@@ -65,3 +65,34 @@ users:
 		t.Fatal("shouldSeedLiveVMFixtures() = false, want true for live kubeconfig")
 	}
 }
+
+func TestLoadFixtureConfig_SecondUserOverrides(t *testing.T) {
+	t.Setenv("E2E_ADMIN_USERNAME", "admin")
+	t.Setenv("E2E_ADMIN_PASSWORD", "admin")
+	t.Setenv("E2E_ADMIN_EMAIL", "admin@example.test")
+	t.Setenv("E2E_SECOND_USERNAME", "test")
+	t.Setenv("E2E_SECOND_PASSWORD", "test")
+	t.Setenv("E2E_SECOND_EMAIL", "test@example.test")
+	t.Setenv("E2E_SECOND_DISPLAY_NAME", "Test User")
+	t.Setenv("E2E_SECOND_ROLE_NAME", "TestEngineer")
+
+	cfg := loadFixtureConfig()
+	if cfg.AdminUsername != "admin" || cfg.AdminPassword != "admin" || cfg.AdminEmail != "admin@example.test" {
+		t.Fatalf("admin fixture config = %#v, want explicit admin overrides", cfg)
+	}
+	if cfg.SecondUsername != "test" {
+		t.Fatalf("SecondUsername = %q, want test", cfg.SecondUsername)
+	}
+	if cfg.SecondPassword != "test" {
+		t.Fatalf("SecondPassword = %q, want test", cfg.SecondPassword)
+	}
+	if cfg.SecondEmail != "test@example.test" {
+		t.Fatalf("SecondEmail = %q, want test@example.test", cfg.SecondEmail)
+	}
+	if cfg.SecondDisplayName != "Test User" {
+		t.Fatalf("SecondDisplayName = %q, want Test User", cfg.SecondDisplayName)
+	}
+	if cfg.SecondRoleName != "TestEngineer" {
+		t.Fatalf("SecondRoleName = %q, want TestEngineer", cfg.SecondRoleName)
+	}
+}

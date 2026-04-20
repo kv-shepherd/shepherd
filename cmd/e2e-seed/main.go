@@ -27,6 +27,7 @@ import (
 	entinstancesize "kv-shepherd.io/shepherd/ent/instancesize"
 	entnamespaceregistry "kv-shepherd.io/shepherd/ent/namespaceregistry"
 	entnotification "kv-shepherd.io/shepherd/ent/notification"
+	entresourcerolebinding "kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	entrole "kv-shepherd.io/shepherd/ent/role"
 	entrolebinding "kv-shepherd.io/shepherd/ent/rolebinding"
 	entservice "kv-shepherd.io/shepherd/ent/service"
@@ -106,6 +107,12 @@ type fixtureConfig struct {
 	AdminPassword string
 	AdminEmail    string
 
+	SecondUsername    string
+	SecondPassword    string
+	SecondEmail       string
+	SecondDisplayName string
+	SecondRoleName    string
+
 	NamespaceName string
 	ClusterName   string
 	ClusterAPIURL string
@@ -172,7 +179,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("resolve cluster seed input: %w", err)
 	}
-	serviceID, err := resolveServiceID(ctx, client, fx, skipAPIManagedFixtures)
+	systemID, err := resolveSystemID(ctx, client, fx, skipAPIManagedFixtures)
+	if err != nil {
+		return fmt.Errorf("resolve system: %w", err)
+	}
+	serviceID, err := resolveServiceID(ctx, client, fx, systemID, skipAPIManagedFixtures)
 	if err != nil {
 		return fmt.Errorf("resolve service: %w", err)
 	}
@@ -213,11 +224,16 @@ func run() error {
 		return fmt.Errorf("ensure auth provider: %w", providerErr)
 	}
 
-	secondUserID, err := ensureSecondUser(ctx, client)
+	secondUserID, err := ensureSecondUser(ctx, client, fx)
 	if err != nil {
 		return fmt.Errorf("ensure second user: %w", err)
 	}
-	_ = secondUserID // Used for member management tests; ID logged below
+	if bindErr := ensureGlobalRoleBinding(ctx, client, secondUserID, fx.SecondRoleName, seedActor); bindErr != nil {
+		return fmt.Errorf("ensure second user role binding: %w", bindErr)
+	}
+	if memberErr := ensureSystemMemberBinding(ctx, client, secondUserID, systemID, entresourcerolebinding.RoleMember); memberErr != nil {
+		return fmt.Errorf("ensure second user system membership: %w", memberErr)
+	}
 
 	if approvalErr := ensureApprovalTickets(ctx, client); approvalErr != nil {
 		return fmt.Errorf("ensure approval tickets: %w", approvalErr)
@@ -239,18 +255,23 @@ func run() error {
 
 func loadFixtureConfig() fixtureConfig {
 	return fixtureConfig{
-		AdminUsername: envOrDefault("E2E_ADMIN_USERNAME", defaultAdminUsername),
-		AdminPassword: envOrDefault("E2E_ADMIN_PASSWORD", defaultAdminPassword),
-		AdminEmail:    envOrDefault("E2E_ADMIN_EMAIL", defaultAdminEmail),
-		NamespaceName: envOrDefault("E2E_NAMESPACE", defaultNamespaceName),
-		ClusterName:   envOrDefault("E2E_CLUSTER", defaultClusterName),
-		ClusterAPIURL: envOrDefault("E2E_CLUSTER_API_SERVER", defaultClusterAPIURL),
-		SystemName:    envOrDefault("E2E_SYSTEM", defaultSystemName),
-		ServiceName:   envOrDefault("E2E_SERVICE", defaultServiceName),
-		TemplateName:  envOrDefault("E2E_TEMPLATE", defaultTemplateName),
-		SizeName:      envOrDefault("E2E_SIZE", defaultSizeName),
-		RunningVMID:   envOrDefault("E2E_VM_RUNNING_ID", defaultRunningVMID),
-		StoppedVMID:   envOrDefault("E2E_VM_STOPPED_ID", defaultStoppedVMID),
+		AdminUsername:     envOrDefault("E2E_ADMIN_USERNAME", defaultAdminUsername),
+		AdminPassword:     envOrDefault("E2E_ADMIN_PASSWORD", defaultAdminPassword),
+		AdminEmail:        envOrDefault("E2E_ADMIN_EMAIL", defaultAdminEmail),
+		SecondUsername:    envOrDefault("E2E_SECOND_USERNAME", defaultSecondUsername),
+		SecondPassword:    envOrDefault("E2E_SECOND_PASSWORD", defaultSecondPassword),
+		SecondEmail:       envOrDefault("E2E_SECOND_EMAIL", defaultSecondEmail),
+		SecondDisplayName: envOrDefault("E2E_SECOND_DISPLAY_NAME", defaultSecondDisplayName),
+		SecondRoleName:    envOrDefault("E2E_SECOND_ROLE_NAME", defaultSecondRoleName),
+		NamespaceName:     envOrDefault("E2E_NAMESPACE", defaultNamespaceName),
+		ClusterName:       envOrDefault("E2E_CLUSTER", defaultClusterName),
+		ClusterAPIURL:     envOrDefault("E2E_CLUSTER_API_SERVER", defaultClusterAPIURL),
+		SystemName:        envOrDefault("E2E_SYSTEM", defaultSystemName),
+		ServiceName:       envOrDefault("E2E_SERVICE", defaultServiceName),
+		TemplateName:      envOrDefault("E2E_TEMPLATE", defaultTemplateName),
+		SizeName:          envOrDefault("E2E_SIZE", defaultSizeName),
+		RunningVMID:       envOrDefault("E2E_VM_RUNNING_ID", defaultRunningVMID),
+		StoppedVMID:       envOrDefault("E2E_VM_STOPPED_ID", defaultStoppedVMID),
 	}
 }
 
@@ -429,10 +450,14 @@ func ensureAdminUser(ctx context.Context, client *ent.Client, fx fixtureConfig) 
 }
 
 func ensureAdminRoleBinding(ctx context.Context, client *ent.Client, userID string) error {
-	roleObj, err := client.Role.Query().Where(entrole.NameEQ("PlatformAdmin")).Only(ctx)
+	return ensureGlobalRoleBinding(ctx, client, userID, "PlatformAdmin", seedActor)
+}
+
+func ensureGlobalRoleBinding(ctx context.Context, client *ent.Client, userID, roleName, createdBy string) error {
+	roleObj, err := client.Role.Query().Where(entrole.NameEQ(roleName)).Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
-			return fmt.Errorf("PlatformAdmin role not found, run cmd/seed first")
+			return fmt.Errorf("%s role not found, run cmd/seed first", roleName)
 		}
 		return err
 	}
@@ -441,6 +466,7 @@ func ensureAdminRoleBinding(ctx context.Context, client *ent.Client, userID stri
 		Where(
 			entrolebinding.HasUserWith(entuser.IDEQ(userID)),
 			entrolebinding.HasRoleWith(entrole.IDEQ(roleObj.ID)),
+			entrolebinding.ScopeTypeEQ("global"),
 		).
 		Exist(ctx)
 	if err != nil {
@@ -456,7 +482,44 @@ func ensureAdminRoleBinding(ctx context.Context, client *ent.Client, userID stri
 		SetUserID(userID).
 		SetRoleID(roleObj.ID).
 		SetScopeType("global").
-		SetCreatedBy("e2e-seed").
+		SetCreatedBy(createdBy).
+		Save(ctx)
+	return err
+}
+
+func ensureSystemMemberBinding(
+	ctx context.Context,
+	client *ent.Client,
+	userID string,
+	systemID string,
+	role entresourcerolebinding.Role,
+) error {
+	existing, err := client.ResourceRoleBinding.Query().
+		Where(
+			entresourcerolebinding.UserIDEQ(userID),
+			entresourcerolebinding.ResourceTypeEQ("system"),
+			entresourcerolebinding.ResourceIDEQ(systemID),
+		).
+		Only(ctx)
+	if err != nil && !ent.IsNotFound(err) {
+		return err
+	}
+
+	if existing == nil {
+		id, _ := uuid.NewV7()
+		_, createErr := client.ResourceRoleBinding.Create().
+			SetID(id.String()).
+			SetUserID(userID).
+			SetResourceType("system").
+			SetResourceID(systemID).
+			SetRole(role).
+			SetCreatedBy(seedActor).
+			Save(ctx)
+		return createErr
+	}
+
+	_, err = client.ResourceRoleBinding.UpdateOneID(existing.ID).
+		SetRole(role).
 		Save(ctx)
 	return err
 }
@@ -502,6 +565,23 @@ func ensureExistingNamespaceRegistry(ctx context.Context, client *ent.Client, na
 	return nil
 }
 
+func resolveSystemID(ctx context.Context, client *ent.Client, fx fixtureConfig, skipAPIManagedFixtures bool) (string, error) {
+	if !skipAPIManagedFixtures {
+		return ensureSystem(ctx, client, fx)
+	}
+
+	systemObj, err := client.System.Query().
+		Where(entsystem.NameEQ(fx.SystemName)).
+		Only(ctx)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return "", fmt.Errorf("system %q not found; seed API-managed fixtures before running cmd/e2e-seed with E2E_SKIP_API_MANAGED_FIXTURES=1", fx.SystemName)
+		}
+		return "", err
+	}
+	return systemObj.ID, nil
+}
+
 func resolveClusterID(ctx context.Context, client *ent.Client, fx fixtureConfig, skipAPIManagedFixtures bool) (string, error) {
 	if !skipAPIManagedFixtures {
 		clusterID, err := ensureCluster(ctx, client, fx)
@@ -526,28 +606,14 @@ func resolveClusterID(ctx context.Context, client *ent.Client, fx fixtureConfig,
 	return clusterObj.ID, nil
 }
 
-func resolveServiceID(ctx context.Context, client *ent.Client, fx fixtureConfig, skipAPIManagedFixtures bool) (string, error) {
+func resolveServiceID(ctx context.Context, client *ent.Client, fx fixtureConfig, systemID string, skipAPIManagedFixtures bool) (string, error) {
 	if !skipAPIManagedFixtures {
-		systemID, err := ensureSystem(ctx, client, fx)
-		if err != nil {
-			return "", err
-		}
 		return ensureService(ctx, client, fx, systemID)
-	}
-
-	systemObj, err := client.System.Query().
-		Where(entsystem.NameEQ(fx.SystemName)).
-		Only(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			return "", fmt.Errorf("system %q not found; seed API-managed fixtures before running cmd/e2e-seed with E2E_SKIP_API_MANAGED_FIXTURES=1", fx.SystemName)
-		}
-		return "", err
 	}
 	serviceObj, err := client.Service.Query().
 		Where(
 			entservice.NameEQ(fx.ServiceName),
-			entservice.HasSystemWith(entsystem.IDEQ(systemObj.ID)),
+			entservice.HasSystemWith(entsystem.IDEQ(systemID)),
 		).
 		Only(ctx)
 	if err != nil {
@@ -1085,10 +1151,12 @@ func ensureVM(
 // ── Extended seed fixtures ────────────────────────────────────────────────────
 
 const (
-	defaultAuthProviderName = "e2e-ldap"
-	defaultSecondUsername   = "e2e-user"
-	defaultSecondPassword   = "e2e-user-123" // #nosec G101 -- test fixture credential for local e2e seeding only.
-	defaultSecondEmail      = "e2e-user@localhost"
+	defaultAuthProviderName  = "e2e-ldap"
+	defaultSecondUsername    = "e2e-user"
+	defaultSecondPassword    = "e2e-user-123" // #nosec G101 -- test fixture credential for local e2e seeding only.
+	defaultSecondEmail       = "e2e-user@localhost"
+	defaultSecondDisplayName = "E2E Regular User"
+	defaultSecondRoleName    = "TestEngineer"
 )
 
 // ensureAuthProvider creates a minimal LDAP-style auth provider for tests
@@ -1133,13 +1201,13 @@ func ensureAuthProvider(ctx context.Context, client *ent.Client) error {
 
 // ensureSecondUser creates a non-admin user needed for member management tests
 // (addSystemMember, updateSystemMemberRole, deleteSystemMember require ≥2 users).
-func ensureSecondUser(ctx context.Context, client *ent.Client) (string, error) {
-	hash, err := bcrypt.GenerateFromPassword([]byte(defaultSecondPassword), bcrypt.DefaultCost)
+func ensureSecondUser(ctx context.Context, client *ent.Client, fx fixtureConfig) (string, error) {
+	hash, err := bcrypt.GenerateFromPassword([]byte(fx.SecondPassword), bcrypt.DefaultCost)
 	if err != nil {
 		return "", fmt.Errorf("hash password: %w", err)
 	}
 
-	user, err := client.User.Query().Where(entuser.UsernameEQ(defaultSecondUsername)).Only(ctx)
+	user, err := client.User.Query().Where(entuser.UsernameEQ(fx.SecondUsername)).Only(ctx)
 	if err != nil {
 		if !ent.IsNotFound(err) {
 			return "", err
@@ -1147,9 +1215,9 @@ func ensureSecondUser(ctx context.Context, client *ent.Client) (string, error) {
 		id, _ := uuid.NewV7()
 		created, createErr := client.User.Create().
 			SetID(id.String()).
-			SetUsername(defaultSecondUsername).
-			SetEmail(defaultSecondEmail).
-			SetDisplayName("E2E Regular User").
+			SetUsername(fx.SecondUsername).
+			SetEmail(fx.SecondEmail).
+			SetDisplayName(fx.SecondDisplayName).
 			SetPasswordHash(string(hash)).
 			SetForcePasswordChange(false).
 			SetEnabled(true).
@@ -1161,8 +1229,8 @@ func ensureSecondUser(ctx context.Context, client *ent.Client) (string, error) {
 	}
 
 	updated, err := client.User.UpdateOneID(user.ID).
-		SetEmail(defaultSecondEmail).
-		SetDisplayName("E2E Regular User").
+		SetEmail(fx.SecondEmail).
+		SetDisplayName(fx.SecondDisplayName).
 		SetPasswordHash(string(hash)).
 		SetForcePasswordChange(false).
 		SetEnabled(true).

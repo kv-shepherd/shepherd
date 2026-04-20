@@ -174,6 +174,7 @@ Or use the one-click script:
 ```bash
 bash deploy/prod/deploy-prod.sh              # builds + deploys
 bash deploy/prod/deploy-prod.sh --with-seed  # first deploy/bootstrap
+bash deploy/prod/deploy-prod.sh --with-seed --with-experience-seed
 bash deploy/prod/deploy-prod.sh --help   # all options
 ```
 
@@ -186,6 +187,29 @@ When `DATABASE_URL` points to an external PostgreSQL host, `deploy-prod.sh`
 auto-detects that topology and does not start the bundled `postgres:18`
 service. Override with `DEPLOY_BUNDLED_POSTGRES=true|false` only when you need
 to force the topology.
+
+### VPS Experience Seed
+
+If you want a browser-accessible product experience on a VPS, keep the real
+production deployment topology and add the extended experience seed instead of
+using a separate demo mode:
+
+```bash
+bash deploy/prod/deploy-prod.sh --with-seed --with-experience-seed
+```
+
+This keeps the normal `server` + `web` + `nginx` + PostgreSQL deployment path
+and then injects:
+
+- `admin / admin`
+- `test / test`
+- sample system, service, template, instance sizes, approval tickets, and notifications
+
+By default, the experience seed registers a stub cluster when no kubeconfig is
+provided, which means cluster-backed VM actions remain illustrative until a
+real Kubernetes/KubeVirt environment is configured. To seed against a real
+cluster, export `E2E_KUBECONFIG_PATH=/path/to/kubeconfig` (or
+`E2E_KUBECONFIG_B64`) before running `deploy-prod.sh`.
 
 ### Key Configuration
 

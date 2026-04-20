@@ -5,6 +5,8 @@
 # Usage:
 #   bash deploy/prod/deploy-prod.sh                    # Public deploy (no bootstrap seed)
 #   bash deploy/prod/deploy-prod.sh --with-seed        # Public deploy + bootstrap seed
+#   bash deploy/prod/deploy-prod.sh --with-seed --with-experience-seed
+#                                                 # Public deploy + baseline seed + experience fixtures
 #   bash deploy/prod/deploy-prod.sh --enterprise       # Enterprise edition
 #   bash deploy/prod/deploy-prod.sh --build-only       # Build images only
 #   bash deploy/prod/deploy-prod.sh --seed-only        # Run bootstrap seed only (after services are up)
@@ -22,6 +24,8 @@ SEED_ONLY=0
 RUN_SEED=0
 SKIP_BUILD=0
 DID_RUN_SEED=0
+RUN_EXPERIENCE_SEED=0
+DID_RUN_EXPERIENCE_SEED=0
 BUNDLED_POSTGRES_MODE=""
 BUNDLED_POSTGRES=1
 
@@ -33,10 +37,102 @@ Options:
   --enterprise     Deploy enterprise edition (requires private repo)
   --build-only     Build images only, do not start services
   --with-seed      Run bootstrap seed after startup (roles + default admin)
+  --with-experience-seed
+                   Run extended experience fixtures after bootstrap seed
+                   (admin/test accounts + sample system/service/catalog data)
   --seed-only      Run bootstrap seed only (assumes services are running)
   --skip-build     Skip image build, use existing images
   -h, --help       Show this help message
 EOF
+}
+
+base64_file() {
+    base64 <"$1" | tr -d '\n'
+}
+
+host_goarch() {
+    case "$(uname -m)" in
+        x86_64|amd64)
+            printf "amd64"
+            ;;
+        aarch64|arm64)
+            printf "arm64"
+            ;;
+        *)
+            echo "ERROR: unsupported host architecture: $(uname -m)"
+            exit 1
+            ;;
+    esac
+}
+
+build_experience_seed_binary() {
+    local binary_path="${ROOT_DIR}/build/bin/e2e-seed"
+    local goarch
+    goarch="$(host_goarch)"
+
+    mkdir -p "${ROOT_DIR}/build/bin"
+    echo "Building extended experience seeder (cmd/e2e-seed)..." >&2
+    if command -v go >/dev/null 2>&1; then
+        (
+            cd "${ROOT_DIR}"
+            GOOS=linux GOARCH="${goarch}" CGO_ENABLED=0 go build -ldflags="-s -w" -o build/bin/e2e-seed ./cmd/e2e-seed/...
+        )
+    else
+        docker run --rm \
+            -u "$(id -u):$(id -g)" \
+            -e HOME=/tmp/go-home \
+            -e GOCACHE=/tmp/go-build \
+            -e GOMODCACHE=/tmp/go-mod \
+            -e GOOS=linux \
+            -e GOARCH="${goarch}" \
+            -e CGO_ENABLED=0 \
+            -v "${ROOT_DIR}:/workspace" \
+            -w /workspace \
+            golang:1.25.9-bookworm \
+            /usr/local/go/bin/go build -ldflags="-s -w" -o build/bin/e2e-seed ./cmd/e2e-seed/...
+    fi
+    printf "%s" "${binary_path}"
+}
+
+run_experience_seed() {
+    local binary_path server_container
+    local -a e2e_seed_env
+    e2e_seed_env=(
+        -e "E2E_ADMIN_USERNAME=admin"
+        -e "E2E_ADMIN_PASSWORD=admin"
+        -e "E2E_ADMIN_EMAIL=admin@localhost"
+        -e "E2E_SECOND_USERNAME=test"
+        -e "E2E_SECOND_PASSWORD=test"
+        -e "E2E_SECOND_EMAIL=test@localhost"
+        -e "E2E_SECOND_DISPLAY_NAME=Test User"
+        -e "E2E_SECOND_ROLE_NAME=TestEngineer"
+    )
+
+    if [[ -n "${E2E_KUBECONFIG_B64:-}" ]]; then
+        e2e_seed_env+=(-e "E2E_KUBECONFIG_B64=${E2E_KUBECONFIG_B64}")
+    elif [[ -n "${E2E_KUBECONFIG_PATH:-}" ]]; then
+        if [[ ! -f "${E2E_KUBECONFIG_PATH}" ]]; then
+            echo "ERROR: E2E_KUBECONFIG_PATH does not exist: ${E2E_KUBECONFIG_PATH}"
+            exit 1
+        fi
+        e2e_seed_env+=(-e "E2E_KUBECONFIG_B64=$(base64_file "${E2E_KUBECONFIG_PATH}")")
+    fi
+
+    binary_path="$(build_experience_seed_binary)"
+    server_container="$(docker compose -f "${COMPOSE_FILE}" -p shepherd-prod ps -q server)"
+    if [[ -z "${server_container}" ]]; then
+        echo "ERROR: could not resolve running server container for experience seed"
+        exit 1
+    fi
+
+    echo "Running extended experience seed (sample catalog + admin/test users)..."
+    docker cp "${binary_path}" "${server_container}:/tmp/e2e-seed"
+    docker compose -f "${COMPOSE_FILE}" -p shepherd-prod exec -T server chmod 0755 /tmp/e2e-seed >/dev/null
+    docker compose -f "${COMPOSE_FILE}" -p shepherd-prod \
+        exec -T "${e2e_seed_env[@]}" server /tmp/e2e-seed >/dev/null
+    docker compose -f "${COMPOSE_FILE}" -p shepherd-prod exec -T server rm -f /tmp/e2e-seed >/dev/null 2>&1 || true
+    echo "  ✓ Extended experience seed complete"
+    DID_RUN_EXPERIENCE_SEED=1
 }
 
 extract_database_host() {
@@ -93,6 +189,11 @@ while [[ $# -gt 0 ]]; do
             shift
             ;;
         --with-seed|--bootstrap)
+            RUN_SEED=1
+            shift
+            ;;
+        --with-experience-seed)
+            RUN_EXPERIENCE_SEED=1
             RUN_SEED=1
             shift
             ;;
@@ -289,12 +390,19 @@ if [[ "${SEED_ONLY}" == "1" || "${RUN_SEED}" == "1" ]]; then
     }
     echo "  ✓ Bootstrap seed complete"
     DID_RUN_SEED=1
+    if [[ "${RUN_EXPERIENCE_SEED}" == "1" ]]; then
+        run_experience_seed
+    fi
 else
     echo ""
     echo "--- Phase 3: Skipping Bootstrap Seed ---"
     echo ""
     echo "Skipping bootstrap seed by default."
     echo "  Use --with-seed for first install/bootstrap or role-baseline reconciliation."
+    if [[ "${RUN_EXPERIENCE_SEED}" == "1" ]]; then
+        echo "ERROR: --with-experience-seed requires bootstrap seed to run."
+        exit 1
+    fi
 fi
 
 # Rotate admin password if needed
@@ -352,9 +460,21 @@ echo "    Backend: http://localhost:${SERVER_PORT:-8080} (internal)"
 echo "    DB:      ${db_summary}"
 echo ""
 if [[ "${DID_RUN_SEED}" == "1" ]]; then
-    echo "  Login:     admin / ${ADMIN_PASSWORD}"
-    echo "  Note:      first sign-in requires a password change"
-    echo ""
+    if [[ "${DID_RUN_EXPERIENCE_SEED}" == "1" ]]; then
+        echo "  Login:     admin / ${ADMIN_PASSWORD}"
+        echo "             test / test"
+        if [[ -n "${E2E_KUBECONFIG_B64:-}" || -n "${E2E_KUBECONFIG_PATH:-}" ]]; then
+            echo "  Note:      experience fixtures seeded against the provided cluster kubeconfig"
+        else
+            echo "  Note:      no cluster kubeconfig provided; the seeded cluster is intentionally unreachable"
+            echo "             so cluster-backed VM actions remain illustrative until a real cluster is configured"
+        fi
+        echo ""
+    else
+        echo "  Login:     admin / ${ADMIN_PASSWORD}"
+        echo "  Note:      first sign-in requires a password change"
+        echo ""
+    fi
 else
     echo "  Bootstrap seed was skipped."
     echo "  Run with --with-seed (or --seed-only) if this is a fresh database."
