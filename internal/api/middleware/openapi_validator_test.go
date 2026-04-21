@@ -239,6 +239,48 @@ func TestOpenAPIValidatorAllowsBrowserRuntimeHeadersInStrictMode(t *testing.T) {
 	}
 }
 
+func TestOpenAPIValidatorAllowsProxyTransportHeadersOnNonAuthRoutes(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/health/ready", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/ready", http.NoBody)
+	req.Host = "demo.kv-shepherd.io"
+	req.AddCookie(&http.Cookie{Name: "shepherd-demo-session", Value: "signed-session"})
+	req.Header.Set("Accept", "application/json, text/plain, */*")
+	req.Header.Set("Accept-Language", "en,zh-CN;q=0.9,zh-TW;q=0.8,zh;q=0.7")
+	req.Header.Set("Origin", "https://demo.kv-shepherd.io")
+	req.Header.Set("Referer", "https://demo.kv-shepherd.io/dashboard")
+	req.Header.Set("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36")
+	req.Header.Set("Sec-Ch-Ua", `"Chromium";v="132", "Not=A?Brand";v="99"`)
+	req.Header.Set("Sec-Ch-Ua-Mobile", "?0")
+	req.Header.Set("Sec-Ch-Ua-Platform", `"Linux"`)
+	req.Header.Set("Sec-Fetch-Dest", "empty")
+	req.Header.Set("Sec-Fetch-Mode", "cors")
+	req.Header.Set("Sec-Fetch-Site", "same-origin")
+	req.Header.Set("Priority", "u=1, i")
+	req.Header.Set("Forwarded", "for=198.51.100.24;proto=https;host=demo.kv-shepherd.io")
+	req.Header.Set("X-Forwarded-For", "198.51.100.24")
+	req.Header.Set("X-Forwarded-Host", "demo.kv-shepherd.io")
+	req.Header.Set("X-Forwarded-Port", "443")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Server", "edge-proxy")
+	req.Header.Set("X-Original-Host", "demo.kv-shepherd.io")
+	req.Header.Set("X-Real-Ip", "198.51.100.24")
+	req.Header.Set("Cdn-Loop", "cloudflare")
+	req.Header.Set("Cf-Connecting-Ip", "198.51.100.24")
+	req.Header.Set("Cf-Ray", "demo-ray")
+	req.Header.Set("Cf-Visitor", `{"scheme":"https"}`)
+	req.Header.Set("Cf-Ipcountry", "US")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for proxy transport headers on non-auth route, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorAllowsForwardedHeadersOnPublicAuthDiscovery(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.GET("/api/v1/auth/providers", func(c *gin.Context) {

@@ -343,6 +343,7 @@ func (v *openAPIRuntimeValidator) newValidator(extraStrictIgnorePaths ...string)
 	// headers that are unrelated to declared API parameters. Keep strict mode
 	// for contract governance, but ignore these transport artifacts.
 	strictIgnorePaths := []string{
+		"$.headers.**",
 		"$.cookies.*",
 		"$.cookies['**']",
 	}
