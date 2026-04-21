@@ -106,6 +106,17 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 		if !v.exposeValidationError {
 			message = openAPIRequestValidationMessage
 		}
+		logger.Warn("OpenAPI request validation failed",
+			zap.String("method", c.Request.Method),
+			zap.String("path", c.Request.URL.Path),
+			zap.String("reason", summarizeValidationErrors(requestErrs)),
+			zap.String("validation_type", firstValidationField(requestErrs, func(err *validatorerrors.ValidationError) string {
+				return strings.TrimSpace(err.ValidationType)
+			})),
+			zap.String("validation_subtype", firstValidationField(requestErrs, func(err *validatorerrors.ValidationError) string {
+				return strings.TrimSpace(err.ValidationSubType)
+			})),
+		)
 
 		abortWithOpenAPIError(c, http.StatusBadRequest, code, message)
 		return
@@ -177,11 +188,13 @@ func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
 	path := normalizeValidationPath(basePath, request.URL.Path)
 	ignorePaths := make([]string, 0, 2)
 
-	if strings.HasPrefix(path, "/auth/") {
-		// GitHub/Codespaces public tunnel auth can append `?tunnel=1` when
-		// replaying the original request after tunnel sign-in. Scope this strict
-		// ignore to auth endpoints only so unrelated API routes remain governed.
-		ignorePaths = append(ignorePaths, "$.query.tunnel")
+	if shouldIgnoreAuthRuntimeQueryMetadata(request, basePath) {
+		// Public auth entrypoints sit behind browser, reverse-proxy, and external
+		// identity-provider redirects. Those flows can append transport/runtime
+		// query metadata (Codespaces tunnel params, GitHub forwarding state, IdP
+		// callback extras) that is not part of the business contract. Keep path
+		// and body validation strict, but ignore undeclared query metadata here.
+		ignorePaths = append(ignorePaths, "$.query.**")
 	}
 
 	// AuthProvider.config is contractually free-form JSON for plugin-specific
@@ -213,6 +226,32 @@ func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
 	}
 
 	return ignorePaths
+}
+
+func shouldIgnoreAuthRuntimeQueryMetadata(request *http.Request, basePath string) bool {
+	if request == nil || request.URL == nil {
+		return false
+	}
+
+	path := normalizeValidationPath(basePath, request.URL.Path)
+	switch request.Method {
+	case http.MethodGet:
+		if path == "/auth/providers" {
+			return true
+		}
+		return strings.HasPrefix(path, "/auth/providers/") && strings.HasSuffix(path, "/callback")
+	case http.MethodPost:
+		if path == "/auth/login" {
+			return true
+		}
+		if strings.HasPrefix(path, "/auth/providers/") {
+			return strings.HasSuffix(path, "/login/start") ||
+				strings.HasSuffix(path, "/login/submit") ||
+				strings.HasSuffix(path, "/callback")
+		}
+	}
+
+	return false
 }
 
 func shouldIgnoreDynamicSchemaResponseBody(request *http.Request, basePath string) bool {
@@ -417,6 +456,18 @@ func hasRouteValidationError(errs []*validatorerrors.ValidationError) bool {
 		}
 	}
 	return false
+}
+
+func firstValidationField(errs []*validatorerrors.ValidationError, picker func(*validatorerrors.ValidationError) string) string {
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		if value := strings.TrimSpace(picker(err)); value != "" {
+			return value
+		}
+	}
+	return ""
 }
 
 func summarizeValidationErrors(errs []*validatorerrors.ValidationError) string {

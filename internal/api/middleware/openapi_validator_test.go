@@ -276,7 +276,7 @@ func TestOpenAPIValidatorAllowsForwardedHeadersOnPublicAuthDiscovery(t *testing.
 	}
 }
 
-func TestOpenAPIValidatorAllowsTunnelQueryOnPublicAuthDiscovery(t *testing.T) {
+func TestOpenAPIValidatorAllowsRuntimeQueryMetadataOnPublicAuthDiscovery(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.GET("/api/v1/auth/providers", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
@@ -290,7 +290,11 @@ func TestOpenAPIValidatorAllowsTunnelQueryOnPublicAuthDiscovery(t *testing.T) {
 		})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers?tunnel=1", http.NoBody)
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/auth/providers?tunnel=1&rd=%2Flogin&id=jolly-horse-f9h5cv8&port=3000&name=potential-halibut&cluster=use",
+		http.NoBody,
+	)
 	req.AddCookie(&http.Cookie{Name: "tunnel_phishing_protection", Value: "demo-codespaces-tunnel"})
 	req.AddCookie(&http.Cookie{Name: ".Tunnels.Relay.WebForwarding.Cookies", Value: "demo-forwarding-cookie"})
 	req.Header.Set("Accept", "*/*")
@@ -304,11 +308,11 @@ func TestOpenAPIValidatorAllowsTunnelQueryOnPublicAuthDiscovery(t *testing.T) {
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200 for public auth discovery with tunnel query, got %d body=%s", resp.Code, resp.Body.String())
+		t.Fatalf("expected 200 for public auth discovery with runtime query metadata, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 
-func TestOpenAPIValidatorAllowsTunnelQueryOnPublicAuthLogin(t *testing.T) {
+func TestOpenAPIValidatorAllowsRuntimeQueryMetadataOnPublicAuthLogin(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.POST("/api/v1/auth/login", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"token": "ok"})
@@ -316,7 +320,7 @@ func TestOpenAPIValidatorAllowsTunnelQueryOnPublicAuthLogin(t *testing.T) {
 
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/v1/auth/login?tunnel=1",
+		"/api/v1/auth/login?tunnel=1&rd=%2Flogin&id=jolly-horse-f9h5cv8&port=3000&name=potential-halibut&cluster=use",
 		bytes.NewBufferString(`{"username":"admin","password":"admin"}`),
 	)
 	req.AddCookie(&http.Cookie{Name: "tunnel_phishing_protection", Value: "demo-codespaces-tunnel"})
@@ -332,7 +336,30 @@ func TestOpenAPIValidatorAllowsTunnelQueryOnPublicAuthLogin(t *testing.T) {
 	router.ServeHTTP(resp, req)
 
 	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200 for public auth login with tunnel query, got %d body=%s", resp.Code, resp.Body.String())
+		t.Fatalf("expected 200 for public auth login with runtime query metadata, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsRuntimeQueryMetadataOnExternalAuthCallback(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/auth/providers/:provider_id/callback", func(c *gin.Context) {
+		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
+	})
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/v1/auth/providers/provider-1/callback?code=code-1&state=state-1&tunnel=1&iss=https%3A%2F%2Fissuer.example.com&session_state=session-1",
+		http.NoBody,
+	)
+	req.Header.Set("Accept", "text/html")
+	req.Header.Set("Referer", "https://potential-halibut-wrppqw7rj9q7cg5xj-3000.app.github.dev/login")
+	req.Header.Set("X-Forwarded-Host", "potential-halibut-wrppqw7rj9q7cg5xj-3000.app.github.dev")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for external auth callback with runtime query metadata, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 
@@ -361,6 +388,27 @@ func TestOpenAPIValidatorRejectsTunnelQueryOnNonAuthRoutes(t *testing.T) {
 	if resp.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400 for non-auth request with tunnel query, got %d body=%s", resp.Code, resp.Body.String())
 	}
+}
+
+func TestOpenAPIValidatorStillRejectsRuntimeQueryMetadataOnAuthenticatedAuthRoutes(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/auth/me", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"id":       "user-1",
+			"username": "admin",
+			"roles":    []string{"platform:admin"},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/me?tunnel=1&rd=%2Flogin&id=jolly-horse-f9h5cv8&port=3000&name=potential-halibut&cluster=use", http.NoBody)
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for authenticated auth route with runtime query metadata, got %d body=%s", resp.Code, resp.Body.String())
+	}
+	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_REQUEST_INVALID")
 }
 
 func TestOpenAPIValidatorSkipsWebSocketUpgradeRequests(t *testing.T) {
