@@ -4,6 +4,10 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kv-shepherd/shepherd)](go.mod)
 [![CI](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml/badge.svg)](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml)
 
+**[Website](https://www.kv-shepherd.io)** ·
+**[Online Demo](https://demo.kv-shepherd.io)** ·
+**[Documentation](docs/README.md)**
+
 **KubeVirt Shepherd** is a governance-first management platform for
 [KubeVirt][kubevirt] virtual machines. It provides self-service VM lifecycle
 management with structured approval workflows, RBAC, and full audit trails
@@ -13,6 +17,10 @@ across multiple Kubernetes clusters.
 > managed throughout their lifecycle — users enjoy self-service freedom while
 > governance policies prevent resource sprawl and orphaned instances.*
 
+<p align="center">
+  <img src="docs/assets/screenshot.png" alt="KubeVirt Shepherd Dashboard" width="800">
+</p>
+
 ## Why Shepherd?
 
 KubeVirt solves *"running VMs on Kubernetes"*. Shepherd solves what comes next:
@@ -21,9 +29,9 @@ and where is the **audit trail**?
 
 Today, these governance capabilities are mainly available through Red Hat's
 commercial stack (OpenShift Virtualization + RHACM). Shepherd provides an
-**open-source, vendor-neutral alternative** built with production-grade
-engineering standards — contract-first API design, declarative schema
-migrations, structured ADR governance, and comprehensive CI gate enforcement.
+**open-source, vendor-neutral alternative** with contract-first API design,
+declarative schema migrations, structured ADR governance, and enforced CI
+gate checks.
 
 | Capability | OpenShift Virt | Shepherd |
 |------------|---------------|----------|
@@ -113,7 +121,7 @@ when you intentionally want a fresh local environment.
 ### GitHub Codespaces
 
 Use Codespaces as a browser-based technical entry point for the real product.
-It builds the current source tree, boots the production-style stack, and seeds
+It builds the current source tree, boots the full platform stack, and seeds
 sample data so contributors and KubeVirt community users can inspect and debug
 the running system directly.
 
@@ -161,6 +169,7 @@ configuration reference, security checklist, and VPS experience seed setup.
 
 ## Documentation
 
+- [Website](https://www.kv-shepherd.io) — Project overview and getting started
 - [docs/README.md](docs/README.md) — Documentation index & 5-minute quick start
 - [docs/adr/](docs/adr/) — 53 Architecture Decision Records
 - [docs/design/](docs/design/) — Implementation specifications
