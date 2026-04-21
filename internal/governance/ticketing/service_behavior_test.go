@@ -97,14 +97,16 @@ func (f *fakeAtomicWriter) ApprovePowerAndEnqueue(_ context.Context, ticketID, e
 
 type dryRunProviderStub struct {
 	*provider.MockProvider
-	result *domain.ValidationResult
-	err    error
-	calls  int
+	result             *domain.ValidationResult
+	err                error
+	ensureNamespaceErr error
+	calls              int
 }
 
 type mutationDryRunProviderStub struct {
 	*provider.MockProvider
 	dryRunErr     error
+	getVMErr      error
 	dryRunCalls   int
 	lastMutation  *domain.VMMutation
 	lastClusterID string
@@ -129,6 +131,13 @@ func (s *dryRunProviderStub) ValidateSpec(_ context.Context, _, _ string, _ *dom
 		return s.result, nil
 	}
 	return &domain.ValidationResult{Valid: true}, nil
+}
+
+func (s *dryRunProviderStub) EnsureNamespace(ctx context.Context, cluster, namespace string) error {
+	if s.ensureNamespaceErr != nil {
+		return s.ensureNamespaceErr
+	}
+	return s.MockProvider.EnsureNamespace(ctx, cluster, namespace)
 }
 
 func (s *dryRunProviderStub) GetStorageProfile(
@@ -178,6 +187,35 @@ func (s *mutationDryRunProviderStub) DryRunVMMutation(
 		return s.dryRunErr
 	}
 	return s.MockProvider.DryRunVMMutation(context.Background(), cluster, namespace, name, mutation)
+}
+
+func (s *mutationDryRunProviderStub) GetVM(ctx context.Context, cluster, namespace, name string) (*domain.VM, error) {
+	if s.getVMErr != nil {
+		return nil, s.getVMErr
+	}
+	return s.MockProvider.GetVM(ctx, cluster, namespace, name)
+}
+
+type clonePreflightProviderStub struct {
+	*provider.MockProvider
+	pvcErr error
+}
+
+func newClonePreflightProviderStub(err error) *clonePreflightProviderStub {
+	return &clonePreflightProviderStub{
+		MockProvider: provider.NewMockProvider(),
+		pvcErr:       err,
+	}
+}
+
+func (s *clonePreflightProviderStub) GetPersistentVolumeClaim(
+	ctx context.Context,
+	cluster, namespace, name string,
+) (*domain.PersistentVolumeClaim, error) {
+	if s.pvcErr != nil {
+		return nil, s.pvcErr
+	}
+	return s.MockProvider.GetPersistentVolumeClaim(ctx, cluster, namespace, name)
 }
 
 // asInt converts a JSON-decoded number (typically float64 or int) to int for assertions.
@@ -490,6 +528,86 @@ func TestServiceApproveModify_DryRunsExactMutationAndStoresApprovedSnapshot(t *t
 	}
 }
 
+func TestServiceApproveModify_DryRunMutationUnavailableDegradesAndStoresApprovedSnapshot(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_modify_dryrun_unavailable")
+	ctx := context.Background()
+
+	eventID := "event-modify-dryrun-unavailable"
+	ticketID := "ticket-modify-dryrun-unavailable"
+	payload, err := domain.VMModifyPayload{
+		VMID:                   "vm-1",
+		VMName:                 "vm-1",
+		ClusterID:              "cluster-1",
+		Namespace:              "team-a",
+		Actor:                  "user-1",
+		CurrentCPUCores:        2,
+		CurrentMemoryGi:        4,
+		CurrentCPURequest:      2,
+		CurrentMemoryRequestGi: 4,
+		TargetMemoryGi:         ptrFloat64(8),
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal modify payload: %v", err)
+	}
+
+	if _, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMModifyRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payload).
+		SetCreatedBy("user-1").
+		Save(ctx); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeMODIFY).
+		Save(ctx); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	stub := newMutationDryRunProviderStub(fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused"))
+	stub.Seed([]*domain.VM{{
+		ID:        "vm-1",
+		Name:      "vm-1",
+		Namespace: "team-a",
+		Cluster:   "cluster-1",
+		Status:    domain.VMStatusRunning,
+		Spec: domain.VMSpec{
+			CPU:                      2,
+			CPURequest:               2,
+			MemoryGi:                 4,
+			MemoryRequestGi:          4,
+			CurrentCPUSockets:        1,
+			CurrentCPUCoresPerSocket: 2,
+			CurrentCPUThreads:        1,
+		},
+	}})
+
+	gw := NewService(client, nil, writer)
+	gw.SetVMService(service.NewVMService(stub))
+
+	if err := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{}); err != nil {
+		t.Fatalf("Approve() error = %v, want degraded success when mutation dry-run cannot reach cluster", err)
+	}
+	if !writer.modifyCalled {
+		t.Fatal("atomic modify writer should be called when mutation dry-run degrades")
+	}
+	if stub.dryRunCalls != 1 {
+		t.Fatalf("DryRunVMMutation calls = %d, want 1", stub.dryRunCalls)
+	}
+	if _, ok := writer.modifiedSpec["vm_mutation"].(map[string]interface{}); !ok {
+		t.Fatalf("modifiedSpec[vm_mutation] = %T, want persisted mutation snapshot", writer.modifiedSpec["vm_mutation"])
+	}
+}
+
 func TestServiceApproveModify_DryRunMutationErrorBlocksAtomicWriterAndPreservesNativeMessage(t *testing.T) {
 	t.Parallel()
 
@@ -575,6 +693,67 @@ func TestServiceApproveModify_DryRunMutationErrorBlocksAtomicWriterAndPreservesN
 	}
 	if !strings.Contains(appErr.Message, rawErr) {
 		t.Fatalf("AppError.Message = %q, want raw kubevirt validation message", appErr.Message)
+	}
+}
+
+func TestServiceApproveModify_GetVMLoadErrorDegradesAndStillEnqueues(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_modify_getvm_unavailable")
+	ctx := context.Background()
+
+	eventID := "event-modify-getvm-unavailable"
+	ticketID := "ticket-modify-getvm-unavailable"
+	payload, err := domain.VMModifyPayload{
+		VMID:                   "vm-1",
+		VMName:                 "vm-1",
+		ClusterID:              "cluster-1",
+		Namespace:              "team-a",
+		Actor:                  "user-1",
+		CurrentCPUCores:        2,
+		CurrentMemoryGi:        4,
+		CurrentCPURequest:      2,
+		CurrentMemoryRequestGi: 4,
+		TargetMemoryGi:         ptrFloat64(8),
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal modify payload: %v", err)
+	}
+	if _, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMModifyRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payload).
+		SetCreatedBy("user-1").
+		Save(ctx); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeMODIFY).
+		Save(ctx); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	stub := newMutationDryRunProviderStub(nil)
+	stub.getVMErr = fmt.Errorf("get client for cluster cluster-1: parse kubeconfig: invalid configuration: no configuration has been provided")
+
+	gw := NewService(client, nil, writer)
+	gw.SetVMService(service.NewVMService(stub))
+
+	if err := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{}); err != nil {
+		t.Fatalf("Approve() error = %v, want degraded success when live VM lookup cannot reach cluster", err)
+	}
+	if !writer.modifyCalled {
+		t.Fatal("atomic modify writer should be called when live VM lookup degrades")
+	}
+	if stub.dryRunCalls != 0 {
+		t.Fatalf("DryRunVMMutation calls = %d, want 0 when live VM lookup fails first", stub.dryRunCalls)
 	}
 }
 
@@ -1904,7 +2083,7 @@ func TestServiceApproveCreate_DryRunGate_InvalidSpecBlocksEnqueue(t *testing.T) 
 	}
 }
 
-func TestServiceApproveCreate_DryRunGate_ProviderErrorBlocksEnqueue(t *testing.T) {
+func TestServiceApproveCreate_DryRunGate_ProviderErrorDegradesAndEnqueues(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_dryrun_gate_error")
 	ticketID := createOverrideTestData(t, client, "dryrun-error")
@@ -1917,17 +2096,177 @@ func TestServiceApproveCreate_DryRunGate_ProviderErrorBlocksEnqueue(t *testing.T
 
 	opts := ExecutionOptions{ClusterID: "cluster-1"}
 	err := gw.Approve(context.Background(), ticketID, "admin-1", opts)
-	if err == nil {
-		t.Fatal("Approve() expected error when DryRun gate provider fails, got nil")
+	if err != nil {
+		t.Fatalf("Approve() error = %v, want degraded success when DryRun gate provider is unavailable", err)
 	}
-	if !strings.Contains(err.Error(), "pre-flight dryrun gate") {
-		t.Fatalf("Approve() error = %v, want pre-flight dryrun gate context", err)
-	}
-	if writer.called {
-		t.Fatal("atomic writer must NOT be called when DryRun gate provider fails")
+	if !writer.called {
+		t.Fatal("atomic writer should be called when DryRun gate degrades on runtime unavailability")
 	}
 	if stubProvider.calls != 1 {
 		t.Fatalf("ValidateSpec calls = %d, want 1", stubProvider.calls)
+	}
+}
+
+func TestServiceApproveCreate_DryRunGate_NamespaceProvisioningErrorDegradesAndEnqueues(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_dryrun_namespace_error")
+	ticketID := createOverrideTestData(t, client, "dryrun-namespace-error")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+	stubProvider := newDryRunProviderStub(&domain.ValidationResult{Valid: true}, nil)
+	stubProvider.ensureNamespaceErr = fmt.Errorf("get client for cluster cluster-1: parse kubeconfig: invalid configuration: no configuration has been provided")
+	gw.SetVMService(service.NewVMService(stubProvider))
+
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{ClusterID: "cluster-1"}); err != nil {
+		t.Fatalf("Approve() error = %v, want degraded success when namespace provisioning cannot reach cluster", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer should be called when namespace provisioning degrades")
+	}
+	if stubProvider.calls != 0 {
+		t.Fatalf("ValidateSpec calls = %d, want 0 when EnsureNamespace fails first", stubProvider.calls)
+	}
+}
+
+func TestServiceApproveCreate_CloneSourcePreflight_ProviderErrorDegradesAndEnqueues(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_clone_preflight_provider_error")
+	ticketID := createClonePreflightTestData(t, client, "provider-error")
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+	gw.SetVMService(service.NewVMService(newClonePreflightProviderStub(
+		fmt.Errorf("get source pvc golden-images/ubuntu-golden on cluster cluster-1: dial tcp 10.0.0.1:443: connect: connection refused"),
+	)))
+
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{ClusterID: "cluster-1", StorageClass: "fast-sc"}); err != nil {
+		t.Fatalf("Approve() error = %v, want degraded success when clone source preflight cannot reach cluster", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer should be called when clone source preflight degrades")
+	}
+}
+
+func TestServiceApproveCreate_AllowsApprovalWhenSelectedClusterIsUnreachable(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_create_unreachable_cluster")
+	ctx := context.Background()
+
+	eventID := "event-unreachable-cluster"
+	ticketID := "ticket-unreachable-cluster"
+	requester := "user-1"
+	payload := domain.VMCreationPayload{
+		RequesterID:    requester,
+		ServiceID:      "svc-unreachable-cluster",
+		TemplateID:     "tpl-unreachable-cluster",
+		InstanceSizeID: "size-unreachable-cluster",
+		Namespace:      "team-a",
+	}
+	payloadRaw, err := payload.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal payload: %v", err)
+	}
+
+	if _, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(payload.ServiceID).
+		SetPayload(payloadRaw).
+		SetCreatedBy(requester).
+		Save(ctx); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester(requester).
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(ctx); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+	if _, err = client.Cluster.Create().
+		SetID("cluster-unreachable").
+		SetName("cluster-unreachable").
+		SetAPIServerURL("https://cluster.invalid").
+		SetEncryptedKubeconfig([]byte("apiVersion: v1\nkind: Config\n")).
+		SetStatus(entcluster.StatusUNREACHABLE).
+		SetEnvironment(entcluster.EnvironmentTest).
+		SetDefaultStorageClass("gold-sc").
+		SetCreatedBy("seed").
+		Save(ctx); err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	if _, err = client.ClusterPolicy.Create().
+		SetID("policy-unreachable").
+		SetClusterID("cluster-unreachable").
+		SetAllowCPUOvercommit(true).
+		SetAllowMemoryOvercommit(true).
+		SetAllowGpu(true).
+		SetAllowSriov(true).
+		SetAllowHugepages(true).
+		SetAllowCdiClone(true).
+		SetAllowedStorageClasses([]string{"gold-sc"}).
+		SetCreatedBy("seed").
+		Save(ctx); err != nil {
+		t.Fatalf("create cluster policy: %v", err)
+	}
+	if _, err = client.NamespaceRegistry.Create().
+		SetID("ns-unreachable").
+		SetName("team-a").
+		SetEnvironment(entnamespaceregistry.EnvironmentTest).
+		SetEnabled(true).
+		SetCreatedBy("seed").
+		Save(ctx); err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+	if _, err = client.Template.Create().
+		SetID("tpl-unreachable-cluster").
+		SetName("tpl-unreachable-cluster").
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/ubuntu:22.04").
+		SetCreatedBy("seed").
+		Save(ctx); err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	if _, err = client.InstanceSize.Create().
+		SetID("size-unreachable-cluster").
+		SetName("size-unreachable-cluster").
+		SetCPUCores(2).
+		SetMemoryGi(4).
+		SetDiskGB(50).
+		SetCreatedBy("seed").
+		Save(ctx); err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+
+	if err := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{
+		ClusterID:    "cluster-unreachable",
+		StorageClass: "gold-sc",
+	}); err != nil {
+		t.Fatalf("Approve() error = %v, want governance approval to survive unreachable cluster", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer should be called when selected cluster is unreachable")
+	}
+	if writer.placement == nil {
+		t.Fatal("placement evaluation should still be recorded")
+	}
+	if eligible, _ := writer.placement["eligible"].(bool); eligible {
+		t.Fatalf("placement eligible = %v, want false for unreachable cluster snapshot", writer.placement["eligible"])
+	}
+	if reason, _ := writer.placement["reason_message"].(string); !strings.Contains(reason, "not healthy") {
+		t.Fatalf("placement reason_message = %q, want cluster health context", reason)
 	}
 }
 

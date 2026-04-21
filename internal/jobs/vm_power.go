@@ -166,6 +166,9 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	}
 
 	if execErr != nil {
+		if isClusterRuntimeUnavailable(execErr) {
+			return snoozeClusterRuntimeUnavailable("vm_power", eventID, payload.ClusterID, "execute_power", execErr)
+		}
 		return markFailed(fmt.Errorf("execute k8s %s for event %s: %w", operation, eventID, execErr), false)
 	}
 

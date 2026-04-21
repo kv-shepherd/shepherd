@@ -276,6 +276,93 @@ func TestOpenAPIValidatorAllowsForwardedHeadersOnPublicAuthDiscovery(t *testing.
 	}
 }
 
+func TestOpenAPIValidatorAllowsTunnelQueryOnPublicAuthDiscovery(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/auth/providers", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":        "provider-1",
+					"name":      "Corp SSO",
+					"auth_type": "oauth2",
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers?tunnel=1", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: "tunnel_phishing_protection", Value: "demo-codespaces-tunnel"})
+	req.AddCookie(&http.Cookie{Name: ".Tunnels.Relay.WebForwarding.Cookies", Value: "demo-forwarding-cookie"})
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Forwarded", "for=198.51.100.24;proto=https;host=shepherd-demo-3000.app.github.dev")
+	req.Header.Set("X-Forwarded-Host", "shepherd-demo-3000.app.github.dev")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Server", "codespaces-proxy")
+	req.Header.Set("Referer", "https://shepherd-demo-3000.app.github.dev/login")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for public auth discovery with tunnel query, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsTunnelQueryOnPublicAuthLogin(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/auth/login", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"token": "ok"})
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/v1/auth/login?tunnel=1",
+		bytes.NewBufferString(`{"username":"admin","password":"admin"}`),
+	)
+	req.AddCookie(&http.Cookie{Name: "tunnel_phishing_protection", Value: "demo-codespaces-tunnel"})
+	req.AddCookie(&http.Cookie{Name: ".Tunnels.Relay.WebForwarding.Cookies", Value: "demo-forwarding-cookie"})
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Origin", "https://shepherd-demo-3000.app.github.dev")
+	req.Header.Set("Referer", "https://shepherd-demo-3000.app.github.dev/login")
+	req.Header.Set("X-Forwarded-Host", "shepherd-demo-3000.app.github.dev")
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Server", "codespaces-proxy")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for public auth login with tunnel query, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorRejectsTunnelQueryOnNonAuthRoutes(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.POST("/api/v1/vms/request", func(c *gin.Context) {
+		c.JSON(http.StatusAccepted, gin.H{
+			"ticket_id": "ticket-123",
+			"status":    "PENDING",
+		})
+	})
+
+	reqBody := `{
+		"service_id":"00000000-0000-0000-0000-000000000001",
+		"template_id":"00000000-0000-0000-0000-000000000002",
+		"instance_size_id":"00000000-0000-0000-0000-000000000003",
+		"namespace":"team-a",
+		"reason":"need vm for testing"
+	}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/vms/request?tunnel=1", bytes.NewBufferString(reqBody))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for non-auth request with tunnel query, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorSkipsWebSocketUpgradeRequests(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.GET("/api/v1/vms/:vm_id/vnc", func(c *gin.Context) {

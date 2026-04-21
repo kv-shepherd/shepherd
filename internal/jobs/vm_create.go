@@ -161,6 +161,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		return markFailed(fmt.Errorf("event %s has no selected cluster", eventID), true)
 	}
 	if validateErr := w.ensureNamespaceClusterEnvironment(ctx, clusterID, namespace); validateErr != nil {
+		if isClusterRuntimeUnavailable(validateErr) {
+			return snoozeClusterRuntimeUnavailable("vm_create", eventID, clusterID, "namespace_cluster_validation", validateErr)
+		}
 		return markFailed(
 			fmt.Errorf("event %s namespace/cluster environment validation failed: %w", eventID, validateErr),
 			true,
@@ -172,6 +175,18 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 			return markFailed(fmt.Errorf("selected cluster %s not found", clusterID), true)
 		}
 		return fmt.Errorf("query selected cluster %s: %w", clusterID, err)
+	}
+	if !selectedCluster.Enabled {
+		return markFailed(fmt.Errorf("selected cluster %s is disabled", clusterID), true)
+	}
+	if selectedCluster.Status != cluster.StatusHEALTHY {
+		return snoozeClusterRuntimeUnavailable(
+			"vm_create",
+			eventID,
+			clusterID,
+			"selected_cluster_status",
+			fmt.Errorf("cluster %s is not healthy (status: %s)", clusterID, selectedCluster.Status),
+		)
 	}
 
 	// Step 4: Build effective spec.
@@ -288,6 +303,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	// If a prior attempt already created this VM, detect it by event label and skip create.
 	createdVM, err := w.findCreatedVMByEvent(ctx, clusterID, namespace, eventID)
 	if err != nil {
+		if isClusterRuntimeUnavailable(err) {
+			return snoozeClusterRuntimeUnavailable("vm_create", eventID, clusterID, "idempotency_lookup", err)
+		}
 		return fmt.Errorf("check vm create idempotency for event %s: %w", eventID, err)
 	}
 
@@ -304,6 +322,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		// Step 6: Execute K8s VM creation (outside transaction per ADR-0012).
 		vmObj, err := w.vmService.ExecuteK8sCreate(ctx, clusterID, namespace, spec)
 		if err != nil {
+			if isClusterRuntimeUnavailable(err) {
+				return snoozeClusterRuntimeUnavailable("vm_create", eventID, clusterID, "execute_create", err)
+			}
 			// K8s VM was NOT created — safe to retry.
 			// Persist FAILED status (best-effort; original error is returned regardless).
 			if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).

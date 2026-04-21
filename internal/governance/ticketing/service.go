@@ -10,14 +10,18 @@ package ticketing
 import (
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
+	"net"
 	"strings"
 	"time"
 
 	"go.uber.org/zap"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"kv-shepherd.io/shepherd/ent"
 	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
+	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -263,16 +267,20 @@ func (g *Service) approveCreateWithConfig(
 		}
 		placementEvaluation = buildPlacementEvaluationSnapshot(evaluation, opts, resolvedOpts)
 		if evaluation != nil && !evaluation.Eligible {
-			if g.auditLogger != nil {
-				_ = g.auditLogger.LogApprovalWithDetails(ctx, ticketID, "validation_failed", approver, map[string]interface{}{
-					"placement_evaluation": placementEvaluation,
-				})
+			if isSelectedClusterRuntimeUnavailable(evaluation) {
+				logApprovalPreflightDegraded(ticketID, opts.ClusterID, "cluster_placement", stderrors.New(evaluation.ReasonMessage))
+			} else {
+				if g.auditLogger != nil {
+					_ = g.auditLogger.LogApprovalWithDetails(ctx, ticketID, "validation_failed", approver, map[string]interface{}{
+						"placement_evaluation": placementEvaluation,
+					})
+				}
+				return fmt.Errorf(
+					"approval validation failed for ticket %s: %w",
+					ticketID,
+					apperrors.BadRequest(evaluation.ReasonCode, evaluation.ReasonMessage),
+				)
 			}
-			return fmt.Errorf(
-				"approval validation failed for ticket %s: %w",
-				ticketID,
-				apperrors.BadRequest(evaluation.ReasonCode, evaluation.ReasonMessage),
-			)
 		}
 	}
 
@@ -304,7 +312,11 @@ func (g *Service) approveCreateWithConfig(
 			targetDiskGB,
 			targetStorageClass,
 		); preflightErr != nil {
-			return fmt.Errorf("source pvc preflight failed for ticket %s: %w", ticketID, preflightErr)
+			if isClusterRuntimeUnavailable(preflightErr) {
+				logApprovalPreflightDegraded(ticketID, opts.ClusterID, "clone_source_preflight", preflightErr)
+			} else {
+				return fmt.Errorf("source pvc preflight failed for ticket %s: %w", ticketID, preflightErr)
+			}
 		}
 	}
 
@@ -323,20 +335,21 @@ func (g *Service) approveCreateWithConfig(
 				fmt.Sprintf("build dryrun spec for ticket %s: %v", ticketID, buildSpecErr))
 		}
 		result, validateErr := g.vmService.ValidateAndPrepare(ctx, opts.ClusterID, payload.Namespace, dryRunSpec)
-		if validateErr != nil {
-			// K8s unreachable — server-side failure, not a client validation error.
-			return fmt.Errorf("pre-flight dryrun gate: cluster %s unavailable for ticket %s: %w",
-				opts.ClusterID, ticketID, validateErr)
-		}
-		if !result.Valid {
+		switch {
+		case validateErr != nil && isClusterRuntimeUnavailable(validateErr):
+			logApprovalPreflightDegraded(ticketID, opts.ClusterID, "create_dryrun", validateErr)
+		case validateErr != nil:
+			return fmt.Errorf("pre-flight dryrun gate failed for ticket %s: %w", ticketID, validateErr)
+		case !result.Valid:
 			return apperrors.BadRequest(apperrors.CodeValidationFailed,
 				fmt.Sprintf("vm spec rejected by cluster %s for ticket %s: %s",
 					opts.ClusterID, ticketID, strings.Join(result.Errors, "; ")))
+		default:
+			logger.Info("pre-flight dryrun passed",
+				zap.String("ticket_id", ticketID),
+				zap.String("cluster_id", opts.ClusterID),
+			)
 		}
-		logger.Info("pre-flight dryrun passed",
-			zap.String("ticket_id", ticketID),
-			zap.String("cluster_id", opts.ClusterID),
-		)
 	}
 	// ── End DryRun Pre-flight Gate ────────────────────────────────────────────────
 
@@ -502,10 +515,75 @@ func (g *Service) preflightCreateCloneSource(ctx context.Context, ticket *ent.Ti
 		targetDiskGB,
 		targetStorageClass,
 	); err != nil {
+		if isClusterRuntimeUnavailable(err) {
+			logApprovalPreflightDegraded(ticket.ID, opts.ClusterID, "batch_clone_source_preflight", err)
+			return nil
+		}
 		return fmt.Errorf("source pvc preflight failed for ticket %s: %w", ticket.ID, err)
 	}
 
 	return nil
+}
+
+func isSelectedClusterRuntimeUnavailable(evaluation *service.ClusterCompatibilityResult) bool {
+	return evaluation != nil &&
+		evaluation.Cluster != nil &&
+		evaluation.Cluster.Status != entcluster.StatusHEALTHY
+}
+
+func isClusterRuntimeUnavailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	if appErr, ok := apperrors.IsAppError(err); ok {
+		return appErr.HTTPStatus == 503 || appErr.Code == apperrors.CodeClusterUnhealthy
+	}
+	if stderrors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	if stderrors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	if apierrors.IsTimeout(err) ||
+		apierrors.IsServerTimeout(err) ||
+		apierrors.IsServiceUnavailable(err) ||
+		apierrors.IsUnexpectedServerError(err) ||
+		apierrors.IsTooManyRequests(err) {
+		return true
+	}
+
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{
+		"not healthy",
+		"apiserver unreachable",
+		"kubeconfig is empty",
+		"no configuration has been provided",
+		"invalid configuration",
+		"connection refused",
+		"dial tcp",
+		"i/o timeout",
+		"tls handshake timeout",
+		"no such host",
+		"server misbehaving",
+		"client.timeout exceeded",
+		"context deadline exceeded",
+		"x509:",
+	} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
+}
+
+func logApprovalPreflightDegraded(ticketID, clusterID, stage string, err error) {
+	logger.Warn("approval preflight degraded due to cluster runtime unavailability",
+		zap.String("ticket_id", ticketID),
+		zap.String("cluster_id", strings.TrimSpace(clusterID)),
+		zap.String("stage", stage),
+		zap.Error(err),
+	)
 }
 
 func buildPlacementEvaluationSnapshot(
@@ -604,57 +682,57 @@ func (g *Service) approveModify(
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return fmt.Errorf("parse modify event payload: %w", err)
 	}
-	if g.vmService != nil {
+	overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts)
+	if validationErr != nil {
+		return validationErr
+	}
+
+	canRunRuntimeChecks := g.vmService != nil
+	if canRunRuntimeChecks {
 		liveVM, err := g.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
 		if err != nil {
-			return fmt.Errorf("load live vm for modify approval %s: %w", ticketID, err)
+			if isClusterRuntimeUnavailable(err) {
+				logApprovalPreflightDegraded(ticketID, payload.ClusterID, "modify_live_vm_lookup", err)
+				canRunRuntimeChecks = false
+			} else {
+				return fmt.Errorf("load live vm for modify approval %s: %w", ticketID, err)
+			}
 		}
-		if liveVM == nil {
+		if canRunRuntimeChecks && liveVM == nil {
 			return fmt.Errorf("live vm is unavailable for modify approval %s", ticketID)
 		}
-		overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts)
-		if validationErr != nil {
-			return validationErr
+		if canRunRuntimeChecks {
+			plan, err := vmmutationplan.PlanVMResourceUpdatePatch(payload.Namespace, liveVM, vmmutationplan.VMLiveUpdateTargets{
+				CPUCores:        payload.TargetCPUCores,
+				MemoryGi:        payload.TargetMemoryGi,
+				DiskGB:          payload.TargetDiskGB,
+				CPURequest:      overrideCPURequest,
+				MemoryRequestGi: overrideMemoryRequest,
+			})
+			if err != nil {
+				return apperrors.BadRequest(
+					"VM_MODIFY_APPROVAL_INVALID",
+					fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
+				)
+			}
+			if err := g.vmService.DryRunVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation); err != nil {
+				if isClusterRuntimeUnavailable(err) {
+					logApprovalPreflightDegraded(ticketID, payload.ClusterID, "modify_dryrun", err)
+				} else {
+					return apperrors.BadRequest(
+						"VM_MODIFY_APPROVAL_INVALID",
+						fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
+					)
+				}
+			}
+			modifySpec = withApprovedVMMutation(modifySpec, plan)
 		}
-		plan, err := vmmutationplan.PlanVMResourceUpdatePatch(payload.Namespace, liveVM, vmmutationplan.VMLiveUpdateTargets{
-			CPUCores:        payload.TargetCPUCores,
-			MemoryGi:        payload.TargetMemoryGi,
-			DiskGB:          payload.TargetDiskGB,
-			CPURequest:      overrideCPURequest,
-			MemoryRequestGi: overrideMemoryRequest,
-		})
-		if err != nil {
-			return apperrors.BadRequest(
-				"VM_MODIFY_APPROVAL_INVALID",
-				fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
-			)
-		}
-		if err := g.vmService.DryRunVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation); err != nil {
-			return apperrors.BadRequest(
-				"VM_MODIFY_APPROVAL_INVALID",
-				fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
-			)
-		}
-		modifySpec = withApprovedVMMutation(modifySpec, plan)
-		if g.atomicWriter == nil {
-			return fmt.Errorf("atomic approval writer is not configured")
-		}
-		if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, modifySpec); err != nil {
-			return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, err)
-		}
-	} else {
-		if g.atomicWriter == nil {
-			return fmt.Errorf("atomic approval writer is not configured")
-		}
-		overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts)
-		if validationErr != nil {
-			return validationErr
-		}
-		_ = overrideCPURequest
-		_ = overrideMemoryRequest
-		if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, modifySpec); err != nil {
-			return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, err)
-		}
+	}
+	if g.atomicWriter == nil {
+		return fmt.Errorf("atomic approval writer is not configured")
+	}
+	if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, modifySpec); err != nil {
+		return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, err)
 	}
 
 	if g.auditLogger != nil {

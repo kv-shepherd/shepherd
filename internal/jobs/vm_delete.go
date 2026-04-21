@@ -154,6 +154,9 @@ func (w *VMDeleteWorker) Work(ctx context.Context, job *river.Job[VMDeleteArgs])
 		if deleteErr := w.vmService.DeleteVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName); deleteErr != nil {
 			// If K8s reports NotFound, the resource is already gone — treat as success.
 			if !k8serrors.IsNotFound(deleteErr) {
+				if isClusterRuntimeUnavailable(deleteErr) {
+					return snoozeClusterRuntimeUnavailable("vm_delete", eventID, payload.ClusterID, "execute_delete", deleteErr)
+				}
 				// K8s deletion failed — persist FAILED status (best-effort).
 				if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
 					SetStatus(domainevent.StatusFAILED).

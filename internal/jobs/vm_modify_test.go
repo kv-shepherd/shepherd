@@ -281,6 +281,134 @@ func TestVMModifyWorker_PersistsFailureReasonOnTicket(t *testing.T) {
 	require.Contains(t, ticket.RejectReason, "kubevirt api rejected the patch")
 }
 
+func TestVMModifyWorker_SnoozesTransientClusterErrorsWithoutFailingTicket(t *testing.T) {
+	t.Parallel()
+	if strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")) == "" && strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		t.Skip("PostgreSQL test DSN is not configured")
+	}
+	_ = logger.Init("error", "json")
+
+	client := testutil.OpenEntPostgres(t, "vm_modify_transient_cluster_error")
+	ctx := t.Context()
+
+	system, err := client.System.Create().
+		SetID("sys-" + uuid.NewString()).
+		SetName("sys" + uuid.NewString()[:8]).
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	svc, err := client.Service.Create().
+		SetID("svc-" + uuid.NewString()).
+		SetName("svc" + uuid.NewString()[:8]).
+		SetSystem(system).
+		Save(ctx)
+	require.NoError(t, err)
+
+	clusterID := "cluster-" + uuid.NewString()
+	_, err = client.Cluster.Create().
+		SetID(clusterID).
+		SetName("cluster-" + clusterID[len(clusterID)-4:]).
+		SetAPIServerURL("https://k8s.example.com").
+		SetEncryptedKubeconfig([]byte("fake-kubeconfig")).
+		SetCreatedBy("seed").
+		SetEnvironment(cluster.EnvironmentProd).
+		SetStatus(cluster.StatusHEALTHY).
+		SetEnabled(true).
+		SetEnabledFeatures([]string{"VMLiveUpdateFeatures"}).
+		Save(ctx)
+	require.NoError(t, err)
+
+	vmID := "vm-" + uuid.NewString()
+	vmName := "vm-" + uuid.NewString()[:8]
+	_, err = client.VM.Create().
+		SetID(vmID).
+		SetName(vmName).
+		SetInstance("01").
+		SetNamespace("prod-ns").
+		SetClusterID(clusterID).
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("seed").
+		SetServiceID(svc.ID).
+		Save(ctx)
+	require.NoError(t, err)
+
+	payloadBytes, err := domain.VMModifyPayload{
+		VMID:            vmID,
+		VMName:          vmName,
+		ClusterID:       clusterID,
+		Namespace:       "prod-ns",
+		Actor:           "seed",
+		CurrentCPUCores: 2,
+		CurrentMemoryGi: 4,
+		TargetMemoryGi:  ptrFloat64(8),
+	}.ToJSON()
+	require.NoError(t, err)
+
+	eventID := "ev-" + uuid.NewString()
+	_, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMModifyRequested)).
+		SetAggregateType("vm").
+		SetAggregateID(vmID).
+		SetPayload(payloadBytes).
+		SetStatus(domainevent.StatusPROCESSING).
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	ticketID := "ticket-" + uuid.NewString()
+	_, err = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetOperationType(entticket.OperationTypeMODIFY).
+		SetStatus(entticket.StatusAPPROVED).
+		SetRequester("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	mock := &failingModifyProvider{
+		MockProvider: provider.NewMockProvider(),
+		updateErr:    fmt.Errorf("dial tcp 10.0.0.1:443: connect: connection refused"),
+	}
+	mock.Seed([]*domain.VM{{
+		ID:        vmID,
+		Name:      vmName,
+		Namespace: "prod-ns",
+		Cluster:   clusterID,
+		Status:    domain.VMStatusRunning,
+		Spec: domain.VMSpec{
+			CPU:                      2,
+			MemoryGi:                 4,
+			CurrentCPUSockets:        1,
+			CurrentCPUCoresPerSocket: 2,
+			CurrentCPUThreads:        1,
+		},
+		ResourceVersion: "rv-before-1",
+	}})
+
+	worker := NewVMModifyWorker(client, service.NewVMService(mock), nil)
+	err = worker.Work(ctx, &river.Job[VMModifyArgs]{
+		Args: VMModifyArgs{EventID: eventID},
+	})
+	var snoozeErr *river.JobSnoozeError
+	require.ErrorAs(t, err, &snoozeErr)
+	require.Equal(t, clusterRuntimeUnavailableSnoozeDuration, snoozeErr.Duration)
+
+	ticket, err := client.Ticket.Get(ctx, ticketID)
+	require.NoError(t, err)
+	require.Equal(t, entticket.StatusEXECUTING, ticket.Status)
+	require.Empty(t, ticket.RejectReason)
+
+	event, err := client.DomainEvent.Get(ctx, eventID)
+	require.NoError(t, err)
+	require.Equal(t, domainevent.StatusPROCESSING, event.Status)
+
+	storedVM, err := client.VM.Get(ctx, vmID)
+	require.NoError(t, err)
+	require.Equal(t, entvm.StatusRUNNING, storedVM.Status)
+}
+
 func TestVMModifyWorker_PrefersApprovedMutationSnapshot(t *testing.T) {
 	t.Parallel()
 	if strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")) == "" && strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {

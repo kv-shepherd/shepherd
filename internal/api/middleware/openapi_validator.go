@@ -175,36 +175,44 @@ func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
 	}
 
 	path := normalizeValidationPath(basePath, request.URL.Path)
+	ignorePaths := make([]string, 0, 2)
+
+	if strings.HasPrefix(path, "/auth/") {
+		// GitHub/Codespaces public tunnel auth can append `?tunnel=1` when
+		// replaying the original request after tunnel sign-in. Scope this strict
+		// ignore to auth endpoints only so unrelated API routes remain governed.
+		ignorePaths = append(ignorePaths, "$.query.tunnel")
+	}
 
 	// AuthProvider.config is contractually free-form JSON for plugin-specific
 	// settings. Keep strict validation for the rest of the request body.
 	switch request.Method {
 	case http.MethodPost:
 		if path == "/admin/auth-providers" {
-			return []string{"$.body.config.**"}
+			ignorePaths = append(ignorePaths, "$.body.config.**")
 		}
 		if strings.HasPrefix(path, "/admin/auth-providers/") &&
 			(strings.HasSuffix(path, "/directory/preview") ||
 				strings.HasSuffix(path, "/directory/sync")) {
-			return []string{"$.body.provider_request.**"}
+			ignorePaths = append(ignorePaths, "$.body.provider_request.**")
 		}
 		if path == "/admin/instance-sizes" {
-			return []string{"$.body.spec_overrides.**"}
+			ignorePaths = append(ignorePaths, "$.body.spec_overrides.**")
 		}
 	case http.MethodPatch:
 		if strings.HasPrefix(path, "/admin/auth-providers/") && !strings.Contains(path, "/cohort-mappings") {
-			return []string{"$.body.config.**"}
+			ignorePaths = append(ignorePaths, "$.body.config.**")
 		}
 		if strings.HasPrefix(path, "/admin/instance-sizes/") {
-			return []string{"$.body.spec_overrides.**"}
+			ignorePaths = append(ignorePaths, "$.body.spec_overrides.**")
 		}
 	case http.MethodPut:
 		if strings.HasPrefix(path, "/auth/preferences/") {
-			return []string{"$.body.value.**"}
+			ignorePaths = append(ignorePaths, "$.body.value.**")
 		}
 	}
 
-	return nil
+	return ignorePaths
 }
 
 func shouldIgnoreDynamicSchemaResponseBody(request *http.Request, basePath string) bool {

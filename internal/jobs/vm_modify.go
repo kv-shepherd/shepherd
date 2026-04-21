@@ -119,11 +119,20 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 		return markFailed(fmt.Errorf("cluster %s is disabled", payload.ClusterID), true)
 	}
 	if clusterRow.Status != entcluster.StatusHEALTHY {
-		return markFailed(fmt.Errorf("cluster %s is not healthy", payload.ClusterID), true)
+		return snoozeClusterRuntimeUnavailable(
+			"vm_modify",
+			eventID,
+			payload.ClusterID,
+			"selected_cluster_status",
+			fmt.Errorf("cluster %s is not healthy (status: %s)", payload.ClusterID, clusterRow.Status),
+		)
 	}
 
 	liveVM, err := w.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
 	if err != nil {
+		if isClusterRuntimeUnavailable(err) {
+			return snoozeClusterRuntimeUnavailable("vm_modify", eventID, payload.ClusterID, "load_live_vm", err)
+		}
 		return markFailed(fmt.Errorf("load live vm %s/%s: %w", payload.Namespace, payload.VMName, err), false)
 	}
 	if liveVM == nil {
@@ -156,6 +165,9 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 
 	updatedVM, err := w.vmService.ExecuteVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation)
 	if err != nil {
+		if isClusterRuntimeUnavailable(err) {
+			return snoozeClusterRuntimeUnavailable("vm_modify", eventID, payload.ClusterID, "execute_mutation", err)
+		}
 		return markFailed(fmt.Errorf("execute vm mutation for event %s: %w", eventID, err), false)
 	}
 
