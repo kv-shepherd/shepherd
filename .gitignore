@@ -70,3 +70,4 @@ deploy/prod/tls/
 Thumbs.db
 k8s-admin.yaml
 e2e-seed
+/.devcontainer/.codespaces-demo.state

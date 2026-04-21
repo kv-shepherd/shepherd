@@ -63,7 +63,7 @@ Recommended split:
 
 - local `./start-dev.sh`: baseline bootstrap only, preserving DB state by default
 - local clean reset: `./start-dev.sh --clean-all`
-- GitHub Codespaces: separate `.devcontainer` demo bootstrap that pulls the published release images and seeds demo fixtures on first create
+- GitHub Codespaces: separate `.devcontainer` demo bootstrap that builds the current source tree into production-style `server` and `web` images, seeds demo fixtures on first create, and auto-rebuilds those images on later resumes when the checked-out runtime source changes
 
 ## Browser Warning Bridge
 

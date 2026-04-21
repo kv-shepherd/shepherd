@@ -132,8 +132,8 @@ Codespaces behavior:
 
 - first create builds `server` and `web` from the checked-out source tree
 - the first bootstrap starts from a clean database and seeds baseline data plus extended experience fixtures
-- later Codespace restarts reuse the existing data and only resume services
-- the helper script also supports a rebuild path when you want fresh images without wiping seeded data
+- later Codespace restarts reuse the existing data, and automatically rebuild `server` / `web` when the checked-out runtime source changes
+- the helper script still supports an explicit rebuild path when you want fresh images without wiping seeded data
 - the first start can still take a few minutes because the source images are built and the seed fixtures are loaded inside the Codespace
 
 Default Codespaces sign-in:

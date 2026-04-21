@@ -41,7 +41,7 @@ vi.mock('react-i18next', () => ({
                 'auth.welcome_back': 'Welcome back',
                 'auth.or_continue_with': 'Or continue with',
                 'auth.dev_login_hint_title': 'Local demo sign-in',
-                'auth.dev_login_hint_description': 'Use admin / admin for local development and Codespaces demos. First sign-in will require a password change.',
+                'auth.dev_login_hint_description': 'Local development and Codespaces demos seed admin / admin on first bootstrap. If the password was already changed, use the updated credential.',
                 'validation.username_required': 'Username is required',
                 'validation.username_min': 'Username is too short',
                 'validation.password_required': 'Password is required',
@@ -108,7 +108,7 @@ describe('LoginPageContent', () => {
         render(<LoginPageContent />);
 
         expect(await screen.findByText('Local demo sign-in')).toBeVisible();
-        expect(screen.getByText('Use admin / admin for local development and Codespaces demos. First sign-in will require a password change.')).toBeVisible();
+        expect(screen.getByText('Local development and Codespaces demos seed admin / admin on first bootstrap. If the password was already changed, use the updated credential.')).toBeVisible();
     });
 
     it('redirects authenticated users away from /login', async () => {

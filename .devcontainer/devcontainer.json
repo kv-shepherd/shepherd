@@ -38,7 +38,9 @@
   // Wait for the initial bootstrap to finish before reporting the container ready.
   "waitFor": "postCreateCommand",
 
-  // Resume services on later container starts without reseeding data.
+  // Resume services on later container starts without reseeding data. When the
+  // checked-out runtime source changes, the helper rebuilds the inner stack
+  // from the current tree before resuming.
   "postStartCommand": "bash .devcontainer/post-start.sh",
 
   // VS Code / Codespaces extensions

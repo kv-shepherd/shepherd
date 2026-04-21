@@ -77,7 +77,7 @@
     "auth.external.divider": "Or continue with",
     "auth.external.login_with_provider": "Continue with {{provider}}",
     "auth.dev_login_hint_title": "Default sign-in",
-    "auth.dev_login_hint_description": "Fresh local development bootstraps and fresh Codespaces demos start with admin / admin. If the password was already changed, use the updated credential.",
+    "auth.dev_login_hint_description": "Local development and Codespaces demos seed admin / admin on first bootstrap. If the password was already changed, use the updated credential.",
     "auth.force_password_change.title": "Password Change Required",
     "auth.force_password_change.description": "You must change your password before continuing.",
     "auth.change_password": "Change Password",

@@ -13,6 +13,29 @@ TEST_USERNAME="${CODESPACES_TEST_USERNAME:-test}"
 TEST_PASSWORD="${CODESPACES_TEST_PASSWORD:-test}"
 HOST_E2E_SEED_BIN="${REPO_ROOT}/build/bin/codespaces-e2e-seed"
 GO_TOOLCHAIN_VERSION="${GO_TOOLCHAIN_VERSION:-$(awk '/^go [0-9]+\.[0-9]+\.[0-9]+$/ { print "go" $2; exit }' "${REPO_ROOT}/go.mod")}"
+STATE_FILE="${SCRIPT_DIR}/.codespaces-demo.state"
+SOURCE_FINGERPRINT_PATHS=(
+    ".devcontainer/docker-compose.codespaces.yml"
+    ".devcontainer/nginx.codespaces.conf"
+    "Dockerfile"
+    "api"
+    "cmd"
+    "deploy/prod/web.Dockerfile"
+    "ent"
+    "go.mod"
+    "go.sum"
+    "internal"
+    "migrations"
+    "pkg"
+    "plugins"
+    "web"
+)
+LAST_SOURCE_FINGERPRINT=""
+LAST_SERVER_PUBLIC_BASE_URL=""
+LAST_SERVER_ALLOWED_ORIGINS=""
+LAST_HTTP_PORT=""
+LAST_API_PORT=""
+LAST_PROJECT_NAME=""
 
 usage() {
     cat <<'EOF'
@@ -20,7 +43,8 @@ Usage: bash .devcontainer/codespaces-demo.sh [bootstrap|resume|rebuild]
 
 bootstrap  Build the current source tree, reset the local Codespaces stack, and
            seed baseline + experience fixtures.
-resume     Start the existing stack without rebuilding images or reseeding data.
+resume     Start the existing stack without reseeding data. Rebuild images
+           automatically when the checked-out runtime source has changed.
 rebuild    Rebuild the current source tree into fresh images and restart the
            stack without resetting data.
 EOF
@@ -32,6 +56,57 @@ base64_file() {
     else
         base64 <"$1" | tr -d '\n'
     fi
+}
+
+load_state_file() {
+    LAST_SOURCE_FINGERPRINT=""
+    LAST_SERVER_PUBLIC_BASE_URL=""
+    LAST_SERVER_ALLOWED_ORIGINS=""
+    LAST_HTTP_PORT=""
+    LAST_API_PORT=""
+    LAST_PROJECT_NAME=""
+
+    if [[ ! -f "${STATE_FILE}" ]]; then
+        return 1
+    fi
+
+    # shellcheck disable=SC1090
+    source "${STATE_FILE}"
+    return 0
+}
+
+write_state_file() {
+    local source_fingerprint="$1"
+    local public_base_url="$2"
+    local allowed_origins="$3"
+    local tmp_file
+
+    tmp_file="${STATE_FILE}.tmp"
+    {
+        printf 'LAST_SOURCE_FINGERPRINT=%q\n' "${source_fingerprint}"
+        printf 'LAST_SERVER_PUBLIC_BASE_URL=%q\n' "${public_base_url}"
+        printf 'LAST_SERVER_ALLOWED_ORIGINS=%q\n' "${allowed_origins}"
+        printf 'LAST_HTTP_PORT=%q\n' "${HTTP_PORT}"
+        printf 'LAST_API_PORT=%q\n' "${API_PORT}"
+        printf 'LAST_PROJECT_NAME=%q\n' "${PROJECT_NAME}"
+    } >"${tmp_file}"
+    mv "${tmp_file}" "${STATE_FILE}"
+}
+
+compute_source_fingerprint() {
+    local head
+
+    if ! head="$(git -C "${REPO_ROOT}" rev-parse HEAD 2>/dev/null)"; then
+        printf "nogit"
+        return 0
+    fi
+
+    if [[ -n "$(git -C "${REPO_ROOT}" status --porcelain=v1 --untracked-files=all -- "${SOURCE_FINGERPRINT_PATHS[@]}")" ]]; then
+        printf "%s-dirty" "${head}"
+        return 0
+    fi
+
+    printf "%s" "${head}"
 }
 
 compute_public_base_url() {
@@ -179,18 +254,37 @@ start_stack() {
     local mode="$1"
     local public_base_url
     local allowed_origins
+    local source_fingerprint
+    local effective_mode
 
     public_base_url="$(compute_public_base_url)"
+    allowed_origins="$(compute_allowed_origins "${public_base_url}")"
+    source_fingerprint="$(compute_source_fingerprint)"
+    effective_mode="${mode}"
 
-    if [[ "${mode}" == "resume" ]] && stack_ready; then
-        echo "Backend and UI already ready; skipping resume bootstrap."
-        echo " Web UI: ${public_base_url}"
-        echo " Login:  ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
-        echo " User:   ${TEST_USERNAME} / ${TEST_PASSWORD}"
-        return 0
+    if [[ "${mode}" == "resume" ]]; then
+        if ! load_state_file; then
+            echo "Codespaces build state missing; rebuilding once to align containers with the current source tree."
+            effective_mode="rebuild"
+        elif [[ "${LAST_SOURCE_FINGERPRINT}" != "${source_fingerprint}" ]]; then
+            echo "Codespaces source drift detected (${LAST_SOURCE_FINGERPRINT} -> ${source_fingerprint}); rebuilding images."
+            effective_mode="rebuild"
+        elif stack_ready \
+            && [[ "${LAST_PROJECT_NAME}" == "${PROJECT_NAME}" ]] \
+            && [[ "${LAST_SERVER_PUBLIC_BASE_URL}" == "${public_base_url}" ]] \
+            && [[ "${LAST_SERVER_ALLOWED_ORIGINS}" == "${allowed_origins}" ]] \
+            && [[ "${LAST_HTTP_PORT}" == "${HTTP_PORT}" ]] \
+            && [[ "${LAST_API_PORT}" == "${API_PORT}" ]]; then
+            echo "Backend and UI already ready; source + runtime config unchanged; skipping resume bootstrap."
+            echo " Web UI: ${public_base_url}"
+            echo " Login:  ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
+            echo " User:   ${TEST_USERNAME} / ${TEST_PASSWORD}"
+            return 0
+        else
+            echo "Codespaces runtime config changed or services are not ready; reconciling containers without reseeding data."
+        fi
     fi
 
-    allowed_origins="$(compute_allowed_origins "${public_base_url}")"
     DATABASE_URL="postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable"
     POSTGRES_PASSWORD="shepherd_password"
     SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-codespaces-session-secret-0123456789abcdef0123456789abcdef}"
@@ -201,7 +295,7 @@ start_stack() {
     echo "=============================================="
     echo " Shepherd Codespaces"
     echo "=============================================="
-    echo " Mode:          ${mode}"
+    echo " Mode:          ${effective_mode}"
     echo " Source root:   ${REPO_ROOT}"
     echo " Web UI:        ${public_base_url}"
     echo " Login(admin):  ${ADMIN_USERNAME} / ${ADMIN_PASSWORD}"
@@ -212,15 +306,15 @@ start_stack() {
         echo " Cluster seed:  stub cluster only (no live KubeVirt backing configured)"
     fi
 
-    if [[ "${mode}" == "bootstrap" ]]; then
+    if [[ "${effective_mode}" == "bootstrap" ]]; then
         echo "Resetting Codespaces state for a clean first boot..."
         compose_cmd down -v --remove-orphans >/dev/null 2>&1 || true
     fi
 
-    compose_up "${mode}"
+    compose_up "${effective_mode}"
     wait_for_url "http://localhost:${API_PORT}/api/v1/health/ready" "backend"
 
-    case "${mode}" in
+    case "${effective_mode}" in
         bootstrap)
             seed_codespaces
             ;;
@@ -234,6 +328,7 @@ start_stack() {
 
     wait_for_url "http://localhost:${HTTP_PORT}/" "web UI"
     prewarm_routes "http://localhost:${HTTP_PORT}"
+    write_state_file "${source_fingerprint}" "${public_base_url}" "${allowed_origins}"
 
     echo
     echo "=============================================="
