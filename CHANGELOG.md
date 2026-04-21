@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.5](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.4...v0.1.1-alpha.5) (2026-04-21)
+
+
+### Features
+
+* **deploy:** add production experience seed flow ([#537](https://github.com/kv-shepherd/shepherd/issues/537)) ([f851a3c](https://github.com/kv-shepherd/shepherd/commit/f851a3c343b868fff318ba638574ae076d6357ed))
+
+
+### Bug Fixes
+
+* **api:** allow proxy transport headers ([#548](https://github.com/kv-shepherd/shepherd/issues/548)) ([fb9c33e](https://github.com/kv-shepherd/shepherd/commit/fb9c33eb6d8cfdb8a3d5f91c112b650d8d254c9a)), closes [#547](https://github.com/kv-shepherd/shepherd/issues/547)
+* **auth:** allow forwarded login query state ([#546](https://github.com/kv-shepherd/shepherd/issues/546)) ([ccfb69d](https://github.com/kv-shepherd/shepherd/commit/ccfb69debc0d6136ecb326421ea2d345048ae765)), closes [#545](https://github.com/kv-shepherd/shepherd/issues/545)
+* **devcontainer:** bootstrap codespaces from source ([#540](https://github.com/kv-shepherd/shepherd/issues/540)) ([0cc4743](https://github.com/kv-shepherd/shepherd/commit/0cc47430b4b223e74da2bcea94905f20bcc304c5))
+* **devcontainer:** rebuild codespaces on drift ([#544](https://github.com/kv-shepherd/shepherd/issues/544)) ([3aea0d6](https://github.com/kv-shepherd/shepherd/commit/3aea0d649ad94cc9a2c0048f4863ffc351df7d41)), closes [#543](https://github.com/kv-shepherd/shepherd/issues/543)
+* enforce system membership on vm authorization ([#534](https://github.com/kv-shepherd/shepherd/issues/534)) ([53fb2e5](https://github.com/kv-shepherd/shepherd/commit/53fb2e558ce84d2ae826603ca9f59d00f3d7f3dd))
+* **runtime:** degrade unreachable cluster paths ([#542](https://github.com/kv-shepherd/shepherd/issues/542)) ([a59aa83](https://github.com/kv-shepherd/shepherd/commit/a59aa83172bdb5c88738f814aee5ae2e031edf8a)), closes [#541](https://github.com/kv-shepherd/shepherd/issues/541)
+
+
+### Documentation
+
+* **readme:** refresh project entry links ([#550](https://github.com/kv-shepherd/shepherd/issues/550)) ([2822b46](https://github.com/kv-shepherd/shepherd/commit/2822b4670af195f90028a718733a23f330d030f7)), closes [#549](https://github.com/kv-shepherd/shepherd/issues/549)
+
 ## [0.1.1-alpha.4](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.3...v0.1.1-alpha.4) (2026-04-17)
 
 
