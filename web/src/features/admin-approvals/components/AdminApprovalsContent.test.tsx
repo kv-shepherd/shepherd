@@ -7,6 +7,11 @@ const controllerState = vi.hoisted(() => ({
   overrides: {} as Record<string, unknown>,
   push: vi.fn(),
 }));
+const authState = vi.hoisted(() => ({
+  user: {
+    permissions: ["builtin_approval:approve"],
+  },
+}));
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({
@@ -381,6 +386,12 @@ vi.mock("@/features/setup-guide/hooks/useSetupGuide", () => ({
   }),
 }));
 
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: (
+    selector: (state: { user: typeof authState.user }) => unknown,
+  ) => selector({ user: authState.user }),
+}));
+
 vi.mock("@/features/setup-guide/components/SetupGuideCard", () => ({
   SetupGuideCard: ({ variant }: { variant: string }) => (
     <div>{`setup-guide-${variant}`}</div>
@@ -608,6 +619,9 @@ import { ApprovalProvisioningCard } from "./ApprovalProvisioningCard";
 describe("AdminApprovalsContent", () => {
   beforeEach(() => {
     controllerState.overrides = {};
+    authState.user = {
+      permissions: ["builtin_approval:approve"],
+    };
   });
 
   it("shows clone fallback details without treating successful clone messages as failures", () => {
@@ -1031,5 +1045,24 @@ describe("AdminApprovalsContent", () => {
     expect(
       screen.getByText("4 vCPU · 8 Gi memory · 80 Gi disk"),
     ).toBeInTheDocument();
+  });
+
+  it("keeps approval tasks readable but removes mutation controls for read-only admins", () => {
+    authState.user = {
+      permissions: ["builtin_approval:view"],
+    };
+
+    render(<AdminApprovalsContent />);
+
+    expect(
+      screen.getByTestId("approval-action-detail-ticket-1"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByTestId("approval-action-approve-ticket-1"),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByTestId("approval-action-more-ticket-1"),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("approve_modal.comment")).not.toBeInTheDocument();
   });
 });

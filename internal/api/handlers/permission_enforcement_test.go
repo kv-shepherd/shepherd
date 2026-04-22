@@ -118,6 +118,106 @@ func TestPermissionEnforcement_CreateNamespace_RequiresClusterWrite(t *testing.T
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
+func TestPermissionEnforcement_UpdateNamespace_RequiresClusterWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/namespaces/ns-a",
+		`{"description":"updated"}`,
+		"user-a",
+		[]string{"cluster:read"},
+	)
+
+	srv.UpdateNamespace(c, "ns-a")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_DeleteNamespace_RequiresClusterWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/namespaces/ns-a",
+		"",
+		"user-a",
+		[]string{"cluster:read"},
+	)
+
+	srv.DeleteNamespace(c, "ns-a", generated.DeleteNamespaceParams{ConfirmName: "ns-a"})
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_CreateCluster_RequiresClusterWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/clusters",
+		`{"name":"cluster-a","kubeconfig":"a3ViZWNvbmZpZw=="}`,
+		"user-a",
+		[]string{"cluster:read"},
+	)
+
+	srv.CreateCluster(c)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_UpdateCluster_RequiresClusterWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/clusters/cl-a",
+		`{"display_name":"updated"}`,
+		"user-a",
+		[]string{"cluster:read"},
+	)
+
+	srv.UpdateCluster(c, "cl-a")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_DeleteCluster_RequiresClusterWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/clusters/cl-a",
+		"",
+		"user-a",
+		[]string{"cluster:read"},
+	)
+
+	srv.DeleteCluster(c, "cl-a")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
 func TestPermissionEnforcement_ListTemplates_RequiresVmCreateOrTemplateRead(t *testing.T) {
 	t.Parallel()
 
@@ -302,6 +402,46 @@ func TestPermissionEnforcement_CreateAdminTemplate_RequiresTemplateWrite(t *test
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
+func TestPermissionEnforcement_UpdateAdminTemplate_RequiresTemplateWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/templates/tpl-1",
+		`{"display_name":"updated"}`,
+		"user-a",
+		[]string{"template:read"},
+	)
+
+	srv.UpdateAdminTemplate(c, "tpl-1")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_DeleteAdminTemplate_RequiresTemplateWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/templates/tpl-1",
+		"",
+		"user-a",
+		[]string{"template:read"},
+	)
+
+	srv.DeleteAdminTemplate(c, "tpl-1")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
 func TestPermissionEnforcement_ListAdminInstanceSizes_RequiresInstanceSizeReadOrWrite(t *testing.T) {
 	t.Parallel()
 
@@ -341,6 +481,86 @@ func TestPermissionEnforcement_CreateAdminInstanceSize_RequiresInstanceSizeWrite
 	)
 
 	srv.CreateAdminInstanceSize(c)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_UpdateAdminInstanceSize_RequiresInstanceSizeWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/instance-sizes/size-1",
+		`{"display_name":"updated"}`,
+		"user-a",
+		[]string{"instance_size:read"},
+	)
+
+	srv.UpdateAdminInstanceSize(c, "size-1")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_DeleteAdminInstanceSize_RequiresInstanceSizeWrite(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/instance-sizes/size-1",
+		"",
+		"user-a",
+		[]string{"instance_size:read"},
+	)
+
+	srv.DeleteAdminInstanceSize(c, "size-1")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_ApproveBuiltinApprovalTask_RequiresBuiltinApprovalApprove(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/builtin-approval/tasks/ticket-1/approve",
+		`{"comment":"looks good"}`,
+		"user-a",
+		[]string{"builtin_approval:view"},
+	)
+
+	srv.ApproveBuiltinApprovalTask(c, "ticket-1")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_RejectBuiltinApprovalTask_RequiresBuiltinApprovalApprove(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/builtin-approval/tasks/ticket-1/reject",
+		`{"reason":"policy mismatch"}`,
+		"user-a",
+		[]string{"builtin_approval:view"},
+	)
+
+	srv.RejectBuiltinApprovalTask(c, "ticket-1")
 	if w.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
 	}

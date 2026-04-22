@@ -360,6 +360,7 @@ export function AdminTemplatesContent() {
     const searchInputRef = useRef<InputRef>(null);
     const router = useRouter();
     const setupGuide = useSetupGuide();
+    const canManageTemplates = setupGuide.canManageTemplates;
     const templates = useAdminTemplatesController({
         t,
         onCreateSuccess: (_template, context) => {
@@ -376,6 +377,9 @@ export function AdminTemplatesContent() {
     });
 
     useAutoOpenIntent('create-template', () => {
+        if (!canManageTemplates) {
+            return;
+        }
         templates.openCreateModal();
     });
     const [quickSearchDraft, setQuickSearchDraft] = useState(() => templates.filters.search);
@@ -592,29 +596,32 @@ export function AdminTemplatesContent() {
             title: t('common:table.actions'),
             key: 'actions',
             width: 150,
-            render: (_: unknown, record: Template) => (
-                <Space size="small">
-                    <Button
-                        type="link"
-                        size="small"
-                        data-testid={`template-action-edit-${record.id}`}
-                        icon={<EditOutlined />}
-                        onClick={() => templates.openEditModal(record)}
-                    >
-                        {t('common:button.edit')}
-                    </Button>
-                    <Button
-                        type="link"
-                        size="small"
-                        danger
-                        data-testid={`template-action-delete-${record.id}`}
-                        icon={<DeleteOutlined />}
-                        onClick={() => templates.openDeleteModal(record)}
-                    >
-                        {t('common:button.delete')}
-                    </Button>
-                </Space>
-            ),
+            render: (_: unknown, record: Template) =>
+                canManageTemplates ? (
+                    <Space size="small">
+                        <Button
+                            type="link"
+                            size="small"
+                            data-testid={`template-action-edit-${record.id}`}
+                            icon={<EditOutlined />}
+                            onClick={() => templates.openEditModal(record)}
+                        >
+                            {t('common:button.edit')}
+                        </Button>
+                        <Button
+                            type="link"
+                            size="small"
+                            danger
+                            data-testid={`template-action-delete-${record.id}`}
+                            icon={<DeleteOutlined />}
+                            onClick={() => templates.openDeleteModal(record)}
+                        >
+                            {t('common:button.delete')}
+                        </Button>
+                    </Space>
+                ) : (
+                    <Text type="secondary">—</Text>
+                ),
         },
     ];
 
@@ -642,14 +649,16 @@ export function AdminTemplatesContent() {
                     <Button icon={<ReloadOutlined />} onClick={() => templates.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        data-testid="template-create-button"
-                        onClick={templates.openCreateModal}
-                    >
-                        {t('common:button.add')}
-                    </Button>
+                    {canManageTemplates ? (
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            data-testid="template-create-button"
+                            onClick={templates.openCreateModal}
+                        >
+                            {t('common:button.add')}
+                        </Button>
+                    ) : null}
                     </Space>
                 )}
             />

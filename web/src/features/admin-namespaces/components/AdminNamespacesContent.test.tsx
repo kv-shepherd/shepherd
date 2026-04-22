@@ -2,6 +2,9 @@ import { render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const pushMock = vi.fn();
+const setupGuideState = vi.hoisted(() => ({
+    canManageNamespaces: true,
+}));
 
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
@@ -20,7 +23,7 @@ vi.mock('@/features/setup-guide/hooks/useSetupGuide', () => ({
         canCreateSystem: true,
         canCreateService: true,
         canCreateVM: true,
-        canManageNamespaces: true,
+        canManageNamespaces: setupGuideState.canManageNamespaces,
         canManageTemplates: true,
         canManageInstanceSizes: true,
         systemReady: true,
@@ -117,6 +120,7 @@ import { AdminNamespacesContent } from './AdminNamespacesContent';
 describe('AdminNamespacesContent', () => {
     beforeEach(() => {
         pushMock.mockReset();
+        setupGuideState.canManageNamespaces = true;
     });
 
     it('renders the page shell and primary namespace actions', () => {
@@ -128,5 +132,16 @@ describe('AdminNamespacesContent', () => {
         expect(screen.getByTestId('namespace-create-button')).toBeVisible();
         expect(screen.getByText('team-prod')).toBeVisible();
         expect(screen.getByText('Production namespace')).toBeVisible();
+    });
+
+    it('hides mutating namespace controls for read-only admins', () => {
+        setupGuideState.canManageNamespaces = false;
+
+        render(<AdminNamespacesContent />);
+
+        expect(screen.queryByTestId('namespace-create-button')).not.toBeInTheDocument();
+        expect(screen.getByTestId('namespace-action-detail-ns-1')).toBeVisible();
+        expect(screen.queryByTestId('namespace-action-edit-ns-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('namespace-action-delete-ns-1')).not.toBeInTheDocument();
     });
 });

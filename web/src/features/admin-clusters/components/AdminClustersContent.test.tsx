@@ -2,6 +2,12 @@ import { Form } from 'antd';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
+const authState = vi.hoisted(() => ({
+    user: {
+        permissions: ['cluster:write'],
+    },
+}));
+
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
         t: (
@@ -122,10 +128,18 @@ vi.mock('../hooks/useAdminClustersController', () => ({
     },
 }));
 
+vi.mock('@/stores/auth', () => ({
+    useAuthStore: (selector: (state: { user: typeof authState.user }) => unknown) =>
+        selector({ user: authState.user }),
+}));
+
 import { AdminClustersContent } from './AdminClustersContent';
 
 describe('AdminClustersContent', () => {
     it('renders the page shell and cluster table actions', () => {
+        authState.user = {
+            permissions: ['cluster:write'],
+        };
         render(<AdminClustersContent />);
 
         expect(screen.getByTestId('admin-clusters-page')).toBeVisible();
@@ -137,5 +151,19 @@ describe('AdminClustersContent', () => {
         expect(screen.getByTestId('cluster-action-edit-cluster-1')).toBeVisible();
         expect(screen.getByTestId('cluster-action-edit-policy-cluster-1')).toBeVisible();
         expect(screen.getByTestId('cluster-action-delete-cluster-1')).toBeVisible();
+    });
+
+    it('renders a read-only cluster view without write actions', () => {
+        authState.user = {
+            permissions: ['cluster:read'],
+        };
+
+        render(<AdminClustersContent />);
+
+        expect(screen.queryByTestId('cluster-create-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('cluster-action-edit-cluster-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('cluster-action-edit-policy-cluster-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('cluster-action-delete-cluster-1')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Test').length).toBeGreaterThan(0);
     });
 });

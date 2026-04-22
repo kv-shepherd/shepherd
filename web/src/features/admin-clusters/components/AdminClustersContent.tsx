@@ -47,6 +47,8 @@ import {
   normalizeHugepagesPageSizeList,
 } from "@/lib/hugepages";
 import { extractKubeconfigServer } from "../kubeconfig";
+import { hasPermission } from "@/lib/auth/permissions";
+import { useAuthStore } from "@/stores/auth";
 import { useAdminClustersController } from "../hooks/useAdminClustersController";
 import { CLUSTER_STATUS_MAP, type Cluster } from "../types";
 
@@ -73,6 +75,8 @@ function clusterMatchesSearch(record: Cluster, query: string) {
 
 export function AdminClustersContent() {
   const { t } = useTranslation(["admin", "common"]);
+  const user = useAuthStore((state) => state.user);
+  const canManageClusters = hasPermission(user, "cluster:write");
   const clusters = useAdminClustersController({ t });
   const policyAllowHugepages = Form.useWatch(
     "allow_hugepages",
@@ -192,15 +196,20 @@ export function AdminClustersContent() {
       dataIndex: "environment",
       key: "environment",
       width: 160,
-      render: (env: "test" | "prod" | undefined, record: Cluster) => (
-        <Button
-          size="small"
-          data-testid={`cluster-action-set-environment-${record.id}`}
-          onClick={() => clusters.openEnvModal(record.id, env ?? "test")}
-        >
-          {env === "prod" ? t("clusters.env_prod") : t("clusters.env_test")}
-        </Button>
-      ),
+      render: (env: "test" | "prod" | undefined, record: Cluster) =>
+        canManageClusters ? (
+          <Button
+            size="small"
+            data-testid={`cluster-action-set-environment-${record.id}`}
+            onClick={() => clusters.openEnvModal(record.id, env ?? "test")}
+          >
+            {env === "prod" ? t("clusters.env_prod") : t("clusters.env_test")}
+          </Button>
+        ) : (
+          <Tag color={env === "prod" ? "red" : "blue"}>
+            {env === "prod" ? t("clusters.env_prod") : t("clusters.env_test")}
+          </Tag>
+        ),
     },
     {
       title: t("clusters.enabled"),
@@ -369,55 +378,58 @@ export function AdminClustersContent() {
       key: "actions",
       width: 240,
       align: "right",
-      render: (_, record: Cluster) => (
-        <Space size={0} split={<Divider type="vertical" />}>
-          <Button
-            type="link"
-            size="small"
-            data-testid={`cluster-action-edit-${record.id}`}
-            onClick={() => {
-              clusters.openEditModal(record);
-            }}
-          >
-            {t("common:button.edit")}
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            data-testid={`cluster-action-edit-policy-${record.id}`}
-            onClick={() => {
-              void clusters.openPolicyModal(record);
-            }}
-          >
-            {t("clusters.edit_policy", "Edit Policy")}
-          </Button>
-          <Popconfirm
-            title={t("clusters.delete_confirm_title", "Delete cluster?")}
-            description={t(
-              "clusters.delete_confirm_description",
-              "Only unused clusters can be deleted. Existing virtual machines must be removed first.",
-            )}
-            okText={t("common:button.delete")}
-            cancelText={t("common:button.cancel")}
-            onConfirm={() => {
-              void clusters.deleteCluster(record.id);
-            }}
-          >
+      render: (_, record: Cluster) =>
+        canManageClusters ? (
+          <Space size={0} split={<Divider type="vertical" />}>
             <Button
               type="link"
               size="small"
-              danger
-              loading={
-                clusters.deletePending &&
-                clusters.deletingClusterId === record.id
-              }
-              data-testid={`cluster-action-delete-${record.id}`}
+              data-testid={`cluster-action-edit-${record.id}`}
+              onClick={() => {
+                clusters.openEditModal(record);
+              }}
             >
-              {t("common:button.delete")}
+              {t("common:button.edit")}
             </Button>
-          </Popconfirm>
-        </Space>
-      ),
+            <Button
+              type="link"
+              size="small"
+              data-testid={`cluster-action-edit-policy-${record.id}`}
+              onClick={() => {
+                void clusters.openPolicyModal(record);
+              }}
+            >
+              {t("clusters.edit_policy", "Edit Policy")}
+            </Button>
+            <Popconfirm
+              title={t("clusters.delete_confirm_title", "Delete cluster?")}
+              description={t(
+                "clusters.delete_confirm_description",
+                "Only unused clusters can be deleted. Existing virtual machines must be removed first.",
+              )}
+              okText={t("common:button.delete")}
+              cancelText={t("common:button.cancel")}
+              onConfirm={() => {
+                void clusters.deleteCluster(record.id);
+              }}
+            >
+              <Button
+                type="link"
+                size="small"
+                danger
+                loading={
+                  clusters.deletePending &&
+                  clusters.deletingClusterId === record.id
+                }
+                data-testid={`cluster-action-delete-${record.id}`}
+              >
+                {t("common:button.delete")}
+              </Button>
+            </Popconfirm>
+          </Space>
+        ) : (
+          <Text type="secondary">—</Text>
+        ),
     },
   ];
 
@@ -436,14 +448,16 @@ export function AdminClustersContent() {
             >
               {t("common:button.refresh")}
             </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              data-testid="cluster-create-button"
-              onClick={clusters.openCreateModal}
-            >
-              {t("clusters.add")}
-            </Button>
+            {canManageClusters ? (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                data-testid="cluster-create-button"
+                onClick={clusters.openCreateModal}
+              >
+                {t("clusters.add")}
+              </Button>
+            ) : null}
           </Space>
         }
       />

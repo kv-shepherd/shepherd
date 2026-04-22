@@ -43,6 +43,7 @@ import { WorkbenchDetailModal } from "@/components/workbench/WorkbenchDetailModa
 import { SetupGuideCard } from "@/features/setup-guide/components/SetupGuideCard";
 import { useSetupGuide } from "@/features/setup-guide/hooks/useSetupGuide";
 import { translateApiError } from "@/lib/api/errorMessage";
+import { hasPermission } from "@/lib/auth/permissions";
 import {
   approvalPrimaryAlert,
   formatApprovalResourceShape,
@@ -63,6 +64,7 @@ import {
 } from "./ApprovalProvisioningCard";
 import { UnitInputNumber } from "@/components/form/UnitInputNumber";
 import { LocalDateTimeText } from "@/components/ui/LocalDateTimeText";
+import { useAuthStore } from "@/stores/auth";
 import {
   getPriorityTier,
   OPERATION_FILTER_OPTIONS,
@@ -472,6 +474,8 @@ export function AdminApprovalsContent() {
       approvals.placementSnapshotFilter !== "ALL",
   );
   const setupGuide = useSetupGuide();
+  const user = useAuthStore((state) => state.user);
+  const canApproveTasks = hasPermission(user, "builtin_approval:approve");
   const pageItems = useMemo(
     () => approvals.data?.items ?? [],
     [approvals.data?.items],
@@ -967,15 +971,15 @@ export function AdminApprovalsContent() {
                   highlightClass = "approval-row-warning";
               }
 
-              const renderActions = () => {
-                if (record.status !== "PENDING") {
-                  if (itemCount > 1) {
-                    return (
-                      <Space size={8} wrap className="workbench-row-actions">
-                        {record.status === "FAILED" ? (
-                          <Button
-                            size="small"
-                            loading={approvals.retryBatchPending}
+                const renderActions = () => {
+                  if (record.status !== "PENDING") {
+                    if (itemCount > 1) {
+                      return (
+                        <Space size={8} wrap className="workbench-row-actions">
+                          {record.status === "FAILED" && canApproveTasks ? (
+                            <Button
+                              size="small"
+                              loading={approvals.retryBatchPending}
                             onClick={() =>
                               approvals.submitBatchRetry(record.id)
                             }
@@ -990,12 +994,26 @@ export function AdminApprovalsContent() {
                           {t("vm:batch.detail_title")}
                         </Button>
                       </Space>
+                      );
+                    }
+                    return null;
+                  }
+                  if (!canApproveTasks) {
+                    return (
+                      <Space size={8} wrap className="workbench-row-actions">
+                        <Button
+                          size="small"
+                          icon={<AuditOutlined />}
+                          data-testid={`approval-action-detail-${record.id}`}
+                          onClick={() => approvals.openApproveModal(record)}
+                        >
+                          {t("common:button.detail", { defaultValue: "Detail" })}
+                        </Button>
+                      </Space>
                     );
                   }
-                  return null;
-                }
-                const moreContent = (
-                  <div className="workbench-row-menu">
+                  const moreContent = (
+                    <div className="workbench-row-menu">
                     <Button
                       type="text"
                       danger
@@ -1259,11 +1277,16 @@ export function AdminApprovalsContent() {
               : t("approve_modal.title")
           }
           open={Boolean(approvals.approveModal)}
-          onOk={() => {
-            void approvals.submitApprove();
-          }}
+          onOk={
+            canApproveTasks
+              ? () => {
+                  void approvals.submitApprove();
+                }
+              : undefined
+          }
           onCancel={approvals.closeApproveModal}
           confirmLoading={approvals.approvePending}
+          footer={canApproveTasks ? undefined : null}
           contentMinWidth={960}
           data-testid="approve-modal"
         >
@@ -1272,6 +1295,7 @@ export function AdminApprovalsContent() {
             layout="vertical"
             name="approve-form"
             preserve={false}
+            disabled={!canApproveTasks}
           >
             {approveAlert && (
               <Alert
@@ -2407,9 +2431,11 @@ export function AdminApprovalsContent() {
                 );
               })()
             ) : null}
-            <Form.Item name="comment" label={t("approve_modal.comment")}>
-              <Input.TextArea rows={3} />
-            </Form.Item>
+            {canApproveTasks ? (
+              <Form.Item name="comment" label={t("approve_modal.comment")}>
+                <Input.TextArea rows={3} />
+              </Form.Item>
+            ) : null}
           </Form>
         </WorkbenchDetailModal>
       ) : null}

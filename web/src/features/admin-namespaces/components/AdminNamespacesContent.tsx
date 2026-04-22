@@ -56,6 +56,7 @@ export function AdminNamespacesContent() {
     const [envFilterDraft, setEnvFilterDraft] = useState<'' | 'test' | 'prod'>('');
     const [enabledFilterDraft, setEnabledFilterDraft] = useState<'' | 'enabled' | 'disabled'>('');
     const setupGuide = useSetupGuide();
+    const canManageNamespaces = setupGuide.canManageNamespaces;
     const namespaces = useAdminNamespacesController({
         t,
         onCreateSuccess: (_namespace, context) => {
@@ -72,6 +73,9 @@ export function AdminNamespacesContent() {
     });
 
     useAutoOpenIntent('create-namespace', () => {
+        if (!canManageNamespaces) {
+            return;
+        }
         namespaces.openCreateModal();
     });
     const namespaceItems = namespaces.data?.items ?? [];
@@ -161,25 +165,29 @@ export function AdminNamespacesContent() {
                     >
                         {t('common:button.detail')}
                     </Button>
-                    <Button
-                        type="link"
-                        size="small"
-                        icon={<EditOutlined />}
-                        data-testid={`namespace-action-edit-${record.id}`}
-                        onClick={() => namespaces.openEditModal(record)}
-                    >
-                        {t('common:button.edit')}
-                    </Button>
-                    <Button
-                        type="link"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        data-testid={`namespace-action-delete-${record.id}`}
-                        onClick={() => namespaces.openDeleteModal(record)}
-                    >
-                        {t('common:button.delete')}
-                    </Button>
+                    {canManageNamespaces ? (
+                        <Button
+                            type="link"
+                            size="small"
+                            icon={<EditOutlined />}
+                            data-testid={`namespace-action-edit-${record.id}`}
+                            onClick={() => namespaces.openEditModal(record)}
+                        >
+                            {t('common:button.edit')}
+                        </Button>
+                    ) : null}
+                    {canManageNamespaces ? (
+                        <Button
+                            type="link"
+                            size="small"
+                            danger
+                            icon={<DeleteOutlined />}
+                            data-testid={`namespace-action-delete-${record.id}`}
+                            onClick={() => namespaces.openDeleteModal(record)}
+                        >
+                            {t('common:button.delete')}
+                        </Button>
+                    ) : null}
                 </Space>
             ),
         },
@@ -204,14 +212,16 @@ export function AdminNamespacesContent() {
                     <Button icon={<ReloadOutlined />} data-testid="namespaces-refresh-btn" onClick={() => namespaces.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
-                    <Button
-                        type="primary"
-                        icon={<PlusOutlined />}
-                        data-testid="namespace-create-button"
-                        onClick={namespaces.openCreateModal}
-                    >
-                        {t('namespaces.add')}
-                    </Button>
+                    {canManageNamespaces ? (
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            data-testid="namespace-create-button"
+                            onClick={namespaces.openCreateModal}
+                        >
+                            {t('namespaces.add')}
+                        </Button>
+                    ) : null}
                     </Space>
                 )}
             />

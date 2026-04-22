@@ -817,6 +817,7 @@ export function AdminInstanceSizesContent() {
     const { t } = useTranslation(['admin', 'common']);
     const router = useRouter();
     const setupGuide = useSetupGuide();
+    const canManageInstanceSizes = setupGuide.canManageInstanceSizes;
     const sizes = useAdminInstanceSizesController({
         t,
         onCreateSuccess: (_instanceSize, context) => {
@@ -840,6 +841,9 @@ export function AdminInstanceSizesContent() {
     const [capabilityDraft, setCapabilityDraft] = useState(() => sizes.filters.capability);
 
     useAutoOpenIntent('create-instance-size', () => {
+        if (!canManageInstanceSizes) {
+            return;
+        }
         sizes.openCreateModal();
     });
     const catalogScopeOptions = [
@@ -1079,29 +1083,32 @@ export function AdminInstanceSizesContent() {
             title: t('common:table.actions'),
             key: 'actions',
             width: 150,
-            render: (_: unknown, record: InstanceSize) => (
-                <Space size="small">
-                    <Button
-                        type="link"
-                        size="small"
-                        data-testid={`instance-size-action-edit-${record.id}`}
-                        icon={<EditOutlined />}
-                        onClick={() => sizes.openEditModal(record)}
-                    >
-                        {t('common:button.edit')}
-                    </Button>
-                    <Button
-                        type="link"
-                        size="small"
-                        danger
-                        data-testid={`instance-size-action-delete-${record.id}`}
-                        icon={<DeleteOutlined />}
-                        onClick={() => sizes.openDeleteModal(record)}
-                    >
-                        {t('common:button.delete')}
-                    </Button>
-                </Space>
-            ),
+            render: (_: unknown, record: InstanceSize) =>
+                canManageInstanceSizes ? (
+                    <Space size="small">
+                        <Button
+                            type="link"
+                            size="small"
+                            data-testid={`instance-size-action-edit-${record.id}`}
+                            icon={<EditOutlined />}
+                            onClick={() => sizes.openEditModal(record)}
+                        >
+                            {t('common:button.edit')}
+                        </Button>
+                        <Button
+                            type="link"
+                            size="small"
+                            danger
+                            data-testid={`instance-size-action-delete-${record.id}`}
+                            icon={<DeleteOutlined />}
+                            onClick={() => sizes.openDeleteModal(record)}
+                        >
+                            {t('common:button.delete')}
+                        </Button>
+                    </Space>
+                ) : (
+                    <Text type="secondary">—</Text>
+                ),
         },
     ];
 
@@ -1138,14 +1145,16 @@ export function AdminInstanceSizesContent() {
                     <Button icon={<ReloadOutlined />} onClick={() => sizes.refetch()}>
                         {t('common:button.refresh')}
                     </Button>
-                    <Button
-                        type="primary"
-                        icon={<HddOutlined />}
-                        data-testid="instance-size-create-button"
-                        onClick={sizes.openCreateModal}
-                    >
-                        {t('common:button.add')}
-                    </Button>
+                    {canManageInstanceSizes ? (
+                        <Button
+                            type="primary"
+                            icon={<HddOutlined />}
+                            data-testid="instance-size-create-button"
+                            onClick={sizes.openCreateModal}
+                        >
+                            {t('common:button.add')}
+                        </Button>
+                    ) : null}
                     </Space>
                 )}
             />

@@ -8,6 +8,9 @@ const controllerState = vi.hoisted(() => ({
     editingItem: null as Record<string, unknown> | null,
     editInitialValues: undefined as Record<string, unknown> | undefined,
 }));
+const setupGuideState = vi.hoisted(() => ({
+    canManageInstanceSizes: true,
+}));
 
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
@@ -42,7 +45,7 @@ vi.mock('@/features/setup-guide/hooks/useSetupGuide', () => ({
         canCreateVM: true,
         canManageNamespaces: true,
         canManageTemplates: true,
-        canManageInstanceSizes: true,
+        canManageInstanceSizes: setupGuideState.canManageInstanceSizes,
         systemReady: true,
         serviceReady: true,
         prerequisitesReady: true,
@@ -177,6 +180,7 @@ describe('AdminInstanceSizesContent', () => {
         controllerState.editOpen = false;
         controllerState.editingItem = null;
         controllerState.editInitialValues = undefined;
+        setupGuideState.canManageInstanceSizes = true;
     });
 
     it('pre-mounts the edit dynamic schema form so first-open hydration has a registered Form tree', () => {
@@ -325,5 +329,16 @@ describe('AdminInstanceSizesContent', () => {
             screen.getByText((content) => content.includes('instanceSizes.request_compact 6 Gi')),
         ).toBeInTheDocument();
         expect(screen.getByText('GPU nvidia.com/A10')).toBeInTheDocument();
+    });
+
+    it('hides instance size mutation controls for read-only admins', () => {
+        setupGuideState.canManageInstanceSizes = false;
+
+        render(<AdminInstanceSizesContent />);
+
+        expect(screen.queryByTestId('instance-size-create-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('instance-size-action-edit-size-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('instance-size-action-delete-size-1')).not.toBeInTheDocument();
+        expect(screen.getAllByText('m4.large').length).toBeGreaterThan(0);
     });
 });

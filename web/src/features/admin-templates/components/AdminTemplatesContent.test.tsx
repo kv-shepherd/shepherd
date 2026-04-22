@@ -8,6 +8,9 @@ const { useApiGetMock, useApiMutationMock, useApiActionMock } = vi.hoisted(() =>
     useApiMutationMock: vi.fn(),
     useApiActionMock: vi.fn(),
 }));
+const setupGuideState = vi.hoisted(() => ({
+    canManageTemplates: true,
+}));
 
 vi.mock('next/navigation', () => ({
     useRouter: () => ({
@@ -44,7 +47,7 @@ vi.mock('@/features/setup-guide/hooks/useSetupGuide', () => ({
         canCreateService: true,
         canCreateVM: true,
         canManageNamespaces: true,
-        canManageTemplates: true,
+        canManageTemplates: setupGuideState.canManageTemplates,
         canManageInstanceSizes: true,
         systemReady: true,
         serviceReady: true,
@@ -87,6 +90,7 @@ describe('AdminTemplatesContent', () => {
 
     beforeEach(() => {
         vi.clearAllMocks();
+        setupGuideState.canManageTemplates = true;
         consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
         createMutate = vi.fn();
         updateMutate = vi.fn();
@@ -205,5 +209,23 @@ describe('AdminTemplatesContent', () => {
                 call.some((value) => String(value).includes('Instance created by `useForm` is not connected to any Form element')),
             ),
         ).toBe(false);
+    });
+
+    it('hides template mutation controls for read-only admins', () => {
+        setupGuideState.canManageTemplates = false;
+        useApiGetMock.mockReturnValue({
+            data: {
+                items: [buildTemplate()],
+                pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+            },
+            isLoading: false,
+            refetch: vi.fn(),
+        });
+
+        render(<AdminTemplatesContent />);
+
+        expect(screen.queryByTestId('template-create-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('template-action-edit-tpl-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('template-action-delete-tpl-1')).not.toBeInTheDocument();
     });
 });
