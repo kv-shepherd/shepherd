@@ -32,6 +32,9 @@ tools/shepherd-linter/
 │   │   ├── analyzer.go                # Detects forbidden imports and hardcoded paths
 │   │   ├── analyzer_test.go
 │   │   └── testdata/src/
+│   ├── openapirbaccontract/
+│   │   ├── analyzer.go                # Enforces explicit OpenAPI x-rbac semantics
+│   │   └── analyzer_test.go
 │   ├── riverbypass/
 │   │   ├── analyzer.go                # Enforces ADR-0006: UseCase writes must use River Queue
 │   │   ├── analyzer_test.go
@@ -61,6 +64,7 @@ tools/shepherd-linter/
 |-------|----------|---------|--------|
 | Batch 1 | P0 — pure AST, no external deps | **12 scripts → 9 analyzers** | ✅ Complete |
 | Batch 2 | P1 — provider-layer + transaction safety (AST) | 3 scripts → 3 Analyzers | ✅ Complete (extended 2026-03-23) |
+| Additional | Cross-cutting contract validation | 1 analyzer-only gate | ✅ Active |
 | Batch 3 | P2 — doc/manifest consistency checks | Permanently retained as `go run` | 📌 Documented |
 
 ### Batch 1 — Implemented Analyzers
@@ -87,6 +91,12 @@ Context7 best practices applied: `pass.Files` for comment scanning (not `os.Read
 | `authproviderlayering` | ADR-0035/ADR-0048/ADR-0049/ADR-0050/ADR-0051: core/edge/provider auth layering | New analyzer-only enforcement |
 | `ssacompliance` | ADR-0011: provider write paths must use SSA+Unstructured | `check_kubevirt_ssa_compliance.go` |
 | `k8sintransaction` | ADR-0006/ADR-0012: K8s calls inside DB transaction callbacks (advisory) | `check_k8s_in_transaction.go` |
+
+### Additional Analyzer-Only Gates
+
+| Analyzer | Enforces | Original script |
+|----------|----------|-----------------|
+| `openapirbaccontract` | Explicit `x-rbac` semantics, auth scheme alignment, and `401/403` response coverage on every OpenAPI operation | New analyzer-only enforcement |
 
 **`ssacompliance` rules:**
 - Forbidden struct literals: `kubevirtv1.VirtualMachine{...}`, `kubevirtv1.VirtualMachineSpec{...}`, etc.

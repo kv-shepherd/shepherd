@@ -18,6 +18,7 @@ import (
 	"kv-shepherd.io/shepherd-linter/analyzer/k8spollingrv"
 	"kv-shepherd.io/shepherd-linter/analyzer/manualdi"
 	"kv-shepherd.io/shepherd-linter/analyzer/nakedgoroutine"
+	"kv-shepherd.io/shepherd-linter/analyzer/openapirbaccontract"
 	"kv-shepherd.io/shepherd-linter/analyzer/rbacguards"
 	"kv-shepherd.io/shepherd-linter/analyzer/riverbypass"
 	"kv-shepherd.io/shepherd-linter/analyzer/riverjobargs"
@@ -38,6 +39,7 @@ var AllAnalyzers = []*analysis.Analyzer{
 	nakedgoroutine.Analyzer,
 	forbiddenimports.Analyzer,
 	manualdi.Analyzer,
+	openapirbaccontract.Analyzer,
 	authproviderlayering.Analyzer,
 	rbacguards.Analyzer,
 	riverbypass.Analyzer,

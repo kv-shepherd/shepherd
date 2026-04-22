@@ -58,6 +58,9 @@ paths:
       summary: Liveness probe
       operationId: getLiveness
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       responses:
         '200':
           description: Process is alive
@@ -72,6 +75,9 @@ paths:
       summary: Readiness probe
       operationId: getReadiness
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       responses:
         '200':
           description: Service is ready
@@ -95,6 +101,9 @@ paths:
       # Public endpoint: schema metadata does not contain sensitive data and
       # must be accessible before a user logs in (bootstrap scenario, ADR-0023).
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       parameters:
         - name: entity_type
           in: path
@@ -123,6 +132,14 @@ paths:
       tags: [systems]
       summary: List systems
       operationId: listSystems
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'system:read'
+        scopeFilters:
+          - type: actor_visible_systems
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -150,6 +167,12 @@ paths:
       tags: [systems]
       summary: Create system (self-service, no approval)
       operationId: createSystem
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'system:write'
       requestBody:
         required: true
         content:
@@ -165,6 +188,10 @@ paths:
                 $ref: '#/components/schemas/System'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
 
@@ -173,6 +200,14 @@ paths:
       tags: [systems]
       summary: List system filter options
       operationId: getSystemFilterOptions
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'system:read'
+        scopeFilters:
+          - type: actor_visible_systems
       responses:
         '200':
           description: Searchable exact filter options for the systems list
@@ -190,6 +225,17 @@ paths:
       tags: [systems]
       summary: Get system by ID
       operationId: getSystem
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'system:read'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: view
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
       responses:
@@ -199,6 +245,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/System'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
@@ -210,6 +260,17 @@ paths:
         Stage 4.C: only `description` is mutable.
         System name is immutable after creation.
       operationId: updateSystem
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'system:write'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: update
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
       requestBody:
@@ -227,6 +288,8 @@ paths:
                 $ref: '#/components/schemas/System'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -238,6 +301,17 @@ paths:
         Requires typing system name to confirm (ADR-0015 §13).
         Cascade constraint: must have zero child services.
       operationId: deleteSystem
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'system:delete'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: delete
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - name: confirm_name
@@ -251,6 +325,10 @@ paths:
       responses:
         '204':
           description: System deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -261,6 +339,17 @@ paths:
       tags: [systems]
       summary: List system members
       operationId: listSystemMembers
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'system:read'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: view
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
       responses:
@@ -270,6 +359,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SystemMemberList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -278,6 +369,17 @@ paths:
       tags: [systems]
       summary: Add system member
       operationId: addSystemMember
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: manage_members
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
       requestBody:
@@ -295,6 +397,8 @@ paths:
                 $ref: '#/components/schemas/SystemMember'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -307,6 +411,17 @@ paths:
       tags: [systems, admin]
       summary: List addable system member candidates
       operationId: listSystemMemberCandidates
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: manage_members
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/Page'
@@ -319,6 +434,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -329,6 +446,17 @@ paths:
       tags: [systems]
       summary: Update system member role
       operationId: updateSystemMemberRole
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: manage_members
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/UserID'
@@ -347,6 +475,8 @@ paths:
                 $ref: '#/components/schemas/SystemMember'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -355,12 +485,25 @@ paths:
       tags: [systems]
       summary: Remove system member
       operationId: deleteSystemMember
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: manage_members
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/UserID'
       responses:
         '204':
           description: System member removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -372,6 +515,14 @@ paths:
       tags: [services]
       summary: List services across visible systems
       operationId: listServicesOverview
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'service:read'
+        scopeFilters:
+          - type: actor_visible_systems
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -384,6 +535,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ServiceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -392,6 +545,17 @@ paths:
       tags: [services]
       summary: List services in a system
       operationId: listServices
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'service:read'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: view
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/Page'
@@ -403,12 +567,25 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ServiceList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
       tags: [services]
       summary: Create service (self-service, no approval)
       operationId: createService
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'service:create'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: create
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
       requestBody:
@@ -426,6 +603,8 @@ paths:
                 $ref: '#/components/schemas/Service'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
@@ -436,6 +615,17 @@ paths:
       tags: [services]
       summary: Get service details
       operationId: getService
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'service:read'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: view
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/ServiceID'
@@ -446,6 +636,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Service'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -457,6 +649,17 @@ paths:
         Stage 4.C: only `description` is mutable.
         Service name is immutable after creation.
       operationId: updateService
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'service:create'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: update
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/ServiceID'
@@ -475,6 +678,8 @@ paths:
                 $ref: '#/components/schemas/Service'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -486,6 +691,17 @@ paths:
         Cascade constraint: must have zero child VMs.
         Requires confirm=true query parameter (ADR-0015 §13).
       operationId: deleteService
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'service:delete'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: delete
+            onDenied: forbidden
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/ServiceID'
@@ -493,6 +709,8 @@ paths:
       responses:
         '204':
           description: Service deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -509,6 +727,31 @@ paths:
         including service metadata, recent visible virtual machines, and the current
         actor's recent create requests for this service.
       operationId: getServiceWorkspaceContext
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'service:read'
+        resourceRoles:
+          - resourceType: system
+            resourceIdParam: system_id
+            action: view
+            onDenied: forbidden
+        fieldVisibility:
+          - fields:
+              - visible_vms
+              - summary.visible_vm_count
+            globalPermissions:
+              anyOf:
+                - 'vm:read'
+            scopeFilters:
+              - type: role_binding_allowed_environments
+          - fields:
+              - recent_requests
+              - summary.recent_request_count
+            scopeFilters:
+              - type: ticket_requester_is_actor
       parameters:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/ServiceID'
@@ -519,6 +762,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ServiceWorkspaceContext'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -530,6 +775,15 @@ paths:
       tags: [vms]
       summary: List VMs
       operationId: listVMs
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:read'
+        scopeFilters:
+          - type: actor_visible_systems
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -568,6 +822,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -579,6 +835,15 @@ paths:
         Returns the current user's visible VM filter catalogs for exact-match advanced filtering.
         Option values are stable identifiers when available, while labels stay human-readable.
       operationId: getVMFilterOptions
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:read'
+        scopeFilters:
+          - type: actor_visible_systems
+          - type: role_binding_allowed_environments
       responses:
         '200':
           description: VM filter option catalogs
@@ -586,6 +851,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMFilterOptionsResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -601,6 +868,16 @@ paths:
         hint is intended for end-user guidance and does not expose cluster
         identities or raw policy messages.
       operationId: getVMRequestContext
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:create'
+        scopeFilters:
+          - type: role_binding_allowed_environments
+          - type: visible_template_catalog_scopes
+          - type: visible_instance_size_catalog_scopes
       parameters:
         - name: namespace
           in: query
@@ -629,12 +906,30 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMRequestContext'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /vms/request:
     post:
       tags: [vms]
       summary: Submit VM creation request (requires approval)
       operationId: createVMRequest
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:create'
+        resourceRoles:
+          - resourceType: service
+            resourceIdBodyField: service_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
+            bodyField: namespace
       requestBody:
         required: true
         content:
@@ -650,6 +945,10 @@ paths:
                 $ref: '#/components/schemas/TicketResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /vms/batch:
     get:
@@ -659,6 +958,18 @@ paths:
         Returns a paginated list of batch job summaries for the current user.
         Admins see all batches; regular users see only their own.
       operationId: listVMBatches
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:read'
+            - 'vm:create'
+            - 'vm:delete'
+            - 'vm:operate'
+            - 'builtin_approval:view'
+        scopeFilters:
+          - type: actor_owned_batches
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -673,6 +984,8 @@ paths:
                 $ref: '#/components/schemas/VMBatchList'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [vms]
       summary: Submit VM batch request
@@ -680,6 +993,44 @@ paths:
         Stage 5.E batch submit entrypoint (ADR-0015 §19).
         Uses parent-child ticket model with idempotency key support.
       operationId: submitVMBatch
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        conditions:
+          - when: request.operation == CREATE
+            globalPermissions:
+              anyOf:
+                - 'vm:create'
+            resourceRoles:
+              - resourceType: service
+                resourceIdBodyField: items[].service_id
+                action: create
+                onDenied: not_found
+            scopeFilters:
+              - type: role_binding_allowed_environments
+                bodyField: items[].namespace
+          - when: request.operation == DELETE
+            globalPermissions:
+              anyOf:
+                - 'vm:delete'
+            resourceRoles:
+              - resourceType: vm
+                resourceIdBodyField: items[].vm_id
+                action: create
+                onDenied: not_found
+            scopeFilters:
+              - type: role_binding_allowed_environments
+          - when: request.operation == MODIFY
+            globalPermissions:
+              anyOf:
+                - 'vm:operate'
+            resourceRoles:
+              - resourceType: vm
+                resourceIdBodyField: items[].vm_id
+                action: create
+                onDenied: not_found
+            scopeFilters:
+              - type: role_binding_allowed_environments
       requestBody:
         required: true
         content:
@@ -695,6 +1046,8 @@ paths:
                 $ref: '#/components/schemas/VMBatchSubmitResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
@@ -718,6 +1071,19 @@ paths:
         Compatibility endpoint normalized into Stage 5.E parent-child pipeline.
         Executes child power operations independently with best-effort semantics.
       operationId: submitVMBatchPower
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:operate'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdBodyField: items[].vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       requestBody:
         required: true
         content:
@@ -733,6 +1099,8 @@ paths:
                 $ref: '#/components/schemas/VMBatchSubmitResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '429':
@@ -747,6 +1115,18 @@ paths:
       tags: [vms]
       summary: Get VM batch status
       operationId: getVMBatch
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:read'
+            - 'vm:create'
+            - 'vm:delete'
+            - 'vm:operate'
+            - 'builtin_approval:view'
+        scopeFilters:
+          - type: actor_owned_batches
       parameters:
         - $ref: '#/components/parameters/BatchID'
       responses:
@@ -756,6 +1136,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMBatchStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -764,6 +1148,17 @@ paths:
       tags: [vms]
       summary: Retry failed children in a VM batch
       operationId: retryVMBatch
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:create'
+            - 'vm:delete'
+            - 'vm:operate'
+            - 'builtin_approval:approve'
+        scopeFilters:
+          - type: actor_owned_batches
       parameters:
         - $ref: '#/components/parameters/BatchID'
       responses:
@@ -773,6 +1168,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMBatchActionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           description: No failed children are available to retry
           content:
@@ -787,6 +1186,17 @@ paths:
       tags: [vms]
       summary: Cancel pending children in a VM batch
       operationId: cancelVMBatch
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:create'
+            - 'vm:delete'
+            - 'vm:operate'
+            - 'builtin_approval:approve'
+        scopeFilters:
+          - type: actor_owned_batches
       parameters:
         - $ref: '#/components/parameters/BatchID'
       responses:
@@ -796,6 +1206,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMBatchActionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           description: No pending children are available to cancel
           content:
@@ -810,6 +1224,19 @@ paths:
       tags: [vms]
       summary: Get VM by ID
       operationId: getVM
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:read'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: view
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -819,6 +1246,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VM'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
@@ -830,6 +1261,19 @@ paths:
         prod env: requires confirm_name matching VM name exactly.
         Tiered confirmation per ADR-0015 §13.
       operationId: deleteVM
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:delete'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
         - $ref: '#/components/parameters/Confirm'
@@ -841,6 +1285,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeleteVMResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -854,6 +1302,12 @@ paths:
         Returns the current live KubeVirt VirtualMachine manifest as YAML.
         This endpoint is intended for platform-admin debugging and troubleshooting only.
       operationId: getVMManifest
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
+        globalPermissions:
+          anyOf:
+            - 'platform:admin'
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -863,6 +1317,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMManifestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -881,6 +1337,19 @@ paths:
         so the UI can open a prefilled "request similar VM" flow without
         implying a direct KubeVirt clone.
       operationId: getVMRequestPrefill
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:create'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: view
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -890,6 +1359,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMRequestPrefill'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -905,6 +1376,19 @@ paths:
         Returns the current live VM resource envelope together with per-field
         online-update support flags so the UI can build a safe modify request.
       operationId: getVMModifyContext
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:operate'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -914,6 +1398,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMModifyContext'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -930,6 +1416,19 @@ paths:
         The request always goes through approval and is validated for online-only
         expansion semantics before the ticket is created.
       operationId: createVMModifyRequest
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:operate'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       requestBody:
@@ -947,6 +1446,8 @@ paths:
                 $ref: '#/components/schemas/TicketResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -959,6 +1460,19 @@ paths:
       tags: [vms]
       summary: Start VM
       operationId: startVM
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:operate'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -968,6 +1482,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMPowerAcceptedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -976,6 +1494,19 @@ paths:
       tags: [vms]
       summary: Stop VM
       operationId: stopVM
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:operate'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -985,6 +1516,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMPowerAcceptedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -993,6 +1528,19 @@ paths:
       tags: [vms]
       summary: Restart VM
       operationId: restartVM
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:operate'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -1002,6 +1550,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMPowerAcceptedResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1015,6 +1567,19 @@ paths:
         /start, /stop, /restart endpoints.
         Accepted by the frontend VM-detail page for power-state management.
       operationId: powerVM
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:operate'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       requestBody:
@@ -1032,6 +1597,10 @@ paths:
                 $ref: '#/components/schemas/VMPowerAcceptedResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '500':
@@ -1048,6 +1617,19 @@ paths:
         test env: direct token issuance.
         prod env: create ticket and return pending status.
       operationId: requestVMConsoleAccess
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vnc:access'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       requestBody:
@@ -1069,6 +1651,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMConsoleRequestResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1082,6 +1666,19 @@ paths:
       summary: Get VM console access status
       description: Polling endpoint for Stage 6 approval/access status.
       operationId: getVMConsoleStatus
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vnc:access'
+        resourceRoles:
+          - resourceType: vm
+            resourceIdParam: vm_id
+            action: create
+            onDenied: not_found
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -1091,6 +1688,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMConsoleStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1107,6 +1706,16 @@ paths:
         Clients MUST NOT pass bearer credentials via URI query.
         V1 returns session bootstrap metadata; proxy internals are implementation-defined.
       operationId: openVMVNC
+      security:
+        - VNCBootstrapCookie: []
+      x-rbac:
+        authentication: bootstrap_cookie
+        platformAdminOverride: false
+        bootstrapSession:
+          securityScheme: VNCBootstrapCookie
+          cookieName: vnc_bootstrap
+          bindsToPathParam: vm_id
+          requiresVmRunning: true
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -1136,6 +1745,16 @@ paths:
         Clients MUST NOT pass bearer credentials via URI query.
         V1 returns session bootstrap metadata; proxy internals are implementation-defined.
       operationId: openVMSerial
+      security:
+        - VNCBootstrapCookie: []
+      x-rbac:
+        authentication: bootstrap_cookie
+        platformAdminOverride: false
+        bootstrapSession:
+          securityScheme: VNCBootstrapCookie
+          cookieName: vnc_bootstrap
+          bindsToPathParam: vm_id
+          requiresVmRunning: true
       parameters:
         - $ref: '#/components/parameters/VMID'
       responses:
@@ -1162,6 +1781,17 @@ paths:
       tags: [tickets]
       summary: List work-order tickets
       operationId: listTickets
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        conditions:
+          - when: query.mine != true
+            globalPermissions:
+              anyOf:
+                - 'ticket:view'
+          - when: query.mine == true
+            scopeFilters:
+              - type: ticket_requester_is_actor
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -1213,6 +1843,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # ── Built-In Approval Provider ─────────────────────
   /builtin-approval/tasks:
@@ -1220,6 +1854,12 @@ paths:
       tags: [builtin-approval]
       summary: List built-in approval tasks
       operationId: listBuiltinApprovalTasks
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'builtin_approval:view'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -1264,12 +1904,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TicketList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /builtin-approval/tasks/{ticket_id}/approve:
     post:
       tags: [builtin-approval]
       summary: Approve a built-in approval task
       operationId: approveBuiltinApprovalTask
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'builtin_approval:approve'
       parameters:
         - $ref: '#/components/parameters/TicketID'
       requestBody:
@@ -1283,6 +1933,10 @@ paths:
           description: Task approved
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1291,6 +1945,12 @@ paths:
       tags: [builtin-approval]
       summary: Reject a built-in approval task
       operationId: rejectBuiltinApprovalTask
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'builtin_approval:approve'
       parameters:
         - $ref: '#/components/parameters/TicketID'
       requestBody:
@@ -1304,6 +1964,10 @@ paths:
           description: Task rejected
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1312,11 +1976,19 @@ paths:
       tags: [tickets]
       summary: Cancel own pending request
       operationId: cancelTicket
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
+        scopeFilters:
+          - type: ticket_requester_is_actor
+          - type: ticket_must_be_cancellable
       parameters:
         - $ref: '#/components/parameters/TicketID'
       responses:
         '204':
           description: Request cancelled
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1333,6 +2005,13 @@ paths:
         List registered clusters. Supports feature-based filtering via `requires`
         query parameter (ADR-0014 Layer 3 / P2-A).
       operationId: listClusters
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:read'
+            - 'cluster:write'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -1439,10 +2118,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [clusters, admin]
       summary: Register a cluster
       operationId: createCluster
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:write'
       requestBody:
         required: true
         content:
@@ -1458,12 +2147,22 @@ paths:
                 $ref: '#/components/schemas/Cluster'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /admin/clusters/{cluster_id}:
     patch:
       tags: [clusters, admin]
       summary: Update cluster metadata or credentials
       operationId: updateCluster
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:write'
       parameters:
         - name: cluster_id
           in: path
@@ -1485,6 +2184,10 @@ paths:
                 $ref: '#/components/schemas/Cluster'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -1493,6 +2196,12 @@ paths:
       tags: [clusters, admin]
       summary: Delete an unused cluster
       operationId: deleteCluster
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:write'
       parameters:
         - name: cluster_id
           in: path
@@ -1502,6 +2211,10 @@ paths:
       responses:
         '204':
           description: Cluster deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -1512,6 +2225,14 @@ paths:
       tags: [admin]
       summary: List users
       operationId: listUsers
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'user:manage'
+            - 'rbac:read'
+            - 'rbac:manage'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -1523,10 +2244,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [admin]
       summary: Create a local JWT user
       operationId: createUser
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'user:manage'
       requestBody:
         required: true
         content:
@@ -1542,6 +2273,10 @@ paths:
                 $ref: '#/components/schemas/User'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
 
@@ -1550,6 +2285,12 @@ paths:
       tags: [admin]
       summary: Update a local JWT user
       operationId: updateUser
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'user:manage'
       parameters:
         - $ref: '#/components/parameters/UserID'
       requestBody:
@@ -1567,17 +2308,29 @@ paths:
                 $ref: '#/components/schemas/User'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
       tags: [admin]
       summary: Delete a local JWT user
       operationId: deleteUser
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'user:manage'
       parameters:
         - $ref: '#/components/parameters/UserID'
       responses:
         '204':
           description: User deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -1588,6 +2341,13 @@ paths:
       tags: [rbac, admin]
       summary: List global role bindings for a user
       operationId: listUserRoleBindings
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:read'
+            - 'rbac:manage'
       parameters:
         - $ref: '#/components/parameters/UserID'
       responses:
@@ -1597,12 +2357,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/GlobalRoleBindingList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     post:
       tags: [rbac, admin]
       summary: Create global role binding for a user
       operationId: createUserRoleBinding
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
       parameters:
         - $ref: '#/components/parameters/UserID'
       requestBody:
@@ -1620,6 +2390,10 @@ paths:
                 $ref: '#/components/schemas/GlobalRoleBinding'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -1630,12 +2404,22 @@ paths:
       tags: [rbac, admin]
       summary: Delete a user's global role binding
       operationId: deleteUserRoleBinding
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
       parameters:
         - $ref: '#/components/parameters/UserID'
         - $ref: '#/components/parameters/RoleBindingID'
       responses:
         '204':
           description: Role binding deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1644,6 +2428,13 @@ paths:
       tags: [rbac, admin]
       summary: List RBAC roles
       operationId: listRoles
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:read'
+            - 'rbac:manage'
       responses:
         '200':
           description: Role list
@@ -1651,10 +2442,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RoleList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [rbac, admin]
       summary: Create custom RBAC role
       operationId: createRole
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
       requestBody:
         required: true
         content:
@@ -1670,6 +2471,10 @@ paths:
                 $ref: '#/components/schemas/Role'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
 
@@ -1678,6 +2483,12 @@ paths:
       tags: [rbac, admin]
       summary: Update RBAC role
       operationId: updateRole
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
       parameters:
         - $ref: '#/components/parameters/RoleID'
       requestBody:
@@ -1695,17 +2506,31 @@ paths:
                 $ref: '#/components/schemas/Role'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
       tags: [rbac, admin]
       summary: Delete RBAC role
       operationId: deleteRole
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:manage'
       parameters:
         - $ref: '#/components/parameters/RoleID'
       responses:
         '204':
           description: Role deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -1716,6 +2541,13 @@ paths:
       tags: [rbac, admin]
       summary: List supported permission keys
       operationId: listPermissions
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rbac:read'
+            - 'rbac:manage'
       responses:
         '200':
           description: Permission list
@@ -1723,12 +2555,29 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PermissionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /admin/auth-provider-types:
     get:
       tags: [auth-providers, admin]
       summary: List registered authentication provider plugin types
       operationId: listAuthProviderTypes
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: &authProviderAccessPermissions
+            - 'auth_provider:read'
+            - 'auth_provider:configure'
+            - 'auth_provider:update'
+            - 'auth_provider:delete'
+            - 'auth_provider:sync'
+            - 'auth_provider:mapping_create'
+            - 'auth_provider:mapping_update'
+            - 'auth_provider:mapping_delete'
       responses:
         '200':
           description: Registered authentication provider plugin types
@@ -1736,12 +2585,21 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthProviderTypeList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /admin/platform-settings/external-auth:
     get:
       tags: [auth-providers, admin]
       summary: Get platform-wide external authentication settings
       operationId: getExternalAuthPlatformSettings
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       responses:
         '200':
           description: Platform external authentication settings
@@ -1749,10 +2607,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExternalAuthPlatformSettings'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     put:
       tags: [auth-providers, admin]
       summary: Update platform-wide external authentication settings
       operationId: updateExternalAuthPlatformSettings
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:update'
       requestBody:
         required: true
         content:
@@ -1768,12 +2636,28 @@ paths:
                 $ref: '#/components/schemas/ExternalAuthPlatformSettings'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   /admin/auth-providers:
     get:
       tags: [auth-providers, admin]
       summary: List authentication providers
       operationId: listAuthProviders
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
+        fieldVisibility:
+          - fields:
+              - items[].config
+            globalPermissions:
+              anyOf:
+                - 'auth_provider:configure'
+                - 'auth_provider:update'
       responses:
         '200':
           description: Authentication provider list
@@ -1781,10 +2665,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthProviderList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [auth-providers, admin]
       summary: Create authentication provider from registered plugin type
       operationId: createAuthProvider
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:configure'
       requestBody:
         required: true
         content:
@@ -1800,6 +2694,10 @@ paths:
                 $ref: '#/components/schemas/AuthProvider'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
 
@@ -1808,6 +2706,12 @@ paths:
       tags: [auth-providers, admin]
       summary: Update authentication provider
       operationId: updateAuthProvider
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:update'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -1825,17 +2729,33 @@ paths:
                 $ref: '#/components/schemas/AuthProvider'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
     delete:
       tags: [auth-providers, admin]
       summary: Delete authentication provider
       operationId: deleteAuthProvider
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:delete'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
         '204':
           description: Authentication provider deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '404':
@@ -1846,6 +2766,12 @@ paths:
       tags: [auth-providers, admin]
       summary: Test authentication provider connectivity
       operationId: testAuthProviderConnection
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:configure'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
@@ -1855,6 +2781,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthProviderConnectionTestResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1863,6 +2793,11 @@ paths:
       tags: [auth-providers, admin]
       summary: Fetch sample identity data fields for mapping
       operationId: getAuthProviderSample
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
@@ -1872,6 +2807,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthProviderSampleResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1880,6 +2819,11 @@ paths:
       tags: [auth-providers, admin]
       summary: List discovered external cohorts for an auth provider
       operationId: listAuthProviderCohorts
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
@@ -1889,6 +2833,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExternalCohortList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1897,6 +2845,12 @@ paths:
       tags: [auth-providers, admin]
       summary: Sync external cohorts for an auth provider
       operationId: syncAuthProviderCohorts
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:sync'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -1914,6 +2868,10 @@ paths:
                 $ref: '#/components/schemas/ExternalCohortSyncResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1922,6 +2880,11 @@ paths:
       tags: [auth-providers, admin]
       summary: Get directory sync capability descriptor for an auth provider
       operationId: getAuthProviderDirectoryDescriptor
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
@@ -1931,6 +2894,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DirectorySyncDescriptor'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
@@ -1945,6 +2912,11 @@ paths:
       tags: [auth-providers, admin]
       summary: Get runtime login descriptor for an auth provider
       operationId: getAuthProviderRuntimeDescriptor
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
@@ -1954,6 +2926,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AuthProviderRuntimeDescriptor'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -1962,6 +2938,11 @@ paths:
       tags: [auth-providers, admin]
       summary: Get scheduled directory enrichment status for an auth provider
       operationId: getAuthProviderDirectorySchedule
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
@@ -1971,6 +2952,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DirectoryEnrichmentScheduleStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
@@ -1985,6 +2970,12 @@ paths:
       tags: [auth-providers, admin]
       summary: Preview canonical directory import result
       operationId: previewAuthProviderDirectory
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:sync'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -2002,6 +2993,10 @@ paths:
                 $ref: '#/components/schemas/DirectorySyncPreview'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
@@ -2016,6 +3011,12 @@ paths:
       tags: [auth-providers, admin]
       summary: Trigger asynchronous directory sync job
       operationId: syncAuthProviderDirectory
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:sync'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -2033,6 +3034,10 @@ paths:
                 $ref: '#/components/schemas/DirectorySyncStartResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
@@ -2047,6 +3052,11 @@ paths:
       tags: [auth-providers, admin]
       summary: List directory sync jobs for an auth provider
       operationId: listAuthProviderDirectorySyncJobs
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       parameters:
         - $ref: '#/components/parameters/ProviderID'
         - $ref: '#/components/parameters/Page'
@@ -2058,6 +3068,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DirectorySyncJobList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
@@ -2072,6 +3086,11 @@ paths:
       tags: [auth-providers, admin]
       summary: Get one directory sync job summary
       operationId: getAuthProviderDirectorySyncJob
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       parameters:
         - $ref: '#/components/parameters/ProviderID'
         - $ref: '#/components/parameters/DirectorySyncJobID'
@@ -2082,6 +3101,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DirectorySyncJobDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
@@ -2096,6 +3119,11 @@ paths:
       tags: [auth-providers, admin]
       summary: List external cohort mappings for an auth provider
       operationId: listAuthProviderCohortMappings
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf: *authProviderAccessPermissions
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       responses:
@@ -2105,12 +3133,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ExternalCohortMappingList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     post:
       tags: [auth-providers, admin]
       summary: Create external cohort mapping
       operationId: createAuthProviderCohortMapping
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:mapping_create'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -2128,6 +3166,10 @@ paths:
                 $ref: '#/components/schemas/ExternalCohortMapping'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -2138,6 +3180,12 @@ paths:
       tags: [auth-providers, admin]
       summary: Update external cohort mapping
       operationId: updateAuthProviderCohortMapping
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:mapping_update'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
         - $ref: '#/components/parameters/MappingID'
@@ -2156,6 +3204,10 @@ paths:
                 $ref: '#/components/schemas/ExternalCohortMapping'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -2164,12 +3216,22 @@ paths:
       tags: [auth-providers, admin]
       summary: Delete external cohort mapping
       operationId: deleteAuthProviderCohortMapping
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'auth_provider:mapping_delete'
       parameters:
         - $ref: '#/components/parameters/ProviderID'
         - $ref: '#/components/parameters/MappingID'
       responses:
         '204':
           description: Cohort mapping deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -2178,6 +3240,12 @@ paths:
       tags: [admin]
       summary: List rate-limit exemptions
       operationId: listRateLimitExemptions
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rate_limit:manage'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -2188,12 +3256,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RateLimitExemptionList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
     post:
       tags: [admin]
       summary: Create or update a user rate-limit exemption
       operationId: createRateLimitExemption
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rate_limit:manage'
       requestBody:
         required: true
         content:
@@ -2209,6 +3285,8 @@ paths:
                 $ref: '#/components/schemas/RateLimitExemption'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -2219,11 +3297,19 @@ paths:
       tags: [admin]
       summary: Remove a user rate-limit exemption
       operationId: deleteRateLimitExemption
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rate_limit:manage'
       parameters:
         - $ref: '#/components/parameters/UserID'
       responses:
         '204':
           description: Exemption removed
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -2234,6 +3320,12 @@ paths:
       tags: [admin]
       summary: Upsert per-user rate-limit overrides
       operationId: updateRateLimitUserOverrides
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rate_limit:manage'
       parameters:
         - $ref: '#/components/parameters/UserID'
       requestBody:
@@ -2251,6 +3343,8 @@ paths:
                 $ref: '#/components/schemas/RateLimitUserOverride'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '404':
@@ -2261,6 +3355,12 @@ paths:
       tags: [admin]
       summary: List current user rate-limit statuses
       operationId: listRateLimitStatus
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'rate_limit:manage'
       responses:
         '200':
           description: Rate-limit status list
@@ -2268,6 +3368,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RateLimitStatusList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
 
@@ -2277,6 +3379,13 @@ paths:
       tags: [templates, admin]
       summary: List templates for admin management
       operationId: listAdminTemplates
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'template:read'
+            - 'template:write'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -2308,10 +3417,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TemplateList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [templates, admin]
       summary: Create template
       operationId: createAdminTemplate
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'template:write'
       requestBody:
         required: true
         content:
@@ -2327,6 +3446,10 @@ paths:
                 $ref: '#/components/schemas/Template'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
 
@@ -2335,6 +3458,12 @@ paths:
       tags: [templates, admin]
       summary: Update template
       operationId: updateAdminTemplate
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'template:write'
       parameters:
         - $ref: '#/components/parameters/TemplateID'
       requestBody:
@@ -2352,17 +3481,31 @@ paths:
                 $ref: '#/components/schemas/Template'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
       tags: [templates, admin]
       summary: Delete template
       operationId: deleteAdminTemplate
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'template:write'
       parameters:
         - $ref: '#/components/parameters/TemplateID'
       responses:
         '204':
           description: Template deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '404':
@@ -2373,6 +3516,17 @@ paths:
       tags: [templates]
       summary: List templates
       operationId: listTemplates
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:create'
+            - 'template:read'
+            - 'template:write'
+        scopeFilters:
+          - type: role_binding_allowed_environments
+          - type: visible_template_catalog_scopes
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -2383,6 +3537,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TemplateList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # ── Instance Sizes ──────────────────────────────────
   /admin/instance-sizes:
@@ -2390,6 +3548,13 @@ paths:
       tags: [instance-sizes, admin]
       summary: List instance sizes for admin management
       operationId: listAdminInstanceSizes
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'instance_size:read'
+            - 'instance_size:write'
       responses:
         '200':
           description: Instance size list
@@ -2397,10 +3562,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InstanceSizeList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [instance-sizes, admin]
       summary: Create instance size
       operationId: createAdminInstanceSize
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'instance_size:write'
       requestBody:
         required: true
         content:
@@ -2416,6 +3591,10 @@ paths:
                 $ref: '#/components/schemas/InstanceSize'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
 
@@ -2424,6 +3603,12 @@ paths:
       tags: [instance-sizes, admin]
       summary: Update instance size
       operationId: updateAdminInstanceSize
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'instance_size:write'
       parameters:
         - $ref: '#/components/parameters/InstanceSizeID'
       requestBody:
@@ -2441,17 +3626,31 @@ paths:
                 $ref: '#/components/schemas/InstanceSize'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
       tags: [instance-sizes, admin]
       summary: Delete instance size
       operationId: deleteAdminInstanceSize
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'instance_size:write'
       parameters:
         - $ref: '#/components/parameters/InstanceSizeID'
       responses:
         '204':
           description: Instance size deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
         '404':
@@ -2462,6 +3661,17 @@ paths:
       tags: [instance-sizes]
       summary: List instance sizes
       operationId: listInstanceSizes
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'vm:create'
+            - 'instance_size:read'
+            - 'instance_size:write'
+        scopeFilters:
+          - type: role_binding_allowed_environments
+          - type: visible_instance_size_catalog_scopes
       responses:
         '200':
           description: Instance size list
@@ -2469,6 +3679,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/InstanceSizeList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # ── Auth ────────────────────────────────────────────
   /auth/providers:
@@ -2477,6 +3691,9 @@ paths:
       summary: List enabled external login providers
       operationId: listLoginAuthProviders
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       responses:
         '200':
           description: Enabled login-capable auth providers
@@ -2491,6 +3708,9 @@ paths:
       summary: Start external auth-provider login
       operationId: startLoginAuthProvider
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -2517,6 +3737,9 @@ paths:
       summary: Submit credential-based auth-provider login
       operationId: submitLoginAuthProvider
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -2545,6 +3768,9 @@ paths:
       summary: Complete external auth-provider login callback
       operationId: completeLoginAuthProviderGet
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       parameters:
         - $ref: '#/components/parameters/ProviderID'
         - name: code
@@ -2573,6 +3799,9 @@ paths:
       summary: Complete external auth-provider login callback
       operationId: completeLoginAuthProviderPost
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
@@ -2608,6 +3837,9 @@ paths:
       summary: Login with credentials
       operationId: login
       security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
       requestBody:
         required: true
         content:
@@ -2631,6 +3863,9 @@ paths:
       operationId: getCurrentUser
       security:
         - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
       responses:
         '200':
           description: Current user
@@ -2648,6 +3883,9 @@ paths:
       operationId: changePassword
       security:
         - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
       requestBody:
         required: true
         content:
@@ -2676,6 +3914,12 @@ paths:
       operationId: getCurrentUserPreference
       security:
         - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
+        scopeFilters:
+          - type: current_user_preferences
+          - type: shared_platform_preference
       responses:
         '200':
           description: Current user preference
@@ -2695,6 +3939,17 @@ paths:
       operationId: updateCurrentUserPreference
       security:
         - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        scopeFilters:
+          - type: current_user_preferences
+        conditions:
+          - when: path.key == admin.users.columns.v4
+            globalPermissions:
+              anyOf:
+                - 'user:manage'
+                - 'rbac:manage'
       requestBody:
         required: true
         content:
@@ -2712,12 +3967,25 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     delete:
       tags: [auth]
       summary: Delete a current user preference
       operationId: deleteCurrentUserPreference
       security:
         - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        scopeFilters:
+          - type: current_user_preferences
+        conditions:
+          - when: path.key == admin.users.columns.v4
+            globalPermissions:
+              anyOf:
+                - 'user:manage'
+                - 'rbac:manage'
       responses:
         '204':
           description: Preference deleted
@@ -2725,6 +3993,8 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
   # ── Namespace Registry (ADR-0017) ────────────────────
   /admin/namespaces:
@@ -2732,6 +4002,15 @@ paths:
       tags: [namespaces, admin]
       summary: List registered namespaces
       operationId: listNamespaces
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:read'
+            - 'cluster:write'
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -2756,10 +4035,18 @@ paths:
                 $ref: '#/components/schemas/NamespaceRegistryList'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
     post:
       tags: [namespaces, admin]
       summary: Register a namespace
       operationId: createNamespace
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:write'
       requestBody:
         required: true
         content:
@@ -2775,6 +4062,10 @@ paths:
                 $ref: '#/components/schemas/NamespaceRegistry'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '409':
           $ref: '#/components/responses/Conflict'
 
@@ -2783,6 +4074,15 @@ paths:
       tags: [namespaces, admin]
       summary: Get namespace by ID
       operationId: getNamespace
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:read'
+            - 'cluster:write'
+        scopeFilters:
+          - type: role_binding_allowed_environments
       parameters:
         - $ref: '#/components/parameters/NamespaceID'
       responses:
@@ -2792,12 +4092,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NamespaceRegistry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     put:
       tags: [namespaces, admin]
       summary: Update namespace
       operationId: updateNamespace
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:write'
       parameters:
         - $ref: '#/components/parameters/NamespaceID'
       requestBody:
@@ -2813,6 +4123,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/NamespaceRegistry'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     delete:
@@ -2822,6 +4136,12 @@ paths:
         Only allowed if no VMs are deployed in this namespace.
         Requires confirm_name for safety.
       operationId: deleteNamespace
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:write'
       parameters:
         - $ref: '#/components/parameters/NamespaceID'
         - name: confirm_name
@@ -2835,6 +4155,10 @@ paths:
       responses:
         '204':
           description: Namespace deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -2846,6 +4170,12 @@ paths:
       tags: [clusters, admin]
       summary: Update cluster environment
       operationId: updateClusterEnvironment
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:write'
       parameters:
         - name: cluster_id
           in: path
@@ -2865,6 +4195,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Cluster'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -2873,6 +4207,13 @@ paths:
       tags: [clusters, admin]
       summary: Get cluster policy
       operationId: getClusterPolicy
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:read'
+            - 'cluster:write'
       parameters:
         - name: cluster_id
           in: path
@@ -2886,12 +4227,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ClusterPolicy'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
     put:
       tags: [clusters, admin]
       summary: Create or replace cluster policy
       operationId: upsertClusterPolicy
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'cluster:write'
       parameters:
         - name: cluster_id
           in: path
@@ -2911,6 +4262,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ClusterPolicy'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -2920,6 +4275,11 @@ paths:
       tags: [notifications]
       summary: List notifications for current user
       operationId: listNotifications
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
+        scopeFilters:
+          - type: current_user_notifications
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -2944,6 +4304,11 @@ paths:
       tags: [notifications]
       summary: Get unread notification count
       operationId: getUnreadCount
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
+        scopeFilters:
+          - type: current_user_notifications
       responses:
         '200':
           description: Unread count
@@ -2959,11 +4324,18 @@ paths:
       tags: [notifications]
       summary: Mark notification as read
       operationId: markNotificationRead
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
+        scopeFilters:
+          - type: current_user_notifications
       parameters:
         - $ref: '#/components/parameters/NotificationID'
       responses:
         '204':
           description: Notification marked as read
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -2972,9 +4344,16 @@ paths:
       tags: [notifications]
       summary: Mark all notifications as read
       operationId: markAllNotificationsRead
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
+        scopeFilters:
+          - type: current_user_notifications
       responses:
         '204':
           description: All notifications marked as read
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 
   # ── Audit Logs ──────────────────────────────────────
   /audit-logs:
@@ -2984,6 +4363,12 @@ paths:
       operationId: listAuditLogs
       security:
         - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'audit:read'
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/PerPage'
@@ -3038,6 +4423,8 @@ paths:
                 $ref: '#/components/schemas/AuditLogList'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
 
 components:
   # ── Security Schemes ────────────────────────────────
@@ -3046,6 +4433,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    VNCBootstrapCookie:
+      type: apiKey
+      in: cookie
+      name: vnc_bootstrap
 
   # ── Reusable Parameters (ADR-0023 Pagination) ──────
   parameters:

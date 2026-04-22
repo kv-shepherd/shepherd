@@ -7,6 +7,7 @@ import {
     resolveMenuHref,
     type MenuRouteItem,
 } from './appLayoutRoutes';
+import { ADMIN_MENU_ROUTE_PERMISSIONS } from '@/lib/auth/permissions';
 
 const t = (key: string) => key;
 
@@ -84,5 +85,36 @@ describe('getMenuRoutes', () => {
                 path: '/admin/templates',
             }),
         ]);
+    });
+
+    it('filters admin child routes by canonical permission groups', () => {
+        const route = getMenuRoutes(t, (permissions) => permissions.includes('cluster:read'));
+        const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
+
+        expect(admin?.routes).toEqual([
+            expect.objectContaining({ path: '/admin/clusters' }),
+            expect.objectContaining({ path: '/admin/namespaces' }),
+        ]);
+        expect(resolveMenuHref(admin ?? {})).toBe('/admin/clusters');
+    });
+
+    it('renders every admin child route when all canonical permissions are available', () => {
+        const route = getMenuRoutes(t, true);
+        const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
+        const adminPaths = admin?.routes?.map((item: MenuRouteItem) => item.path) ?? [];
+
+        expect(adminPaths).toHaveLength(Object.keys(ADMIN_MENU_ROUTE_PERMISSIONS).length);
+        expect(adminPaths).toEqual(expect.arrayContaining([
+            '/admin/approval-tasks',
+            '/admin/clusters',
+            '/admin/namespaces',
+            '/admin/templates',
+            '/admin/instance-sizes',
+            '/admin/users',
+            '/admin/rbac',
+            '/admin/rate-limits',
+            '/admin/auth-providers',
+            '/admin/audit',
+        ]));
     });
 });

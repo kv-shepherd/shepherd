@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { hasAnyPermission, hasPermission, PLATFORM_ADMIN_PERMISSION } from './permissions';
+import {
+    ADMIN_MENU_ROUTE_PERMISSIONS,
+    type AdminMenuRouteKey,
+    canAccessAdminMenu,
+    canAccessAdminMenuRoute,
+    hasAnyPermission,
+    hasPermission,
+    PLATFORM_ADMIN_PERMISSION,
+} from './permissions';
 
 describe('permission helpers', () => {
   it('grants explicit permission and platform-admin override', () => {
@@ -31,5 +39,43 @@ describe('permission helpers', () => {
     expect(hasAnyPermission(user, ['vm:create', 'vm:delete'])).toBe(false);
     expect(hasAnyPermission(null, ['vm:create'])).toBe(false);
   });
-});
 
+  it('derives admin menu access from canonical route permissions', () => {
+    const reviewer = {
+      id: 'u-4',
+      username: 'reviewer',
+      permissions: ['builtin_approval:view'],
+    };
+    expect(canAccessAdminMenu(reviewer)).toBe(true);
+    expect(canAccessAdminMenuRoute(reviewer, 'approvalTasks')).toBe(true);
+    expect(canAccessAdminMenuRoute(reviewer, 'clusters')).toBe(false);
+
+    const regularUser = {
+      id: 'u-5',
+      username: 'carol',
+      permissions: ['vm:create'],
+    };
+    expect(canAccessAdminMenu(regularUser)).toBe(false);
+  });
+
+  it('covers every admin menu route with canonical permission checks', () => {
+    for (const [routeKey, permissions] of Object.entries(ADMIN_MENU_ROUTE_PERMISSIONS) as Array<
+      [AdminMenuRouteKey, readonly string[]]
+    >) {
+      const scopedUser = {
+        id: `user-${routeKey}`,
+        username: routeKey,
+        permissions: [permissions[0]],
+      };
+      expect(canAccessAdminMenu(scopedUser)).toBe(true);
+      expect(canAccessAdminMenuRoute(scopedUser, routeKey)).toBe(true);
+
+      const platformAdmin = {
+        id: `admin-${routeKey}`,
+        username: `admin-${routeKey}`,
+        permissions: [PLATFORM_ADMIN_PERMISSION],
+      };
+      expect(canAccessAdminMenuRoute(platformAdmin, routeKey)).toBe(true);
+    }
+  });
+});

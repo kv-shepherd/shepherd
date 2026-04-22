@@ -31,7 +31,10 @@ import {
 import NotificationBell from '@/components/ui/NotificationBell';
 import LocalTimezoneBadge from '@/components/ui/LocalTimezoneBadge';
 import LanguageSwitcher from '@/components/ui/LanguageSwitcher';
-import { hasPermission, PLATFORM_ADMIN_PERMISSION } from '@/lib/auth/permissions';
+import {
+    canAccessAdminMenuRoute,
+    hasAnyPermission,
+} from '@/lib/auth/permissions';
 import {
     filterMenuSearchEntries,
     flattenMenuRoutes,
@@ -50,8 +53,11 @@ export default function AppLayout({
     const pathname = usePathname();
     const { t } = useTranslation('common');
     const { user, logout } = useAuthStore();
-    const canAccessAdmin = hasPermission(user, PLATFORM_ADMIN_PERMISSION);
-    const route = React.useMemo(() => getMenuRoutes(t, canAccessAdmin), [t, canAccessAdmin]);
+    const canAccessApprovalCenter = canAccessAdminMenuRoute(user, 'approvalTasks');
+    const route = React.useMemo(
+        () => getMenuRoutes(t, (permissions) => hasAnyPermission(user, permissions)),
+        [t, user],
+    );
     const [menuSearch, setMenuSearch] = React.useState('');
     const secureDevOrigin = process.env.NEXT_PUBLIC_DEV_SECURE_ORIGIN?.trim() ?? '';
     const devIngressPort = process.env.NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT?.trim() ?? '';
@@ -97,7 +103,7 @@ export default function AppLayout({
                 onClick: () => router.push('/tickets'),
             },
         ];
-        if (canAccessAdmin) {
+        if (canAccessApprovalCenter) {
             items.push({
                 key: 'approval-center',
                 label: t('quick_actions.open_approval_tasks'),
@@ -105,7 +111,7 @@ export default function AppLayout({
             });
         }
         return items;
-    }, [canAccessAdmin, router, t]);
+    }, [canAccessApprovalCenter, router, t]);
 
     const searchableMenuEntries = React.useMemo(
         () => flattenMenuRoutes(route.routes),
