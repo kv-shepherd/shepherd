@@ -15,9 +15,16 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.prod.yml"
-ENV_FILE="${SCRIPT_DIR}/.env.prod"
-ENV_EXAMPLE_FILE="${SCRIPT_DIR}/.env.prod.example"
+COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-${SCRIPT_DIR}/docker-compose.prod.yml}"
+ENV_FILE="${DEPLOY_ENV_FILE:-${SCRIPT_DIR}/.env.prod}"
+ENV_EXAMPLE_FILE="${DEPLOY_ENV_EXAMPLE_FILE:-${SCRIPT_DIR}/.env.prod.example}"
+TLS_DIR="${DEPLOY_TLS_DIR:-${SCRIPT_DIR}/tls}"
+TLS_CERT_FILE="${TLS_CERT_FILE:-${TLS_DIR}/cert.pem}"
+TLS_KEY_FILE="${TLS_KEY_FILE:-${TLS_DIR}/key.pem}"
+COMPOSE_PROJECT_NAME="${DEPLOY_COMPOSE_PROJECT_NAME:-shepherd-prod}"
+SERVER_IMAGE="${SERVER_IMAGE:-shepherd-server:latest}"
+WEB_IMAGE="${WEB_IMAGE:-shepherd-web:latest}"
+export SERVER_IMAGE WEB_IMAGE TLS_CERT_FILE TLS_KEY_FILE
 ENTERPRISE_MODE=0
 BUILD_ONLY=0
 SEED_ONLY=0
@@ -43,7 +50,94 @@ Options:
   --seed-only      Run bootstrap seed only (assumes services are running)
   --skip-build     Skip image build, use existing images
   -h, --help       Show this help message
+
+Environment overrides:
+  DEPLOY_ENV_FILE              Alternate .env.prod path
+  DEPLOY_TLS_DIR               Alternate TLS cert/key directory
+  DEPLOY_COMPOSE_PROJECT_NAME  Alternate docker compose project name
+  SERVER_IMAGE                 Server image tag to build/run
+  WEB_IMAGE                    Web image tag to build/run
 EOF
+}
+
+require_cmd() {
+    if ! command -v "$1" >/dev/null 2>&1; then
+        echo "ERROR: required command not found: $1"
+        exit 1
+    fi
+}
+
+prepare_env_file() {
+    if [[ -f "${ENV_FILE}" ]]; then
+        return
+    fi
+    if [[ ! -f "${ENV_EXAMPLE_FILE}" ]]; then
+        echo "ERROR: ${ENV_FILE} not found and template ${ENV_EXAMPLE_FILE} is missing."
+        exit 1
+    fi
+    cp "${ENV_EXAMPLE_FILE}" "${ENV_FILE}"
+    echo "INFO: ${ENV_FILE} not found."
+    echo "  Generated a first-run template from:"
+    echo "    ${ENV_EXAMPLE_FILE}"
+}
+
+read_env_value() {
+    local key="$1"
+    local line
+    line=$(grep -E "^${key}=" "${ENV_FILE}" | tail -n 1 || true)
+    if [[ -z "${line}" ]]; then
+        return 0
+    fi
+    printf '%s' "${line#*=}"
+}
+
+write_env_value() {
+    local key="$1"
+    local value="$2"
+    if grep -Eq "^${key}=" "${ENV_FILE}"; then
+        sed -i -e "s|^${key}=.*$|${key}=${value}|" "${ENV_FILE}"
+    else
+        printf '\n%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
+    fi
+}
+
+is_placeholder_value() {
+    local value="$1"
+    case "${value}" in
+        ""|CHANGE_ME*|change_me*|https://replace-me.example.com|https://your-domain.com)
+            return 0
+            ;;
+    esac
+    return 1
+}
+
+needs_generated_secret() {
+    local key="$1"
+    local value="$2"
+    if is_placeholder_value "${value}"; then
+        return 0
+    fi
+
+    case "${key}" in
+        POSTGRES_PASSWORD|DEV_ADMIN_PASSWORD)
+            [[ ${#value} -lt 16 ]] && return 0
+            ;;
+    esac
+
+    return 1
+}
+
+ensure_generated_secret() {
+    local key="$1"
+    local bytes="$2"
+    local current
+    current="$(read_env_value "${key}")"
+    if needs_generated_secret "${key}" "${current}"; then
+        local generated
+        generated="$(openssl rand -hex "${bytes}")"
+        write_env_value "${key}" "${generated}"
+        echo "INFO: generated ${key} and persisted it to ${ENV_FILE}."
+    fi
 }
 
 base64_file() {
@@ -119,7 +213,7 @@ run_experience_seed() {
     fi
 
     binary_path="$(build_experience_seed_binary)"
-    server_container="$(docker compose -f "${COMPOSE_FILE}" -p shepherd-prod ps -q server)"
+    server_container="$(docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" ps -q server)"
     if [[ -z "${server_container}" ]]; then
         echo "ERROR: could not resolve running server container for experience seed"
         exit 1
@@ -127,16 +221,38 @@ run_experience_seed() {
 
     echo "Running extended experience seed (sample catalog + admin/test users)..."
     docker cp "${binary_path}" "${server_container}:/tmp/e2e-seed"
-    docker compose -f "${COMPOSE_FILE}" -p shepherd-prod exec -T server chmod 0755 /tmp/e2e-seed >/dev/null
-    docker compose -f "${COMPOSE_FILE}" -p shepherd-prod \
+    docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" exec -T server chmod 0755 /tmp/e2e-seed >/dev/null
+    docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" \
         exec -T "${e2e_seed_env[@]}" server /tmp/e2e-seed >/dev/null
-    docker compose -f "${COMPOSE_FILE}" -p shepherd-prod exec -T server rm -f /tmp/e2e-seed >/dev/null 2>&1 || true
+    docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" exec -T server rm -f /tmp/e2e-seed >/dev/null 2>&1 || true
     echo "  ✓ Extended experience seed complete"
     DID_RUN_EXPERIENCE_SEED=1
 }
 
+login_token() {
+    local username="$1"
+    local password="$2"
+
+    docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" exec -T web \
+        node -e "const [port, username, password] = process.argv.slice(1); (async () => { try { const res = await fetch('http://server:' + port + '/api/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) }); const body = await res.json().catch(() => ({})); if (!res.ok || !body.token) process.exit(1); process.stdout.write(body.token); } catch { process.exit(2); } })();" \
+        "${SERVER_PORT:-8080}" "${username}" "${password}" 2>/dev/null
+}
+
+change_password_via_api() {
+    local token="$1"
+    local old_password="$2"
+    local new_password="$3"
+
+    docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" exec -T web \
+        node -e "const [port, token, oldPassword, newPassword] = process.argv.slice(1); (async () => { try { const res = await fetch('http://server:' + port + '/api/v1/auth/change-password', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }) }); if (!res.ok) process.exit(1); } catch { process.exit(2); } })();" \
+        "${SERVER_PORT:-8080}" "${token}" "${old_password}" "${new_password}" >/dev/null 2>&1
+}
+
 extract_database_host() {
     local url="$1"
+    if [[ -z "${url}" ]]; then
+        return 0
+    fi
     local rest="${url#*://}"
     rest="${rest#*@}"
     rest="${rest%%/*}"
@@ -147,6 +263,63 @@ extract_database_host() {
         return 0
     fi
     printf "%s" "${rest%%:*}"
+}
+
+sync_bundled_database_url() {
+    local mode current host bundled_url pg_user pg_password pg_database
+    mode="$(read_env_value DEPLOY_BUNDLED_POSTGRES)"
+    current="$(read_env_value DATABASE_URL)"
+    host="$(extract_database_host "${current}")"
+
+    case "${mode:-auto}" in
+        false|0|no|off)
+            return
+            ;;
+    esac
+
+    pg_user="$(read_env_value POSTGRES_USER)"
+    pg_password="$(read_env_value POSTGRES_PASSWORD)"
+    pg_database="$(read_env_value POSTGRES_DB)"
+    pg_user="${pg_user:-shepherd}"
+    pg_database="${pg_database:-shepherd_db}"
+
+    bundled_url="postgres://${pg_user}:${pg_password}@db:5432/${pg_database}?sslmode=disable"
+
+    if is_placeholder_value "${current}" || [[ "${host}" == "db" ]] || [[ "${mode:-auto}" =~ ^(true|1|yes|on)$ ]]; then
+        if [[ "${current}" != "${bundled_url}" ]]; then
+            write_env_value DATABASE_URL "${bundled_url}"
+            echo "INFO: prepared DATABASE_URL for bundled PostgreSQL and persisted it to ${ENV_FILE}."
+        fi
+    fi
+}
+
+should_prepare_bundled_postgres_values() {
+    local mode current host
+    mode="$(read_env_value DEPLOY_BUNDLED_POSTGRES)"
+    current="$(read_env_value DATABASE_URL)"
+    host="$(extract_database_host "${current}")"
+
+    case "${mode:-auto}" in
+        false|0|no|off)
+            return 1
+            ;;
+        true|1|yes|on)
+            return 0
+            ;;
+    esac
+
+    if is_placeholder_value "${current}" || [[ "${host}" == "db" ]]; then
+        return 0
+    fi
+    return 1
+}
+
+prepare_runtime_values() {
+    if should_prepare_bundled_postgres_values; then
+        ensure_generated_secret POSTGRES_PASSWORD 16
+    fi
+    ensure_generated_secret DEV_ADMIN_PASSWORD 16
+    sync_bundled_database_url
 }
 
 resolve_bundled_postgres_mode() {
@@ -218,34 +391,35 @@ while [[ $# -gt 0 ]]; do
 done
 
 # ---- Preflight checks ----
+require_cmd docker
+require_cmd openssl
+
 echo "=============================================="
 echo "  KubeVirt Shepherd — Production Deployment"
 echo "=============================================="
 echo ""
 
-if [[ ! -f "${ENV_FILE}" ]]; then
-    if [[ ! -f "${ENV_EXAMPLE_FILE}" ]]; then
-        echo "ERROR: ${ENV_FILE} not found and template ${ENV_EXAMPLE_FILE} is missing."
-        exit 1
-    fi
-    cp "${ENV_EXAMPLE_FILE}" "${ENV_FILE}"
-    echo "INFO: ${ENV_FILE} not found."
-    echo "  Generated a first-run template from:"
-    echo "    ${ENV_EXAMPLE_FILE}"
-    echo "  Review and update the generated file, then rerun this command."
-fi
+prepare_env_file
 
-# Source env for validation
+# Source env so generated values can reuse the current topology inputs.
+set -a
+# shellcheck source=/dev/null
+source "${ENV_FILE}"
+set +a
+
+prepare_runtime_values
+
+# Re-source env after first-run generation/backfill.
 set -a
 # shellcheck source=/dev/null
 source "${ENV_FILE}"
 set +a
 
 # Validate required variables
-for var in DATABASE_URL SECURITY_SESSION_SECRET SECURITY_ENCRYPTION_KEY SERVER_PUBLIC_BASE_URL; do
+for var in DATABASE_URL SERVER_PUBLIC_BASE_URL; do
     val="${!var:-}"
-    if [[ -z "${val}" ]] || [[ "${val}" == CHANGE_ME* ]]; then
-        echo "ERROR: ${var} is not set or still has placeholder value in ${ENV_FILE}"
+    if is_placeholder_value "${val}"; then
+        echo "ERROR: ${var} is not set or still has a placeholder value in ${ENV_FILE}"
         exit 1
     fi
 done
@@ -254,22 +428,28 @@ resolve_bundled_postgres_mode
 
 if [[ "${BUNDLED_POSTGRES}" == "1" ]]; then
     val="${POSTGRES_PASSWORD:-}"
-    if [[ -z "${val}" ]] || [[ "${val}" == CHANGE_ME* ]]; then
+    if is_placeholder_value "${val}"; then
         echo "ERROR: POSTGRES_PASSWORD is required when bundled PostgreSQL is enabled"
         exit 1
     fi
 fi
 
+if [[ -z "${SECURITY_SESSION_SECRET:-}" ]]; then
+    echo "INFO: SECURITY_SESSION_SECRET is empty; the server will load or generate a PostgreSQL-backed bootstrap secret."
+fi
+if [[ -z "${SECURITY_ENCRYPTION_KEY:-}" ]]; then
+    echo "INFO: SECURITY_ENCRYPTION_KEY is empty; the server will load or generate a PostgreSQL-backed bootstrap secret."
+fi
+
 # Check TLS certificate
-TLS_DIR="${SCRIPT_DIR}/tls"
-if [[ ! -f "${TLS_DIR}/cert.pem" ]] || [[ ! -f "${TLS_DIR}/key.pem" ]]; then
+if [[ ! -f "${TLS_CERT_FILE}" ]] || [[ ! -f "${TLS_KEY_FILE}" ]]; then
     echo "WARNING: TLS certificates not found in ${TLS_DIR}/"
     echo "  Generating self-signed certificate for development/testing..."
-    mkdir -p "${TLS_DIR}"
+    mkdir -p "$(dirname "${TLS_CERT_FILE}")" "$(dirname "${TLS_KEY_FILE}")"
     openssl req \
         -x509 -nodes -newkey rsa:2048 -days 365 \
-        -keyout "${TLS_DIR}/key.pem" \
-        -out "${TLS_DIR}/cert.pem" \
+        -keyout "${TLS_KEY_FILE}" \
+        -out "${TLS_CERT_FILE}" \
         -subj "/CN=localhost" \
         -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" \
         >/dev/null 2>&1
@@ -287,22 +467,24 @@ else
     echo ""
 
     # Build Go backend
-    echo "[1/3] Building Go backend image (shepherd-server)..."
+    echo "[1/3] Building Go backend image (${SERVER_IMAGE})..."
     DOCKER_BUILDKIT=1 docker build \
         --network=host \
-        -t shepherd-server:latest \
+        --target runtime \
+        -t "${SERVER_IMAGE}" \
         -f "${ROOT_DIR}/Dockerfile" \
         "${ROOT_DIR}"
-    echo "  ✓ shepherd-server:latest built"
+    echo "  ✓ ${SERVER_IMAGE} built"
 
     # Build Next.js frontend
-    echo "[2/3] Building Next.js frontend image (shepherd-web)..."
+    echo "[2/3] Building Next.js frontend image (${WEB_IMAGE})..."
     DOCKER_BUILDKIT=1 docker build \
         --network=host \
-        -t shepherd-web:latest \
+        --target runner \
+        -t "${WEB_IMAGE}" \
         -f "${SCRIPT_DIR}/web.Dockerfile" \
         "${ROOT_DIR}/web"
-    echo "  ✓ shepherd-web:latest built"
+    echo "  ✓ ${WEB_IMAGE} built"
 
     echo "[3/3] Pulling nginx:1.27-alpine..."
     docker pull nginx:1.27-alpine >/dev/null 2>&1 || true
@@ -316,8 +498,8 @@ else
     if [[ "${BUILD_ONLY}" == "1" ]]; then
         echo ""
         echo "Build complete. Images ready:"
-        echo "  - shepherd-server:latest"
-        echo "  - shepherd-web:latest"
+        echo "  - ${SERVER_IMAGE}"
+        echo "  - ${WEB_IMAGE}"
         echo "  - nginx:1.27-alpine"
         exit 0
     fi
@@ -333,13 +515,13 @@ if [[ "${SEED_ONLY}" != "1" ]]; then
         docker compose \
             -f "${COMPOSE_FILE}" \
             --env-file "${ENV_FILE}" \
-            -p shepherd-prod \
+            -p "${COMPOSE_PROJECT_NAME}" \
             up -d db
 
         echo ""
         echo "Waiting for bundled database to be ready..."
         for _ in {1..30}; do
-            if docker compose -f "${COMPOSE_FILE}" -p shepherd-prod \
+            if docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" \
                 exec -T db pg_isready -U "${POSTGRES_USER:-shepherd}" -d "${POSTGRES_DB:-shepherd_db}" >/dev/null 2>&1; then
                 echo "  ✓ Database ready"
                 break
@@ -351,7 +533,7 @@ if [[ "${SEED_ONLY}" != "1" ]]; then
         docker compose \
             -f "${COMPOSE_FILE}" \
             --env-file "${ENV_FILE}" \
-            -p shepherd-prod \
+            -p "${COMPOSE_PROJECT_NAME}" \
             up -d server web nginx
     else
         echo ""
@@ -360,15 +542,14 @@ if [[ "${SEED_ONLY}" != "1" ]]; then
         docker compose \
             -f "${COMPOSE_FILE}" \
             --env-file "${ENV_FILE}" \
-            -p shepherd-prod \
+            -p "${COMPOSE_PROJECT_NAME}" \
             up -d server web nginx
     fi
 
     echo "Waiting for backend to be ready..."
     for _ in {1..60}; do
-        if docker compose -f "${COMPOSE_FILE}" -p shepherd-prod \
-            exec -T server wget --no-verbose --tries=1 --spider \
-                "http://localhost:${SERVER_PORT:-8080}/api/v1/health/ready" >/dev/null 2>&1; then
+        if docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" \
+            exec -T web node -e "const http=require('http');http.get('http://server:${SERVER_PORT:-8080}/api/v1/health/ready',res=>process.exit(res.statusCode===200?0:1)).on('error',()=>process.exit(2));" >/dev/null 2>&1; then
             echo "  ✓ Backend ready"
             break
         fi
@@ -384,7 +565,7 @@ if [[ "${SEED_ONLY}" == "1" || "${RUN_SEED}" == "1" ]]; then
     echo ""
 
     echo "Running bootstrap seed (built-in roles + default admin)..."
-    docker compose -f "${COMPOSE_FILE}" -p shepherd-prod \
+    docker compose -f "${COMPOSE_FILE}" -p "${COMPOSE_PROJECT_NAME}" \
         exec -T server /usr/local/bin/seed >/dev/null 2>&1 || {
         echo "  ⚠ bootstrap seed failed or was already reconciled (non-fatal)"
     }
@@ -411,32 +592,20 @@ if [[ "${DID_RUN_SEED}" == "1" && "${ADMIN_PASSWORD}" != "admin" ]]; then
     echo "Rotating default admin password..."
     TOKEN=""
     # Try login with target password first
-    TOKEN=$(docker compose -f "${COMPOSE_FILE}" -p shepherd-prod \
-        exec -T server wget -qO- \
-            --header="Content-Type: application/json" \
-            --post-data="{\"username\":\"admin\",\"password\":\"${ADMIN_PASSWORD}\"}" \
-            "http://localhost:${SERVER_PORT:-8080}/api/v1/auth/login" 2>/dev/null | \
-        grep -o '"token":"[^"]*"' | head -1 | sed 's/"token":"//;s/"//' || true)
+    TOKEN="$(login_token admin "${ADMIN_PASSWORD}" || true)"
 
     if [[ -n "${TOKEN}" ]]; then
         echo "  ✓ Admin password already set"
     else
         # Login with bootstrap password and rotate
-        TOKEN=$(docker compose -f "${COMPOSE_FILE}" -p shepherd-prod \
-            exec -T server wget -qO- \
-                --header="Content-Type: application/json" \
-                --post-data='{"username":"admin","password":"admin"}' \
-                "http://localhost:${SERVER_PORT:-8080}/api/v1/auth/login" 2>/dev/null | \
-            grep -o '"token":"[^"]*"' | head -1 | sed 's/"token":"//;s/"//' || true)
+        TOKEN="$(login_token admin admin || true)"
 
         if [[ -n "${TOKEN}" ]]; then
-            docker compose -f "${COMPOSE_FILE}" -p shepherd-prod \
-                exec -T server wget -qO- \
-                    --header="Authorization: Bearer ${TOKEN}" \
-                    --header="Content-Type: application/json" \
-                    --post-data="{\"old_password\":\"admin\",\"new_password\":\"${ADMIN_PASSWORD}\"}" \
-                    "http://localhost:${SERVER_PORT:-8080}/api/v1/auth/change-password" >/dev/null 2>&1 || true
-            echo "  ✓ Admin password rotated"
+            if change_password_via_api "${TOKEN}" admin "${ADMIN_PASSWORD}"; then
+                echo "  ✓ Admin password rotated"
+            else
+                echo "  ⚠ Could not rotate admin password (non-fatal)"
+            fi
         else
             echo "  ⚠ Could not rotate admin password (non-fatal)"
         fi
@@ -481,9 +650,9 @@ else
     echo ""
 fi
 echo "  Management:"
-echo "    docker compose -f ${COMPOSE_FILE} -p shepherd-prod logs -f"
-echo "    docker compose -f ${COMPOSE_FILE} -p shepherd-prod ps"
-echo "    docker compose -f ${COMPOSE_FILE} -p shepherd-prod down"
+echo "    docker compose -f ${COMPOSE_FILE} -p ${COMPOSE_PROJECT_NAME} logs -f"
+echo "    docker compose -f ${COMPOSE_FILE} -p ${COMPOSE_PROJECT_NAME} ps"
+echo "    docker compose -f ${COMPOSE_FILE} -p ${COMPOSE_PROJECT_NAME} down"
 echo ""
 if [[ "${ENTERPRISE_MODE}" == "1" ]]; then
     echo "  Enterprise Auth Setup:"
