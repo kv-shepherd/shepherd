@@ -88,7 +88,6 @@ describe('SetupGuideCard', () => {
             canManageNamespaces: true,
             canManageTemplates: true,
             canManageInstanceSizes: true,
-            isPlatformAdmin: true,
             systemReady: true,
             serviceReady: true,
             prerequisitesReady: false,
@@ -125,7 +124,6 @@ describe('SetupGuideCard', () => {
             canManageNamespaces: true,
             canManageTemplates: true,
             canManageInstanceSizes: true,
-            isPlatformAdmin: true,
             systemReady: false,
             serviceReady: false,
             prerequisitesReady: false,
@@ -157,7 +155,6 @@ describe('SetupGuideCard', () => {
             canManageNamespaces: true,
             canManageTemplates: true,
             canManageInstanceSizes: true,
-            isPlatformAdmin: true,
             systemReady: true,
             serviceReady: true,
             prerequisitesReady: false,
@@ -190,7 +187,6 @@ describe('SetupGuideCard', () => {
             canManageNamespaces: true,
             canManageTemplates: true,
             canManageInstanceSizes: true,
-            isPlatformAdmin: true,
             systemReady: true,
             serviceReady: true,
             prerequisitesReady: true,
@@ -212,7 +208,7 @@ describe('SetupGuideCard', () => {
         expect(screen.getByRole('button', { name: 'Open VM request' })).toBeVisible();
     });
 
-    it('limits quick launchers for non-platform-admin users after setup completes', () => {
+    it('keeps resource quick launchers for scoped writers after setup completes', () => {
         useSetupGuideMock.mockReturnValue({
             systemsTotal: 2,
             servicesTotal: 4,
@@ -226,7 +222,6 @@ describe('SetupGuideCard', () => {
             canManageNamespaces: true,
             canManageTemplates: true,
             canManageInstanceSizes: true,
-            isPlatformAdmin: false,
             systemReady: true,
             serviceReady: true,
             prerequisitesReady: true,
@@ -240,8 +235,8 @@ describe('SetupGuideCard', () => {
         expect(screen.getByRole('button', { name: 'Create system' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Create service' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open VM request' })).toBeVisible();
-        expect(screen.queryByRole('button', { name: 'Create namespace' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Create template' })).not.toBeInTheDocument();
-        expect(screen.queryByRole('button', { name: 'Create instance size' })).not.toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Create namespace' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Create template' })).toBeVisible();
+        expect(screen.getByRole('button', { name: 'Create instance size' })).toBeVisible();
     });
 });

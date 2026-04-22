@@ -149,21 +149,21 @@ export function SetupGuideCard({
                 label: setup.canCreateService ? t('common:setup.action.create_service') : t('common:setup.action.open_services'),
             },
         ];
-        if (setup.isPlatformAdmin && setup.canManageNamespaces) {
+        if (setup.canManageNamespaces) {
             actions.push({
                 key: 'create-namespace',
                 href: '/admin/namespaces?intent=create-namespace',
                 label: t('common:setup.action.create_namespace'),
             });
         }
-        if (setup.isPlatformAdmin && setup.canManageTemplates) {
+        if (setup.canManageTemplates) {
             actions.push({
                 key: 'create-template',
                 href: '/admin/templates?intent=create-template',
                 label: t('common:setup.action.create_template'),
             });
         }
-        if (setup.isPlatformAdmin && setup.canManageInstanceSizes) {
+        if (setup.canManageInstanceSizes) {
             actions.push({
                 key: 'create-instance-size',
                 href: '/admin/instance-sizes?intent=create-instance-size',
@@ -185,7 +185,6 @@ export function SetupGuideCard({
         setup.canManageInstanceSizes,
         setup.canManageNamespaces,
         setup.canManageTemplates,
-        setup.isPlatformAdmin,
         t,
         variant,
     ]);
