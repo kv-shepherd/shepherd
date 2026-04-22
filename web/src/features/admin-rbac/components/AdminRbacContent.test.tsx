@@ -5,9 +5,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const selectUserMock = vi.fn();
 const searchParamsState = new URLSearchParams();
+const authState = {
+    user: {
+        id: 'admin-1',
+        username: 'admin',
+        permissions: ['rbac:manage'],
+    },
+};
 
 vi.mock('next/navigation', () => ({
     useSearchParams: () => searchParamsState,
+}));
+
+vi.mock('@/stores/auth', () => ({
+    useAuthStore: (selector: (state: typeof authState) => unknown) => selector(authState),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -176,6 +187,7 @@ describe('AdminRbacContent', () => {
         searchParamsState.delete('user_id');
         searchParamsState.delete('user_label');
         selectUserMock.mockReset();
+        authState.user.permissions = ['rbac:manage'];
     });
 
     it('renders the page shell and core access-management surfaces', () => {
@@ -211,5 +223,17 @@ describe('AdminRbacContent', () => {
 
         expect(screen.getAllByText('Viewer').length).toBeGreaterThan(0);
         expect(screen.queryByText('Platform Admin')).not.toBeInTheDocument();
+    });
+
+    it('keeps RBAC inventory visible but hides mutation controls for read-only access', () => {
+        authState.user.permissions = ['rbac:read'];
+
+        render(<AdminRbacContent />);
+
+        expect(screen.queryByTestId('rbac-role-create-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('rbac-binding-create-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('rbac-binding-action-delete-binding-1')).not.toBeInTheDocument();
+        expect(screen.getAllByText('Platform Admin').length).toBeGreaterThan(0);
+        expect(screen.getByTestId('rbac-user-selector')).toBeVisible();
     });
 });

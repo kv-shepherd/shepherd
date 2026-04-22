@@ -21,6 +21,13 @@ const submitAddBindingMock = vi.fn();
 const deleteRoleBindingMock = vi.fn();
 const deleteRoleBindingsMock = vi.fn();
 const resetRoleBindingsForUsersMock = vi.fn();
+const authState = {
+    user: {
+        id: 'admin-1',
+        username: 'admin',
+        permissions: ['user:manage', 'rbac:manage'],
+    },
+};
 
 let userPreferenceState:
     | {
@@ -35,6 +42,10 @@ let userPreferenceState:
 
 vi.mock('next/navigation', () => ({
     useRouter: () => ({ push: pushMock }),
+}));
+
+vi.mock('@/stores/auth', () => ({
+    useAuthStore: (selector: (state: typeof authState) => unknown) => selector(authState),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -581,6 +592,7 @@ describe('AdminUsersContent', () => {
         savePreferenceMock.mockReset();
         resetPreferenceMock.mockReset();
         userPreferenceState = undefined;
+        authState.user.permissions = ['user:manage', 'rbac:manage'];
     });
 
     afterEach(() => {
@@ -679,6 +691,24 @@ describe('AdminUsersContent', () => {
         expect(screen.getByText('Payments')).toBeVisible();
         expect(screen.queryByText('1 high-privilege')).not.toBeInTheDocument();
         expect(screen.getByTestId('user-binding-batch-delete-button')).toBeVisible();
+    });
+
+    it('keeps the user directory readable when only RBAC read access is present', async () => {
+        const user = userEvent.setup();
+        authState.user.permissions = ['rbac:read'];
+
+        render(<AdminUsersContent />);
+
+        expect(screen.queryByTestId('user-create-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('user-action-edit-user-1')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('user-action-delete-user-1')).not.toBeInTheDocument();
+        expect(screen.getByTestId('user-action-role-bindings-user-1')).toBeVisible();
+
+        await user.click(screen.getByTestId('user-action-role-bindings-user-1'));
+
+        expect(screen.queryByTestId('user-binding-create-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('user-binding-batch-delete-button')).not.toBeInTheDocument();
+        expect(screen.queryByTestId('user-binding-action-delete-binding-standard-1')).not.toBeInTheDocument();
     });
 
     it('builds selected columns inside a custom merged column', () => {

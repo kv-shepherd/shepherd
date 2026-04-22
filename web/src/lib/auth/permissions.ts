@@ -14,13 +14,14 @@ export type AdminMenuRouteKey =
     | 'audit';
 
 export const PLATFORM_ADMIN_PERMISSION = 'platform:admin';
+export const USER_DIRECTORY_ROUTE_PERMISSIONS = ['user:manage', 'rbac:read', 'rbac:manage'] as const;
 export const ADMIN_MENU_ROUTE_PERMISSIONS: Record<AdminMenuRouteKey, readonly string[]> = {
     approvalTasks: ['builtin_approval:view', 'builtin_approval:approve'],
     clusters: ['cluster:read', 'cluster:write'],
     namespaces: ['cluster:read', 'cluster:write'],
     templates: ['template:read', 'template:write'],
     instanceSizes: ['instance_size:read', 'instance_size:write'],
-    users: ['user:manage'],
+    users: USER_DIRECTORY_ROUTE_PERMISSIONS,
     rbac: ['rbac:read', 'rbac:manage'],
     rateLimits: ['rate_limit:manage'],
     authProviders: [

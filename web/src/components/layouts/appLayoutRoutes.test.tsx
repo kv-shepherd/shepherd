@@ -98,6 +98,16 @@ describe('getMenuRoutes', () => {
         expect(resolveMenuHref(admin ?? {})).toBe('/admin/clusters');
     });
 
+    it('keeps the users route visible for RBAC read-only operators', () => {
+        const route = getMenuRoutes(t, (permissions) => permissions.includes('rbac:read'));
+        const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
+
+        expect(admin?.routes).toEqual(expect.arrayContaining([
+            expect.objectContaining({ path: '/admin/users' }),
+            expect.objectContaining({ path: '/admin/rbac' }),
+        ]));
+    });
+
     it('renders every admin child route when all canonical permissions are available', () => {
         const route = getMenuRoutes(t, true);
         const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');

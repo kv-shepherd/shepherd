@@ -4,6 +4,22 @@ import userEvent from "@testing-library/user-event";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 
+const authState = {
+  user: {
+    id: "admin-1",
+    username: "admin",
+    permissions: [
+      "auth_provider:configure",
+      "auth_provider:update",
+      "auth_provider:delete",
+      "auth_provider:sync",
+      "auth_provider:mapping_create",
+      "auth_provider:mapping_update",
+      "auth_provider:mapping_delete",
+    ],
+  },
+};
+
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string, options?: { defaultValue?: string; count?: number }) => {
@@ -36,6 +52,10 @@ vi.mock("react-i18next", () => ({
       return labels[key] ?? options?.defaultValue ?? key;
     },
   }),
+}));
+
+vi.mock("@/stores/auth", () => ({
+  useAuthStore: (selector: (state: typeof authState) => unknown) => selector(authState),
 }));
 
 vi.mock("antd", async (importOriginal) => {
@@ -435,6 +455,15 @@ import { AdminAuthProvidersContent } from "./AdminAuthProvidersContent";
 
 describe("AdminAuthProvidersContent", () => {
   it("renders the page shell and primary provider actions", () => {
+    authState.user.permissions = [
+      "auth_provider:configure",
+      "auth_provider:update",
+      "auth_provider:delete",
+      "auth_provider:sync",
+      "auth_provider:mapping_create",
+      "auth_provider:mapping_update",
+      "auth_provider:mapping_delete",
+    ];
     mockControllerOverrides = buildMockControllerOverrides();
 
     render(<AdminAuthProvidersContent />);
@@ -448,6 +477,19 @@ describe("AdminAuthProvidersContent", () => {
     expect(
       screen.getByTestId("auth-provider-action-test-provider-1"),
     ).toBeVisible();
+  });
+
+  it("keeps auth provider inventory readable while hiding mutation controls for read-only access", () => {
+    authState.user.permissions = ["auth_provider:read"];
+    mockControllerOverrides = buildMockControllerOverrides();
+
+    render(<AdminAuthProvidersContent />);
+
+    expect(screen.queryByTestId("auth-provider-create-button")).not.toBeInTheDocument();
+    expect(screen.getByTestId("auth-provider-action-mappings-provider-1")).toBeVisible();
+    expect(screen.queryByTestId("auth-provider-action-test-provider-1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("auth-provider-action-edit-provider-1")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("auth-provider-action-delete-provider-1")).not.toBeInTheDocument();
   });
 
   it(

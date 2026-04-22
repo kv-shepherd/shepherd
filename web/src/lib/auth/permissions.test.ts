@@ -8,6 +8,7 @@ import {
     hasAnyPermission,
     hasPermission,
     PLATFORM_ADMIN_PERMISSION,
+    USER_DIRECTORY_ROUTE_PERMISSIONS,
 } from './permissions';
 
 describe('permission helpers', () => {
@@ -77,5 +78,17 @@ describe('permission helpers', () => {
       };
       expect(canAccessAdminMenuRoute(platformAdmin, routeKey)).toBe(true);
     }
+  });
+
+  it('keeps the users admin route aligned with backend read permissions', () => {
+    expect(ADMIN_MENU_ROUTE_PERMISSIONS.users).toEqual(USER_DIRECTORY_ROUTE_PERMISSIONS);
+
+    const auditor = {
+      id: 'u-6',
+      username: 'auditor',
+      permissions: ['rbac:read'],
+    };
+
+    expect(canAccessAdminMenuRoute(auditor, 'users')).toBe(true);
   });
 });

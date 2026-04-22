@@ -42,6 +42,8 @@ import {
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
+import { hasPermission } from '@/lib/auth/permissions';
+import { useAuthStore } from '@/stores/auth';
 import { useAdminRbacController } from '../hooks/useAdminRbacController';
 import {
     ENVIRONMENT_VALUES,
@@ -60,6 +62,8 @@ function permissionCatalogTranslationKey(permissionKey: string) {
 export function AdminRbacContent() {
     const { t } = useTranslation(['admin', 'common']);
     const searchParams = useSearchParams();
+    const currentUser = useAuthStore((state) => state.user);
+    const canManageRbac = hasPermission(currentUser, 'rbac:manage');
     const rbac = useAdminRbacController({ t });
     const { selectedUserId, selectUser } = rbac;
     const [quickSearch, setQuickSearch] = useState('');
@@ -300,7 +304,7 @@ export function AdminRbacContent() {
             title: t('common:table.actions'),
             key: 'actions',
             width: 180,
-            render: (_, role: Role) => (
+            render: (_, role: Role) => canManageRbac ? (
                 <Space size={4} wrap>
                     <Button
                         type="link"
@@ -324,7 +328,7 @@ export function AdminRbacContent() {
                         {t('common:button.delete')}
                     </Button>
                 </Space>
-            ),
+            ) : null,
         },
     ];
 
@@ -379,7 +383,7 @@ export function AdminRbacContent() {
             title: t('common:table.actions'),
             key: 'actions',
             width: 120,
-            render: (_, binding: GlobalRoleBinding) => (
+            render: (_, binding: GlobalRoleBinding) => canManageRbac ? (
                 <Popconfirm
                     title={t('rbac.bindings.delete_confirm')}
                     onConfirm={() => rbac.deleteRoleBinding(binding.id)}
@@ -396,7 +400,7 @@ export function AdminRbacContent() {
                         {t('common:button.delete')}
                     </Button>
                 </Popconfirm>
-            ),
+            ) : null,
         },
     ];
 
@@ -625,9 +629,11 @@ export function AdminRbacContent() {
                         }}>
                             {t('common:button.refresh')}
                         </Button>
-                        <Button type="primary" icon={<PlusOutlined />} data-testid="rbac-role-create-button" onClick={rbac.openCreateRoleModal}>
-                            {t('rbac.roles.add')}
-                        </Button>
+                        {canManageRbac ? (
+                            <Button type="primary" icon={<PlusOutlined />} data-testid="rbac-role-create-button" onClick={rbac.openCreateRoleModal}>
+                                {t('rbac.roles.add')}
+                            </Button>
+                        ) : null}
                     </Space>
                 </Space>
                 <Alert
@@ -651,11 +657,11 @@ export function AdminRbacContent() {
                                     title={t('rbac.roles.empty')}
                                     description={t('rbac.roles.empty_description')}
                                     visual={<RoleCatalogGlyph className="action-empty-state__art" />}
-                                    actions={(
+                                    actions={canManageRbac ? (
                                         <Button type="primary" icon={<PlusOutlined />} onClick={rbac.openCreateRoleModal}>
                                             {t('rbac.roles.add')}
                                         </Button>
-                                    )}
+                                    ) : undefined}
                                 />
                             </div>
                         ),
@@ -679,9 +685,11 @@ export function AdminRbacContent() {
                         }}>
                             {t('common:button.refresh')}
                         </Button>
-                        <Button type="primary" icon={<PlusOutlined />} data-testid="rbac-binding-create-button" onClick={() => rbac.openAddBindingModal()}>
-                            {t('rbac.bindings.add')}
-                        </Button>
+                        {canManageRbac ? (
+                            <Button type="primary" icon={<PlusOutlined />} data-testid="rbac-binding-create-button" onClick={() => rbac.openAddBindingModal()}>
+                                {t('rbac.bindings.add')}
+                            </Button>
+                        ) : null}
                     </Space>
                 </Space>
                 <Alert
@@ -750,11 +758,11 @@ export function AdminRbacContent() {
                                         title={t('rbac.bindings.empty')}
                                         description={t('rbac.bindings.empty_description', { user: rbac.selectedUserDisplayLabel || EMPTY_VALUE })}
                                         visual={<AccessControlGlyph className="action-empty-state__art" />}
-                                        actions={(
+                                        actions={canManageRbac ? (
                                             <Button type="primary" size="small" icon={<PlusOutlined />} onClick={() => rbac.openAddBindingModal()}>
                                                 {t('rbac.bindings.add')}
                                             </Button>
-                                        )}
+                                        ) : undefined}
                                     />
                                 </div>
                             )

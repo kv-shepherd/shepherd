@@ -51,6 +51,8 @@ import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { useUserPreference } from '@/hooks/useUserPreference';
+import { hasAnyPermission, hasPermission } from '@/lib/auth/permissions';
+import { useAuthStore } from '@/stores/auth';
 import {
     getRoleAccessTagColor,
     isPrivilegedRole,
@@ -218,6 +220,10 @@ function estimateUsersTableScrollWidth(visibleConfigurableColumnCount: number) {
 export function AdminUsersContent() {
     const { t } = useTranslation(['admin', 'common']);
     const router = useRouter();
+    const currentUser = useAuthStore((state) => state.user);
+    const canManageUsers = hasPermission(currentUser, 'user:manage');
+    const canReadUserBindings = hasAnyPermission(currentUser, ['rbac:read', 'rbac:manage']);
+    const canManageUserBindings = hasPermission(currentUser, 'rbac:manage');
     const users = useAdminUsersController({ t });
     const { setPage, setSearch } = users;
     const [selectedAccessUser, setSelectedAccessUser] = useState<Pick<User, 'id' | 'username' | 'display_name'> | null>(null);
@@ -687,6 +693,9 @@ export function AdminUsersContent() {
     };
 
     const openSelectedUserAccessModal = () => {
+        if (!canManageUserBindings) {
+            return;
+        }
         const presetUsers = selectedAccessUser
             ? [
                 {
@@ -777,7 +786,7 @@ export function AdminUsersContent() {
             title: t('common:table.actions'),
             key: 'actions',
             width: 120,
-            render: (_: unknown, binding: GlobalRoleBinding) => (
+            render: (_: unknown, binding: GlobalRoleBinding) => canManageUserBindings ? (
                 <Popconfirm
                     title={t('rbac.bindings.delete_confirm')}
                     onConfirm={() => accessBindings.deleteRoleBinding(binding.id)}
@@ -794,7 +803,7 @@ export function AdminUsersContent() {
                         {t('common:button.delete')}
                     </Button>
                 </Popconfirm>
-            ),
+            ) : null,
         },
     ];
 
@@ -984,44 +993,50 @@ export function AdminUsersContent() {
                 fixed: 'right' as const,
                 render: (_: unknown, record: User) => (
                     <Space size={0} wrap className="admin-users-table__actions">
-                        <Tooltip title={t('common:button.edit')}>
-                            <Button
-                                type="text"
-                                size="small"
-                                icon={<EditOutlined />}
-                                aria-label={t('common:button.edit')}
-                                data-testid={`user-action-edit-${record.id}`}
-                                onClick={() => users.openEditUserModal(record)}
-                            />
-                        </Tooltip>
-                        <Tooltip title={t('users.directory.manage_access')}>
-                            <Button
-                                type="text"
-                                size="small"
-                                icon={<SafetyCertificateOutlined />}
-                                aria-label={t('users.directory.manage_access')}
-                                data-testid={`user-action-role-bindings-${record.id}`}
-                                onClick={() => openAccessBindingsDrawer(record)}
-                            />
-                        </Tooltip>
-                        <Popconfirm
-                            title={t('users.directory.delete_confirm', { username: record.username })}
-                            onConfirm={() => users.deleteUser(record.id)}
-                            okText={t('common:button.confirm')}
-                            cancelText={t('common:button.cancel')}
-                        >
-                            <Tooltip title={t('common:button.delete')}>
+                        {canManageUsers ? (
+                            <Tooltip title={t('common:button.edit')}>
                                 <Button
                                     type="text"
                                     size="small"
-                                    danger
-                                    icon={<DeleteOutlined />}
-                                    aria-label={t('common:button.delete')}
-                                    data-testid={`user-action-delete-${record.id}`}
-                                    loading={users.deleteUserPending && users.deletingUserId === record.id}
+                                    icon={<EditOutlined />}
+                                    aria-label={t('common:button.edit')}
+                                    data-testid={`user-action-edit-${record.id}`}
+                                    onClick={() => users.openEditUserModal(record)}
                                 />
                             </Tooltip>
-                        </Popconfirm>
+                        ) : null}
+                        {canReadUserBindings ? (
+                            <Tooltip title={t('users.directory.manage_access')}>
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    icon={<SafetyCertificateOutlined />}
+                                    aria-label={t('users.directory.manage_access')}
+                                    data-testid={`user-action-role-bindings-${record.id}`}
+                                    onClick={() => openAccessBindingsDrawer(record)}
+                                />
+                            </Tooltip>
+                        ) : null}
+                        {canManageUsers ? (
+                            <Popconfirm
+                                title={t('users.directory.delete_confirm', { username: record.username })}
+                                onConfirm={() => users.deleteUser(record.id)}
+                                okText={t('common:button.confirm')}
+                                cancelText={t('common:button.cancel')}
+                            >
+                                <Tooltip title={t('common:button.delete')}>
+                                    <Button
+                                        type="text"
+                                        size="small"
+                                        danger
+                                        icon={<DeleteOutlined />}
+                                        aria-label={t('common:button.delete')}
+                                        data-testid={`user-action-delete-${record.id}`}
+                                        loading={users.deleteUserPending && users.deletingUserId === record.id}
+                                    />
+                                </Tooltip>
+                            </Popconfirm>
+                        ) : null}
                     </Space>
                 ),
             },
@@ -1121,41 +1136,47 @@ export function AdminUsersContent() {
                         <Button icon={<ReloadOutlined />} onClick={() => users.refetchUsers()}>
                             {t('common:button.refresh')}
                         </Button>
-                        <Button
-                            icon={<SafetyCertificateOutlined />}
-                            onClick={openBatchAccessModal}
-                            data-testid="user-batch-access-button"
-                            disabled={selectedDirectoryUserIds.length === 0}
-                        >
-                            {t('users.directory.batch_manage_access', {
-                                defaultValue: 'Batch access',
-                            })}
-                        </Button>
-                        <Popconfirm
-                            title={t('users.directory.batch_reset_access_confirm', {
-                                defaultValue: 'Reset explicit access for {{count}} selected users?',
-                                count: selectedDirectoryUserIds.length,
-                            })}
-                            onConfirm={() => handleResetSelectedUserAccess()}
-                            okText={t('common:button.confirm')}
-                            cancelText={t('common:button.cancel')}
-                            disabled={selectedDirectoryUserIds.length === 0}
-                        >
+                        {canManageUserBindings ? (
                             <Button
-                                danger
-                                icon={<DeleteOutlined />}
-                                data-testid="user-batch-reset-access-button"
+                                icon={<SafetyCertificateOutlined />}
+                                onClick={openBatchAccessModal}
+                                data-testid="user-batch-access-button"
                                 disabled={selectedDirectoryUserIds.length === 0}
-                                loading={accessBindings.deleteBindingPending}
                             >
-                                {t('users.directory.batch_reset_access', {
-                                    defaultValue: 'Reset access',
+                                {t('users.directory.batch_manage_access', {
+                                    defaultValue: 'Batch access',
                                 })}
                             </Button>
-                        </Popconfirm>
-                        <Button type="primary" icon={<PlusOutlined />} data-testid="user-create-button" onClick={users.openCreateUserModal}>
-                            {t('users.directory.add')}
-                        </Button>
+                        ) : null}
+                        {canManageUserBindings ? (
+                            <Popconfirm
+                                title={t('users.directory.batch_reset_access_confirm', {
+                                    defaultValue: 'Reset explicit access for {{count}} selected users?',
+                                    count: selectedDirectoryUserIds.length,
+                                })}
+                                onConfirm={() => handleResetSelectedUserAccess()}
+                                okText={t('common:button.confirm')}
+                                cancelText={t('common:button.cancel')}
+                                disabled={selectedDirectoryUserIds.length === 0}
+                            >
+                                <Button
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    data-testid="user-batch-reset-access-button"
+                                    disabled={selectedDirectoryUserIds.length === 0}
+                                    loading={accessBindings.deleteBindingPending}
+                                >
+                                    {t('users.directory.batch_reset_access', {
+                                        defaultValue: 'Reset access',
+                                    })}
+                                </Button>
+                            </Popconfirm>
+                        ) : null}
+                        {canManageUsers ? (
+                            <Button type="primary" icon={<PlusOutlined />} data-testid="user-create-button" onClick={users.openCreateUserModal}>
+                                {t('users.directory.add')}
+                            </Button>
+                        ) : null}
                     </Space>
                 </Space>
                 <Space direction="vertical" size={4} className="admin-users-page__search-stack" style={{ width: '100%', marginTop: 16 }}>
@@ -1327,11 +1348,11 @@ export function AdminUsersContent() {
                                     title={t('users.directory.empty')}
                                     description={t('users.directory.empty_description')}
                                     visual={<UserDirectoryGlyph className="action-empty-state__art" />}
-                                    actions={(
+                                    actions={canManageUsers ? (
                                         <Button type="primary" icon={<PlusOutlined />} onClick={users.openCreateUserModal}>
                                             {t('users.directory.add')}
                                         </Button>
-                                    )}
+                                    ) : undefined}
                                 />
                             </div>
                         ),
@@ -1617,14 +1638,16 @@ export function AdminUsersContent() {
                                 <Button onClick={closeAccessBindingsDrawer}>
                                     {t('common:button.close', { defaultValue: 'Close' })}
                                 </Button>
-                                <Button
-                                    type="primary"
-                                    icon={<PlusOutlined />}
-                                    data-testid="user-binding-create-button"
-                                    onClick={() => accessBindings.openAddBindingModal()}
-                                >
-                                    {t('rbac.bindings.add')}
-                                </Button>
+                                {canManageUserBindings ? (
+                                    <Button
+                                        type="primary"
+                                        icon={<PlusOutlined />}
+                                        data-testid="user-binding-create-button"
+                                        onClick={() => accessBindings.openAddBindingModal()}
+                                    >
+                                        {t('rbac.bindings.add')}
+                                    </Button>
+                                ) : null}
                             </Space>
                         </Space>
                     }
@@ -1667,28 +1690,30 @@ export function AdminUsersContent() {
                                         count: visibleSelectedRoleBindingIds.length,
                                     })}
                                 </Text>
-                                <Popconfirm
-                                    title={t('users.directory.batch_delete_bindings_confirm', {
-                                        defaultValue: 'Remove {{count}} selected bindings?',
-                                        count: visibleSelectedRoleBindingIds.length,
-                                    })}
-                                    onConfirm={() => handleDeleteSelectedBindings()}
-                                    okText={t('common:button.delete')}
-                                    cancelText={t('common:button.cancel')}
-                                    disabled={visibleSelectedRoleBindingIds.length === 0}
-                                >
-                                    <Button
-                                        danger
-                                        icon={<DeleteOutlined />}
-                                        disabled={visibleSelectedRoleBindingIds.length === 0}
-                                        loading={accessBindings.deleteBindingPending}
-                                        data-testid="user-binding-batch-delete-button"
-                                    >
-                                        {t('users.directory.batch_delete_bindings', {
-                                            defaultValue: 'Remove selected',
+                                {canManageUserBindings ? (
+                                    <Popconfirm
+                                        title={t('users.directory.batch_delete_bindings_confirm', {
+                                            defaultValue: 'Remove {{count}} selected bindings?',
+                                            count: visibleSelectedRoleBindingIds.length,
                                         })}
-                                    </Button>
-                                </Popconfirm>
+                                        onConfirm={() => handleDeleteSelectedBindings()}
+                                        okText={t('common:button.delete')}
+                                        cancelText={t('common:button.cancel')}
+                                        disabled={visibleSelectedRoleBindingIds.length === 0}
+                                    >
+                                        <Button
+                                            danger
+                                            icon={<DeleteOutlined />}
+                                            disabled={visibleSelectedRoleBindingIds.length === 0}
+                                            loading={accessBindings.deleteBindingPending}
+                                            data-testid="user-binding-batch-delete-button"
+                                        >
+                                            {t('users.directory.batch_delete_bindings', {
+                                                defaultValue: 'Remove selected',
+                                            })}
+                                        </Button>
+                                    </Popconfirm>
+                                ) : null}
                             </Space>
                         </Space>
                         <Table<GlobalRoleBinding>
@@ -1696,7 +1721,7 @@ export function AdminUsersContent() {
                             columns={bindingColumns}
                             dataSource={accessBindings.roleBindings}
                             loading={accessBindings.roleBindingsLoading}
-                            rowSelection={accessBindingRowSelection}
+                            rowSelection={canManageUserBindings ? accessBindingRowSelection : undefined}
                             locale={{
                                 emptyText: (
                                     <div style={{ padding: 32 }}>
@@ -1705,11 +1730,11 @@ export function AdminUsersContent() {
                                             title={t('users.directory.manage_access_empty')}
                                             description={t('users.directory.manage_access_empty_description')}
                                             visual={<AccessControlGlyph className="action-empty-state__art" />}
-                                            actions={(
+                                            actions={canManageUserBindings ? (
                                                 <Button type="primary" size="small" icon={<PlusOutlined />} onClick={openSelectedUserAccessModal}>
                                                     {t('rbac.bindings.add')}
                                                 </Button>
-                                            )}
+                                            ) : undefined}
                                         />
                                     </div>
                                 ),

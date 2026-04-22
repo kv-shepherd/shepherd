@@ -58,6 +58,8 @@ import {
 import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
 import { LocalDateTimeText } from "@/components/ui/LocalDateTimeText";
 import { PageSearchToolbar, filterOptionByLabel } from "@/components/ui/PageSearchToolbar";
+import { hasPermission } from "@/lib/auth/permissions";
+import { useAuthStore } from "@/stores/auth";
 import { useAdminAuthProvidersController } from "../hooks/useAdminAuthProvidersController";
 import {
   type AuthProvider,
@@ -450,6 +452,15 @@ function directoryPreviewActionLabel(
 
 export function AdminAuthProvidersContent() {
   const { t } = useTranslation(["admin", "common"]);
+  const currentUser = useAuthStore((state) => state.user);
+  const canCreateAuthProviders = hasPermission(currentUser, "auth_provider:configure");
+  const canUpdateAuthProviders = hasPermission(currentUser, "auth_provider:update");
+  const canDeleteAuthProviders = hasPermission(currentUser, "auth_provider:delete");
+  const canTestAuthProviders = hasPermission(currentUser, "auth_provider:configure");
+  const canSyncAuthProviders = hasPermission(currentUser, "auth_provider:sync");
+  const canCreateAuthProviderMappings = hasPermission(currentUser, "auth_provider:mapping_create");
+  const canUpdateAuthProviderMappings = hasPermission(currentUser, "auth_provider:mapping_update");
+  const canDeleteAuthProviderMappings = hasPermission(currentUser, "auth_provider:mapping_delete");
   const providers = useAdminAuthProvidersController({ t });
   const [directoryPreviewFilter, setDirectoryPreviewFilter] =
     useState<DirectoryPreviewFilter>("all");
@@ -1343,38 +1354,44 @@ export function AdminAuthProvidersContent() {
           >
             {t("authProviders.cohort_mappings")}
           </Button>
-          <Button
-            type="link"
-            size="small"
-            data-testid={`auth-provider-action-test-${record.id}`}
-            icon={<LinkOutlined />}
-            loading={
-              providers.testingProviderId === record.id &&
-              providers.testConnectionPending
-            }
-            onClick={() => providers.testConnection(record)}
-          >
-            {t("authProviders.test_connection")}
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            data-testid={`auth-provider-action-edit-${record.id}`}
-            icon={<EditOutlined />}
-            onClick={() => providers.openEditModal(record)}
-          >
-            {t("common:button.edit")}
-          </Button>
-          <Button
-            type="link"
-            size="small"
-            data-testid={`auth-provider-action-delete-${record.id}`}
-            danger
-            icon={<DeleteOutlined />}
-            onClick={() => providers.openDeleteModal(record)}
-          >
-            {t("common:button.delete")}
-          </Button>
+          {canTestAuthProviders ? (
+            <Button
+              type="link"
+              size="small"
+              data-testid={`auth-provider-action-test-${record.id}`}
+              icon={<LinkOutlined />}
+              loading={
+                providers.testingProviderId === record.id &&
+                providers.testConnectionPending
+              }
+              onClick={() => providers.testConnection(record)}
+            >
+              {t("authProviders.test_connection")}
+            </Button>
+          ) : null}
+          {canUpdateAuthProviders ? (
+            <Button
+              type="link"
+              size="small"
+              data-testid={`auth-provider-action-edit-${record.id}`}
+              icon={<EditOutlined />}
+              onClick={() => providers.openEditModal(record)}
+            >
+              {t("common:button.edit")}
+            </Button>
+          ) : null}
+          {canDeleteAuthProviders ? (
+            <Button
+              type="link"
+              size="small"
+              data-testid={`auth-provider-action-delete-${record.id}`}
+              danger
+              icon={<DeleteOutlined />}
+              onClick={() => providers.openDeleteModal(record)}
+            >
+              {t("common:button.delete")}
+            </Button>
+          ) : null}
         </Space>
       ),
     },
@@ -1457,29 +1474,33 @@ export function AdminAuthProvidersContent() {
       width: 180,
       render: (_, record) => (
         <Space size={4} wrap>
-          <Button
-            type="link"
-            size="small"
-            data-testid={`cohort-mapping-action-edit-${record.id}`}
-            icon={<EditOutlined />}
-            onClick={() => providers.openEditMappingModal(record)}
-          >
-            {t("common:button.edit")}
-          </Button>
-          <Popconfirm
-            title={t("authProviders.mapping.delete_confirm")}
-            onConfirm={() => providers.deleteMapping(record)}
-          >
+          {canUpdateAuthProviderMappings ? (
             <Button
               type="link"
               size="small"
-              danger
-              data-testid={`cohort-mapping-action-delete-${record.id}`}
-              icon={<DeleteOutlined />}
+              data-testid={`cohort-mapping-action-edit-${record.id}`}
+              icon={<EditOutlined />}
+              onClick={() => providers.openEditMappingModal(record)}
             >
-              {t("common:button.delete")}
+              {t("common:button.edit")}
             </Button>
-          </Popconfirm>
+          ) : null}
+          {canDeleteAuthProviderMappings ? (
+            <Popconfirm
+              title={t("authProviders.mapping.delete_confirm")}
+              onConfirm={() => providers.deleteMapping(record)}
+            >
+              <Button
+                type="link"
+                size="small"
+                danger
+                data-testid={`cohort-mapping-action-delete-${record.id}`}
+                icon={<DeleteOutlined />}
+              >
+                {t("common:button.delete")}
+              </Button>
+            </Popconfirm>
+          ) : null}
         </Space>
       ),
     },
@@ -1660,27 +1681,30 @@ export function AdminAuthProvidersContent() {
                   prefix={<LinkOutlined />}
                   placeholder="https://auth.example.com"
                   autoComplete="off"
+                  disabled={!canUpdateAuthProviders}
                 />
               </Form.Item>
-              <Space wrap={true}>
-                <Button
-                  type="primary"
-                  onClick={() => {
-                    void providers.submitExternalAuthSettings();
-                  }}
-                  loading={providers.updateExternalAuthSettingsPending}
-                >
-                  {t("common:button.save")}
-                </Button>
-                <Button
-                  onClick={providers.resetExternalAuthSettingsToDeploymentDefault}
-                  loading={providers.updateExternalAuthSettingsPending}
-                >
-                  {t("authProviders.externalAuthSettings.use_deployment_default", {
-                    defaultValue: "Use deployment default",
-                  })}
-                </Button>
-              </Space>
+              {canUpdateAuthProviders ? (
+                <Space wrap={true}>
+                  <Button
+                    type="primary"
+                    onClick={() => {
+                      void providers.submitExternalAuthSettings();
+                    }}
+                    loading={providers.updateExternalAuthSettingsPending}
+                  >
+                    {t("common:button.save")}
+                  </Button>
+                  <Button
+                    onClick={providers.resetExternalAuthSettingsToDeploymentDefault}
+                    loading={providers.updateExternalAuthSettingsPending}
+                  >
+                    {t("authProviders.externalAuthSettings.use_deployment_default", {
+                      defaultValue: "Use deployment default",
+                    })}
+                  </Button>
+                </Space>
+              ) : null}
             </Form>
           </Space>
         </Card>
@@ -1694,14 +1718,16 @@ export function AdminAuthProvidersContent() {
             >
               {t("common:button.refresh")}
             </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              data-testid="auth-provider-create-button"
-              onClick={providers.openCreateModal}
-            >
-              {t("authProviders.add")}
-            </Button>
+            {canCreateAuthProviders ? (
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                data-testid="auth-provider-create-button"
+                onClick={providers.openCreateModal}
+              >
+                {t("authProviders.add")}
+              </Button>
+            ) : null}
           </Space>
         </Space>
         <div className="auth-providers-page__search-stack" style={{ marginTop: 16 }}>
@@ -2131,25 +2157,29 @@ export function AdminAuthProvidersContent() {
                   />
                 </Form>
                 <Space size={8} wrap={true}>
-                  <Button
-                    icon={<ReloadOutlined />}
-                    onClick={() => void providers.previewDirectory()}
-                    loading={providers.previewDirectoryPending}
-                  >
-                    {t("authProviders.directory.preview", {
-                      defaultValue: "Preview canonical result",
-                    })}
-                  </Button>
-                  <Button
-                    type="primary"
-                    icon={<SyncOutlined />}
-                    onClick={() => void providers.syncDirectory()}
-                    loading={providers.syncDirectoryPending}
-                  >
-                    {t("authProviders.directory.sync", {
-                      defaultValue: "Run sync job",
-                    })}
-                  </Button>
+                  {canSyncAuthProviders ? (
+                    <>
+                      <Button
+                        icon={<ReloadOutlined />}
+                        onClick={() => void providers.previewDirectory()}
+                        loading={providers.previewDirectoryPending}
+                      >
+                        {t("authProviders.directory.preview", {
+                          defaultValue: "Preview canonical result",
+                        })}
+                      </Button>
+                      <Button
+                        type="primary"
+                        icon={<SyncOutlined />}
+                        onClick={() => void providers.syncDirectory()}
+                        loading={providers.syncDirectoryPending}
+                      >
+                        {t("authProviders.directory.sync", {
+                          defaultValue: "Run sync job",
+                        })}
+                      </Button>
+                    </>
+                  ) : null}
                 </Space>
                 {directoryPreview ? (
                   <Space direction="vertical" size={12} style={{ width: "100%" }}>
@@ -2546,23 +2576,25 @@ export function AdminAuthProvidersContent() {
             size="small"
             title={t("authProviders.sample.title")}
             extra={
-              <Button
-                data-testid={
-                  providers.mappingProvider
-                    ? `auth-provider-action-sample-${providers.mappingProvider.id}`
-                    : undefined
-                }
-                icon={<SyncOutlined />}
-                onClick={() =>
-                  providers.testConnection(
-                    providers.mappingProvider as AuthProvider,
-                  )
-                }
-                loading={providers.testConnectionPending}
-                disabled={!providers.mappingProvider}
-              >
-                {t("authProviders.test_connection")}
-              </Button>
+              canTestAuthProviders ? (
+                <Button
+                  data-testid={
+                    providers.mappingProvider
+                      ? `auth-provider-action-sample-${providers.mappingProvider.id}`
+                      : undefined
+                  }
+                  icon={<SyncOutlined />}
+                  onClick={() =>
+                    providers.testConnection(
+                      providers.mappingProvider as AuthProvider,
+                    )
+                  }
+                  loading={providers.testConnectionPending}
+                  disabled={!providers.mappingProvider}
+                >
+                  {t("authProviders.test_connection")}
+                </Button>
+              ) : null
             }
           >
             <Table
@@ -2910,184 +2942,188 @@ export function AdminAuthProvidersContent() {
             ) : null}
           </Drawer>
 
-          <Card size="small" title={mappingWorkflow.manualTitle}>
-            <Form form={providers.syncForm} layout="vertical">
-              <Space direction="vertical" size={12} style={{ width: "100%" }}>
-                <Text type="secondary">
-                  {mappingWorkflow.manualDescription}
-                </Text>
-                <Alert
-                  type="warning"
-                  showIcon={true}
-                  message={t("authProviders.sync.manual_warning_title", {
-                    defaultValue:
-                      "Use this only when pre-registration is necessary",
-                  })}
-                  description={t(
-                    "authProviders.sync.manual_warning_description",
-                    {
+          {canSyncAuthProviders ? (
+            <Card size="small" title={mappingWorkflow.manualTitle}>
+              <Form form={providers.syncForm} layout="vertical">
+                <Space direction="vertical" size={12} style={{ width: "100%" }}>
+                  <Text type="secondary">
+                    {mappingWorkflow.manualDescription}
+                  </Text>
+                  <Alert
+                    type="warning"
+                    showIcon={true}
+                    message={t("authProviders.sync.manual_warning_title", {
                       defaultValue:
-                        "If a real external user can log in first, prefer discovered cohorts above. Manual registration is a fallback for pre-binding access.",
-                    },
-                  )}
-                />
-                {recommendedCohortCopy ? (
-                  <Alert
-                    type="info"
-                    showIcon={true}
-                    message={recommendedCohortCopy.title}
-                    description={recommendedCohortCopy.description}
-                  />
-                ) : null}
-                {manualCohortSeedCandidates.length > 0 ? (
-                  <Card
-                    size="small"
-                    title={t("authProviders.sync.quick_start_title", {
-                      defaultValue: "Quick start from observed values",
-                    })}
-                  >
-                    <Space direction="vertical" size={8} style={{ width: "100%" }}>
-                      <Text type="secondary">
-                        {t("authProviders.sync.quick_start_description", {
-                          defaultValue:
-                            "Choose a discovered provider field and let Shepherd pre-fill the organization type and known sample values for you.",
-                        })}
-                      </Text>
-                      <Space wrap={true} className="copy-friendly-actions">
-                        {manualCohortSeedCandidates.map((candidate) => (
-                          <Button
-                            key={`${candidate.cohortKind}:${candidate.sourceField}`}
-                            size="small"
-                            onClick={() => {
-                              providers.syncForm.setFieldsValue({
-                                cohort_kind: candidate.cohortKind,
-                                source_field: candidate.sourceField,
-                                cohorts_text: candidate.values,
-                              });
-                            }}
-                          >
-                            {t("authProviders.sync.quick_start_button", {
-                              defaultValue:
-                                '{{field}} -> {{cohortKind}} ({{count}} values)',
-                              field: candidate.sourceField,
-                              cohortKind: candidate.cohortKind,
-                              count: candidate.values.length,
-                            })}
-                          </Button>
-                        ))}
-                      </Space>
-                    </Space>
-                  </Card>
-                ) : null}
-                {activeManualCohortSeedCandidate ? (
-                  <Alert
-                    type="success"
-                    showIcon={true}
-                    message={t("authProviders.sync.selected_source_hint_title", {
-                      defaultValue: "Selected source field has known values",
+                        "Use this only when pre-registration is necessary",
                     })}
                     description={t(
-                      "authProviders.sync.selected_source_hint_description",
+                      "authProviders.sync.manual_warning_description",
                       {
                         defaultValue:
-                          'Field "{{field}}" currently exposes {{count}} sample values. The cohort list below has been preloaded from those values and still allows manual additions.',
-                        field: activeManualCohortSeedCandidate.sourceField,
-                        count: activeManualCohortSeedCandidate.values.length,
+                          "If a real external user can log in first, prefer discovered cohorts above. Manual registration is a fallback for pre-binding access.",
                       },
                     )}
                   />
-                ) : null}
-              </Space>
-              <Form.Item
-                name="cohort_kind"
-                label={t("authProviders.sync.cohort_kind")}
-                rules={[{ required: true }]}
-                extra={mappingWorkflow.cohortKindHint}
-              >
-                <AutoComplete
-                  options={manualCohortKindOptions}
-                  allowClear={true}
-                  placeholder={t("authProviders.sync.cohort_kind_placeholder", {
-                    defaultValue: "Select or type a canonical cohort kind",
+                  {recommendedCohortCopy ? (
+                    <Alert
+                      type="info"
+                      showIcon={true}
+                      message={recommendedCohortCopy.title}
+                      description={recommendedCohortCopy.description}
+                    />
+                  ) : null}
+                  {manualCohortSeedCandidates.length > 0 ? (
+                    <Card
+                      size="small"
+                      title={t("authProviders.sync.quick_start_title", {
+                        defaultValue: "Quick start from observed values",
+                      })}
+                    >
+                      <Space direction="vertical" size={8} style={{ width: "100%" }}>
+                        <Text type="secondary">
+                          {t("authProviders.sync.quick_start_description", {
+                            defaultValue:
+                              "Choose a discovered provider field and let Shepherd pre-fill the organization type and known sample values for you.",
+                          })}
+                        </Text>
+                        <Space wrap={true} className="copy-friendly-actions">
+                          {manualCohortSeedCandidates.map((candidate) => (
+                            <Button
+                              key={`${candidate.cohortKind}:${candidate.sourceField}`}
+                              size="small"
+                              onClick={() => {
+                                providers.syncForm.setFieldsValue({
+                                  cohort_kind: candidate.cohortKind,
+                                  source_field: candidate.sourceField,
+                                  cohorts_text: candidate.values,
+                                });
+                              }}
+                            >
+                              {t("authProviders.sync.quick_start_button", {
+                                defaultValue:
+                                  '{{field}} -> {{cohortKind}} ({{count}} values)',
+                                field: candidate.sourceField,
+                                cohortKind: candidate.cohortKind,
+                                count: candidate.values.length,
+                              })}
+                            </Button>
+                          ))}
+                        </Space>
+                      </Space>
+                    </Card>
+                  ) : null}
+                  {activeManualCohortSeedCandidate ? (
+                    <Alert
+                      type="success"
+                      showIcon={true}
+                      message={t("authProviders.sync.selected_source_hint_title", {
+                        defaultValue: "Selected source field has known values",
+                      })}
+                      description={t(
+                        "authProviders.sync.selected_source_hint_description",
+                        {
+                          defaultValue:
+                            'Field "{{field}}" currently exposes {{count}} sample values. The cohort list below has been preloaded from those values and still allows manual additions.',
+                          field: activeManualCohortSeedCandidate.sourceField,
+                          count: activeManualCohortSeedCandidate.values.length,
+                        },
+                      )}
+                    />
+                  ) : null}
+                </Space>
+                <Form.Item
+                  name="cohort_kind"
+                  label={t("authProviders.sync.cohort_kind")}
+                  rules={[{ required: true }]}
+                  extra={mappingWorkflow.cohortKindHint}
+                >
+                  <AutoComplete
+                    options={manualCohortKindOptions}
+                    allowClear={true}
+                    placeholder={t("authProviders.sync.cohort_kind_placeholder", {
+                      defaultValue: "Select or type a canonical cohort kind",
+                    })}
+                    filterOption={(inputValue, option) => {
+                      const search = inputValue.trim().toLowerCase();
+                      const label = String(option?.label ?? "").toLowerCase();
+                      const value = String(option?.value ?? "").toLowerCase();
+                      return label.includes(search) || value.includes(search);
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="source_field"
+                  label={t("authProviders.sync.source_field")}
+                  rules={[{ required: true }]}
+                  extra={mappingWorkflow.sourceFieldHint}
+                >
+                  <AutoComplete
+                    options={manualSourceFieldOptions}
+                    allowClear={true}
+                    placeholder={t("authProviders.sync.source_field_placeholder", {
+                      defaultValue: "Select a discovered field or type a provider field",
+                    })}
+                    filterOption={(inputValue, option) => {
+                      const search = inputValue.trim().toLowerCase();
+                      const label = String(option?.label ?? "").toLowerCase();
+                      const value = String(option?.value ?? "").toLowerCase();
+                      return label.includes(search) || value.includes(search);
+                    }}
+                  />
+                </Form.Item>
+                <Form.Item
+                  name="cohorts_text"
+                  label={t("authProviders.sync.cohorts")}
+                  rules={[{ required: true }]}
+                  extra={t("authProviders.sync.cohorts_help", {
+                    defaultValue:
+                      "Prefer selecting discovered cohorts below. You can still type a new value if the provider has not exposed it yet.",
                   })}
-                  filterOption={(inputValue, option) => {
-                    const search = inputValue.trim().toLowerCase();
-                    const label = String(option?.label ?? "").toLowerCase();
-                    const value = String(option?.value ?? "").toLowerCase();
-                    return label.includes(search) || value.includes(search);
+                >
+                  <Select
+                    mode="tags"
+                    allowClear={true}
+                    showSearch={true}
+                    options={manualKnownCohortOptions}
+                    placeholder={mappingWorkflow.cohortsPlaceholder}
+                    tokenSeparators={[",", "\n"]}
+                  />
+                </Form.Item>
+                <Button
+                  type="primary"
+                  icon={<SyncOutlined />}
+                  loading={providers.syncCohortsPending}
+                  data-testid={
+                    providers.mappingProvider
+                      ? `auth-provider-action-sync-${providers.mappingProvider.id}`
+                      : undefined
+                  }
+                  onClick={() => {
+                    void providers.submitSyncCohorts();
                   }}
-                />
-              </Form.Item>
-              <Form.Item
-                name="source_field"
-                label={t("authProviders.sync.source_field")}
-                rules={[{ required: true }]}
-                extra={mappingWorkflow.sourceFieldHint}
-              >
-                <AutoComplete
-                  options={manualSourceFieldOptions}
-                  allowClear={true}
-                  placeholder={t("authProviders.sync.source_field_placeholder", {
-                    defaultValue: "Select a discovered field or type a provider field",
+                >
+                  {t("authProviders.sync.submit_manual", {
+                    defaultValue: "Save known cohorts",
                   })}
-                  filterOption={(inputValue, option) => {
-                    const search = inputValue.trim().toLowerCase();
-                    const label = String(option?.label ?? "").toLowerCase();
-                    const value = String(option?.value ?? "").toLowerCase();
-                    return label.includes(search) || value.includes(search);
-                  }}
-                />
-              </Form.Item>
-              <Form.Item
-                name="cohorts_text"
-                label={t("authProviders.sync.cohorts")}
-                rules={[{ required: true }]}
-                extra={t("authProviders.sync.cohorts_help", {
-                  defaultValue:
-                    "Prefer selecting discovered cohorts below. You can still type a new value if the provider has not exposed it yet.",
-                })}
-              >
-                <Select
-                  mode="tags"
-                  allowClear={true}
-                  showSearch={true}
-                  options={manualKnownCohortOptions}
-                  placeholder={mappingWorkflow.cohortsPlaceholder}
-                  tokenSeparators={[",", "\n"]}
-                />
-              </Form.Item>
-              <Button
-                type="primary"
-                icon={<SyncOutlined />}
-                loading={providers.syncCohortsPending}
-                data-testid={
-                  providers.mappingProvider
-                    ? `auth-provider-action-sync-${providers.mappingProvider.id}`
-                    : undefined
-                }
-                onClick={() => {
-                  void providers.submitSyncCohorts();
-                }}
-              >
-                {t("authProviders.sync.submit_manual", {
-                  defaultValue: "Save known cohorts",
-                })}
-              </Button>
-            </Form>
-          </Card>
+                </Button>
+              </Form>
+            </Card>
+          ) : null}
 
           <Card
             size="small"
             title={t("authProviders.mapping.title")}
             extra={
-              <Button
-                type="primary"
-                icon={<PlusOutlined />}
-                data-testid="cohort-mapping-create-button"
-                onClick={providers.openCreateMappingModal}
-              >
-                {t("authProviders.mapping.add")}
-              </Button>
+              canCreateAuthProviderMappings ? (
+                <Button
+                  type="primary"
+                  icon={<PlusOutlined />}
+                  data-testid="cohort-mapping-create-button"
+                  onClick={providers.openCreateMappingModal}
+                >
+                  {t("authProviders.mapping.add")}
+                </Button>
+              ) : null
             }
           >
             <Table<ExternalCohortMapping>
