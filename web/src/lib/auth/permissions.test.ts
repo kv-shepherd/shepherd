@@ -91,4 +91,17 @@ describe('permission helpers', () => {
 
     expect(canAccessAdminMenuRoute(auditor, 'users')).toBe(true);
   });
+
+  it('keeps the namespaces admin route aligned with namespace-scoped permissions', () => {
+    expect(ADMIN_MENU_ROUTE_PERMISSIONS.namespaces).toEqual(['namespace:read', 'namespace:write']);
+
+    const namespaceAuditor = {
+      id: 'u-7',
+      username: 'namespace-auditor',
+      permissions: ['namespace:read'],
+    };
+
+    expect(canAccessAdminMenuRoute(namespaceAuditor, 'namespaces')).toBe(true);
+    expect(canAccessAdminMenuRoute(namespaceAuditor, 'clusters')).toBe(false);
+  });
 });

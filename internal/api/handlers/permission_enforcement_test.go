@@ -92,7 +92,7 @@ func TestPermissionEnforcement_ListSystemMemberCandidates_RequiresRbacManage(t *
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
-func TestPermissionEnforcement_ListNamespaces_RequiresClusterPermission(t *testing.T) {
+func TestPermissionEnforcement_ListNamespaces_RequiresNamespacePermission(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer(ServerDeps{})
@@ -105,11 +105,11 @@ func TestPermissionEnforcement_ListNamespaces_RequiresClusterPermission(t *testi
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
-func TestPermissionEnforcement_CreateNamespace_RequiresClusterWrite(t *testing.T) {
+func TestPermissionEnforcement_CreateNamespace_RequiresNamespaceWrite(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer(ServerDeps{})
-	c, w := newAuthedGinContext(t, http.MethodPost, "/admin/namespaces", `{"name":"ns-a","environment":"test"}`, "user-a", []string{"cluster:read"})
+	c, w := newAuthedGinContext(t, http.MethodPost, "/admin/namespaces", `{"name":"ns-a","environment":"test"}`, "user-a", []string{"namespace:read"})
 
 	srv.CreateNamespace(c)
 	if w.Code != http.StatusForbidden {
@@ -118,7 +118,7 @@ func TestPermissionEnforcement_CreateNamespace_RequiresClusterWrite(t *testing.T
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
-func TestPermissionEnforcement_UpdateNamespace_RequiresClusterWrite(t *testing.T) {
+func TestPermissionEnforcement_UpdateNamespace_RequiresNamespaceWrite(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer(ServerDeps{})
@@ -128,7 +128,7 @@ func TestPermissionEnforcement_UpdateNamespace_RequiresClusterWrite(t *testing.T
 		"/admin/namespaces/ns-a",
 		`{"description":"updated"}`,
 		"user-a",
-		[]string{"cluster:read"},
+		[]string{"namespace:read"},
 	)
 
 	srv.UpdateNamespace(c, "ns-a")
@@ -138,7 +138,7 @@ func TestPermissionEnforcement_UpdateNamespace_RequiresClusterWrite(t *testing.T
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
-func TestPermissionEnforcement_DeleteNamespace_RequiresClusterWrite(t *testing.T) {
+func TestPermissionEnforcement_DeleteNamespace_RequiresNamespaceWrite(t *testing.T) {
 	t.Parallel()
 
 	srv := NewServer(ServerDeps{})
@@ -148,7 +148,7 @@ func TestPermissionEnforcement_DeleteNamespace_RequiresClusterWrite(t *testing.T
 		"/admin/namespaces/ns-a",
 		"",
 		"user-a",
-		[]string{"cluster:read"},
+		[]string{"namespace:read"},
 	)
 
 	srv.DeleteNamespace(c, "ns-a", generated.DeleteNamespaceParams{ConfirmName: "ns-a"})

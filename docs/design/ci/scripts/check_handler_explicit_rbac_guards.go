@@ -25,8 +25,8 @@ func main() {
 		{
 			path: "internal/api/handlers/server_namespace.go",
 			required: []string{
-				`requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write")`,
-				`requireActorWithAnyGlobalPermission(c, "cluster:write")`,
+				`requireActorWithAnyGlobalPermission(c, "namespace:read", "namespace:write")`,
+				`requireActorWithAnyGlobalPermission(c, "namespace:write")`,
 			},
 			forbidden: []string{
 				`middleware.GetUserID(`,

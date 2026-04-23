@@ -172,6 +172,8 @@ var permissionCatalog = map[string]string{
 	"cluster:write":                "Create, update, or delete clusters",
 	"instance_size:read":           "Read instance size catalog",
 	"instance_size:write":          "Create/update/delete instance sizes",
+	"namespace:read":               "Read namespace registry",
+	"namespace:write":              "Create/update/delete namespace registry entries",
 	"platform:admin":               "Full platform management capability",
 	"rate_limit:manage":            "Manage batch rate-limit policy overrides",
 	"rbac:manage":                  "Manage RBAC roles and bindings",

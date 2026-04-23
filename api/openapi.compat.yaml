@@ -3920,8 +3920,8 @@ paths:
         platformAdminOverride: true
         globalPermissions:
           anyOf:
-            - 'cluster:read'
-            - 'cluster:write'
+            - 'namespace:read'
+            - 'namespace:write'
         scopeFilters:
           - type: role_binding_allowed_environments
       parameters:
@@ -3959,7 +3959,7 @@ paths:
         platformAdminOverride: true
         globalPermissions:
           anyOf:
-            - 'cluster:write'
+            - 'namespace:write'
       requestBody:
         required: true
         content:
@@ -3991,8 +3991,8 @@ paths:
         platformAdminOverride: true
         globalPermissions:
           anyOf:
-            - 'cluster:read'
-            - 'cluster:write'
+            - 'namespace:read'
+            - 'namespace:write'
         scopeFilters:
           - type: role_binding_allowed_environments
       parameters:
@@ -4019,7 +4019,7 @@ paths:
         platformAdminOverride: true
         globalPermissions:
           anyOf:
-            - 'cluster:write'
+            - 'namespace:write'
       parameters:
         - $ref: '#/components/parameters/NamespaceID'
       requestBody:
@@ -4053,7 +4053,7 @@ paths:
         platformAdminOverride: true
         globalPermissions:
           anyOf:
-            - 'cluster:write'
+            - 'namespace:write'
       parameters:
         - $ref: '#/components/parameters/NamespaceID'
         - name: confirm_name

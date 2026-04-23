@@ -18,7 +18,7 @@ import (
 
 // ListNamespaces handles GET /admin/namespaces.
 func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesParams) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write")
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "namespace:read", "namespace:write")
 	if !ok {
 		return
 	}
@@ -104,7 +104,7 @@ func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesP
 
 // CreateNamespace handles POST /admin/namespaces.
 func (s *Server) CreateNamespace(c *gin.Context) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "namespace:write")
 	if !ok {
 		return
 	}
@@ -148,7 +148,7 @@ func (s *Server) CreateNamespace(c *gin.Context) {
 
 // GetNamespace handles GET /admin/namespaces/{namespace_id}.
 func (s *Server) GetNamespace(c *gin.Context, namespaceID generated.NamespaceID) {
-	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "cluster:read", "cluster:write")
+	ctx, _, ok := requireActorWithAnyGlobalPermission(c, "namespace:read", "namespace:write")
 	if !ok {
 		return
 	}
@@ -185,7 +185,7 @@ func (s *Server) GetNamespace(c *gin.Context, namespaceID generated.NamespaceID)
 
 // UpdateNamespace handles PUT /admin/namespaces/{namespace_id}.
 func (s *Server) UpdateNamespace(c *gin.Context, namespaceID generated.NamespaceID) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "namespace:write")
 	if !ok {
 		return
 	}
@@ -221,7 +221,7 @@ func (s *Server) UpdateNamespace(c *gin.Context, namespaceID generated.Namespace
 // DeleteNamespace handles DELETE /admin/namespaces/{namespace_id}.
 // ADR-0015 §13 addendum: confirm_name query param required.
 func (s *Server) DeleteNamespace(c *gin.Context, namespaceID generated.NamespaceID, params generated.DeleteNamespaceParams) {
-	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "cluster:write")
+	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "namespace:write")
 	if !ok {
 		return
 	}

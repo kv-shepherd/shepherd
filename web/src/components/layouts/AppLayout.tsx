@@ -118,8 +118,6 @@ export default function AppLayout({
         [route.routes],
     );
     const displayName = user?.display_name ?? user?.username ?? 'User';
-    const sidebarFooterTitle = 'KubeVirt Shepherd';
-
     const filteredMenuEntries = React.useMemo(
         () => filterMenuSearchEntries(searchableMenuEntries, menuSearch).slice(0, 8),
         [menuSearch, searchableMenuEntries],
@@ -150,18 +148,6 @@ export default function AppLayout({
 </svg>`.trim());
     const avatarUrl = `data:image/svg+xml;utf8,${avatarSvg}`;
 
-    const renderSidebarIdentity = (collapsed?: boolean) => (
-        collapsed ? (
-            <div className="app-shell-sidebar-footer app-shell-sidebar-footer--collapsed">
-                <span className="app-shell-sidebar-footer__pulse" />
-            </div>
-        ) : (
-            <div className="app-shell-sidebar-footer">
-                <span className="app-shell-sidebar-footer__label">{sidebarFooterTitle}</span>
-            </div>
-        )
-    );
-
     return (
         <ProLayout
             className="app-shell-layout"
@@ -182,7 +168,6 @@ export default function AppLayout({
                     </span>
                 </Link>
             )}
-            menuFooterRender={(props) => renderSidebarIdentity(props?.collapsed)}
             token={{
                 sider: {
                     colorMenuBackground: '#091423',
@@ -268,19 +253,6 @@ export default function AppLayout({
                     </span>
                 );
             }}
-            footerRender={() => (
-                <div style={{ textAlign: 'center', padding: '24px 0 24px', color: '#8c98a4', fontSize: 13 }}>
-                    <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '16px', marginBottom: '8px' }}>
-                        <span style={{ fontFamily: 'monospace', fontWeight: 600, padding: '4px 10px', background: 'rgba(15, 23, 42, 0.03)', borderRadius: '6px', border: '1px solid rgba(15, 23, 42, 0.05)', color: '#64748b' }}>Shepherd</span>
-                        <a href="https://github.com/kv-shepherd/shepherd" target="_blank" rel="noopener noreferrer" style={{ color: '#64748b', fontSize: 18, display: 'flex', alignItems: 'center', opacity: 0.8 }} title="GitHub">
-                            <GithubOutlined />
-                        </a>
-                    </div>
-                    <div style={{ letterSpacing: '0.01em' }}>
-                        Cloud-native VM governance
-                    </div>
-                </div>
-            )}
             avatarProps={{
                 src: undefined, // Let our custom render handle the image completely
                 title: undefined, // Suppress default ProLayout text injection!
@@ -329,7 +301,25 @@ export default function AppLayout({
             }}
         >
             <div className="app-shell-content">
-                <div className="app-shell-content__inner">{children}</div>
+                <div className="app-shell-content__inner">
+                    {children}
+                    <footer className="app-shell-site-footer">
+                        <div className="app-shell-site-footer__row">
+                            <a
+                                href="https://github.com/kv-shepherd/shepherd"
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="app-shell-site-footer__link"
+                                title="GitHub"
+                            >
+                                <GithubOutlined />
+                            </a>
+                        </div>
+                        <div className="app-shell-site-footer__tagline">
+                            Cloud-native VM governance
+                        </div>
+                    </footer>
+                </div>
             </div>
         </ProLayout>
     );

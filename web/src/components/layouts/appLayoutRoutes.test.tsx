@@ -87,15 +87,24 @@ describe('getMenuRoutes', () => {
         ]);
     });
 
-    it('filters admin child routes by canonical permission groups', () => {
+    it('filters cluster admin routes by canonical permission groups', () => {
         const route = getMenuRoutes(t, (permissions) => permissions.includes('cluster:read'));
         const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
 
         expect(admin?.routes).toEqual([
             expect.objectContaining({ path: '/admin/clusters' }),
-            expect.objectContaining({ path: '/admin/namespaces' }),
         ]);
         expect(resolveMenuHref(admin ?? {})).toBe('/admin/clusters');
+    });
+
+    it('keeps namespaces visible for namespace-scoped admins', () => {
+        const route = getMenuRoutes(t, (permissions) => permissions.includes('namespace:read'));
+        const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
+
+        expect(admin?.routes).toEqual([
+            expect.objectContaining({ path: '/admin/namespaces' }),
+        ]);
+        expect(resolveMenuHref(admin ?? {})).toBe('/admin/namespaces');
     });
 
     it('keeps the users route visible for RBAC read-only operators', () => {

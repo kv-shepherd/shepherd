@@ -48,7 +48,7 @@ export function useSetupGuide(snapshot: SetupGuideSnapshot = {}): SetupGuideStat
     const canCreateService = hasPermission(user, 'service:create');
     const canCreateVM = hasPermission(user, 'vm:create');
     const canReadVM = hasPermission(user, 'vm:read');
-    const canManageNamespaces = hasPermission(user, 'cluster:write');
+    const canManageNamespaces = hasPermission(user, 'namespace:write');
     const canManageTemplates = hasPermission(user, 'template:write');
     const canManageInstanceSizes = hasPermission(user, 'instance_size:write');
 

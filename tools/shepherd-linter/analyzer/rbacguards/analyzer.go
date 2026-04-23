@@ -62,13 +62,13 @@ var rules = map[string]fileRule{
 		Required: []callPattern{
 			{
 				Callee:     "requireActorWithAnyGlobalPermission",
-				StringArgs: []string{"cluster:read", "cluster:write"},
-				Label:      `requireActorWithAnyGlobalPermission(..., "cluster:read", "cluster:write")`,
+				StringArgs: []string{"namespace:read", "namespace:write"},
+				Label:      `requireActorWithAnyGlobalPermission(..., "namespace:read", "namespace:write")`,
 			},
 			{
 				Callee:     "requireActorWithAnyGlobalPermission",
-				StringArgs: []string{"cluster:write"},
-				Label:      `requireActorWithAnyGlobalPermission(..., "cluster:write")`,
+				StringArgs: []string{"namespace:write"},
+				Label:      `requireActorWithAnyGlobalPermission(..., "namespace:write")`,
 			},
 		},
 		Forbidden: []callPattern{
