@@ -791,8 +791,28 @@ func TestServiceApproveCreate_RequiresClusterSelection(t *testing.T) {
 		Save(context.Background())
 
 	gw := NewService(client, nil, &fakeAtomicWriter{})
-	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{}); err == nil {
+	err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{})
+	if err == nil {
 		t.Fatal("Approve() expected error when cluster id is empty, got nil")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want AppError", err)
+	}
+	if appErr.Code != apperrors.CodeValidationFailed {
+		t.Fatalf("Approve() app error code = %q, want %q", appErr.Code, apperrors.CodeValidationFailed)
+	}
+	if appErr.Message != "selected cluster is required for create approval" {
+		t.Fatalf("Approve() message = %q, want selected cluster is required for create approval", appErr.Message)
+	}
+	if len(appErr.FieldErrors) != 1 {
+		t.Fatalf("Approve() field errors = %v, want one selected_cluster_id error", appErr.FieldErrors)
+	}
+	if appErr.FieldErrors[0].Field != "selected_cluster_id" {
+		t.Fatalf("Approve() field error field = %q, want selected_cluster_id", appErr.FieldErrors[0].Field)
+	}
+	if appErr.FieldErrors[0].Code != "REQUIRED" {
+		t.Fatalf("Approve() field error code = %q, want REQUIRED", appErr.FieldErrors[0].Code)
 	}
 }
 

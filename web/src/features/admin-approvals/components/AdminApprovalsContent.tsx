@@ -312,6 +312,32 @@ function batchPayloadItems(
   return asPayloadRecords(payload?.items);
 }
 
+function isFullyFailedCreateBatchApproval(record: ApprovalTask): boolean {
+  if (record.operation_type !== "CREATE") {
+    return false;
+  }
+
+  const payload = asPayloadRecord(record.ticket_payload);
+  const batchSummary = asPayloadRecord(payload?.batch_summary);
+  if (!batchSummary) {
+    return record.status === "FAILED";
+  }
+
+  const batchStatus =
+    typeof batchSummary?.status === "string" ? batchSummary.status : undefined;
+  if (batchStatus === "FAILED") {
+    return true;
+  }
+  if (batchStatus) {
+    return false;
+  }
+
+  const successCount = payloadNumber(batchSummary?.success_count) ?? 0;
+  const failedCount = payloadNumber(batchSummary?.failed_count) ?? 0;
+  const pendingCount = payloadNumber(batchSummary?.pending_count) ?? 0;
+  return failedCount > 0 && successCount === 0 && pendingCount === 0;
+}
+
 function requiresStorageClassSelection(cluster: Cluster): boolean {
   return (
     cluster.compatibility?.reason_code ===
@@ -971,17 +997,19 @@ export function AdminApprovalsContent() {
                   highlightClass = "approval-row-warning";
               }
 
-                const renderActions = () => {
-                  if (record.status !== "PENDING") {
-                    if (itemCount > 1) {
-                      return (
-                        <Space size={8} wrap className="workbench-row-actions">
-                          {record.status === "FAILED" && canApproveTasks ? (
-                            <Button
-                              size="small"
-                              loading={approvals.retryBatchPending}
+              const renderActions = () => {
+                if (record.status !== "PENDING") {
+                  if (itemCount > 1) {
+                    return (
+                      <Space size={8} wrap className="workbench-row-actions">
+                        {record.status === "FAILED" && canApproveTasks ? (
+                          <Button
+                            size="small"
+                            loading={approvals.retryBatchPending}
                             onClick={() =>
-                              approvals.submitBatchRetry(record.id)
+                              isFullyFailedCreateBatchApproval(record)
+                                ? approvals.openBatchRetryReviewModal(record)
+                                : approvals.submitBatchRetry(record.id)
                             }
                           >
                             {t("vm:batch.retry_failed")}
@@ -994,26 +1022,26 @@ export function AdminApprovalsContent() {
                           {t("vm:batch.detail_title")}
                         </Button>
                       </Space>
-                      );
-                    }
-                    return null;
-                  }
-                  if (!canApproveTasks) {
-                    return (
-                      <Space size={8} wrap className="workbench-row-actions">
-                        <Button
-                          size="small"
-                          icon={<AuditOutlined />}
-                          data-testid={`approval-action-detail-${record.id}`}
-                          onClick={() => approvals.openApproveModal(record)}
-                        >
-                          {t("common:button.detail", { defaultValue: "Detail" })}
-                        </Button>
-                      </Space>
                     );
                   }
-                  const moreContent = (
-                    <div className="workbench-row-menu">
+                  return null;
+                }
+                if (!canApproveTasks) {
+                  return (
+                    <Space size={8} wrap className="workbench-row-actions">
+                      <Button
+                        size="small"
+                        icon={<AuditOutlined />}
+                        data-testid={`approval-action-detail-${record.id}`}
+                        onClick={() => approvals.openApproveModal(record)}
+                      >
+                        {t("common:button.detail", { defaultValue: "Detail" })}
+                      </Button>
+                    </Space>
+                  );
+                }
+                const moreContent = (
+                  <div className="workbench-row-menu">
                     <Button
                       type="text"
                       danger
@@ -1284,8 +1312,13 @@ export function AdminApprovalsContent() {
                 }
               : undefined
           }
+          okText={
+            approvals.approveModalAction === "retry_failed_batch"
+              ? t("vm:batch.retry_failed")
+              : t("common:button.approve")
+          }
           onCancel={approvals.closeApproveModal}
-          confirmLoading={approvals.approvePending}
+          confirmLoading={approvals.approveSubmitPending}
           footer={canApproveTasks ? undefined : null}
           contentMinWidth={960}
           data-testid="approve-modal"
@@ -1846,6 +1879,15 @@ export function AdminApprovalsContent() {
                         approvals.handleSelectedClusterChange();
                         return value;
                       }}
+                      rules={[
+                        {
+                          required: true,
+                          message: t(
+                            "approve_modal.cluster_required",
+                            "Select a target cluster before approving this request.",
+                          ),
+                        },
+                      ]}
                     >
                       <Select
                         placeholder={t("approve_modal.cluster")}

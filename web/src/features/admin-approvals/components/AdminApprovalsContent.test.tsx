@@ -595,7 +595,9 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
         handleSelectedClusterChange: vi.fn(),
         handleSelectedStorageClassChange: vi.fn(),
         handleSelectedRootVolumeModeChange: vi.fn((value) => value),
+        approveModalAction: "approve",
         openApproveModal: vi.fn(),
+        openBatchRetryReviewModal: vi.fn(),
         closeApproveModal: vi.fn(),
         openRejectModal: vi.fn(),
         closeRejectModal: vi.fn(),
@@ -604,6 +606,7 @@ vi.mock("../hooks/useAdminApprovalsController", async () => {
         submitCancel: vi.fn(),
         submitBatchRetry: vi.fn(),
         approvePending: false,
+        approveSubmitPending: false,
         rejectPending: false,
         cancelPending: false,
         retryBatchPending: false,
@@ -634,7 +637,8 @@ describe("AdminApprovalsContent", () => {
           pvc_phase: "Bound",
           clone_type: "snapshot",
           clone_phase: "Succeeded",
-          clone_fallback_reason: "The volume modes of source and target are incompatible",
+          clone_fallback_reason:
+            "The volume modes of source and target are incompatible",
           failure_message: "Clone Complete",
         }}
       />,
@@ -680,7 +684,9 @@ describe("AdminApprovalsContent", () => {
   it("does not render successful provisioning messages as list-level failures", () => {
     render(<AdminApprovalsContent />);
 
-    expect(screen.queryByText("target pod restarted once")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("target pod restarted once"),
+    ).not.toBeInTheDocument();
   });
 
   it("shows cluster compatibility query errors instead of silently rendering an empty list", () => {
@@ -760,8 +766,9 @@ describe("AdminApprovalsContent", () => {
     );
   });
 
-  it("shows retry action for failed batch approvals", async () => {
+  it("opens review instead of blind retry for failed CREATE batch approvals", async () => {
     const user = userEvent.setup();
+    const openBatchRetryReviewModal = vi.fn();
     const submitBatchRetry = vi.fn();
     controllerState.overrides = {
       data: {
@@ -770,6 +777,52 @@ describe("AdminApprovalsContent", () => {
             id: "ticket-batch-failed",
             event_id: "event-batch-failed",
             status: "FAILED",
+            operation_type: "CREATE",
+            requester: "alice",
+            summary: {
+              batch_count: 2,
+              system_name: "shop",
+              service_name: "redis",
+            },
+            ticket_payload: {
+              batch_summary: {
+                status: "FAILED",
+                child_count: 2,
+                success_count: 0,
+                failed_count: 2,
+                pending_count: 0,
+              },
+              items: [{ vm_name: "vm-a" }, { vm_name: "vm-b" }],
+            },
+          },
+        ],
+        pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+      },
+      openBatchRetryReviewModal,
+      submitBatchRetry,
+    };
+
+    render(<AdminApprovalsContent />);
+
+    await user.click(screen.getByRole("button", { name: "Retry failed" }));
+    expect(openBatchRetryReviewModal).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "ticket-batch-failed" }),
+    );
+    expect(submitBatchRetry).not.toHaveBeenCalled();
+  });
+
+  it("keeps blind retry for failed non-CREATE batch approvals", async () => {
+    const user = userEvent.setup();
+    const openBatchRetryReviewModal = vi.fn();
+    const submitBatchRetry = vi.fn();
+    controllerState.overrides = {
+      data: {
+        items: [
+          {
+            id: "ticket-batch-delete-failed",
+            event_id: "event-batch-delete-failed",
+            status: "FAILED",
+            operation_type: "DELETE",
             requester: "alice",
             summary: {
               batch_count: 2,
@@ -783,13 +836,60 @@ describe("AdminApprovalsContent", () => {
         ],
         pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
       },
+      openBatchRetryReviewModal,
       submitBatchRetry,
     };
 
     render(<AdminApprovalsContent />);
 
     await user.click(screen.getByRole("button", { name: "Retry failed" }));
-    expect(submitBatchRetry).toHaveBeenCalledWith("ticket-batch-failed");
+    expect(submitBatchRetry).toHaveBeenCalledWith("ticket-batch-delete-failed");
+    expect(openBatchRetryReviewModal).not.toHaveBeenCalled();
+  });
+
+  it("keeps blind retry for partial-success CREATE batch approvals", async () => {
+    const user = userEvent.setup();
+    const openBatchRetryReviewModal = vi.fn();
+    const submitBatchRetry = vi.fn();
+    controllerState.overrides = {
+      data: {
+        items: [
+          {
+            id: "ticket-batch-partial-create",
+            event_id: "event-batch-partial-create",
+            status: "FAILED",
+            operation_type: "CREATE",
+            requester: "alice",
+            summary: {
+              batch_count: 2,
+              system_name: "shop",
+              service_name: "redis",
+            },
+            ticket_payload: {
+              batch_summary: {
+                status: "PARTIAL_SUCCESS",
+                child_count: 2,
+                success_count: 1,
+                failed_count: 1,
+                pending_count: 0,
+              },
+              items: [{ vm_name: "vm-a" }, { vm_name: "vm-b" }],
+            },
+          },
+        ],
+        pagination: { page: 1, per_page: 20, total: 1, total_pages: 1 },
+      },
+      openBatchRetryReviewModal,
+      submitBatchRetry,
+    };
+
+    render(<AdminApprovalsContent />);
+
+    await user.click(screen.getByRole("button", { name: "Retry failed" }));
+    expect(submitBatchRetry).toHaveBeenCalledWith(
+      "ticket-batch-partial-create",
+    );
+    expect(openBatchRetryReviewModal).not.toHaveBeenCalled();
   });
 
   it("keeps storage-class-resolvable clusters selectable and shows detected storage classes", () => {
@@ -921,9 +1021,7 @@ describe("AdminApprovalsContent", () => {
 
     render(<AdminApprovalsContent />);
 
-    expect(
-      screen.getByText(/Filesystem \+ ReadWriteMany/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/Filesystem \+ ReadWriteMany/)).toBeInTheDocument();
   });
 
   it("allows manual root volume mode entry when StorageProfile claimPropertySets are missing", () => {

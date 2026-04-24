@@ -115,6 +115,7 @@
   "approve_modal.default_disk_gb": "默认磁盘",
   "approve_modal.cluster": "选择目标集群",
   "approve_modal.cluster_hint": "管理员选择 VM 部署的目标集群（ADR-0017）",
+  "approve_modal.cluster_required": "请先选择目标集群，再执行审批。",
   "approve_modal.cluster_query_error_title": "集群兼容性检查失败",
   "approve_modal.cluster_query_error_description": "当前请求上下文无效，平台暂时无法计算集群兼容性。",
   "approve_modal.cluster_advisory": "可能回退为主机辅助拷贝",

@@ -480,10 +480,11 @@ test.describe('admin-flow mock smoke interactions', () => {
         await expect(page.getByTestId('approval-action-approve-ticket-pending-1')).toBeVisible({ timeout: 10000 });
         await page.getByTestId('approval-action-approve-ticket-pending-1').click();
 
-        // Approve modal is visible (no required fields for CREATE type)
+        // CREATE approvals must select required execution inputs before submit.
         const modal = visibleModal(page);
         await expect(modal).toBeVisible();
-        await modal.getByRole('button', { name: 'OK' }).click();
+        await selectAntOption(page, modal.locator('[role="combobox"]').first(), 'Prod Cluster');
+        await modal.getByRole('button', { name: 'Approve' }).click();
 
         await expect.poll(() =>
             captured.some((r) => r.method === 'POST' && r.path.includes('ticket-pending-1') && r.path.includes('/approve')),

@@ -117,6 +117,29 @@ func TestTicketToAPI_PopulatesPlacementEvaluation(t *testing.T) {
 	}
 }
 
+func TestTicketToAPI_PopulatesStoredApprovalSelections(t *testing.T) {
+	t.Parallel()
+
+	tick := &ent.Ticket{
+		ID:                   "ticket-stored-selection",
+		EventID:              "event-stored-selection",
+		OperationType:        entticket.OperationTypeCREATE,
+		Requester:            "user-c",
+		Status:               entticket.StatusFAILED,
+		SelectedClusterID:    "cluster-review",
+		SelectedStorageClass: "gold-sc",
+		CreatedAt:            time.Now(),
+	}
+
+	got := ticketToAPI(tick, nil, nil, nil, nil, approvalActorLookup{}, approvalActorLookup{})
+	if got.SelectedClusterId != "cluster-review" {
+		t.Fatalf("SelectedClusterId = %q, want cluster-review", got.SelectedClusterId)
+	}
+	if got.SelectedStorageClass != "gold-sc" {
+		t.Fatalf("SelectedStorageClass = %q, want gold-sc", got.SelectedStorageClass)
+	}
+}
+
 func TestTicketToAPI_PopulatesPlacementOverride(t *testing.T) {
 	t.Parallel()
 

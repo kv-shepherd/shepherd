@@ -124,6 +124,11 @@ func (g *Service) Approve(ctx context.Context, ticketID, approver string, opts E
 		return fmt.Errorf("ticket %s is not pending (current: %s)", ticketID, ticket.Status)
 	}
 
+	opts = normalizeExecutionOptions(opts)
+	if validationErr := validateApprovalExecutionOptions(ticket, opts); validationErr != nil {
+		return validationErr
+	}
+
 	event, err := g.client.DomainEvent.Get(ctx, ticket.EventID)
 	if err != nil {
 		return fmt.Errorf("get domain event %s: %w", ticket.EventID, err)
@@ -206,8 +211,9 @@ func (g *Service) approveCreateWithConfig(
 	opts ExecutionOptions,
 	config approveCreateConfig,
 ) error {
-	if opts.ClusterID == "" {
-		return fmt.Errorf("selected cluster is required for create approval")
+	opts = normalizeExecutionOptions(opts)
+	if err := validateCreateApprovalClusterSelection(opts.ClusterID); err != nil {
+		return err
 	}
 	resolvedOpts := opts
 
@@ -447,6 +453,47 @@ func (g *Service) approveCreateWithConfig(
 	)
 
 	return nil
+}
+
+func normalizeExecutionOptions(opts ExecutionOptions) ExecutionOptions {
+	opts.ClusterID = strings.TrimSpace(opts.ClusterID)
+	opts.StorageClass = strings.TrimSpace(opts.StorageClass)
+	opts.DVVolumeMode = strings.TrimSpace(opts.DVVolumeMode)
+	if len(opts.DVAccessModes) > 0 {
+		normalized := make([]string, 0, len(opts.DVAccessModes))
+		for _, value := range opts.DVAccessModes {
+			trimmed := strings.TrimSpace(value)
+			if trimmed != "" {
+				normalized = append(normalized, trimmed)
+			}
+		}
+		opts.DVAccessModes = normalized
+	}
+	return opts
+}
+
+func validateApprovalExecutionOptions(ticket *ent.Ticket, opts ExecutionOptions) error {
+	if ticket == nil {
+		return fmt.Errorf("ticket is required")
+	}
+	if ticket.OperationType != entticket.OperationTypeCREATE {
+		return nil
+	}
+	return validateCreateApprovalClusterSelection(opts.ClusterID)
+}
+
+func validateCreateApprovalClusterSelection(clusterID string) error {
+	if strings.TrimSpace(clusterID) != "" {
+		return nil
+	}
+	return apperrors.BadRequest(
+		apperrors.CodeValidationFailed,
+		"selected cluster is required for create approval",
+	).WithFieldErrors([]apperrors.FieldError{{
+		Field:   "selected_cluster_id",
+		Code:    "REQUIRED",
+		Message: "selected cluster is required for create approval",
+	}})
 }
 
 func (g *Service) preflightCreateCloneSource(ctx context.Context, ticket *ent.Ticket, opts ExecutionOptions) error {

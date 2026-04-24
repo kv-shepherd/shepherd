@@ -9,6 +9,7 @@ const {
   useFormMock,
   useWatchMock,
   apiGetMock,
+  applyApiFieldErrorsMock,
   approveFormState,
   rejectFormState,
   watchedValues,
@@ -26,6 +27,7 @@ const {
   useFormMock: vi.fn(),
   useWatchMock: vi.fn(),
   apiGetMock: vi.fn(),
+  applyApiFieldErrorsMock: vi.fn(),
   approveFormState: {
     validateFields: vi.fn(),
     resetFields: vi.fn(),
@@ -81,6 +83,10 @@ vi.mock("@/hooks/useApiQuery", () => ({
   useApiAction: (...args: unknown[]) => useApiActionMock(...args),
 }));
 
+vi.mock("@/hooks/applyApiFieldErrors", () => ({
+  applyApiFieldErrors: (...args: unknown[]) => applyApiFieldErrorsMock(...args),
+}));
+
 vi.mock("@/lib/api/client", () => ({
   api: {
     GET: (...args: unknown[]) => apiGetMock(...args),
@@ -108,6 +114,7 @@ describe("useAdminApprovalsController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     window.localStorage.clear();
+    applyApiFieldErrorsMock.mockReturnValue(false);
     let formCall = 0;
     useFormMock.mockImplementation(() => {
       formCall += 1;
@@ -146,7 +153,8 @@ describe("useAdminApprovalsController", () => {
       (
         fields: Array<{
           name: string | string[];
-          value: unknown;
+          value?: unknown;
+          errors?: string[];
         }>,
       ) => {
         for (const field of fields) {
@@ -373,6 +381,105 @@ describe("useAdminApprovalsController", () => {
       ticketId: "ticket-1",
       body: { reason: "policy violation" },
     });
+  });
+
+  it("blocks create approvals when the target cluster is still missing", async () => {
+    watchedValues.selected_cluster_id = undefined;
+    approveFormState.validateFields.mockResolvedValue({
+      selected_cluster_id: undefined,
+      selected_storage_class: "rook-ceph",
+      enable_override: true,
+      comment: "approved",
+    });
+
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-1",
+        operation_type: "CREATE",
+        status: "PENDING",
+        requester: "alice",
+      } as never);
+    });
+
+    await act(async () => {
+      await result.current.submitApprove();
+    });
+
+    expect(approveMutate).not.toHaveBeenCalled();
+    expect(approveFormState.setFields).toHaveBeenCalledWith([
+      {
+        name: ["selected_cluster_id"],
+        errors: ["approve_modal.cluster_required"],
+      },
+    ]);
+  });
+
+  it("prefills failed create batch review from persisted approval inputs", () => {
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openBatchRetryReviewModal({
+        id: "ticket-batch-failed",
+        operation_type: "CREATE",
+        status: "FAILED",
+        requester: "alice",
+        selected_cluster_id: "cluster-review",
+        selected_storage_class: "gold-sc",
+        placement_evaluation: {
+          requested_dv_access_modes: ["ReadWriteOnce"],
+          requested_dv_volume_mode: "Filesystem",
+          override: {
+            enabled: true,
+            cpu_request: 2,
+            memory_request_gi: 4,
+            disk_gb: 120,
+          },
+        },
+      } as never);
+    });
+
+    expect(approveFormState.setFieldsValue).toHaveBeenCalledWith(
+      expect.objectContaining({
+        selected_cluster_id: "cluster-review",
+        selected_storage_class: "gold-sc",
+        selected_dv_access_modes: ["ReadWriteOnce"],
+        selected_dv_volume_mode: "Filesystem",
+        enable_override: true,
+        cpu_request: 2,
+        memory_request_gi: 4,
+        disk_gb: 120,
+      }),
+    );
+  });
+
+  it("submits failed create batch retries through the batch retry mutation", async () => {
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openBatchRetryReviewModal({
+        id: "ticket-batch-failed",
+        operation_type: "CREATE",
+        status: "FAILED",
+        requester: "alice",
+      } as never);
+    });
+
+    await act(async () => {
+      await result.current.submitApprove();
+    });
+
+    expect(retryBatchMutate).toHaveBeenCalledWith({
+      batchId: "ticket-batch-failed",
+      body: {
+        selected_cluster_id: "cluster-a",
+        selected_storage_class: "rook-ceph",
+        enable_override: true,
+        comment: "approved",
+      },
+    });
+    expect(approveMutate).not.toHaveBeenCalled();
   });
 
   it("requests compatible clusters using ticket payload and form overrides", async () => {
@@ -833,9 +940,7 @@ describe("useAdminApprovalsController", () => {
 
     await waitFor(() => {
       expect(watchedValues.selected_storage_class).toBe("block-sc");
-      expect(watchedValues.selected_dv_access_modes).toEqual([
-        "ReadWriteOnce",
-      ]);
+      expect(watchedValues.selected_dv_access_modes).toEqual(["ReadWriteOnce"]);
       expect(watchedValues.selected_dv_volume_mode).toBe("Block");
     });
   });
@@ -1716,6 +1821,91 @@ describe("useAdminApprovalsController", () => {
       content: "vm spec rejected by cluster",
       duration: 10,
     });
+  });
+
+  it("applies backend field errors to the approve form before showing a toast", () => {
+    applyApiFieldErrorsMock.mockReturnValue(true);
+    renderHook(() => useAdminApprovalsController({ t }));
+
+    const approveMutationOptions = useApiMutationMock.mock.calls[0]?.[1] as
+      | {
+          onError?: (err: {
+            field_errors?: Array<{
+              field: string;
+              code: string;
+              message?: string;
+            }>;
+          }) => void;
+        }
+      | undefined;
+
+    approveMutationOptions?.onError?.({
+      field_errors: [
+        {
+          field: "selected_cluster_id",
+          code: "REQUIRED",
+          message: "selected cluster is required for create approval",
+        },
+      ],
+    });
+
+    expect(applyApiFieldErrorsMock).toHaveBeenCalledWith(approveFormState, {
+      field_errors: [
+        {
+          field: "selected_cluster_id",
+          code: "REQUIRED",
+          message: "selected cluster is required for create approval",
+        },
+      ],
+    });
+    expect(messageErrorMock).not.toHaveBeenCalled();
+  });
+
+  it("applies backend field errors to retry review before showing a toast", () => {
+    applyApiFieldErrorsMock.mockReturnValue(true);
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openBatchRetryReviewModal({
+        id: "ticket-batch-failed",
+        operation_type: "CREATE",
+        status: "FAILED",
+        requester: "alice",
+      } as never);
+    });
+
+    const retryMutationOptions = useApiMutationMock.mock.calls[2]?.[1] as
+      | {
+          onError?: (err: {
+            field_errors?: Array<{
+              field: string;
+              code: string;
+              message?: string;
+            }>;
+          }) => void;
+        }
+      | undefined;
+
+    retryMutationOptions?.onError?.({
+      field_errors: [
+        {
+          field: "selected_cluster_id",
+          code: "REQUIRED",
+          message: "selected cluster is required for create approval",
+        },
+      ],
+    });
+
+    expect(applyApiFieldErrorsMock).toHaveBeenCalledWith(approveFormState, {
+      field_errors: [
+        {
+          field: "selected_cluster_id",
+          code: "REQUIRED",
+          message: "selected cluster is required for create approval",
+        },
+      ],
+    });
+    expect(messageErrorMock).not.toHaveBeenCalled();
   });
 
   it("sorts approval tasks with pending items first, then newest items first within each status group", () => {

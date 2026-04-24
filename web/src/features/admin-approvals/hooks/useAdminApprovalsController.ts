@@ -4,6 +4,7 @@ import { App, Form } from "antd";
 import type { TFunction } from "i18next";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import { applyApiFieldErrors } from "@/hooks/applyApiFieldErrors";
 import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
 import { translateApiError } from "@/lib/api/errorMessage";
@@ -39,6 +40,7 @@ interface ApprovalCreateContext {
   hasMixedSelection: boolean;
 }
 
+type ApproveModalAction = "approve" | "retry_failed_batch";
 type ClusterPolicy = components["schemas"]["ClusterPolicy"];
 const APPROVAL_ERROR_MESSAGE_DURATION_SECONDS = 10;
 
@@ -62,9 +64,12 @@ export function useAdminApprovalsController({
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [approveModal, setApproveModal] = useState<ApprovalTask | null>(null);
+  const [approveModalAction, setApproveModalAction] =
+    useState<ApproveModalAction>("approve");
   const [rejectModal, setRejectModal] = useState<ApprovalTask | null>(null);
   const rememberedStorageAutofillRef = useRef("");
   const rememberedRootModeAutofillRef = useRef("");
+  const approveModalActionRef = useRef<ApproveModalAction>("approve");
   const [approveForm] = Form.useForm<ApprovalDecisionFormValues>();
   const [rejectForm] = Form.useForm<RejectDecisionRequest>();
   const watchedSelectedClusterId = Form.useWatch(
@@ -445,7 +450,8 @@ export function useAdminApprovalsController({
       return;
     }
 
-    const remembered = loadRememberedApprovalClusterPlacement(selectedClusterId);
+    const remembered =
+      loadRememberedApprovalClusterPlacement(selectedClusterId);
     const rememberedStorageClass = normalizeOptionalString(
       remembered?.selectedStorageClass,
     );
@@ -487,7 +493,10 @@ export function useAdminApprovalsController({
     ) {
       return;
     }
-    if (!selectionSourceRootVolumeResolution && resolvedClusterListQuery.isLoading) {
+    if (
+      !selectionSourceRootVolumeResolution &&
+      resolvedClusterListQuery.isLoading
+    ) {
       return;
     }
 
@@ -516,7 +525,8 @@ export function useAdminApprovalsController({
       return;
     }
 
-    const remembered = loadRememberedApprovalClusterPlacement(selectedClusterId);
+    const remembered =
+      loadRememberedApprovalClusterPlacement(selectedClusterId);
     if (
       normalizeStorageClassName(remembered?.selectedStorageClass ?? "") !==
       normalizeStorageClassName(effectiveSelectedStorageClass)
@@ -593,13 +603,13 @@ export function useAdminApprovalsController({
           ? effectiveSelectedRootVolumeModeKey
           : undefined,
       selectedDVAccessModes:
-        requiresManualRootVolumeModeInput && effectiveSelectedDVAccessModes.length > 0
+        requiresManualRootVolumeModeInput &&
+        effectiveSelectedDVAccessModes.length > 0
           ? effectiveSelectedDVAccessModes
           : undefined,
-      selectedDVVolumeMode:
-        requiresManualRootVolumeModeInput
-          ? effectiveSelectedDVVolumeMode
-          : undefined,
+      selectedDVVolumeMode: requiresManualRootVolumeModeInput
+        ? effectiveSelectedDVVolumeMode
+        : undefined,
     });
   }, [
     approveModal,
@@ -639,7 +649,12 @@ export function useAdminApprovalsController({
         messageApi.info(t("approve_submitted"));
         closeApproveModal();
       },
-      onError: (err) => showApprovalError(err),
+      onError: (err) => {
+        if (applyApiFieldErrors(approveForm, err)) {
+          return;
+        }
+        showApprovalError(err);
+      },
     },
   );
 
@@ -675,12 +690,13 @@ export function useAdminApprovalsController({
   );
 
   const retryBatchMutation = useApiMutation<
-    string,
+    { batchId: string; body?: ApprovalDecisionRequest },
     components["schemas"]["VMBatchActionResponse"]
   >(
-    (batchId) =>
+    ({ batchId, body }) =>
       api.POST("/vms/batch/{batch_id}/retry", {
         params: { path: { batch_id: batchId } },
+        ...(body ? { body } : {}),
       }),
     {
       onSuccess: (response) => {
@@ -689,9 +705,20 @@ export function useAdminApprovalsController({
             count: response?.affected_count ?? 0,
           }),
         );
+        if (approveModalActionRef.current === "retry_failed_batch") {
+          closeApproveModal();
+        }
         void approvalListQuery.refetch();
       },
-      onError: (err) => showApprovalError(err),
+      onError: (err) => {
+        if (
+          approveModalActionRef.current === "retry_failed_batch" &&
+          applyApiFieldErrors(approveForm, err)
+        ) {
+          return;
+        }
+        showApprovalError(err);
+      },
     },
   );
 
@@ -739,11 +766,20 @@ export function useAdminApprovalsController({
     setPage(1);
   };
 
-  const openApproveModal = (ticket: ApprovalTask) => {
+  const openApproveModal = (
+    ticket: ApprovalTask,
+    action: ApproveModalAction = "approve",
+  ) => {
     rememberedStorageAutofillRef.current = "";
     rememberedRootModeAutofillRef.current = "";
+    approveModalActionRef.current = action;
+    setApproveModalAction(action);
     setApproveModal(ticket);
     approveForm.resetFields();
+    const initialValues = extractApprovalFormInitialValues(ticket);
+    if (Object.keys(initialValues).length > 0) {
+      approveForm.setFieldsValue(initialValues);
+    }
     if (ticket.operation_type === "MODIFY") {
       const payload = asPayloadRecord(ticket.ticket_payload);
       const currentCPURequest = payloadNumber(payload?.current_cpu_request);
@@ -770,8 +806,14 @@ export function useAdminApprovalsController({
   const closeApproveModal = () => {
     rememberedStorageAutofillRef.current = "";
     rememberedRootModeAutofillRef.current = "";
+    approveModalActionRef.current = "approve";
+    setApproveModalAction("approve");
     setApproveModal(null);
     approveForm.resetFields();
+  };
+
+  const openBatchRetryReviewModal = (ticket: ApprovalTask) => {
+    openApproveModal(ticket, "retry_failed_batch");
   };
 
   const openRejectModal = (ticket: ApprovalTask) => {
@@ -868,16 +910,41 @@ export function useAdminApprovalsController({
       return;
     }
     const values = await approveForm.validateFields();
+    if (
+      approveModal.operation_type === "CREATE" &&
+      normalizeOptionalString(values.selected_cluster_id) === ""
+    ) {
+      approveForm.setFields([
+        {
+          name: ["selected_cluster_id"],
+          errors: [
+            t("approve_modal.cluster_required", {
+              defaultValue:
+                "Select a target cluster before approving this request.",
+            }),
+          ],
+        },
+      ]);
+      return;
+    }
+    const body = normalizeApprovalDecisionValues(values, {
+      selected_storage_class: effectiveSelectedStorageClass || undefined,
+      selected_dv_access_modes:
+        effectiveSelectedDVAccessModes.length > 0
+          ? effectiveSelectedDVAccessModes
+          : undefined,
+      selected_dv_volume_mode: effectiveSelectedDVVolumeMode,
+    });
+    if (approveModalAction === "retry_failed_batch") {
+      retryBatchMutation.mutate({
+        batchId: approveModal.id,
+        body,
+      });
+      return;
+    }
     approveMutation.mutate({
       ticketId: approveModal.id,
-      body: normalizeApprovalDecisionValues(values, {
-        selected_storage_class: effectiveSelectedStorageClass || undefined,
-        selected_dv_access_modes:
-          effectiveSelectedDVAccessModes.length > 0
-            ? effectiveSelectedDVAccessModes
-            : undefined,
-        selected_dv_volume_mode: effectiveSelectedDVVolumeMode,
-      }),
+      body,
     });
   };
 
@@ -894,8 +961,13 @@ export function useAdminApprovalsController({
   };
 
   const submitBatchRetry = (batchId: string) => {
-    retryBatchMutation.mutate(batchId);
+    retryBatchMutation.mutate({ batchId });
   };
+
+  const approveSubmitPending =
+    approveMutation.isPending ||
+    (approveModalAction === "retry_failed_batch" &&
+      retryBatchMutation.isPending);
 
   return {
     messageContextHolder,
@@ -951,7 +1023,9 @@ export function useAdminApprovalsController({
     handleSelectedClusterChange,
     handleSelectedStorageClassChange,
     handleSelectedRootVolumeModeChange,
+    approveModalAction,
     openApproveModal,
+    openBatchRetryReviewModal,
     closeApproveModal,
     openRejectModal,
     closeRejectModal,
@@ -960,6 +1034,7 @@ export function useAdminApprovalsController({
     submitCancel,
     submitBatchRetry,
     approvePending: approveMutation.isPending,
+    approveSubmitPending,
     rejectPending: rejectMutation.isPending,
     cancelPending: cancelMutation.isPending,
     retryBatchPending: retryBatchMutation.isPending,
@@ -1090,6 +1165,73 @@ function normalizeApprovalDecisionValues(
   return Object.fromEntries(
     Object.entries(base).filter(([, value]) => value !== undefined),
   ) as ApprovalDecisionRequest;
+}
+
+function extractApprovalFormInitialValues(
+  ticket: ApprovalTask,
+): Partial<ApprovalDecisionFormValues> {
+  const placement = ticket.placement_evaluation;
+  const selectedDVAccessModes = placement?.requested_dv_access_modes?.length
+    ? placement.requested_dv_access_modes
+    : placement?.effective_dv_access_modes;
+  const selectedDVVolumeMode =
+    placement?.requested_dv_volume_mode ?? placement?.effective_dv_volume_mode;
+  const values: Partial<ApprovalDecisionFormValues> = {};
+
+  const selectedClusterId =
+    normalizeOptionalString(ticket.selected_cluster_id) ||
+    normalizeOptionalString(placement?.selected_cluster_id) ||
+    undefined;
+  if (selectedClusterId) {
+    values.selected_cluster_id = selectedClusterId;
+  }
+
+  const selectedStorageClass =
+    normalizeOptionalString(ticket.selected_storage_class) ||
+    normalizeOptionalString(placement?.requested_storage_class) ||
+    normalizeOptionalString(placement?.effective_storage_class) ||
+    undefined;
+  if (selectedStorageClass) {
+    values.selected_storage_class = selectedStorageClass;
+  }
+
+  if (selectedDVAccessModes && selectedDVAccessModes.length > 0) {
+    values.selected_dv_access_modes = [...selectedDVAccessModes];
+  }
+  if (selectedDVVolumeMode) {
+    values.selected_dv_volume_mode = selectedDVVolumeMode;
+  }
+  if (
+    selectedDVVolumeMode &&
+    selectedDVAccessModes &&
+    selectedDVAccessModes.length > 0
+  ) {
+    values.selected_root_volume_mode_key = rootVolumeModeOptionKey({
+      access_modes: selectedDVAccessModes,
+      volume_mode: selectedDVVolumeMode,
+    });
+  }
+
+  if (placement?.override?.enabled) {
+    values.enable_override = true;
+    if (typeof placement.override.cpu_request === "number") {
+      values.cpu_request = placement.override.cpu_request;
+    }
+    if (typeof placement.override.cpu_limit === "number") {
+      values.cpu_limit = placement.override.cpu_limit;
+    }
+    if (typeof placement.override.memory_request_gi === "number") {
+      values.memory_request_gi = placement.override.memory_request_gi;
+    }
+    if (typeof placement.override.memory_limit_gi === "number") {
+      values.memory_limit_gi = placement.override.memory_limit_gi;
+    }
+    if (typeof placement.override.disk_gb === "number") {
+      values.disk_gb = placement.override.disk_gb;
+    }
+  }
+
+  return values;
 }
 
 function normalizeOptionalString(value: unknown): string {

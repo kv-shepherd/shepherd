@@ -1161,6 +1161,26 @@ paths:
           - type: actor_owned_batches
       parameters:
         - $ref: '#/components/parameters/BatchID'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApprovalDecisionRequest'
+            examples:
+              createRetryReview:
+                summary: Re-review inputs for a failed CREATE batch before retry
+                value:
+                  selected_cluster_id: cluster-prod-a
+                  selected_storage_class: rook-ceph
+                  selected_dv_access_modes: [ReadWriteOnce]
+                  selected_dv_volume_mode: Filesystem
+                  enable_override: true
+                  cpu_request: 2
+                  cpu_limit: 4
+                  memory_request_gi: 8
+                  memory_limit_gi: 16
+                  disk_gb: 120
       responses:
         '200':
           description: Retry action accepted
@@ -1168,6 +1188,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/VMBatchActionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -5890,6 +5912,12 @@ components:
           x-go-type-skip-optional-pointer: false
           allOf:
             - $ref: '#/components/schemas/PlacementEvaluation'
+        selected_cluster_id:
+          type: string
+          description: Persisted cluster selected during CREATE approval execution, exposed to support failed-batch re-review.
+        selected_storage_class:
+          type: string
+          description: Persisted storage class selected during CREATE approval execution, exposed to support failed-batch re-review.
         created_at:
           type: string
           format: date-time

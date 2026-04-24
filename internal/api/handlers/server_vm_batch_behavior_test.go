@@ -16,6 +16,7 @@ import (
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
 
 	"kv-shepherd.io/shepherd/ent"
+	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
@@ -945,6 +946,123 @@ func TestBatchHandler_RetryVMBatch_UsesApprovalProviderSeam(t *testing.T) {
 	}
 }
 
+func TestBatchHandler_RetryVMBatch_UsesReviewBodyForFailedCreateBatch(t *testing.T) {
+	t.Parallel()
+
+	capture := &captureApprovalProvider{}
+	srv, client := newBatchBehaviorTestServerWithApprovalRouter(t, capture)
+	batchID, childID := mustSubmitFailedCreateBatchForRetry(t, srv, client, "owner-1")
+
+	retryBody := mustJSON(t, generated.ApprovalDecisionRequest{
+		SelectedClusterId:     "cluster-review",
+		SelectedStorageClass:  "gold-sc",
+		SelectedDvAccessModes: []string{"ReadWriteOnce"},
+		SelectedDvVolumeMode:  generated.ApprovalDecisionRequestSelectedDvVolumeModeFilesystem,
+		EnableOverride:        true,
+		CpuRequest:            2,
+		CpuLimit:              4,
+		MemoryRequestGi:       8,
+		MemoryLimitGi:         16,
+		DiskGb:                120,
+	})
+
+	retryCtx, retryW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/vms/batch/"+batchID+"/retry",
+		retryBody,
+		"admin-1",
+		[]string{"builtin_approval:approve", "platform:admin"},
+	)
+	srv.RetryVMBatch(retryCtx, batchID)
+	if retryW.Code != http.StatusOK {
+		t.Fatalf("retry status = %d, want %d body=%s", retryW.Code, http.StatusOK, retryW.Body.String())
+	}
+
+	if capture.processCalled != 1 {
+		t.Fatalf("approval provider processCalled = %d, want 1", capture.processCalled)
+	}
+	if capture.lastTicketID != childID {
+		t.Fatalf("approval provider lastTicketID = %q, want %q", capture.lastTicketID, childID)
+	}
+	if capture.lastDecision.Execution.ClusterID != "cluster-review" {
+		t.Fatalf("execution cluster_id = %q, want cluster-review", capture.lastDecision.Execution.ClusterID)
+	}
+	if capture.lastDecision.Execution.StorageClass != "gold-sc" {
+		t.Fatalf("execution storage_class = %q, want gold-sc", capture.lastDecision.Execution.StorageClass)
+	}
+	if len(capture.lastDecision.Execution.DVAccessModes) != 1 || capture.lastDecision.Execution.DVAccessModes[0] != "ReadWriteOnce" {
+		t.Fatalf("execution dv_access_modes = %v, want [ReadWriteOnce]", capture.lastDecision.Execution.DVAccessModes)
+	}
+	if capture.lastDecision.Execution.DVVolumeMode != "Filesystem" {
+		t.Fatalf("execution dv_volume_mode = %q, want Filesystem", capture.lastDecision.Execution.DVVolumeMode)
+	}
+	if !capture.lastDecision.Execution.EnableOverride {
+		t.Fatal("execution EnableOverride = false, want true")
+	}
+	if capture.lastDecision.Execution.CPURequest != 2 {
+		t.Fatalf("execution cpu_request = %v, want 2", capture.lastDecision.Execution.CPURequest)
+	}
+	if capture.lastDecision.Execution.MemoryRequestGi != 8 {
+		t.Fatalf("execution memory_request_gi = %v, want 8", capture.lastDecision.Execution.MemoryRequestGi)
+	}
+	if capture.lastDecision.Execution.DiskGB != 120 {
+		t.Fatalf("execution disk_gb = %d, want 120", capture.lastDecision.Execution.DiskGB)
+	}
+
+	parentTicket, err := client.Ticket.Get(t.Context(), batchID)
+	if err != nil {
+		t.Fatalf("load parent ticket: %v", err)
+	}
+	if parentTicket.SelectedClusterID != "cluster-review" {
+		t.Fatalf("parent selected_cluster_id = %q, want cluster-review", parentTicket.SelectedClusterID)
+	}
+	if parentTicket.SelectedStorageClass != "gold-sc" {
+		t.Fatalf("parent selected_storage_class = %q, want gold-sc", parentTicket.SelectedStorageClass)
+	}
+}
+
+func TestBatchHandler_RetryVMBatch_RequiresReviewWhenFailedCreateBatchHasNoSelectedCluster(t *testing.T) {
+	t.Parallel()
+
+	capture := &captureApprovalProvider{}
+	srv, client := newBatchBehaviorTestServerWithApprovalRouter(t, capture)
+	batchID, childID := mustSubmitFailedCreateBatchForRetry(t, srv, client, "owner-1")
+
+	retryCtx, retryW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/vms/batch/"+batchID+"/retry",
+		"",
+		"admin-1",
+		[]string{"builtin_approval:approve", "platform:admin"},
+	)
+	srv.RetryVMBatch(retryCtx, batchID)
+	if retryW.Code != http.StatusConflict {
+		t.Fatalf("retry status = %d, want %d body=%s", retryW.Code, http.StatusConflict, retryW.Body.String())
+	}
+	assertErrorCode(t, retryW.Body.Bytes(), "BATCH_RETRY_REVIEW_REQUIRED")
+
+	var resp generated.Error
+	if err := json.Unmarshal(retryW.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode retry response: %v", err)
+	}
+	if len(resp.FieldErrors) != 1 || resp.FieldErrors[0].Field != "selected_cluster_id" {
+		t.Fatalf("field_errors = %+v, want selected_cluster_id", resp.FieldErrors)
+	}
+	if capture.processCalled != 0 {
+		t.Fatalf("approval provider processCalled = %d, want 0", capture.processCalled)
+	}
+
+	child, err := client.Ticket.Get(t.Context(), childID)
+	if err != nil {
+		t.Fatalf("load child ticket: %v", err)
+	}
+	if child.Status != entticket.StatusFAILED {
+		t.Fatalf("child status = %q, want %q", child.Status, entticket.StatusFAILED)
+	}
+}
+
 func TestBatchHandler_SubmitVMBatchPower_EnqueueFailureFallsBackToFailed(t *testing.T) {
 	t.Parallel()
 
@@ -1355,6 +1473,102 @@ func mustSeedPowerBatchForRetry(t *testing.T, client *ent.Client, actor, operati
 	}
 
 	return batchID, childID
+}
+
+func mustSubmitFailedCreateBatchForRetry(
+	t *testing.T,
+	srv *Server,
+	client *ent.Client,
+	actor string,
+) (batchID, childID string) {
+	t.Helper()
+
+	serviceID, templateID, sizeID := mustCreateBatchCreatePrerequisites(
+		t,
+		client,
+		actor,
+		"team-prod",
+	)
+	submitBody := mustJSON(t, generated.VMBatchSubmitRequest{
+		Operation: generated.VMBatchOperation("CREATE"),
+		Items: []generated.VMBatchChildItem{
+			{
+				ServiceId:      serviceID,
+				TemplateId:     templateID,
+				InstanceSizeId: sizeID,
+				Namespace:      "team-prod",
+				Reason:         "create one",
+			},
+		},
+	})
+	submitCtx, submitW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/vms/batch",
+		submitBody,
+		actor,
+		[]string{"platform:admin"},
+	)
+	srv.SubmitVMBatch(submitCtx)
+	if submitW.Code != http.StatusAccepted {
+		t.Fatalf("submit status = %d, want %d body=%s", submitW.Code, http.StatusAccepted, submitW.Body.String())
+	}
+
+	var submitResp generated.VMBatchSubmitResponse
+	if err := json.Unmarshal(submitW.Body.Bytes(), &submitResp); err != nil {
+		t.Fatalf("decode submit response: %v", err)
+	}
+
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(submitResp.BatchId)).
+		All(t.Context())
+	if err != nil {
+		t.Fatalf("query child tickets: %v", err)
+	}
+	if len(children) != 1 {
+		t.Fatalf("child ticket count = %d, want 1", len(children))
+	}
+	childID = children[0].ID
+
+	if _, updateChildErr := client.Ticket.UpdateOneID(childID).
+		SetStatus(entticket.StatusFAILED).
+		SetRejectReason("seed failure").
+		Save(t.Context()); updateChildErr != nil {
+		t.Fatalf("seed child failed status: %v", updateChildErr)
+	}
+	if _, updateChildEventErr := client.DomainEvent.UpdateOneID(children[0].EventID).
+		SetStatus(domainevent.StatusFAILED).
+		Save(t.Context()); updateChildEventErr != nil {
+		t.Fatalf("seed child event failed status: %v", updateChildEventErr)
+	}
+	if _, updateParentErr := client.Ticket.UpdateOneID(submitResp.BatchId).
+		SetStatus(entticket.StatusFAILED).
+		ClearSelectedClusterID().
+		ClearSelectedStorageClass().
+		SetRejectReason("seed batch failure").
+		Save(t.Context()); updateParentErr != nil {
+		t.Fatalf("seed parent failed status: %v", updateParentErr)
+	}
+	parentTicket, err := client.Ticket.Get(t.Context(), submitResp.BatchId)
+	if err != nil {
+		t.Fatalf("load parent ticket: %v", err)
+	}
+	if _, err := client.DomainEvent.UpdateOneID(parentTicket.EventID).
+		SetStatus(domainevent.StatusFAILED).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed parent event failed status: %v", err)
+	}
+	if _, err := client.BatchTicket.UpdateOneID(submitResp.BatchId).
+		SetChildCount(1).
+		SetFailedCount(1).
+		SetSuccessCount(0).
+		SetPendingCount(0).
+		SetStatus(entbatchticket.StatusFAILED).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed batch projection failed status: %v", err)
+	}
+
+	return submitResp.BatchId, childID
 }
 
 func mustCreateBatchCreatePrerequisites(

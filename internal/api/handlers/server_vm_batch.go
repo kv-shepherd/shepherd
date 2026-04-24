@@ -994,15 +994,27 @@ func (s *Server) GetVMBatch(c *gin.Context, batchID generated.BatchID) {
 
 // RetryVMBatch handles POST /vms/batch/{batch_id}/retry.
 func (s *Server) RetryVMBatch(c *gin.Context, batchID generated.BatchID) {
-	s.mutateBatchChildren(c, batchID, batchActionRetry)
+	req, bindErr := bindOptionalJSON[generated.ApprovalDecisionRequest](c)
+	if bindErr != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{
+			Code:    "BAD_REQUEST",
+			Message: bindErr.Error(),
+		})
+		return
+	}
+	s.mutateBatchChildren(c, batchID, batchActionRetry, req)
 }
 
 // CancelVMBatch handles POST /vms/batch/{batch_id}/cancel.
 func (s *Server) CancelVMBatch(c *gin.Context, batchID generated.BatchID) {
-	s.mutateBatchChildren(c, batchID, batchActionCancel)
+	s.mutateBatchChildren(c, batchID, batchActionCancel, nil)
 }
 
-func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
+func (s *Server) mutateBatchChildren(
+	c *gin.Context,
+	batchID, action string,
+	retryReview *generated.ApprovalDecisionRequest,
+) {
 	ctx := c.Request.Context()
 	if !requireAnyGlobalPermission(c, "vm:create", "vm:delete", "vm:operate", "builtin_approval:approve") {
 		return
@@ -1060,6 +1072,29 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 		return
 	}
 	isPowerBatch := domain.EventType(parentEvent.EventType) == domain.EventBatchPowerRequested
+	isCreateBatch := parentTicket.OperationType == entticket.OperationTypeCREATE
+
+	useRetryReviewExecution := action == batchActionRetry && retryReview != nil
+	retryExecution := approvalcontract.ApprovalExecutionOptions{}
+	if useRetryReviewExecution {
+		if !hasGlobalPermission(c, "builtin_approval:approve") {
+			c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
+			return
+		}
+		retryExecution = approvalDecisionRequestToExecutionOptions(*retryReview)
+		if isCreateBatch && strings.TrimSpace(retryExecution.ClusterID) == "" {
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    "VALIDATION_FAILED",
+				Message: "selected cluster is required for create approval",
+				FieldErrors: []generated.FieldError{{
+					Field:   "selected_cluster_id",
+					Code:    "REQUIRED",
+					Message: "selected cluster is required for create approval",
+				}},
+			})
+			return
+		}
+	}
 
 	targetIDs := make([]string, 0)
 	targetEventIDs := make([]string, 0)
@@ -1113,6 +1148,55 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 	affectedCount := 0
 	affectedTicketIDs := make([]string, 0)
 	if action == batchActionRetry {
+		if isCreateBatch &&
+			resp.Status == generated.VMBatchParentStatusFAILED &&
+			!useRetryReviewExecution &&
+			strings.TrimSpace(parentTicket.SelectedClusterID) == "" {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "BATCH_RETRY_REVIEW_REQUIRED",
+				Message: "selected cluster is required before retrying a failed create batch; review the approval inputs first",
+				Params: map[string]interface{}{
+					"batch_id":         batchID,
+					"batch_status":     resp.Status,
+					"operation_type":   string(parentTicket.OperationType),
+					"requested_action": action,
+				},
+				FieldErrors: []generated.FieldError{{
+					Field:   "selected_cluster_id",
+					Code:    "REQUIRED",
+					Message: "selected cluster is required before retrying a failed create batch",
+				}},
+			})
+			return
+		}
+		if isCreateBatch && useRetryReviewExecution {
+			parentSelectionUpdater := s.client.Ticket.UpdateOneID(parentTicket.ID)
+			if strings.TrimSpace(retryExecution.ClusterID) != "" {
+				parentSelectionUpdater = parentSelectionUpdater.SetSelectedClusterID(
+					retryExecution.ClusterID,
+				)
+			} else {
+				parentSelectionUpdater = parentSelectionUpdater.ClearSelectedClusterID()
+			}
+			if strings.TrimSpace(retryExecution.StorageClass) != "" {
+				parentSelectionUpdater = parentSelectionUpdater.SetSelectedStorageClass(
+					retryExecution.StorageClass,
+				)
+			} else {
+				parentSelectionUpdater = parentSelectionUpdater.ClearSelectedStorageClass()
+			}
+			if _, updateParentErr := parentSelectionUpdater.Save(ctx); updateParentErr != nil {
+				if isRequestContextCanceled(updateParentErr) {
+					logger.Debug("request canceled while updating parent retry review inputs", zap.Error(updateParentErr), zap.String("batch_id", batchID), zap.String("action", action))
+					return
+				}
+				logger.Error("failed to update parent retry review inputs", zap.Error(updateParentErr), zap.String("batch_id", batchID), zap.String("action", action))
+				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+				return
+			}
+			parentTicket.SelectedClusterID = retryExecution.ClusterID
+			parentTicket.SelectedStorageClass = retryExecution.StorageClass
+		}
 		retryStatus := entticket.StatusPENDING
 		if isPowerBatch {
 			retryStatus = entticket.StatusEXECUTING
@@ -1212,15 +1296,19 @@ func (s *Server) mutateBatchChildren(c *gin.Context, batchID, action string) {
 				affectedTicketIDs = append(affectedTicketIDs, child.ID)
 				continue
 			}
+			execution := approvalcontract.ApprovalExecutionOptions{
+				ClusterID:    strings.TrimSpace(parentTicket.SelectedClusterID),
+				StorageClass: strings.TrimSpace(parentTicket.SelectedStorageClass),
+			}
+			if isCreateBatch && useRetryReviewExecution {
+				execution = retryExecution
+			}
 			approveErr := fmt.Errorf("approval provider is not configured")
 			if s.approvalRouter != nil {
 				approveErr = s.approvalRouter.ProcessApproval(ctx, child.ID, approvalcontract.ApprovalDecision{
-					Approved: true,
-					Approver: actor,
-					Execution: approvalcontract.ApprovalExecutionOptions{
-						ClusterID:    parentTicket.SelectedClusterID,
-						StorageClass: parentTicket.SelectedStorageClass,
-					},
+					Approved:  true,
+					Approver:  actor,
+					Execution: execution,
 				})
 			}
 			if approveErr != nil {

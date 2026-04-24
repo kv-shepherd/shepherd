@@ -2343,6 +2343,10 @@ export interface components {
             } | null;
             provisioning?: components["schemas"]["ProvisioningStatus"];
             placement_evaluation?: components["schemas"]["PlacementEvaluation"];
+            /** @description Persisted cluster selected during CREATE approval execution, exposed to support failed-batch re-review. */
+            selected_cluster_id?: string;
+            /** @description Persisted storage class selected during CREATE approval execution, exposed to support failed-batch re-review. */
+            selected_storage_class?: string;
             /** Format: date-time */
             created_at?: string;
         };
@@ -4419,7 +4423,11 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApprovalDecisionRequest"];
+            };
+        };
         responses: {
             /** @description Retry action accepted */
             200: {
@@ -4430,6 +4438,7 @@ export interface operations {
                     "application/json": components["schemas"]["VMBatchActionResponse"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];

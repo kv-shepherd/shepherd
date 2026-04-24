@@ -115,6 +115,7 @@
   "approve_modal.default_disk_gb": "Default Disk",
   "approve_modal.cluster": "Select Target Cluster",
   "approve_modal.cluster_hint": "Admin selects target cluster for VM deployment (ADR-0017)",
+  "approve_modal.cluster_required": "Select a target cluster before approving this request.",
   "approve_modal.cluster_query_error_title": "Cluster compatibility check failed",
   "approve_modal.cluster_query_error_description": "The current request context is invalid, so the platform cannot evaluate cluster compatibility yet.",
   "approve_modal.cluster_advisory": "Clone fallback likely",

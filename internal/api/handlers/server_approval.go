@@ -397,20 +397,9 @@ func (s *Server) ApproveBuiltinApprovalTask(c *gin.Context, ticketID generated.T
 	}
 
 	if err := s.approvalRouter.ProcessApproval(ctx, ticketID, approvalcontract.ApprovalDecision{
-		Approved: true,
-		Approver: actor,
-		Execution: approvalcontract.ApprovalExecutionOptions{
-			ClusterID:       req.SelectedClusterId,
-			StorageClass:    req.SelectedStorageClass,
-			DVAccessModes:   req.SelectedDvAccessModes,
-			DVVolumeMode:    string(req.SelectedDvVolumeMode),
-			EnableOverride:  req.EnableOverride,
-			CPURequest:      float64(req.CpuRequest),
-			CPULimit:        float64(req.CpuLimit),
-			MemoryRequestGi: float64(req.MemoryRequestGi),
-			MemoryLimitGi:   float64(req.MemoryLimitGi),
-			DiskGB:          req.DiskGb,
-		},
+		Approved:  true,
+		Approver:  actor,
+		Execution: approvalDecisionRequestToExecutionOptions(req),
 	}); err != nil {
 		if appErr, ok := apperrors.IsAppError(err); ok {
 			c.JSON(appErr.HTTPStatus, generated.Error{
@@ -560,7 +549,28 @@ func ticketToAPI(
 		TicketPayload:       ticketPayload,
 		Provisioning:        provisioning,
 		PlacementEvaluation: placementEvaluation,
-		CreatedAt:           t.CreatedAt,
+		SelectedClusterId:   strings.TrimSpace(t.SelectedClusterID),
+		SelectedStorageClass: strings.TrimSpace(
+			t.SelectedStorageClass,
+		),
+		CreatedAt: t.CreatedAt,
+	}
+}
+
+func approvalDecisionRequestToExecutionOptions(
+	req generated.ApprovalDecisionRequest,
+) approvalcontract.ApprovalExecutionOptions {
+	return approvalcontract.ApprovalExecutionOptions{
+		ClusterID:       strings.TrimSpace(req.SelectedClusterId),
+		StorageClass:    strings.TrimSpace(req.SelectedStorageClass),
+		DVAccessModes:   cloneStringSlice(req.SelectedDvAccessModes),
+		DVVolumeMode:    string(req.SelectedDvVolumeMode),
+		EnableOverride:  req.EnableOverride,
+		CPURequest:      float64(req.CpuRequest),
+		CPULimit:        float64(req.CpuLimit),
+		MemoryRequestGi: float64(req.MemoryRequestGi),
+		MemoryLimitGi:   float64(req.MemoryLimitGi),
+		DiskGB:          req.DiskGb,
 	}
 }
 
