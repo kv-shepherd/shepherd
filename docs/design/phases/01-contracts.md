@@ -45,31 +45,16 @@ Define core contracts and types:
 
 | Deliverable | File Path | Status | Example |
 |-------------|-----------|--------|---------|
-| **System Schema** | `ent/schema/system.go` | ⬜ | - |
-| **Service Schema** | `ent/schema/service.go` | ⬜ | - |
-| VM Schema | `ent/schema/vm.go` | ⬜ | - |
-| VM Revision Schema | `ent/schema/vm_revision.go` | ⬜ | - |
-| AuditLog Schema | `ent/schema/audit_log.go` | ⬜ | - |
-| ApprovalTicket Schema | `ent/schema/approval_ticket.go` | ⬜ | - |
-| ApprovalPolicy Schema | `ent/schema/approval_policy.go` | ⬜ | [ADR-0005](../../adr/ADR-0005-workflow-extensibility.md) ¹ |
-| Cluster Schema | `ent/schema/cluster.go` | ⬜ | - |
-| DomainEvent Schema | `ent/schema/domain_event.go` | ⬜ | - |
-| PendingAdoption Schema | `ent/schema/pending_adoption.go` | ⬜ | - |
-| **InstanceSize Schema** | `ent/schema/instance_size.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **Users Schema** | `ent/schema/users.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **AuthProviders Schema** | `ent/schema/auth_providers.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **ExternalCohorts Schema** | `ent/schema/external_cohort.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
-| **ExternalCohortMappings Schema** | `ent/schema/external_cohort_mapping.go` | ⬜ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
-| **Roles Schema** | `ent/schema/roles.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.A](../interaction-flows/master-flow.md#stage-2-a) |
-| **RoleBindings Schema** | `ent/schema/role_bindings.go` | ⬜ | [ADR-0018 §7](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 2.B](../interaction-flows/master-flow.md#stage-2-b) |
-| **ResourceRoleBindings Schema** | `ent/schema/resource_role_bindings.go` | ⬜ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md), [master-flow Stage 4.A+](../interaction-flows/master-flow.md#stage-4-a-plus) |
-| **ExternalApprovalSystem Schema** | `ent/schema/external_approval_system.go` | ⬜ | [RFC-0004](../../rfc/RFC-0004-external-approval.md) ² |
-| Provider interface | `internal/provider/interface.go` | ⬜ | [examples/provider/interface.go](../examples/provider/interface.go) |
-| Domain models | `internal/domain/` | ⬜ | [examples/README.md §Directory Structure](../examples/README.md#directory-structure) |
-| Error system | `internal/pkg/errors/errors.go` | ⬜ | - |
-| **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ⬜ | [ADR-0021](../../adr/ADR-0021-api-contract-first.md) |
-| **OpenAPI Spec (Compat, optional)** | `api/openapi.compat.yaml` | ⬜ | 3.0-compatible artifact for Go toolchain |
-| **Go API Generated Types** | `internal/api/generated/` | ⬜ | `make api-generate` |
+| Core governance schemas | `ent/schema/{system,service,vm,vm_revision,audit_log,ticket,approval_policy,cluster,domain_event,pending_adoption}.go` | ✅ | 32 Ent schemas total |
+| Catalog/RBAC/auth schemas | `ent/schema/{template,instance_size,user,auth_provider,role,role_binding,resource_role_binding}.go` | ✅ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
+| External cohort schemas | `ent/schema/{external_cohort,external_cohort_mapping,external_cohort_grant}.go` | ✅ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
+| External approval system schema | - | Deferred | Future adapters remain [RFC-0004](../../rfc/RFC-0004-external-approval.md) scope ² |
+| Provider interfaces | `internal/provider/`, `internal/provider/*contract/` | ✅ | Capability-composed runtime/admin/directory/notification contracts |
+| Domain models | `internal/domain/` | ✅ | [examples/README.md §Directory Structure](../examples/README.md#directory-structure) |
+| Error system | `internal/pkg/errors/{errors.go,codes.go}` | ✅ | Structured `AppError` and canonical codes |
+| **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ✅ | OpenAPI 3.1.0, 127 operationIds |
+| **OpenAPI Spec (Compat)** | `api/openapi.compat.yaml` | ✅ | Required because canonical spec uses OpenAPI 3.1 nullable union types |
+| **Go API Generated Types** | `internal/api/generated/` | ✅ | `make api-generate` |
 | **TS API Generated Types** | `web/src/types/api.gen.ts` | ✅ | `make api-generate` |
 
 > ³ **V1 Scope**: IdP authentication (OIDC + LDAP) is fully implemented in V1.
@@ -95,7 +80,8 @@ api/openapi.yaml → Code Generation → Implementation
 
 **Compat generation**:
 - Use `make api-compat-generate` to produce `api/openapi.compat.yaml` from `api/openapi.yaml`.
-- The downgrade is defined by `docs/design/ci/api-templates/openapi-overlay-3.0.yaml`.
+- The downgrade is implemented by `cmd/openapi-compat-gen/main.go` and verified
+  by `REQUIRE_OPENAPI_COMPAT=1 make api-compat`.
 
 ### Directory Structure
 
@@ -129,7 +115,7 @@ Granular error codes for frontend handling:
 | `NAMESPACE_PERMISSION_DENIED` | 403 | No JIT namespace creation permission | ✅ Active |
 | `NAMESPACE_QUOTA_EXCEEDED` | 403 | Cluster namespace quota reached (K8s ResourceQuota) | ✅ Active ¹ |
 | `NAMESPACE_CREATION_FAILED` | 500 | JIT namespace creation failed (K8s API error) | ✅ Active ³ |
-| `QUOTA_EXCEEDED` | 422 | Tenant resource quota exceeded | ⏳ V2+ Reserved ² |
+| `QUOTA_EXCEEDED` | 422 | Tenant resource quota exceeded | V2+ reserved ² |
 | `CLUSTER_UNHEALTHY` | 503 | Target cluster unavailable | ✅ Active |
 | `APPROVAL_REQUIRED` | 202 | Request pending approval | ✅ Active |
 
@@ -560,11 +546,12 @@ const (
 
 ## Acceptance Criteria
 
-- [ ] All Ent schemas compile (`go generate ./ent`)
-- [ ] Provider interfaces compile
-- [ ] Domain types defined
-- [ ] Error codes defined
-- [ ] CI checks pass
+- [x] All Ent schemas compile (`make generate` / Ent generation path)
+- [x] Provider interfaces compile
+- [x] Domain types defined
+- [x] Error codes defined
+- [x] OpenAPI 3.1 canonical spec and 3.0-compatible artifact are in sync
+- [x] CI gates exist for Ent generation, OpenAPI contracts, SQL usage, and architecture constraints
 
 ---
 

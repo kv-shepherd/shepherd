@@ -59,7 +59,7 @@
 | ✅ ADR-0012 atomic approval | `usecase/approval_atomic.go` + `repository/sqlc/` | Approval writes + River enqueue in single transaction |
 | ✅ VM create idempotency guard | `jobs/vm_create.go` | Event label + pre-create lookup + safe retry on DB write failure |
 | ✅ ListApprovals DELETE target VM | `server_approval.go` | Batch-fetch DomainEvent payload for DELETE tickets, populate target_vm_id/name |
-| ✅ Approvals priority highlighting | `web/src/app/admin/approvals/page.tsx` | ADR-0015 §11 visual priority tier (🟡 4-7d, 🔴 7+d) |
+| ✅ Approvals priority highlighting | `web/src/app/(protected)/admin/approvals/page.tsx` | ADR-0015 §11 visual priority tier (🟡 4-7d, 🔴 7+d) |
 | ✅ Service delete frontend | `web/src/app/services/page.tsx` | Popconfirm + DELETE API + confirm=true |
 | ✅ i18n: target_vm + delete modal | `web/src/i18n/locales/{en,zh-CN}/approval.json` | target_vm, delete_target_vm keys |
 | ✅ NotificationSender interface | `internal/notification/sender.go` | Sender interface + InboxSender (sync DB write) |
@@ -69,9 +69,9 @@
 | ✅ DI wiring | `internal/app/modules/approval.go` | InboxSender → Triggers → Gateway.SetNotifier |
 | ✅ Frontend NotificationBell | `web/src/components/ui/NotificationBell.tsx` | Badge + Popover + mark-read + 30s polling |
 | ✅ i18n: notification keys | `web/src/i18n/locales/{en,zh-CN}/common.json` | notification.title/empty/markAllRead/type.* keys |
-| ✅ Namespace Admin Page | `web/src/app/admin/namespaces/page.tsx` | CRUD + confirm_name delete gate (ADR-0015 §13) |
-| ✅ Templates Admin Page | `web/src/app/admin/templates/page.tsx` | CRUD list/forms + column filters + useDeferredValue search |
-| ✅ InstanceSizes Admin Page | `web/src/app/admin/instance-sizes/page.tsx` | CRUD list/forms + capability filters + numeric sorters |
+| ✅ Namespace Admin Page | `web/src/app/(protected)/admin/namespaces/page.tsx` | CRUD + confirm_name delete gate (ADR-0015 §13) |
+| ✅ Templates Admin Page | `web/src/app/(protected)/admin/templates/page.tsx` | CRUD list/forms + column filters + useDeferredValue search |
+| ✅ InstanceSizes Admin Page | `web/src/app/(protected)/admin/instance-sizes/page.tsx` | CRUD list/forms + capability filters + numeric sorters |
 | ✅ i18n: admin page keys | `web/src/i18n/locales/{en,zh-CN}/admin.json` | 44+ keys for namespaces/templates/instanceSizes |
 | ✅ Navigation updated | `web/src/components/layouts/AppLayout.tsx` | 3 new admin menu entries with icons |
 
@@ -95,14 +95,14 @@
 | ApprovalTicket Schema | `ent/schema/approval_ticket.go` | full | ✅ Fixed — operation_type enum added |
 | AuditLogger | `internal/governance/audit/logger.go` | full | ✅ Aligned |
 | ListApprovals DELETE enrichment | `internal/api/handlers/server_approval.go` | 17-100 | ✅ Batch-fetch DomainEvent for DELETE ticket target VM |
-| Approvals Frontend + Priority | `web/src/app/admin/approvals/page.tsx` | full | ✅ target_vm column + ADR-0015 §11 priority highlighting |
+| Approvals Frontend + Priority | `web/src/app/(protected)/admin/approvals/page.tsx` | full | ✅ target_vm column + ADR-0015 §11 priority highlighting |
 | Service Delete Frontend | `web/src/app/services/page.tsx` | full | ✅ Popconfirm + DELETE with confirm=true |
 | NotificationSender | `internal/notification/sender.go` | full | ✅ Sender interface + InboxSender |
 | NotificationTriggers | `internal/notification/triggers.go` | full | ✅ 4 event triggers + approver lookup |
 | NotificationBell (Frontend) | `web/src/components/ui/NotificationBell.tsx` | full | ✅ Badge + Popover + mark-read |
-| Namespace Admin Page | `web/src/app/admin/namespaces/page.tsx` | full | ✅ CRUD + confirm_name delete |
-| Templates Admin Page | `web/src/app/admin/templates/page.tsx` | full | ✅ Column filters + deferred search |
-| InstanceSizes Admin Page | `web/src/app/admin/instance-sizes/page.tsx` | full | ✅ Capability filters + sort |
+| Namespace Admin Page | `web/src/app/(protected)/admin/namespaces/page.tsx` | full | ✅ CRUD + confirm_name delete |
+| Templates Admin Page | `web/src/app/(protected)/admin/templates/page.tsx` | full | ✅ Column filters + deferred search |
+| InstanceSizes Admin Page | `web/src/app/(protected)/admin/instance-sizes/page.tsx` | full | ✅ Capability filters + sort |
 
 ---
 

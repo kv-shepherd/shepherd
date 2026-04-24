@@ -51,8 +51,8 @@ Integrate service layer with providers:
 | VMHandler | `internal/api/handlers/vm.go` | ✅ | - |
 | SystemHandler | `internal/api/handlers/system.go` | ✅ | - |
 | **InstanceSizeService** | `internal/service/instance_size_service.go` | ✅ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
-| **InstanceSizeHandler** | `internal/api/handlers/instance_size.go` | ⬜ | Deferred |
-| CI check | `docs/design/ci/scripts/check_manual_di.sh` | ⬜ | Deferred |
+| **InstanceSize handlers** | `internal/api/handlers/server_admin_catalog.go` | ✅ | Admin and public catalog endpoints |
+| CI check | `docs/design/ci/scripts/check_manual_di.sh` | ✅ | Verified locally; registration-only `init()` is allowed |
 
 ---
 
@@ -396,12 +396,15 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, spec *domain.VMSpec) e
 
 ## Acceptance Criteria
 
-- [ ] Manual DI in `bootstrap.go`
-- [ ] `check_manual_di.sh` passes
-- [ ] UseCase manages transactions
-- [ ] Handler returns 202 for writes
-- [ ] Degradation check works
-- [ ] HPA constraints documented
+- [x] Manual DI in `bootstrap.go` and `internal/app/modules/`
+- [x] `check_manual_di.sh` passes
+- [x] UseCase layer owns transaction orchestration for write paths
+- [x] Handlers return `202 Accepted` for async VM writes and batch/console request paths
+- [x] Cluster/runtime degradation handling exists in approval preflight, capability detection, and worker retry paths
+- [x] HPA constraints documented in [DEPENDENCIES.md §HPA Concurrency Constraints Required](../DEPENDENCIES.md#hpa-concurrency-constraints-required)
+
+Advanced degradation/circuit-breaker UX remains a non-blocking follow-up in
+[DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md).
 
 ---
 
@@ -415,35 +418,21 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, spec *domain.VMSpec) e
 |----------|--------|-------------|
 | `/api/v1/admin/instance-sizes` | GET | List all InstanceSizes |
 | `/api/v1/admin/instance-sizes` | POST | Create InstanceSize |
-| `/api/v1/admin/instance-sizes/{name}` | GET | Get InstanceSize by name |
-| `/api/v1/admin/instance-sizes/{name}` | PUT | Update InstanceSize |
-| `/api/v1/admin/instance-sizes/{name}` | DELETE | Delete InstanceSize |
-| `/api/v1/admin/instance-sizes?dryRun=All` | POST | Dry-run validation only |
+| `/api/v1/admin/instance-sizes/{instance_size_id}` | PATCH | Update InstanceSize |
+| `/api/v1/admin/instance-sizes/{instance_size_id}` | DELETE | Delete InstanceSize |
+| `/api/v1/instance-sizes` | GET | User-facing enabled catalog list |
 
-### River Queue Integration (ADR-0006 Compliance)
+### Write Semantics
 
-> **Mandatory**: All InstanceSize write operations MUST go through River Queue per [ADR-0006](../../adr/ADR-0006-unified-async-model.md).
+InstanceSize CRUD is a pure PostgreSQL catalog operation. It is synchronous and
+does not call K8s, so ADR-0006 River enqueue is not required. ADR-0006 applies
+to external-system write operations such as VM create/delete/power/modify.
 
 ```go
-// All admin writes create River Job
-func (h *InstanceSizeHandler) Create(c *gin.Context) {
-    var req CreateInstanceSizeRequest
-    if err := c.ShouldBindJSON(&req); err != nil {
-        c.JSON(400, gin.H{"error": err.Error()})
-        return
-    }
-    
-    // Insert via River Queue
-    job, err := h.riverClient.Insert(ctx, InstanceSizeCRUDJobArgs{
-        Operation: "CREATE",
-        Payload:   req,
-    }, nil)
-    
-    c.JSON(202, gin.H{
-        "job_id": job.ID,
-        "status": "PENDING",
-    })
-}
+// internal/api/handlers/server_admin_catalog.go
+// createAdminInstanceSize -> validate request -> ent.InstanceSize.Create() -> 201
+// updateAdminInstanceSize -> validate request -> ent.InstanceSize.UpdateOneID() -> 200
+// deleteAdminInstanceSize -> delete guards -> ent.InstanceSize.DeleteOneID() -> 204
 ```
 
 ### Overcommit Warnings (Approval Flow)

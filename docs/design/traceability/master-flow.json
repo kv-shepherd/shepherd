@@ -26,11 +26,13 @@
         "docs/design/phases/00-prerequisites.md#ci-enforcement",
         "docs/design/phases/01-contracts.md",
         "docs/design/phases/01-contracts.md#ent-usage-standards-ci-enforcement",
-        "docs/design/phases/05-auth-api-frontend.md"
+        "docs/design/phases/05-auth-api-frontend.md",
+        "docs/design/phases/05-auth-api-frontend.md#current-runtime-alignment"
       ],
       "checklists": [
         "docs/design/checklist/phase-0-checklist.md",
-        "docs/design/checklist/phase-5-checklist.md"
+        "docs/design/checklist/phase-5-checklist.md",
+        "docs/design/checklist/phase-5-checklist.md#current-runtime-alignment"
       ],
       "adrs": [
         "docs/adr/ADR-0025-secret-bootstrap.md",

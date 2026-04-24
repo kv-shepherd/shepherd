@@ -54,7 +54,7 @@ river:
 
 security:
   # ADR-0025: Auto-generated on first boot if missing
-  # encryption_key: ""   # 32-byte base64 key (openssl rand -base64 32)
+  # encryption_key: ""   # 32-byte hex key (openssl rand -hex 32)
   # session_secret: ""   # 32-byte base64 key (openssl rand -base64 32)
   password_policy:
     mode: nist          # "nist" (default) or "legacy"

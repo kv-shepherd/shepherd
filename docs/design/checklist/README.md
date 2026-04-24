@@ -22,9 +22,10 @@
 ## Usage
 
 1. Complete each phase checklist before entering the next phase.
-2. All `[ ]` items must be converted to `[x]` for phase completion.
-3. Any new checklist item must map to an ADR, phase spec, or global checklist entry.
-4. Frontend-impacting changes must update both frontend checklist items and corresponding backend/API checklist items.
+2. Phase-blocking `[ ]` items must be converted to `[x]` for phase completion.
+3. Non-blocking production, environment, or V2/RFC items belong in [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md), not as stale phase-blocking checkboxes.
+4. Any new checklist item must map to an ADR, phase spec, or global checklist entry.
+5. Frontend-impacting changes must update both frontend checklist items and corresponding backend/API checklist items.
 
 ---
 

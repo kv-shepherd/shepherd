@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/01-contracts.md](../phases/01-contracts.md)
 >
-> **Implementation Status**: 🔄 Partial (~92%) — 28 Ent schemas complete, Go/TS API types + frontend testing toolchain completed, contract CI hardening gaps remain
+> **Implementation Status**: 🔄 Partial (~94%) — 32 Ent schemas complete, Go/TS API types + frontend testing toolchain completed, contract CI hardening gaps and deferred V2 schemas remain
 
 ---
 
@@ -107,7 +107,7 @@
 - [x] `api/.vacuum.yaml` exists and `make api-lint` passes (ADR-0029: vacuum replaces spectral) — *implemented in `build/api.mk`*
 - [x] `api/oapi-codegen.yaml` exists and targets `internal/api/generated/` — *Phase 5: v2 format with gin-server + models*
 - [x] `make api-generate` produces:
-  - [x] `internal/api/generated/` Go server types — *Phase 5: 5901 lines, ServerInterface with 97 endpoints*
+  - [x] `internal/api/generated/` Go server types — *Phase 5: 8613 lines, ServerInterface with 127 endpoints*
   - [x] `web/src/types/api.gen.ts` TypeScript types — *Regenerated from `api/openapi.yaml`*
 - [x] `make api-check` passes with no uncommitted generated changes — *implemented in `build/api.mk` + `docs/design/ci/scripts/api-check.sh`*
 - [ ] If 3.1-only features are used:

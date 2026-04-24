@@ -41,6 +41,18 @@ gate checks.
 | Audit trail | OpenShift-integrated | ✔ Platform-native |
 | Vendor lock-in | Strong (OpenShift) | None |
 
+## Born in Production
+
+Shepherd was created from recurring VM governance needs in a financial-services
+Kubernetes/KubeVirt environment: request intake, approval, delivery, RBAC,
+auditability, and lifecycle cleanup had to work together rather than as
+separate scripts.
+
+The public project is a clean Go/TypeScript implementation of that operating
+model. Core governance paths have been exercised internally, while the public
+Alpha status reflects the need for broader feedback across different clusters,
+storage classes, auth providers, and organizational policies.
+
 ## Features
 
 - **Approval Workflow** — Structured request and multi-level approval for VM lifecycle operations

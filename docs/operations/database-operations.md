@@ -2,7 +2,7 @@
 
 > **Reference ADRs**: 
 > - [ADR-0003](../adr/ADR-0003-database-orm.md) - Database ORM (Ent)
-> - [ADR-0008](../adr/ADR-0008-postgres-only.md) - PostgreSQL Only
+> - [ADR-0008](../adr/ADR-0008-postgresql-stability.md) - PostgreSQL Stability
 > - [ADR-0012](../adr/ADR-0012-hybrid-transaction.md) - Hybrid Transaction
 
 ---
@@ -124,6 +124,6 @@ VACUUM ANALYZE river_job;
 ## Related Documents
 
 - [00-prerequisites.md §7.5](../design/phases/00-prerequisites.md) - PostgreSQL Stability Configuration
-- [ADR-0008](../adr/ADR-0008-postgres-only.md) - PostgreSQL Only Decision
+- [ADR-0008](../adr/ADR-0008-postgresql-stability.md) - PostgreSQL Stability Decision
 - [ADR-0012](../adr/ADR-0012-hybrid-transaction.md) - Hybrid Transaction Strategy
 - [DEPENDENCIES.md](../design/DEPENDENCIES.md) - Version Requirements

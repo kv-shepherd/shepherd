@@ -2,9 +2,18 @@
 
 > **Detailed Document**: [phases/05-auth-api-frontend.md](../phases/05-auth-api-frontend.md)
 >
-> **Implementation Status**: 🔄 In Progress (~96%, 2026-03-10) — Backend + frontend feature-complete (97 endpoints, 25 pages), E2E verification pending
+> **Implementation Status**: 🔄 In Progress (~97%, 2026-04-24) — Backend + frontend feature-complete for current scope (127 endpoints, 28 App Router page files including compatibility/alias routes), E2E verification pending
 >
 > **Gate Checklist**: [../ci/GATE_HARDENING_CHECKLIST.md](../ci/GATE_HARDENING_CHECKLIST.md)
+
+---
+
+## Current Runtime Alignment
+
+- Current OpenAPI contract has 127 `operationId`s.
+- Current frontend tree has 28 `page.tsx` files under `web/src/app`, including the root redirect and compatibility/alias routes.
+- Canonical auth middleware paths are `internal/api/middleware/jwt.go` and `internal/api/middleware/rbac.go`.
+- Canonical auth handler path is `internal/api/handlers/server_auth.go`; route registration is generated from OpenAPI and wired by `internal/app/router.go`.
 
 ---
 
@@ -12,13 +21,13 @@
 
 - [x] **Local Login**: POST `/api/v1/auth/login` with bcrypt password verification
 - [x] **Password Hash Cost**: bcrypt cost fixed to `12` (`handlers/server_auth.go`)
-- [x] **JWT Token Signing**: HS256 with configurable secret + expiry (`middleware/jwt.go`)
+- [x] **JWT Token Signing**: HS256 with configurable secret + expiry (`internal/api/middleware/jwt.go`)
 - [x] **Force Password Change**: Default admin must change password on first login
 - [x] **Current User**: GET `/api/v1/auth/me` returns user info + roles + permissions
 - [x] **Change Password**: POST `/api/v1/auth/change-password` with old/new password validation
 - [x] **Credential Log Redaction**: login failure logs do not include username/password/token
-- [x] **AuthHandler** (`handlers/auth.go`) — Login, GetCurrentUser, ChangePassword
-- [x] **AuthModule** (`modules/auth.go`) — Public routes (login) + JWT-protected routes (me, change-password)
+- [x] **Auth handlers** (`internal/api/handlers/server_auth.go`) — Login, GetCurrentUser, ChangePassword
+- [x] **Auth route wiring** (`internal/app/router.go` + generated OpenAPI registration) — Public routes (login/provider callbacks) + JWT-protected routes (me, change-password)
 
 ---
 
@@ -46,7 +55,7 @@
 ## API Contract-First Code Generation (ADR-0021)
 
 - [x] `api/oapi-codegen.yaml` v2 format with gin-server + models generation
-- [x] `internal/api/generated/server.gen.go` — 97 endpoints (omitzero value types via ADR-0028), all model types
+- [x] `internal/api/generated/server.gen.go` — 127 endpoints (omitzero value types via ADR-0028), all model types
 - [x] `make api-gen` Makefile target
 - [x] `make ent-gen` Makefile target
 - [x] `make generate` composite target (ent-gen + api-gen)
@@ -88,7 +97,7 @@
 - [x] **River Client**: `InitRiverClient()` in `database.go` with riverpgxv5
 - [x] **Worker Registration**: VMCreateWorker in bootstrap composition root
 - [x] **Atlas Migration Config**: `migrations/atlas/atlas.hcl`
-- [x] **Bootstrap composition root**: `Bootstrap()` remains orchestration-only and concise (current function body: 55 lines; file may exceed 100 due to helpers/comments, see ADR-0043 design note)
+- [x] **Bootstrap composition root**: `Bootstrap()` remains orchestration-only and concise (current function body: 57 lines; file may exceed 100 due to helpers/comments, see ADR-0043 design note)
 - [x] **Seed Command**: `cmd/seed/main.go` with 6 built-in roles + default admin
 
 ---
@@ -105,7 +114,7 @@
 - [ ] **Form Validation**: Zod 4.x (i18n validation messages pending)
 - [x] **Internationalization**: react-i18next 16.x (en + zh-CN, 6 namespaces)
 - [x] **API Client**: openapi-typescript + openapi-fetch (type-safe from contract)
-- [x] **Pages feature-complete** (25/25 routes exist and are production-ready for current scope):
+- [x] **Pages feature-complete** for current scope (28 App Router page files exist, including compatibility/alias routes):
   - [x] Login page (with force password change flow)
   - [x] Dashboard / System overview (real API: health, stats)
   - [x] System CRUD management (GET/POST/DELETE with RFC 1035 validation)

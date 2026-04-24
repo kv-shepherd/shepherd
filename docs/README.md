@@ -16,10 +16,12 @@ docs/
 │
 ├── rfc/                      # Request for Comments (Future Features)
 │   ├── README.md             # RFC index with priorities
-│   └── RFC-0001 ~ RFC-0018   # Individual RFCs
+│   └── RFC-0001 ~ RFC-0022   # Individual RFCs
 │
 └── design/                   # Implementation Design
-    ├── README.md             # Core Go Refactor Project overview
+    ├── README.md             # Design overview and reading order
+    ├── CURRENT_STATE.md      # Current code-vs-design alignment snapshot
+    ├── DEFERRED_FOLLOWUPS.md # Non-blocking production/environment/V2 follow-ups
     ├── interaction-flows/    # Canonical interaction outcomes
     │   ├── README.md
     │   └── master-flow.md
@@ -30,14 +32,16 @@ docs/
     │   ├── 01-contracts.md
     │   ├── 02-providers.md
     │   ├── 03-service-layer.md
-    │   └── 04-governance.md
+    │   ├── 04-governance.md
+    │   └── 05-auth-api-frontend.md
     ├── checklist/            # Per-phase acceptance checklists
     │   ├── README.md
     │   ├── phase-0-checklist.md
     │   ├── phase-1-checklist.md
     │   ├── phase-2-checklist.md
     │   ├── phase-3-checklist.md
-    │   └── phase-4-checklist.md
+    │   ├── phase-4-checklist.md
+    │   └── phase-5-checklist.md
     ├── examples/             # Reference implementations
     │   ├── README.md
     │   ├── config/
@@ -84,9 +88,11 @@ docs/
 1. **[design/DEPENDENCIES.md](./design/DEPENDENCIES.md)** - Understand version constraints FIRST (single source of truth)
 2. **[adr/README.md](./adr/README.md)** - Follow the "Reading Order" section for architectural decisions
 3. **[design/README.md](./design/README.md)** - Project overview and structure
-4. **[design/README.md → Implementation Phases](./design/README.md#implementation-phases)** - Sequential implementation (00 → 01 → 02 → 03 → 04)
-5. **[design/examples/README.md](./design/examples/README.md)** - Reference implementations
-6. **[design/checklist/README.md](./design/checklist/README.md)** - Verification criteria for each phase
+4. **[design/CURRENT_STATE.md](./design/CURRENT_STATE.md)** - Current code-vs-design alignment snapshot
+5. **[design/DEFERRED_FOLLOWUPS.md](./design/DEFERRED_FOLLOWUPS.md)** - Non-blocking production/environment/V2 follow-ups
+6. **[design/README.md → Implementation Phases](./design/README.md#implementation-phases)** - Sequential implementation (00 → 01 → 02 → 03 → 04 → 05)
+7. **[design/examples/README.md](./design/examples/README.md)** - Reference implementations
+8. **[design/checklist/README.md](./design/checklist/README.md)** - Verification criteria for each phase
 
 ### For Architects
 

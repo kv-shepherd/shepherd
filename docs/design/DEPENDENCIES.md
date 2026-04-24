@@ -1,777 +1,260 @@
-# Dependency Version Definitions (Single Source of Truth)
+# Dependency Version Definitions
 
-> **Purpose**: Authoritative source for all dependency versions. Other documents reference this file.  
-> **Validation**: All versions verified via go.dev / github releases  
-> **Key Decision**: ADR-0012 Hybrid Atomic Transaction Strategy (Ent + sqlc)
+> **Purpose**: Authoritative dependency and toolchain version reference.
+> **Last audited**: 2026-04-24.
+> **Primary sources**: `go.mod`, `Makefile`, `build/api.mk`, `web/package.json`,
+> `api/openapi.yaml`.
 
----
-
-## Document Purpose
-
-**This file is the single source of truth for dependency versions.**
-
-- Other documents must not define versions, only reference this file
-- Version changes only happen here
-- CI checks verify other documents don't contain hardcoded versions
-
----
+Other design documents should link here instead of hardcoding dependency
+versions.
 
 ## Go Version
 
-| Item | Version | Notes |
-|------|---------|-------|
-| **Go** | `1.25.9` | Current repository baseline and minimum patched toolchain for blocking `govulncheck` |
+| Item | Version | Source |
+|------|---------|--------|
+| Go toolchain | `1.25.9` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION` |
 
-> **Go Version Strategy (ADR-0028)**: 
-> - **Minimum**: Go 1.24 (required for `omitzero` tag support, ADR-0028)
-> - **CI Enforced**: Go 1.25+ (ADR-0028 §Confirmation)
-> - **Current Baseline**: Go 1.25.9
-> - **Security Gate**: `govulncheck` is blocking at this baseline
-> - Dependencies: Gin v1.11.0 requires Go 1.23+, KubeVirt client-go requires Go 1.24+
-> - Code is backward compatible with Go 1.24, but CI blocks builds below Go 1.25
-
----
+ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
+`1.25.9`.
 
 ## Core Dependencies
 
-> **Version Selection Strategy**: 
-> - Use exact versions, prefer mature versions with multiple patches
-> - All versions verified via `proxy.golang.org` on 2026-02-09
+### Backend Runtime
 
-> **Version Verification Method**:
-> ```bash
-> curl -s "https://proxy.golang.org/<package>/@v/list" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1
-> ```
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `github.com/gin-gonic/gin` | `v1.12.0` | HTTP router |
+| `github.com/gin-contrib/cors` | `v1.7.7` | CORS middleware |
+| `github.com/go-playground/validator/v10` | `v10.30.2` | Request/struct validation |
+| `entgo.io/ent` | `v0.14.6` | ORM |
+| `github.com/jackc/pgx/v5` | `v5.9.1` | PostgreSQL driver and pool |
+| `github.com/riverqueue/river` | `v0.32.0` | PostgreSQL-native job queue |
+| `github.com/riverqueue/river/riverdriver/riverpgxv5` | `v0.32.0` | River pgx v5 driver |
+| `github.com/sqlc-dev/sqlc` | `v1.30.0` | SQL code generation; invoked by `make sqlc-gen` |
+| `go.uber.org/zap` | `v1.27.1` | Structured logging |
+| `github.com/spf13/viper` | `v1.21.0` | Configuration |
+| `github.com/robfig/cron/v3` | `v3.0.1` | Directory-enrichment schedule parsing |
+| `github.com/panjf2000/ants/v2` | `v2.12.0` | In-process worker pool |
+| `golang.org/x/sync` | `v0.20.0` | Semaphore/errgroup utilities |
 
-### Web Framework Layer
+### Database
 
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `github.com/gin-gonic/gin` | `v1.11.0` | 2025-09 | High-performance web framework |
-| `github.com/go-playground/validator/v10` | `v10.25.0` | 2025-12 | Struct validation (Gin dependency) |
+| Component | Version | Notes |
+|-----------|---------|-------|
+| PostgreSQL | `18` | Development and production baseline |
+| Ent migrations | Ent-generated schema | Dev auto-migrate is available behind `database.auto_migrate`; production uses reviewed migrations |
+| Atlas config | `migrations/atlas/atlas.hcl` | Atlas CLI is an external tool; `ariga.io/atlas` appears indirectly through Ent |
+| River migrations | River `rivermigrate` | Created by `DatabaseClients.AutoMigrate` in development paths |
 
-### Database Layer (PostgreSQL + Ent)
+### Kubernetes and KubeVirt
 
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| **PostgreSQL** | `18` | 2025-09 | Database (latest stable) |
-| `github.com/jackc/pgx/v5` | `v5.8.0` | 2025-12 | PostgreSQL driver (best performance) |
-| `entgo.io/ent` | `v0.14.5` | 2025-07 | Entity framework (type-safe ORM, **latest stable**) |
-| `ariga.io/atlas` | `v1.0.0` | 2025-12 | Schema migration tool (GA release) |
-| `ariga.io/atlas-go-sdk` | `v0.10.0` | 2025-12 | Atlas Go SDK |
-| `github.com/riverqueue/river` | `v0.30.2` | 2026-01 | PostgreSQL-native job queue (**latest stable**) |
-| `github.com/sqlc-dev/sqlc` | `v1.30.0` | 2025-09 | Type-safe SQL code generation (**ADR-0012 core transaction**) |
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `k8s.io/api` | `v0.34.3` | Kubernetes API types |
+| `k8s.io/apimachinery` | `v0.34.3` | Kubernetes API machinery |
+| `k8s.io/client-go` | `v0.34.3` | Kubernetes clients |
+| `kubevirt.io/api` | `v1.8.1` | KubeVirt API types |
+| `kubevirt.io/client-go` | `v1.8.1` | Official KubeVirt client |
+| `kubevirt.io/containerized-data-importer-api` | `v1.64.0` | CDI DataVolume and StorageProfile types |
+| `sigs.k8s.io/yaml` | `v1.6.0` | YAML conversion |
 
-### Connection Pool Architecture (ADR-0012 Update)
+Kubernetes core packages are replace-locked in `go.mod` to the same `v0.34.3`
+series used by the KubeVirt `v1.8.1` baseline. Do not upgrade one Kubernetes
+core package independently.
 
-> **Default Mode**: Ent + River + sqlc share a **single pgxpool**
->
-> ADR-0012 uses shared connection pool to avoid doubling connections.
+SSA is implemented through `dynamic.Interface` and
+`types.ApplyPatchType` in `internal/provider/ssa_applier.go`. The current
+runtime does not depend on `sigs.k8s.io/controller-runtime`.
 
-| Mode | Use Case | Pool Count | Notes |
-|------|----------|------------|-------|
-| **Shared Pool (Default)** | Direct PostgreSQL connection | 1 pgxpool | ADR-0012 recommended |
-| Dual Pool (Advanced) | PgBouncer environment | 2 pgxpools | [Backlog reserved](../rfc/RFC-0009-pgbouncer.md) |
+### API Contract Tooling
 
-#### Default Configuration: Shared Single Pool
+| Tool or package | Version | Source |
+|-----------------|---------|--------|
+| OpenAPI spec | `3.1.0` | `api/openapi.yaml` |
+| `github.com/oapi-codegen/oapi-codegen/v2` | `v2.5.1` | `build/api.mk`, CI version check |
+| `github.com/oapi-codegen/runtime` | `v1.3.1` | `go.mod` |
+| `openapi-typescript` | `^7.13.0` | `web/package.json` |
+| `openapi-fetch` | `^0.16.0` | `web/package.json` |
+| `github.com/daveshanley/vacuum` | `v0.23.8` | `build/api.mk` |
+| `github.com/oasdiff/oasdiff` | `v1.11.10` | `build/api.mk` |
+| `github.com/pb33f/libopenapi` | `v0.35.1` | `go.mod` |
+| `github.com/pb33f/libopenapi-validator` | `v0.13.1` | `go.mod` |
+| `github.com/getkin/kin-openapi` | `v0.134.0` | `go.mod` |
 
-| Parameter | Default | Environment Variable | Description |
-|-----------|---------|---------------------|-------------|
-| `DB_POOL_MAX_CONNS` | `50` | `DB_POOL_MAX_CONNS` | pgxpool max connections |
-| `DB_POOL_MIN_CONNS` | `5` | `DB_POOL_MIN_CONNS` | pgxpool min connections |
-| `DB_MAX_CONN_LIFETIME` | `1h` | `DB_MAX_CONN_LIFETIME` | Max connection lifetime |
+Canonical flow:
 
-#### Initialization Code Example (ADR-0012 Shared Pool)
-
-```go
-// internal/infrastructure/database.go
-
-package infrastructure
-
-import (
-    "context"
-    "database/sql"
-    "fmt"
-    
-    "github.com/jackc/pgx/v5/pgxpool"
-    "github.com/jackc/pgx/v5/stdlib"
-    
-    "entgo.io/ent/dialect"
-    entsql "entgo.io/ent/dialect/sql"
-    "github.com/riverqueue/river"
-    "github.com/riverqueue/river/riverdriver/riverpgxv5"
-    
-    "kv-shepherd.io/shepherd/ent"
-    "kv-shepherd.io/shepherd/internal/repository/sqlc"
-)
-
-// DatabaseClients - Database client container (ADR-0012 shared pool)
-// Coding Standard: Use this struct to manage connection pools
-type DatabaseClients struct {
-    // Pool - Shared connection pool (Ent + River + sqlc reuse)
-    Pool *pgxpool.Pool
-    
-    // EntClient - Ent ORM client
-    EntClient *ent.Client
-    
-    // SqlcQueries - sqlc query client (for core transactions)
-    SqlcQueries *sqlc.Queries
-    
-    // Optional: Separate WorkerPool for PgBouncer scenarios
-    WorkerPool *pgxpool.Pool
-}
-
-// NewDatabaseClients creates database clients (default shared pool)
-func NewDatabaseClients(ctx context.Context, dsn string, cfg PoolConfig) (*DatabaseClients, error) {
-    // Create shared connection pool
-    poolConfig, err := pgxpool.ParseConfig(dsn)
-    if err != nil {
-        return nil, fmt.Errorf("parse pool config: %w", err)
-    }
-    poolConfig.MaxConns = cfg.MaxConns
-    poolConfig.MinConns = cfg.MinConns
-    poolConfig.MaxConnLifetime = cfg.MaxConnLifetime
-    
-    pool, err := pgxpool.NewWithConfig(ctx, poolConfig)
-    if err != nil {
-        return nil, fmt.Errorf("create pool: %w", err)
-    }
-    
-    // Ent Client (reuse pgxpool via stdlib.OpenDBFromPool)
-    entDB := stdlib.OpenDBFromPool(pool)
-    entDriver := entsql.OpenDB(dialect.Postgres, entDB)
-    entClient := ent.NewClient(ent.Driver(entDriver))
-    
-    // sqlc Queries (use pgxpool directly)
-    sqlcQueries := sqlc.New(pool)
-    
-    return &DatabaseClients{
-        Pool:        pool,
-        EntClient:   entClient,
-        SqlcQueries: sqlcQueries,
-    }, nil
-}
-
-// Close closes all connection pools
-func (c *DatabaseClients) Close() {
-    if c.EntClient != nil {
-        c.EntClient.Close()
-    }
-    if c.WorkerPool != nil {
-        c.WorkerPool.Close()
-    }
-    if c.Pool != nil {
-        c.Pool.Close()
-    }
-}
+```text
+api/openapi.yaml
+  -> internal/api/specembed/openapi.yaml
+  -> internal/api/generated/server.gen.go
+  -> web/src/types/api.gen.ts
 ```
 
-> **PostgreSQL Stability Guarantees**
->
-> See [ADR-0008-postgresql-stability.md](../adr/ADR-0008-postgresql-stability.md)
->
-> **Adopted Approach**: River built-in cleanup + Autovacuum aggressive tuning
->
-> | Measure | Description |
-> |---------|-------------|
-> | **River Job Cleaner** | Built-in cleanup, configurable `CompletedJobRetentionPeriod` |
-> | **Autovacuum Tuning** | Aggressive settings for `river_job` table (`scale_factor=0.01`) |
-> | **Dead Tuple Monitoring** | Prometheus metrics + alert thresholds |
->
-> **Roadmap**: See [RFC-0001 pg_partman Table Partitioning](../rfc/RFC-0001-pg-partman.md)
+Use `make api-generate` to regenerate Go and TypeScript artifacts. Use
+`REQUIRE_OPENAPI_COMPAT=1 make api-check` to enforce the OpenAPI 3.0-compatible
+artifact when 3.1 features require it.
 
-> **Decision Record**: [ADR-0003-database-orm.md](../adr/ADR-0003-database-orm.md)
+### Authentication and Security
 
-### Kubernetes Layer
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `github.com/golang-jwt/jwt/v5` | `v5.3.1` | Shepherd JWTs |
+| `golang.org/x/crypto` | `v0.49.0` | bcrypt and crypto utilities |
+| `github.com/go-ldap/ldap/v3` | `v3.4.13` | LDAP auth provider |
+| `github.com/gorilla/websocket` | `v1.5.4-0.20250319132907-e064f32e3674` | Console websocket handling |
 
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `k8s.io/client-go` | `v0.34.3` | 2026-03 | K8s official client (aligned with K8s 1.34) |
-| `k8s.io/apimachinery` | `v0.34.3` | 2026-03 | K8s API machinery |
-| `k8s.io/api` | `v0.34.3` | 2026-03 | K8s API types |
-| `kubevirt.io/client-go` | `v1.8.1` | 2026-04-16 | **KubeVirt official client** (typed client + list/watch primitives) |
-| `kubevirt.io/api` | `v1.8.1` | 2026-04-16 | KubeVirt API type definitions |
-| `sigs.k8s.io/controller-runtime` | `v0.22.5` | 2025-12 | **SSA Apply core dependency** (ADR-0011), validated against k8s.io v0.34.x |
+V1 uses JWT auth with a DB-bootstrapped signing secret. PostgreSQL stores
+bootstrap secrets and console replay markers; the current runtime does not use
+`alexedwards/scs` server-side browser sessions.
 
-### KubeVirt Schema Upgrade Workflow
+### Frontend Runtime
 
-The repository keeps versioned embedded KubeVirt schema snapshots under
-`internal/pkg/schema/versions/`, but runtime authoring always follows the
-single `manifest.current_version` baseline.
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `next` | `^16.2.3` | Next.js App Router |
+| `react` | `19.2.3` | React runtime |
+| `react-dom` | `19.2.3` | React DOM |
+| `antd` | `^5.29.3` | UI components |
+| `@ant-design/pro-components` | `^2.8.10` | Admin/table components |
+| `@ant-design/icons` | `^5.6.1` | Icon set |
+| `@tanstack/react-query` | `^5.95.2` | Server-state management |
+| `zustand` | `^5.0.12` | Client-state management |
+| `tailwindcss` | `^4.2.2` | Utility CSS |
+| `zod` | `^4.3.6` | Form/data validation |
+| `i18next` | `^25.10.9` | i18n core |
+| `react-i18next` | `^16.6.6` | React i18n integration |
+| `@novnc/novnc` | `^1.6.0` | VNC console frontend |
+| `@xterm/xterm` | `^6.0.0` | Serial console frontend |
 
-When a new KubeVirt GA release appears:
+### Frontend and Test Tooling
 
-1. Run `make kubevirt-schema-check`
-2. Run `make kubevirt-schema-upgrade VERSION=<semver>`
-3. Run `make kubevirt-schema-report`
-4. Review only the newly added/changed fields that the report surfaces
-5. Manually expose chosen fields in the current mask and add i18n/help keys
+| Package | Version | Purpose |
+|---------|---------|---------|
+| `typescript` | `^5` | Type checking |
+| `eslint` | `^9.39.4` | Frontend linting |
+| `vitest` | `^4.1.1` | Unit/component tests |
+| `@vitest/coverage-v8` | `^4.1.1` | Coverage |
+| `@testing-library/react` | `^16.3.2` | React component testing |
+| `@testing-library/user-event` | `^14.6.1` | User-event simulation |
+| `jsdom` | `^28.1.0` | DOM test environment |
+| `@playwright/test` | `^1.58.2` | E2E/smoke tests |
+| `knip` | `^6.0.5` | Frontend dependency/dead-code scan |
 
-This keeps schema truth upstream-driven while leaving product exposure decisions
-explicit and reviewable.
+### Supplemental CI Tools
 
----
+| Tool | Version | Purpose |
+|------|---------|---------|
+| `golang.org/x/vuln/cmd/govulncheck` | `v1.1.4` | Go vulnerability scan |
+| `gitleaks` | `v8.28.0` | Secret scanning |
+| `golangci-lint` | Custom binary from `.custom-gcl.yml` when present | Go lint plus shepherd architecture analyzers |
+| `shepherd-lint` | Repository-local build | Custom go/analysis architecture checks |
 
-## API Contract-First Tooling (ADR-0021, ADR-0028, ADR-0029)
+## Middleware Versions
 
-> **Note**: Toolchain governance defined by ADR-0029; optional field handling by ADR-0028. Pin versions here.
->
-> **Go-Native Backend Tooling**: Per ADR-0029, backend validation/linting uses Go-native tools.
-> TypeScript generation remains Node.js-based per ADR-0021.
->
-> ⚠️ **ADR Status Notice**:
-> - **ADR-0021**: Accepted ✅
-> - **ADR-0028**: Accepted ✅ (omitzero field strategy)
-> - **ADR-0029**: Accepted ✅ (toolchain governance)
+| Middleware | Baseline |
+|------------|----------|
+| PostgreSQL | `18` |
+| Kubernetes API series | `v1.34` / `k8s.io/* v0.34.3` |
+| KubeVirt | `v1.8.1` |
+| CDI API | `v1.64.0` |
 
-### OpenAPI Specification Versions
+## Configuration Parameters
 
-| Spec | Version | Release Date | Description |
-|------|---------|--------------|-------------|
-| **OpenAPI Specification** | `3.1.1` | 2024-10 | Canonical spec version for `api/openapi.yaml` |
-| **OpenAPI Overlay Spec** | `1.1.0` | 2026-01-14 | Overlay version for compat generation |
+Defaults are defined in `internal/config/config.go` and shown in
+`config/config.yaml.example`.
 
-### Go-Native Backend Tooling (ADR-0029)
+### Database Connection Pool
 
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `vacuum` | `v0.23.8` | 2026-02 | Go-native OpenAPI linter (replaces spectral), pinned for reproducible CI/local |
-| `github.com/pb33f/libopenapi` | `>= v0.31.0` | 2025-11 | Lossless OpenAPI parsing, Overlay support |
-| `github.com/pb33f/libopenapi-validator` | `>= v0.6.0` | 2025-10 | **StrictMode** request/response validation |
-| `github.com/getkin/kin-openapi` | `>= v0.131.0` | 2025-03 | OpenAPI parsing (oapi-codegen transitive dependency) |
+| Parameter | Default | Environment variable |
+|-----------|---------|----------------------|
+| `database.max_conns` | `50` | `DATABASE_MAX_CONNS` |
+| `database.min_conns` | `5` | `DATABASE_MIN_CONNS` |
+| `database.max_conn_lifetime` | `1h` | `DATABASE_MAX_CONN_LIFETIME` |
+| `database.max_conn_idle_time` | `10m` | `DATABASE_MAX_CONN_IDLE_TIME` |
 
-> **Removed Dependencies** (ADR-0029):
-> - `spectral` → replaced by `vacuum` (Go-native, Spectral-rule compatible)
-> - `oas-patch` → replaced by `libopenapi` overlay support (Go-native)
-> - `kin-openapi` validation → replaced by `libopenapi-validator` (StrictMode)
->
-> Note: `kin-openapi` remains as a transitive dependency of `oapi-codegen`.
+### Runtime Concurrency
 
-### Code Generation (ADR-0021, ADR-0028)
+| Parameter | Default | Environment variable |
+|-----------|---------|----------------------|
+| `k8s.cluster_concurrency` | `20` | `K8S_CLUSTER_CONCURRENCY` |
+| `k8s.operation_timeout` | `5m` | `K8S_OPERATION_TIMEOUT` |
+| `river.max_workers` | `10` | `RIVER_MAX_WORKERS` |
+| `worker.general_pool_size` | `100` | `WORKER_GENERAL_POOL_SIZE` |
+| `worker.k8s_pool_size` | `50` | `WORKER_K8S_POOL_SIZE` |
 
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `github.com/oapi-codegen/oapi-codegen/v2` | `v2.5.0` | 2026-01 | Go server/client code generation (`go tool oapi-codegen`) |
-| `openapi-typescript` | `7.12.0` | 2025-12 | TypeScript type generation (Node.js, `npm exec`) |
-| `github.com/oasdiff/oasdiff` | `v1.11.10` | 2026-02 | OpenAPI breaking-change/changelog detection |
+## HPA Concurrency Constraints Required
 
-#### oapi-codegen Configuration (ADR-0028 omitzero)
+River coordinates jobs globally through PostgreSQL row locking, but worker
+counts are configured per process. K8s semaphores are also per process.
 
-```yaml
-# api/oapi-codegen.yaml
-package: api
-generate:
-  models: true
-  gin-server: true
-output: internal/api/api.gen.go
-output-options:
-  # Go 1.24+ omitzero support (ADR-0028)
-  prefer-skip-optional-pointer-with-omitzero: true
-```
+| Formula | Recommended upper limit | Reason |
+|---------|--------------------------|--------|
+| `HPA.maxReplicas * RIVER_MAX_WORKERS` | `<= 50` | Avoid exhausting PostgreSQL connections during job execution |
+| `HPA.maxReplicas * K8S_CLUSTER_CONCURRENCY` | `<= 60` | Avoid excessive per-cluster API pressure |
 
-> **ADR-0028 Field Generation Rules**:
->
-> | OpenAPI Specification | Generated Go Type | JSON Tag |
-> |-----------------------|-------------------|----------|
-> | `type: string` (required) | `string` | `json:"field"` |
-> | `type: string` (optional, no nullable) | `string` | `json:"field,omitzero"` |
-> | `type: string` + `nullable: true` | `*string` | `json:"field,omitempty"` |
->
-> Benefits: Eliminates "Pointer Hell", reduces nil checks, improves code readability.
+Tune these values conservatively for production. If a deployment uses PgBouncer
+or different PostgreSQL pool sizing, document the local calculation in the
+deployment runbook.
 
-> **ADR-0011 SSA Apply Strategy**:
-> 
-> `controller-runtime` provides `client.Apply` (Server-Side Apply) capability.
-> 
-> | Use Case | Package | Description |
-> |----------|---------|-------------|
-> | **SSA Resource Submission** | `sigs.k8s.io/controller-runtime/pkg/client` | `client.Patch(..., client.Apply)` |
-> | **Unstructured Operations** | `k8s.io/apimachinery/pkg/apis/meta/v1/unstructured` | Dynamic object decoding |
-> | **Informer Event Parsing** | `kubevirt.io/api` | Type-safe event handling |
->
-> **Decision Record**: [ADR-0011-ssa-apply-strategy.md](../adr/ADR-0011-ssa-apply-strategy.md)
+## go.mod Template
 
-> **Important**: Use KubeVirt official client-go for type-safe VM/VMI operations
->
-> **Decision Record**: [ADR-0001-kubevirt-client.md](../adr/ADR-0001-kubevirt-client.md)
-
-> **Version Compatibility Constraints**:
-> - `kubevirt.io/client-go` v1.8.1 is built for **Kubernetes v1.34** (k8s.io v0.34.3 per kubevirt go.mod)
-> - Also supports K8s v1.33 ~ v1.34
-> - **Must** use `k8s.io/client-go` **v0.34.x** series
-> - **Do not** upgrade to `k8s.io/client-go` v0.35.x+ until a compatible KubeVirt baseline is adopted
-> - All three k8s.io packages must use **exactly the same version**
-
-> **Compatibility Verification Record** (2026-04-16, refreshed from kubevirt v1.8.1 go.mod):
->
-> | Package Pair | Status | Verification Method |
-> |--------------|--------|---------------------|
-> | `controller-runtime v0.22.5` + `client-go v0.34.3` | ✅ Compatible | repository build/test validation after refresh |
-> | `kubevirt.io/client-go v1.8.1` + `client-go v0.34.3` | ✅ Compatible | KubeVirt v1.8.1 go.mod replace directives use v0.34.3 |
-> | `controller-runtime v0.22.5` + `kubevirt.io/client-go v1.8.1` | ✅ Compatible | repository build/test validation after refresh |
->
-> **Note**: Actual compatibility must be verified via `go mod tidy && go build` during Phase 0.
-> **Upgrade Path**: When adopting a future KubeVirt baseline, refresh the matching k8s.io series and re-run compatibility validation.
-
-### K8s Dependency Hell Prevention
-
-> **Dependency Hell Risk**:
-> 
-> `kubevirt.io/client-go` depends on specific versions of `k8s.io/*` packages. Introducing other K8s ecosystem libraries
-> (like `controller-runtime`, Operator SDK) can easily cause version conflicts.
-
-#### go.mod Replace Directive Strategy
-
-> **Core Principle: Minimize replace, only use for these scenarios**
->
-> | Scenario | Allow replace | Reason |
-> |----------|--------------|--------|
-> | **K8s core package version locking** | ✅ Yes | Kubernetes ecosystem specificity |
-> | **Permanent fork redirect** | ✅ Yes | e.g., `goforj/wire` replacing `google/wire` |
-> | **Other dependency conflicts** | ❌ No | Prefer removing conflicting features/libraries |
-> | **Local development debugging** | ❌ No | Use `go.work` instead |
+Use `go.mod` as the exact source of truth. This abbreviated template shows the
+runtime-sensitive dependency families that must stay aligned:
 
 ```go
-// go.mod
-
 module kv-shepherd.io/shepherd
 
-go 1.25
+go 1.25.9
 
 require (
-    kubevirt.io/client-go v1.8.1
-    kubevirt.io/api v1.8.1
-    k8s.io/client-go v0.34.3
-    k8s.io/apimachinery v0.34.3
+    entgo.io/ent v0.14.6
+    github.com/gin-gonic/gin v1.12.0
+    github.com/jackc/pgx/v5 v5.9.1
+    github.com/riverqueue/river v0.32.0
+    github.com/oapi-codegen/oapi-codegen/v2 v2.5.1
     k8s.io/api v0.34.3
+    k8s.io/apimachinery v0.34.3
+    k8s.io/client-go v0.34.3
+    kubevirt.io/api v1.8.1
+    kubevirt.io/client-go v1.8.1
 )
 
-// Force lock K8s dependency versions (match kubevirt.io/client-go v1.8.1)
 replace (
     k8s.io/api => k8s.io/api v0.34.3
     k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.3
     k8s.io/apimachinery => k8s.io/apimachinery v0.34.3
-    k8s.io/apiserver => k8s.io/apiserver v0.34.3
     k8s.io/client-go => k8s.io/client-go v0.34.3
-    k8s.io/component-base => k8s.io/component-base v0.34.3
+    k8s.io/kube-openapi => k8s.io/kube-openapi v0.0.0-20250710124328-f3f2b991d03b
 )
 ```
 
-### Session Storage (PostgreSQL Native)
-
-> **Architecture Simplification**:
-> 
-> **Removed Redis**, Session storage uses PostgreSQL:
-> - ✅ Unified tech stack: Only depends on PostgreSQL
-> - ✅ Instant revocation: Session invalidated immediately (delete record)
-> - ✅ Simplified supply chain: Reduced operational complexity
-
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `github.com/alexedwards/scs/v2` | `v2.9.0` | 2026-01 | HTTP Session management (OWASP security spec) |
-| `github.com/alexedwards/scs/postgresstore` | `v2.9.0` | 2026-01 | PostgreSQL Session Store |
-
-> **Distributed Lock Best Practices**:
-> 
-> **Use PostgreSQL Advisory Lock instead of Redis Lock**:
-> - ✅ Strong consistency: Lock tied to database transaction
-> - ✅ Auto-release: Use `pg_advisory_xact_lock`, auto-releases on transaction end
-> - ✅ Reduced components: No need for additional Redis lock library
-
-### Logging and Observability
-
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `go.uber.org/zap` | `v1.27.1` | 2025-11-19 | High-performance structured logging |
-| `go.opentelemetry.io/otel` | `v1.40.0` | 2026-02 | OpenTelemetry API |
-| `go.opentelemetry.io/otel/sdk` | `v1.40.0` | 2026-02 | OpenTelemetry SDK |
-| `go.opentelemetry.io/otel/exporters/prometheus` | `v0.61.0` | 2025-12 | Prometheus exporter |
-| `github.com/prometheus/client_golang` | `v1.21.0` | 2025-12 | Prometheus client |
-
-### Authentication and Security
-
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `github.com/golang-jwt/jwt/v5` | `v5.3.0` | 2025-07-30 | JWT handling |
-| `golang.org/x/crypto` | `v0.37.0` | 2026-01 | Crypto utilities (argon2, bcrypt) |
-| `github.com/go-ldap/ldap/v3` | `v3.4.10` | 2025 | LDAP authentication |
-
-### Configuration and Tools
-
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `github.com/spf13/viper` | `v1.21.0` | 2025-09-08 | Configuration management |
-| `github.com/spf13/cobra` | `v1.9.1` | 2025 | CLI framework |
-| `gopkg.in/yaml.v3` | `v3.0.1` | Stable | YAML parsing |
-| `github.com/robfig/cron/v3` | `v3.0.1` | Stable | Cron expression parsing |
-| `github.com/google/uuid` | `v1.6.0` | 2025 | UUID generation |
-
-### Dependency Injection (Strict Manual DI)
-
-> **Architecture Simplification**:
-> 
-> **Removed Wire, adopted strict Manual DI pattern**:
-> - ✅ Zero supply chain risk: Only depends on Go compiler
-> - ✅ Developer-friendly: Explicit code more transparent than code generators
-> - ✅ Shortest feedback loop: `go build` checks directly, no need for `wire gen`
-> - ✅ WYSIWYG: No generated code to trace during debugging
-
-> **Why Abandon Wire**:
-> 
-> | Dimension | Wire (goforj) | Strict Manual DI |
-> |-----------|---------------|------------------|
-> | Boilerplate code | Less | More (acceptable trade-off) |
-> | Compile check | Requires running wire | `go build` checks directly |
-> | Debug difficulty | Medium (need to view generated code) | Low (WYSIWYG) |
-> | Supply chain | 🔴 High risk (Fork library) | 🟢 Zero risk (stdlib) |
-> | Potential misuse | Can misuse Wire DSL | Compiler intercepts directly |
->
-> **Conclusion**: Wire's core value (reducing boilerplate) is outweighed by explicit code transparency.
-
-### Worker Pool (Coding Standard - Required)
-
-> **Decision**: [ADR-0031](../adr/ADR-0031-concurrency-and-worker-pool-standard.md)  
-> **Naked goroutines are forbidden**: All concurrency must go through Worker Pool
-
-| Package | Version | Description |
-|---------|---------|-------------|
-| `github.com/panjf2000/ants/v2` | `v2.11.5` | High-performance goroutine pool |
-| `golang.org/x/sync` | `v0.12.0` | Semaphore and errgroup |
-
-> **Why Forbid Naked `go func()`**:
-> 
-> | Issue | Naked goroutine | Worker Pool |
-> |-------|-----------------|-------------|
-> | Concurrency count | ❌ Uncontrolled | ✅ Configurable limit |
-> | Panic handling | ❌ Must write each time | ✅ Unified recovery |
-> | Resource reclamation | ❌ No guarantee | ✅ Pool managed |
-> | Observability | ❌ No metrics | ✅ Can expose metrics |
-> | Code consistency | ❌ Variable patterns | ✅ Unified pattern |
-
-> **ants vs River Workers - Clear Separation of Responsibilities**:
->
-> | Component | Purpose | Usage Scope |
-> |-----------|---------|-------------|
-> | **River Workers** | Job queue consumption | All async write operations (VM create, delete, etc.) |
-> | **ants Pool** | General concurrency | Non-River async tasks (batch reads, optional future accelerators, etc.) |
->
-> ⚠️ **Anti-Pattern**: Do NOT use ants Pool inside River Worker handlers. River has built-in concurrency control.
->
-> ```go
-> // ❌ Forbidden: Using ants inside River Worker
-> func (w *EventWorker) Work(ctx context.Context, job *river.Job[EventJobArgs]) error {
->     pools.General.Submit(func() { ... }) // DON'T DO THIS
-> }
->
-> // ✅ Correct: River Worker executes synchronously, River controls concurrency
-> func (w *EventWorker) Work(ctx context.Context, job *river.Job[EventJobArgs]) error {
->     return w.processEvent(ctx, job.Args.EventID) // Direct execution
-> }
-> ```
-
-### Template Engine
-
-> **Helm Basic Syntax Compatible**: Uses same template engine as Helm (Go text/template + Sprig)
->
-> **⚠️ Clarification (04-governance.md)**: These dependencies are **NOT** used for VM Template rendering.
-> VM Templates are now **Kubernetes-native YAML** (VirtualMachine/VirtualMachineInstanceType) with no Go template variables.
-> This template engine is retained for **internal configuration rendering** (e.g., deployment manifests, config files).
-
-| Package | Version | Release Date | Description |
-|---------|---------|--------------|-------------|
-| `text/template` | stdlib | - | Go standard template engine |
-| `github.com/Masterminds/sprig/v3` | `v3.3.0` | 2024-08-29 | Template function extension (same as Helm) |
-| `sigs.k8s.io/yaml` | `v1.4.0` | Stable | YAML parsing to K8s objects |
-
-
-### Test Dependencies
-
-| Package | Version | Description |
-|---------|---------|-------------|
-| `github.com/stretchr/testify` | `v1.10.0` | Test assertion library |
-| `go.uber.org/mock` | `v0.5.2` | Mock generation (uber maintained) |
-| `github.com/testcontainers/testcontainers-go` | `v0.40.0` | Docker container testing (replaces SQLite) |
-| `github.com/testcontainers/testcontainers-go/modules/postgres` | `v0.40.0` | PostgreSQL module |
-| `sigs.k8s.io/controller-runtime` | `v0.22.5` | Test environment (envtest) |
-
-> **Test Database Strategy**:
-> 
-> **Completely removed SQLite, unified on PostgreSQL**
-> 
-> | Scenario | Solution | Description |
-> |----------|----------|-------------|
-> | **Local Development** | testcontainers-go | Auto-starts Docker PostgreSQL container |
-> | **CI (GitHub Actions)** | Service Container | postgres:18 container |
-
-### Frontend Testing Dependencies (ADR-0020)
-
-> **Implementation Guide**: [ADR-0020 Testing Toolchain](./notes/ADR-0020-frontend-testing-toolchain.md)
-
-| Package | Version | Description |
-|---------|---------|-------------|
-| `vitest` | `3.x` | High-performance ESM-native test runner |
-| `@testing-library/react` | `16.x` | User-centric React component testing |
-| `@testing-library/jest-dom` | `6.x` | Jest DOM matchers for Vitest |
-| `@testing-library/user-event` | `14.x` | User interaction simulation |
-| `jsdom` | `26.x` | DOM environment simulation (stable, comprehensive) |
-| `@vitest/coverage-v8` | `3.x` | Native V8 coverage provider |
-| `playwright` | `1.5x` | Cross-browser E2E testing |
-| `msw` | `2.x` | Mock Service Worker for API mocking |
-
-### Supplemental CI Scanners
-
-| Package | Version | Description |
-|---------|---------|-------------|
-| `golang.org/x/vuln/cmd/govulncheck` | `v1.1.4` | Go official reachable-vulnerability scanner |
-| `knip` | `6.0.5` | Frontend dead-code, unused-export, and dependency-hygiene scanner |
-
-> **Environment Selection**: `jsdom` chosen over `happy-dom` for:
-> - Superior API coverage and browser fidelity
-> - Stability with `getByRole` queries (React Testing Library recommended)
-> - Enterprise-grade component testing requirements
-> - Alignment with project priority: `Stability > Consistency > Performance`
-
-> **Coverage Thresholds (CI Enforcement)**:
->
-> | Metric | Threshold |
-> |--------|-----------|
-> | Lines | ≥ 80% |
-> | Functions | ≥ 80% |
-> | Statements | ≥ 80% |
-> | Branches | ≥ 75% |
->
-> ⚠️ Coverage below thresholds will **BLOCK** PR merging.
-
----
-
-## Middleware Versions
-
-| Middleware | Version | Support Cycle |
-|------------|---------|---------------|
-| **PostgreSQL** | `18.x` | Latest stable |
-| **Kubernetes** | `1.33+` | Test baseline 1.34 (aligned with kubevirt.io/client-go v1.8.1) |
-| **KubeVirt** | `1.7+` | Recommended 1.8+ |
-
-> **Database Selection**: PostgreSQL, supports JSONB indexes, transactional DDL, SKIP LOCKED
->
-> **Redis Removed**: See [ADR-0013](../adr/ADR-0013-manual-di.md), Session storage uses PostgreSQL + alexedwards/scs
-
----
-
-## Configuration Parameters
-
-> **Single Source**: All configuration parameter defaults defined here
-
-### Database Connection Pool (pgxpool terminology)
-
-| Parameter | Default | Environment Variable | Constraint |
-|-----------|---------|---------------------|------------|
-| `DB_POOL_MAX_CONNS` | `50` | `DB_POOL_MAX_CONNS` | Max connections |
-| `DB_POOL_MIN_CONNS` | `5` | `DB_POOL_MIN_CONNS` | Min connections |
-| `DB_POOL_MAX_CONN_LIFETIME` | `1h` | `DB_POOL_MAX_CONN_LIFETIME` | Max connection lifetime |
-| `DB_POOL_MAX_CONN_IDLE_TIME` | `10m` | `DB_POOL_MAX_CONN_IDLE_TIME` | Idle connection timeout |
-
-### Concurrency Control
-
-> ⚠️ **Platform Positioning: Governance Over Speed**
->
-> KubeVirt Shepherd is a **governance platform**, NOT a high-concurrency scheduling platform.
->
-> | Principle | Meaning |
-> |-----------|---------|
-> | **Reliability First** | All 10 VMs eventually created properly is more important than creating them in parallel |
-> | **Conservative Concurrency** | Default settings favor stability; intentionally slower to avoid K8s API overload |
-> | **Queue-Based Processing** | Batch requests are serialized through River Queue; no need for aggressive parallelism |
-> | **No Distributed Lock Complexity** | Avoid Redis/Zookeeper dependencies; PostgreSQL-native solutions only |
->
-> **Implication for Batch Operations**:
-> - Batch create 10 VMs → Queued as 10 River Jobs → Processed gradually (e.g., 2 per cluster at a time)
-> - Total time may be longer, but each operation gets proper K8s API attention
-> - Retry and error handling work reliably without race conditions
-
-| Parameter | Default | Environment Variable | Constraint |
-|-----------|---------|---------------------|------------|
-| `K8S_CLUSTER_CONCURRENCY` | `20` | `K8S_CLUSTER_CONCURRENCY` | **Per-instance** single cluster K8s operation limit |
-| `HEAVY_WRITE_LIMIT` | `30` | `HEAVY_WRITE_LIMIT` | Heavy write operations (K8s API, external systems) |
-| `LIGHT_WRITE_LIMIT` | `80` | `LIGHT_WRITE_LIMIT` | Light write operations (pure DB) |
-| `RIVER_MAX_WORKERS` | `10` | `RIVER_MAX_WORKERS` | River Worker max concurrency |
-
-> ⚠️ **Concurrency Scope Clarification**:
->
-> | Parameter | Scope | Coordination |
-> |-----------|-------|--------------|
-> | `RIVER_MAX_WORKERS` | Per-instance | **River Queue coordinates globally** via `FOR UPDATE SKIP LOCKED` |
-> | `K8S_CLUSTER_CONCURRENCY` | **Per-instance only** | In-memory semaphore, no cross-Pod coordination |
->
-> **Implication**: With HPA, actual K8s concurrency per cluster = `Pod count × K8S_CLUSTER_CONCURRENCY`.
-> The K8s API server's built-in rate limiting provides the final protection layer.
->
-> **Best Practice**: Set `K8S_CLUSTER_CONCURRENCY` conservatively (default: 20) to ensure
-> even at maximum HPA scale, total K8s API load remains acceptable.
-
-### HPA Concurrency Constraints (Required)
-
-> **Key Constraint**: With multiple replicas, total concurrency = Pod count × per-instance config. Must follow these formulas.
-
-| Constraint Formula | Upper Limit | Description |
-|-------------------|-------------|-------------|
-| `HPA.maxReplicas × RIVER_MAX_WORKERS` | **≤ 50** | Global River Worker total concurrency |
-| `HPA.maxReplicas × K8S_CLUSTER_CONCURRENCY` | **≤ 60** | Single cluster K8s operation total concurrency |
-
-> **Calculation Examples**:
->
-> | Scenario | maxReplicas | RIVER_MAX_WORKERS | Total Workers | Status |
-> |----------|-------------|-------------------|---------------|--------|
-> | ✅ Recommended | 3 | 10 | 30 | Safe |
-> | ✅ Conservative | 5 | 10 | 50 | At limit |
-> | ❌ Over limit | 6 | 10 | 60 | Exceeds 50 |
->
-> **Why these limits?**
-> - PostgreSQL connection pool typically sized at 50-100 connections
-> - Each River Worker holds a connection during job execution
-> - Excessive workers can exhaust connections, causing job failures
-> - K8s API server has rate limiting; too many concurrent requests cause throttling
-
-### Distributed Lock and Timeout (PostgreSQL Advisory Lock)
-
-> **Use PostgreSQL Advisory Lock instead of Redis Lock**:
-> - Lock tied to database transaction, PostgreSQL is a hard dependency
-> - Auto-releases on transaction end, no watchdog mechanism needed
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `K8S_OPERATION_TIMEOUT` | `5m` | K8s operation hard timeout |
-| `DB_LOCK_TIMEOUT` | `10s` | Advisory Lock acquisition timeout |
-
-### Cache TTL
-
-| Cache Type | TTL | Description |
-|------------|-----|-------------|
-| `list_resources` | `5s` | List cache |
-| `get_resource` | `3s` | Single resource cache |
-
----
-
-## go.mod Template
-
-```go
-module kv-shepherd.io/shepherd
-
-go 1.25
-
-require (
-    // Web framework
-    github.com/gin-gonic/gin v1.11.0
-    
-    // Database (PostgreSQL + Ent + River)
-    entgo.io/ent v0.14.5
-    ariga.io/atlas v1.0.0
-    github.com/jackc/pgx/v5 v5.8.0
-    github.com/riverqueue/river v0.30.2
-    
-    // Kubernetes (must match kubevirt.io/client-go v1.8.1 → k8s.io v0.34.3)
-    k8s.io/client-go v0.34.3
-    k8s.io/apimachinery v0.34.3
-    k8s.io/api v0.34.3
-    kubevirt.io/client-go v1.8.1
-    kubevirt.io/api v1.8.1
-    
-    // Session storage (replaces Redis)
-    github.com/alexedwards/scs/v2 v2.9.0
-    github.com/alexedwards/scs/postgresstore v2.9.0
-    
-    // Logging and observability
-    go.uber.org/zap v1.27.1
-    go.opentelemetry.io/otel v1.40.0
-    
-    // Worker Pool (Coding Standard - Required)
-    github.com/panjf2000/ants/v2 v2.11.5
-    golang.org/x/sync v0.12.0
-    
-    // OpenAPI Tooling (ADR-0029 Go-native)
-    github.com/pb33f/libopenapi v0.31.0
-    github.com/pb33f/libopenapi-validator v0.6.0
-    
-    // Testing (unified PostgreSQL, removed SQLite)
-    github.com/stretchr/testify v1.10.0
-    github.com/testcontainers/testcontainers-go v0.40.0
-)
-
-// Force lock K8s dependency versions (match kubevirt.io/client-go v1.8.1)
-replace (
-    k8s.io/api => k8s.io/api v0.33.5
-    k8s.io/apimachinery => k8s.io/apimachinery v0.33.5
-    k8s.io/client-go => k8s.io/client-go v0.33.5
-)
-```
-
----
-
-## Toolchain
-
-| Tool | Version | Purpose |
-|------|---------|---------|
-| `golangci-lint` | `v1.63.0` | Static code analysis |
-| `goimports` | Latest | Import formatting |
-| `mockgen` | `v0.5.2` | Mock generation (uber-go/mock) |
-| `vacuum` | `v0.23.8` | OpenAPI linting (Go-native, ADR-0029) |
-| `oapi-codegen` | `v2.5.0` | Go code generation from OpenAPI (ADR-0021/ADR-0028) |
-| `openapi-typescript` | `7.12.0` | TypeScript types generation from OpenAPI |
-| `oasdiff` | `v1.11.10` | OpenAPI breaking-change/changelog analysis |
-
----
+`build/api.mk` intentionally runs oapi-codegen `v2.5.1` for generated-code
+checks even though `go.mod` carries the module at `v2.5.0`. Keep the generated
+artifact check authoritative until the module pin is explicitly bumped.
 
 ## Version Upgrade Guide
 
-### Upgrading KubeVirt client-go
+### KubeVirt and Kubernetes
 
-1. Check [KubeVirt Release Notes](https://github.com/kubevirt/kubevirt/releases)
-2. Confirm compatible `k8s.io/client-go` version
-3. **Simultaneously update** all three k8s.io packages to same version
-4. Update versions in `go.mod`
-5. Run `go mod tidy`
-6. Run full test suite
-7. Verify CI passes
+1. Check the target KubeVirt release notes and its `go.mod`.
+2. Update `kubevirt.io/api`, `kubevirt.io/client-go`, and the matching
+   `k8s.io/*` package set together.
+3. Refresh the `replace` block if KubeVirt pins a newer Kubernetes series.
+4. Run `go mod tidy`, `make generate`, `make ci-go-build`, and relevant provider
+   tests.
+5. Update this document and [CURRENT_STATE.md](./CURRENT_STATE.md).
 
-### Upgrading K8s Dependencies
+### OpenAPI Tooling
 
-⚠️ **Warning**: K8s dependency versions **must be consistent**
+1. Update `build/api.mk` tool versions.
+2. Regenerate API artifacts with `make api-generate`.
+3. Run `REQUIRE_OPENAPI_COMPAT=1 make api-check`.
+4. Update this document if generated output or compatibility behavior changes.
 
-```bash
-# Upgrade all k8s.io packages simultaneously
-go get k8s.io/client-go@v0.33.5
-go get k8s.io/apimachinery@v0.33.5
-go get k8s.io/api@v0.33.5
-go mod tidy
-```
+### Frontend
 
-### Verifying Dependency Compatibility
-
-```bash
-# Check dependency conflicts
-go mod tidy
-go mod verify
-
-# Run tests
-go test -race ./...
-
-# Check K8s version consistency
-go list -m k8s.io/client-go k8s.io/apimachinery k8s.io/api
-```
-
----
-
-## References
-
-- [ADR-0001: KubeVirt Client Selection](../adr/ADR-0001-kubevirt-client.md)
-- [ADR-0003: Database ORM Selection](../adr/ADR-0003-database-orm.md)
-- [ADR-0006: Unified Async Model](../adr/ADR-0006-unified-async-model.md)
-- [ADR-0008: PostgreSQL Stability](../adr/ADR-0008-postgresql-stability.md)
-- [ADR-0011: SSA Apply Strategy](../adr/ADR-0011-ssa-apply-strategy.md)
-- [ADR-0012: Hybrid Transaction](../adr/ADR-0012-hybrid-transaction.md)
-- [ADR-0013: Manual DI](../adr/ADR-0013-manual-di.md)
-- [ADR-0020: Frontend Technology Stack](../adr/ADR-0020-frontend-technology-stack.md)
-- [ADR-0020: Testing Toolchain Implementation](./notes/ADR-0020-frontend-testing-toolchain.md)
-- [ADR-0021: API Contract-First](../adr/ADR-0021-api-contract-first.md)
-- [ADR-0028: oapi-codegen Optional Field Strategy](../adr/ADR-0028-oapi-codegen-optional-field-strategy.md)
-- [ADR-0029: OpenAPI Toolchain Governance](../adr/ADR-0029-openapi-toolchain-governance.md)
+1. Update `web/package.json`.
+2. Run `npm install --prefix web` or `npm ci --prefix web` as appropriate.
+3. Run `npm run typecheck --prefix web`, `npm run test:run --prefix web`, and
+   `npm run build --prefix web`.
+4. Update this document if major framework or test-tool versions change.

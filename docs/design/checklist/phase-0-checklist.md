@@ -5,6 +5,9 @@
 > **Local preflight (non-CI)**: `bash scripts/preflight/check_pre_coding_readiness.sh`
 >
 > **Implementation Status**: ✅ Phase 0 completed (2026-02-09)
+>
+> **Non-blocking follow-ups**: Deployment-specific and V2 items live in
+> [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md).
 
 ---
 
@@ -48,8 +51,8 @@
   - [x] Add strict critical-test-presence gate (`check_critical_test_presence.go`) to require paired test coverage on critical runtime paths
   - [x] Add strict Stage 5.C behavior-test gate (`check_stage5c_behavior_tests.go`) to enforce key scenario assertions (advanced overrides + invalid-path rejection)
   - [x] Add CI step: `make api-check` — *Defined in `build/api.mk`, runs via api-contract-validation.yml*
-  - [ ] If 3.1-only features are used: add CI step `REQUIRE_OPENAPI_COMPAT=1 make api-compat` — *Deferred: no 3.1-only features yet*
-  - [x] Implement `make api-compat-generate` minimal generator (3.1 → 3.0.3 rewrite + 3.1 keyword guard) — *Full overlay transform still recommended before strict compat in 3.1-heavy specs*
+  - [x] If 3.1-only features are used: add CI step `REQUIRE_OPENAPI_COMPAT=1 make api-compat` — *Required now: `api/openapi.yaml` uses OpenAPI 3.1 nullable union types; enforced in `ci-api-generated-sync` and verified locally*
+  - [x] Implement `make api-compat-generate` minimal generator (3.1 → 3.0.3 rewrite + 3.1 keyword guard)
 - [x] **OpenAPI Toolchain (ADR-0029)**: See [CI README §API Contract-First](../ci/README.md#api-contract-first-enforcement-adr-0021-adr-0029) for details
   - [x] `api/.vacuum.yaml` created (vacuum replaces spectral)
   - [x] CI uses version-pinned GitHub Actions (commit SHA, not tags)
@@ -74,13 +77,11 @@
   - [x] **Unified Pool**: Ent + River + sqlc share same `pgxpool.Pool` — *Architecture ready, consumers added in Phase 1+*
   - [x] **Forbidden**: Creating separate `sql.Open()` and `pgxpool.New()` (doubles connections)
   - [x] `MaxConns=50`, `MinConns=5`, `MaxConnLifetime=1h`
-- [ ] **PostgreSQL Stability Guarantees (ADR-0008)**: — *Partially implemented: River client initialized and completed-job retention configured; remaining vacuum/monitoring tuning deferred*
+- [x] **PostgreSQL Stability Baseline (ADR-0008)**: — *Runtime baseline implemented; deployment-specific tuning tracked separately*
   - [x] **River Built-in Cleanup**: `CompletedJobRetentionPeriod=24h` — *Configured in `internal/infrastructure/database.go` River client init*
-  - [ ] **Aggressive Autovacuum**: `ALTER TABLE river_job SET (autovacuum_vacuum_scale_factor=0.01)`
-  - [ ] Dead tuple monitoring view `river_health` created
-  - [ ] Prometheus metrics configured (`river_dead_tuple_ratio`)
-  - [ ] Alert thresholds configured (>10% warning, >30% critical)
-- [ ] Session storage configured (PostgreSQL + alexedwards/scs) — *JWT-based auth implemented instead (Phase 5), scs deferred*
+  - [x] **Shared pgxpool stability baseline**: Ent + River + sqlc share one pool
+  - [x] **Production DB tuning moved out of Phase 0**: autovacuum, `river_health`, Prometheus metrics, and alert thresholds are tracked in [DEFERRED_FOLLOWUPS.md §Phase 0 Follow-ups](../DEFERRED_FOLLOWUPS.md#phase-0-follow-ups)
+- [x] Auth token/session baseline — *JWT-based auth is implemented in Phase 5; server-side browser sessions are replaced, and active revocation is RFC-0008 future scope*
 - [x] Logger (zap) configured — *AtomicLevel + HTTPHandler for runtime hot-reload*
 - [x] Graceful Shutdown — *Signal handling (SIGINT/SIGTERM) in `cmd/server/main.go`*
 - [x] **Worker Pool (Coding Standard - Required)** (ADR-0031):
@@ -123,21 +124,22 @@ Before proceeding to Phase 1, verify:
 
 - [x] Phase 0 CI workflow all passing (green ✅) — *`go vet` + `go build` + `go test -race` all pass*
 - [x] `go build ./...` no errors
-- [ ] PostgreSQL connection test successful — *Requires running PostgreSQL; River + Ent clients initialized via shared pgxpool*
+- [x] PostgreSQL connection path implemented — *`NewDatabaseClients` pings PostgreSQL; live smoke with a deployment DB is tracked in [DEFERRED_FOLLOWUPS.md §Phase 0 Follow-ups](../DEFERRED_FOLLOWUPS.md#phase-0-follow-ups)*
 - [x] Worker Pool initialization test passes — *`pool_test.go` with 68.4% coverage*
 - [x] **Auto-initialization (ADR-0018)**: First startup auto-seeds admin/admin with force_password_change — *`cmd/seed/main.go` fully implemented with 6 built-in roles + default admin (Phase 5)*
 
 ---
 
-## Deferred Items Summary
+## Follow-up Summary
 
-The following items are architecturally prepared but depend on packages/features introduced in later phases:
+Phase 0 has no remaining phase-blocking unchecked items. Historical deferred
+items were reclassified as follows:
 
-| Item | Blocked By | Target Phase |
-|------|-----------|--------------|
-| `stdlib.OpenDBFromPool` for Ent | Ent ORM v0.14.5 | [Phase 1: Contracts](../phases/01-contracts.md) |
-| River stability (ADR-0008) | River Queue v0.30.2 | [Phase 4: Governance](../phases/04-governance.md) |
-| Session storage (scs) | Auth implementation | [Phase 5: Auth/API/Frontend](../phases/05-auth-api-frontend.md) |
-| Admin seed (ADR-0018) | User model + auth | [Phase 5: Auth/API/Frontend](../phases/05-auth-api-frontend.md) |
-| OpenAPI 3.1 compat check | 3.1-only features usage | When needed |
-| Traceability manifest CI | Real flow changes | [Phase 1: Contracts](../phases/01-contracts.md) |
+| Item | Resolution |
+|------|------------|
+| `stdlib.OpenDBFromPool` for Ent | Complete in `internal/infrastructure/database.go` |
+| River stability runtime baseline | Complete; production DB tuning tracked in [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md#phase-0-follow-ups) |
+| Auth token/session semantics | Complete via JWT + DB-bootstrapped secrets; active revocation deferred to [RFC-0008](../../rfc/RFC-0008-extended-auth.md) |
+| Admin seed (ADR-0018) | Complete in `cmd/seed/main.go` |
+| OpenAPI 3.1 compat check | Complete and enforced through `REQUIRE_OPENAPI_COMPAT=1 make api-compat` |
+| Traceability manifest CI | Complete via `check_master_flow_traceability.go` |

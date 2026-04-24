@@ -1,36 +1,36 @@
 # Phase 5: Authentication, API Completion & Frontend
 
-> **Status**: In Progress (~96%)
+> **Status**: In Progress (~97%)
 > **Started**: 2026-02-09
 > **Dependencies**: Phase 0-4 completed
-> **Last Audited**: 2026-03-10 (code-vs-doc alignment audit)
+> **Last Audited**: 2026-04-24 (code-vs-doc alignment audit)
 
 ## Deliverables
 
-> **Last Updated**: 2026-03-10
+> **Last Updated**: 2026-04-24
 
 | Deliverable | File Path | Status | Notes |
 |-------------|-----------|--------|-------|
-| JWT Auth Middleware | `internal/middleware/jwt.go` | ✅ | HS256 signing, Bearer extraction, claims injection |
-| Auth Handlers | `internal/api/handlers/auth.go` | ✅ | Login/Me/ChangePassword |
-| RBAC Middleware | `internal/middleware/rbac.go` | ✅ | RequirePermission + RequireResourceAccess |
+| JWT Auth Middleware | `internal/api/middleware/jwt.go` | ✅ | HS256 signing, Bearer extraction, claims injection |
+| Auth Handlers | `internal/api/handlers/server_auth.go` | ✅ | Login/Me/ChangePassword |
+| RBAC Middleware | `internal/api/middleware/rbac.go` | ✅ | RequirePermission + RequireResourceAccess |
 | Member Handler | `internal/api/handlers/member.go` | ✅ | ResourceRoleBinding CRUD + audit |
 | oapi-codegen config | `api/oapi-codegen.yaml` | ✅ | v2 format, gin-server + models |
-| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 97 endpoints (ADR-0028 omitzero value types), all model types |
+| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 127 endpoints (ADR-0028 omitzero value types), all model types |
 | openapi-typescript | `web/src/types/api.gen.ts` | ✅ | Auto-generated from OpenAPI spec |
 | Seed Command | `cmd/seed/main.go` | ✅ | 6 roles + default admin |
-| Bootstrap | `internal/app/bootstrap.go` | ✅ | 107 file lines; `Bootstrap()` function is 55 lines and remains orchestration-only (see ADR-0043 design note) |
+| Bootstrap | `internal/app/bootstrap.go` | ✅ | 127 file lines; `Bootstrap()` function is 57 lines and remains orchestration-only (see ADR-0043 design note) |
 | Frontend: Login | `web/src/app/(auth)/login/page.tsx` | ✅ | Force password change flow |
-| Frontend: Dashboard | `web/src/app/dashboard/page.tsx` | ✅ | System overview + health stats |
-| Frontend: Systems | `web/src/app/systems/page.tsx` | ✅ | CRUD + DELETE with RFC 1035 validation |
-| Frontend: Services | `web/src/app/services/page.tsx` | ✅ | CRUD + DELETE with cascade constraint |
-| Frontend: VMs | `web/src/app/vms/page.tsx` | ✅ | Request wizard + power ops + delete confirm |
-| Frontend: Approvals | `web/src/app/admin/approvals/page.tsx` | ✅ | Approve/Reject + DELETE target VM + priority highlighting |
-| Frontend: Audit Logs | `web/src/app/admin/audit/page.tsx` | ✅ | Filtering + pagination |
-| Frontend: Clusters | `web/src/app/admin/clusters/page.tsx` | ✅ | GET/POST with kubeconfig |
-| Frontend: Namespaces | `web/src/app/admin/namespaces/page.tsx` | ✅ | CRUD + confirm_name delete (ADR-0015 §13) |
-| Frontend: Templates | `web/src/app/admin/templates/page.tsx` | ✅ | CRUD + column filters + deferred search + JSON spec editor |
-| Frontend: Instance Sizes | `web/src/app/admin/instance-sizes/page.tsx` | ✅ | CRUD + capability filters + sort + JSON spec_overrides editor |
+| Frontend: Dashboard | `web/src/app/(protected)/dashboard/page.tsx` | ✅ | System overview + health stats |
+| Frontend: Systems | `web/src/app/(protected)/systems/page.tsx` | ✅ | CRUD + DELETE with RFC 1035 validation |
+| Frontend: Services | `web/src/app/(protected)/services/page.tsx` | ✅ | CRUD + DELETE with cascade constraint |
+| Frontend: VMs | `web/src/app/(protected)/vms/page.tsx` | ✅ | Request wizard + power ops + delete confirm |
+| Frontend: Approvals | `web/src/app/(protected)/admin/approvals/page.tsx` | ✅ | Approve/Reject + DELETE target VM + priority highlighting |
+| Frontend: Audit Logs | `web/src/app/(protected)/admin/audit/page.tsx` and `web/src/app/(protected)/admin/audit-logs/page.tsx` | ✅ | Filtering + pagination plus compatibility route |
+| Frontend: Clusters | `web/src/app/(protected)/admin/clusters/page.tsx` | ✅ | GET/POST with kubeconfig |
+| Frontend: Namespaces | `web/src/app/(protected)/admin/namespaces/page.tsx` and `[id]/page.tsx` | ✅ | CRUD + confirm_name delete (ADR-0015 §13) |
+| Frontend: Templates | `web/src/app/(protected)/admin/templates/page.tsx` | ✅ | CRUD + column filters + deferred search + JSON spec editor |
+| Frontend: Instance Sizes | `web/src/app/(protected)/admin/instance-sizes/page.tsx` | ✅ | CRUD + capability filters + sort + JSON spec_overrides editor |
 | Frontend: Users | `web/src/app/(protected)/admin/users/page.tsx` | ✅ | User directory + system member management |
 | Frontend: Auth Providers | `web/src/app/(protected)/admin/auth-providers/page.tsx` | ✅ | Schema-driven provider CRUD + test connection + sample fields + directory preview/sync + external cohort mappings |
 | Frontend: Rate Limits | `web/src/app/(protected)/admin/rate-limits/page.tsx` | ✅ | Exemptions/overrides admin management |
@@ -43,6 +43,8 @@
 | Frontend: Profile | `web/src/app/(protected)/profile/page.tsx` | ✅ | User profile view |
 | Frontend: Change Password | `web/src/app/(auth)/auth/change-password/page.tsx` | ✅ | Standalone password change |
 | Frontend: User Approvals | `web/src/app/(protected)/approvals/page.tsx` | ✅ | User-facing approvals view |
+| Frontend: Tickets | `web/src/app/(protected)/tickets/page.tsx` | ✅ | User-facing ticket/request history |
+| Frontend: Approval Tasks | `web/src/app/(protected)/admin/approval-tasks/page.tsx` | ✅ | Admin approval-task compatibility/workbench route |
 | Namespace Handlers | `internal/api/handlers/server_namespace.go` | ✅ | CRUD with environment filter + confirm_name delete gate |
 | Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead + InboxSender + Triggers + Frontend Bell |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes + UpdateClusterEnvironment |
@@ -56,6 +58,15 @@ Phase 5 bridges the backend to a usable product by implementing:
 1. **Authentication & Authorization** — JWT-based auth with RBAC middleware
 2. **API Completion** — Contract-first code generation, approval flow enhancements, audit API
 3. **Frontend** — React SPA generated from OpenAPI contract, consuming backend APIs
+
+---
+
+## Current Runtime Alignment
+
+- `api/openapi.yaml` currently exposes 127 `operationId`s.
+- `web/src/app` currently contains 28 `page.tsx` files, including the root route and compatibility/alias pages.
+- Auth middleware lives under `internal/api/middleware/`; there is no standalone `internal/middleware` package.
+- Route registration is OpenAPI-generated and centralized through `internal/app/router.go`.
 
 ---
 
@@ -159,7 +170,7 @@ Phase 5 bridges the backend to a usable product by implementing:
 2. `openapi-fetch` creates type-safe API client (no manual typing)
 3. All API calls are fully typed end-to-end (OpenAPI → Go server → TS client)
 
-### Pages (MVP — 25 routes)
+### Pages (MVP — 28 App Router page files)
 
 - Login page with force password change
 - Change password page (standalone)

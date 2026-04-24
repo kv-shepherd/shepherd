@@ -88,7 +88,7 @@ POST   /api/v1/snapshots/{id}/restore
 
 ## Snapshot Lifecycle Management (Added 2026-01-26)
 
-> **Scope**: This section covers the lifecycle management of **InstanceSize snapshots** stored in `ApprovalTicket.instance_size_snapshot`, as defined in [ADR-0018](../adr/ADR-0018-instance-size-abstraction.md#instancesize-immutability-snapshot-pattern).
+> **Scope**: This section covers the lifecycle management of **InstanceSize snapshots** stored in `ApprovalTicket.instance_size_snapshot`, as defined in [ADR-0018](../adr/ADR-0018-instance-size-abstraction.md#instancesize-immutability-snapshot-pattern-added-2026-01-26-per-review-feedback).
 >
 > VM snapshots (via KubeVirt Snapshot API) follow separate lifecycle policies managed by storage layer.
 

@@ -442,150 +442,101 @@ draft → active → deprecated → archived
 > **Updated per ADR-0018**: Removed Go Template syntax check.
 
 1. ~~Go Template syntax check~~ → **REMOVED**
-2. Cloud-init YAML syntax validation
-3. K8s Server-Side Dry-Run validation
+2. Template spec boundary validation via `internal/service/template_validator.go`
+3. `source_type` and dependent field validation via `internal/service/template_source.go`
+   and `internal/api/handlers/server_admin_catalog.go`
+4. Live K8s server-side dry-run is performed during approval preflight, not on
+   template save.
 
 ### SSA Apply (ADR-0011)
 
-> **Version Requirement**: `controller-runtime v0.22.4+` required for `client.DryRunAll` support.
-> See [DEPENDENCIES.md §Core Dependencies](../DEPENDENCIES.md#core-dependencies) for version matrix.
+> **Runtime implementation**: `internal/provider/ssa_applier.go` uses the
+> Kubernetes dynamic client with `types.ApplyPatchType`, `FieldManager:
+> kubevirt-shepherd`, `Force: true`, and `metav1.DryRunAll` for dry-run
+> validation. `controller-runtime` is not a runtime dependency.
+> See [DEPENDENCIES.md §Core Dependencies](../DEPENDENCIES.md#core-dependencies) for the current version matrix.
 
 ```go
-type SSAApplier struct {
-    client client.Client
+type KubevirtSSAApplier struct {
+    dynamicClient dynamic.Interface
 }
 
-func (a *SSAApplier) ApplyYAML(ctx context.Context, yaml []byte) error {
-    obj := &unstructured.Unstructured{}
-    _ = yamlutil.Unmarshal(yaml, obj)
-    
-    return a.client.Patch(ctx, obj, client.Apply, 
-        client.FieldOwner("kubevirt-shepherd"),
-        client.ForceOwnership,
-    )
+func (a *KubevirtSSAApplier) ApplyYAML(
+    ctx context.Context,
+    namespace string,
+    yamlData []byte,
+) (*unstructured.Unstructured, error) {
+    return a.applyYAML(ctx, vmGVR, namespace, yamlData, false)
 }
 
-func (a *SSAApplier) DryRunApply(ctx context.Context, yaml []byte) error {
-    // Same but with DryRunAll option
+func (a *KubevirtSSAApplier) DryRunApplyYAML(
+    ctx context.Context,
+    namespace string,
+    yamlData []byte,
+) error {
+    _, err := a.applyYAML(ctx, vmGVR, namespace, yamlData, true)
+    return err
 }
 ```
 
 ### Dry-Run Validation Flow (ADR-0018)
 
-> **Purpose**: Validate VM creation request against target cluster BEFORE approval, ensuring request is valid and can be executed.
+> **Purpose**: Validate an approved VM create request against the selected target
+> cluster before enqueueing the River create job.
 
 #### When Dry-Run is Performed
 
 | Stage | Trigger | Target Cluster |
 |-------|---------|----------------|
-| VM Request Submission | User submits VM creation | Preview cluster (admin-configured) |
-| Template Save | Admin saves template | Test cluster |
-| Approval Phase | Admin assigns target cluster | Actual target cluster |
+| VM Request Submission | User submits VM creation | No live K8s dry-run; validates catalog scope, requested resource bounds, namespace environment, and duplicate pending requests |
+| Template Save | Admin saves template | No live K8s dry-run endpoint in V1; template/source validation remains local and policy-driven |
+| Approval Phase | Admin selects target cluster and approves | Actual target cluster; blocks enqueue on validation failure |
 
-#### API Endpoint
-
-```
-POST /api/v1/vms/validate
-Content-Type: application/json
-
-{
-  "instance_size": "medium-gpu",
-  "template_name": "centos7-docker",
-  "namespace": "prod-shop",
-  "cluster_id": "cluster-01"  // Optional: specific cluster, otherwise uses preview cluster
-}
-
-Response (200 OK):
-{
-  "valid": true,
-  "warnings": ["GPU quota is at 80%"],
-  "estimated_resources": {
-    "cpu": "4",
-    "memory": "8Gi",
-    "gpu": "1"
-  }
-}
-
-Response (422 Unprocessable Entity):
-{
-  "valid": false,
-  "code": "VALIDATION_FAILED",
-  "errors": [
-    {
-      "field": "spec.template.spec.domain.devices.gpus",
-      "message": "GPU allocation failed: insufficient GPU resources",
-      "k8s_reason": "Forbidden"
-    }
-  ]
-}
-```
+There is no public `/api/v1/vms/validate` endpoint in the current OpenAPI
+contract. Dry-run is an internal approval preflight gate.
 
 #### Implementation
 
 ```go
-// internal/provider/validator.go
+// internal/governance/ticketing/service.go
+result, validateErr := g.vmService.ValidateAndPrepare(
+    ctx,
+    opts.ClusterID,
+    payload.Namespace,
+    dryRunSpec,
+)
 
-type VMValidator struct {
-    applier  *SSAApplier
-    clusters ClusterProvider
+// internal/service/vm_service.go
+result, err := s.infra.ValidateSpec(ctx, cluster, namespace, spec)
+
+// internal/provider/kubevirt.go
+applyErr := client.SSA().DryRunApplyYAML(
+    ctx,
+    namespace,
+    []byte(spec.RenderedYAML),
+)
+
+// internal/provider/ssa_applier.go
+patchOpts := metav1.PatchOptions{
+    FieldManager: FieldOwner,
+    Force:        ptr.To(true),
 }
-
-// ValidateVMSpec performs dry-run validation against target K8s cluster
-func (v *VMValidator) ValidateVMSpec(ctx context.Context, req *ValidateVMRequest) (*ValidationResult, error) {
-    // 1. Resolve target cluster (preview or specified)
-    cluster, err := v.resolveTargetCluster(ctx, req.ClusterID)
-    if err != nil {
-        return nil, err
-    }
-    
-    // 2. Generate VM manifest from InstanceSize + Template
-    manifest, err := v.generateVMManifest(ctx, req)
-    if err != nil {
-        return &ValidationResult{
-            Valid:  false,
-            Errors: []ValidationError{{Message: err.Error()}},
-        }, nil
-    }
-    
-    // 3. Perform K8s Dry-Run Apply
-    err = v.applier.DryRunApply(ctx, manifest)
-    if err != nil {
-        return v.parseK8sError(err), nil
-    }
-    
-    // 4. Check resource availability (optional quota check)
-    warnings := v.checkResourceWarnings(ctx, cluster, manifest)
-    
-    return &ValidationResult{
-        Valid:    true,
-        Warnings: warnings,
-    }, nil
-}
-
-// DryRunApply performs SSA with DryRunAll option
-func (a *SSAApplier) DryRunApply(ctx context.Context, yaml []byte) error {
-    obj := &unstructured.Unstructured{}
-    if err := yamlutil.Unmarshal(yaml, obj); err != nil {
-        return fmt.Errorf("invalid YAML: %w", err)
-    }
-    
-    return a.client.Patch(ctx, obj, client.Apply,
-        client.FieldOwner("kubevirt-shepherd"),
-        client.ForceOwnership,
-        client.DryRunAll,  // Key: DryRunAll option
-    )
+if dryRun {
+    patchOpts.DryRun = []string{metav1.DryRunAll}
 }
 ```
 
 #### Graceful Degradation
 
-If dry-run fails due to cluster unreachable:
+Current approval behavior:
 
 | Scenario | Behavior |
 |----------|----------|
-| Preview cluster unreachable | Allow submission with warning, re-validate at approval |
-| Target cluster unreachable at approval | Block approval, require cluster recovery |
-| Dry-run timeout (>10s) | Allow submission with warning |
+| `vmService` is not wired | Skip dry-run for backward compatibility |
+| Cluster/runtime unavailable | Log degraded preflight and continue approval |
+| Rendered YAML invalid | Block approval before enqueue |
+| K8s dry-run rejects the manifest | Block approval before enqueue |
+| Dry-run passes | Enqueue River VM create job |
 
 ---
 
@@ -595,13 +546,16 @@ If dry-run fails due to cluster unreachable:
 
 ### Design Overview
 
-StorageClass management ensures VMs use appropriate storage for their workload. The platform auto-detects available StorageClasses during cluster health checks and allows admin override during approval.
+StorageClass management ensures VMs use appropriate storage for their workload.
+The current runtime auto-detects available StorageClasses during cluster health
+checks, exposes them on cluster responses, and applies ClusterPolicy allowlists
+during approval compatibility checks.
 
 ### Schema Extensions
 
 ```go
 // ent/schema/cluster.go - additional fields
-field.Strings("storage_classes").Optional().
+field.JSON("storage_classes", []string{}).
     Comment("Auto-detected StorageClass list from cluster"),
 field.String("default_storage_class").Optional().
     Comment("Admin-specified default StorageClass"),
@@ -626,16 +580,24 @@ Health Check (60s interval)
 
 > **Code Example**: See [`examples/provider/storage_detector.go`](../examples/provider/storage_detector.go)
 
-### Admin API Endpoints
+### Admin API Surface
 
 | Endpoint | Method | Description |
 |----------|--------|-------------|
-| `GET /api/v1/admin/clusters/{id}/storage-classes` | GET | List cluster's available storage classes |
-| `PUT /api/v1/admin/clusters/{id}/storage-classes/default` | PUT | Set default storage class for cluster |
+| `GET /api/v1/admin/clusters` | GET | Returns `storage_classes`, `default_storage_class`, policy summary, and optional compatibility results |
+| `GET /api/v1/admin/clusters/{cluster_id}/policy` | GET | Returns ClusterPolicy, including `allowed_storage_classes` |
+| `PUT /api/v1/admin/clusters/{cluster_id}/policy` | PUT | Updates ClusterPolicy storage-class allowlist |
+
+Dedicated `storage-classes` GET/PUT endpoints are not present in the current
+OpenAPI contract. If a first-class default StorageClass management workflow is
+needed, add it through the contract-first API process before implementing UI or
+handler behavior.
 
 ### Approval Workflow Integration
 
-During approval, admin can select a specific StorageClass (or use cluster default):
+During approval, the operator can select a specific StorageClass where the
+operation supports root-volume provisioning. Otherwise the runtime falls back to
+the cluster default when one is present:
 
 ```go
 // ApprovalTicket additional field for storage class selection
@@ -648,9 +610,9 @@ field.String("selected_storage_class").Optional().
 ```
 Admin approves request
     ├── Select target cluster
-    ├── [Optional] Select StorageClass from cluster.storage_classes
-    │   └── If not specified → use cluster.default_storage_class
-    ├── Validate StorageClass exists on cluster
+    ├── [Optional] Select StorageClass
+    │   └── If not specified -> use cluster.default_storage_class when present
+    ├── Validate storage class against ClusterPolicy/root-volume resolution
     └── Proceed with VM creation
 ```
 
@@ -658,9 +620,9 @@ Admin approves request
 
 | Check | Enforcement |
 |-------|------------|
-| Selected SC must exist | Validate against `cluster.storage_classes` before approval |
-| Default SC must be set | Warn if cluster has no `default_storage_class` |
-| SC detection staleness | Warn if `storage_classes_updated_at` > 24 hours |
+| Selected SC must be allowed | Validate through ClusterPolicy `allowed_storage_classes` before approval |
+| Missing selected SC | Use `cluster.default_storage_class` when available, otherwise require explicit selection when policy/root-volume resolution needs it |
+| Detection freshness | `storage_classes_updated_at` records the last successful health-check detection |
 
 ---
 
@@ -1473,25 +1435,25 @@ If >50% of resources detected as ghosts, halt and alert.
 
 ## Acceptance Criteria
 
-- [ ] Atlas migrations work
-- [ ] River Jobs process correctly
-- [ ] Approval workflow functional (including power ops)
-- [ ] Event status updates correctly
-- [ ] Template lifecycle works
-- [ ] Audit logs complete
-- [ ] Environment isolation enforced (via Cluster + RoleBinding.allowed_environments)
-- [ ] Delete confirmation mechanism works (tiered by entity/environment)
+- [x] Atlas/Ent migration path exists; live migration application is environment verification
+- [x] River jobs process VM create/delete/modify/power/status sync and directory jobs
+- [x] Approval workflow functional for create, delete, modify, power, VNC, and batch parent/child paths
+- [x] Event and ticket status updates are wired through approval services and workers
+- [x] Template CRUD/source validation/catalog-scope baseline works; full lifecycle states are deferred to [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md)
+- [x] Audit logs are written for core governance and VM lifecycle actions
+- [x] Environment isolation enforced via Cluster environment, namespace compatibility, and RoleBinding `allowed_environments`
+- [x] Delete confirmation mechanism works (tiered by entity/environment)
 - [x] VNC token security enforced (single-use, time-bounded, AES-256-GCM encrypted)
-- [ ] **External Authentication** (V1):
-  - [ ] Runtime provider login flow works
-  - [ ] JIT user provisioning works
-  - [ ] External cohort → RBAC mapping reconciles on login
-- [ ] **Resource-level RBAC**:
-  - [ ] Member management API functional
-  - [ ] Permission inheritance chain correct
-- [ ] **VM Deletion**:
-  - [ ] Tiered confirmation enforced
-  - [ ] Audit log recorded
+- [x] **External Authentication** (V1):
+  - [x] Runtime provider login flow works
+  - [x] JIT user provisioning works
+  - [x] External cohort -> RBAC mapping reconciles on login
+- [x] **Resource-level RBAC**:
+  - [x] Member management API functional
+  - [x] Permission inheritance chain correct
+- [x] **VM Deletion**:
+  - [x] Tiered confirmation enforced
+  - [x] Audit log recorded
 
 ---
 
@@ -1529,7 +1491,7 @@ If >50% of resources detected as ghosts, halt and alert.
 | §5 Template Layered Design | ✅ Done | [master-flow.md Stage 1](../interaction-flows/master-flow.md#stage-1) | Amended by ADR-0018 (capability → InstanceSize) |
 | §6 Audit Trail | ✅ Done | Section 7 (this doc) | DomainEvent pattern; redaction per ADR-0019 |
 | §7 Approval Policies | ✅ Done | Section 4 (this doc) | Environment-aware policy matrix |
-| §8 Storage Class | ✅ Done | Section 5.5 (this doc) | Auto-detection, admin default, approval override |
+| §8 Storage Class | ✅ Done | Section 5.5 (this doc) | Auto-detection, cluster default field, ClusterPolicy allowlist, approval selection/root-volume resolution |
 | §9 Namespace Responsibility | ✅ Done | Section 6 (this doc) + [01-contracts.md §1](01-contracts.md#1-governance-model-hierarchy) | Platform does NOT manage K8s RBAC/Quota |
 | §10 Cancellation | ✅ Done | Section 4 (this doc) | User can cancel pending requests |
 | §11 Approval Timeout | ✅ V1 UI | Section 4 (this doc) | Days pending sort + color warning; no auto-cancel |
@@ -1540,14 +1502,14 @@ If >50% of resources detected as ghosts, halt and alert.
 | §15 Cluster Visibility | ✅ Done | Section 6 (this doc) | Namespace/cluster env matching enforced in approval+worker; `allowed_environments` visibility filtering enforced in namespace/VM query-read path |
 | §16 Global Naming | ✅ Done | [01-contracts.md §1.1](01-contracts.md#11-naming-constraints-adr-0019) | RFC 1035 + ADR-0019 extension |
 | §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
-| §18 VNC Permissions | ⚠️ Partial | Section 6.2 (this doc) | V1 Stage 6 baseline implemented (request/status/open + approval + audit + AES-256-GCM encrypted single-use credential); proxy internals + active revocation remain V2+ |
-| §19 Batch Operations | ⚠️ Partial | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` compatibility execution implemented (`/vms/batch` submit/query/retry/cancel + `/vms/batch/power` + `/admin/rate-limits/*`), but frontend queue UX is still pending |
+| §18 VNC Permissions | ⚠️ V1 Baseline | Section 6.2 (this doc) | Request/status/open + approval + audit + AES-256-GCM encrypted single-use credential implemented; proxy internals + active revocation remain V2+ |
+| §19 Batch Operations | ✅ V1 Baseline | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` + frontend queue UX implemented; export-result UX remains follow-up |
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
-| §22 Authentication | ⚠️ Partial | Section 8 (this doc) | Local/JWT core exists; external runtime provider + JIT + cohort mapping rollout is in progress |
-| External Approval Systems | ⚠️ V1 Interface | - | Standard data interface; plugin layer |
+| §22 Authentication | ✅ Done | Section 8 (this doc) | Local/JWT, external provider runtime, JIT provisioning, directory sync, and cohort mapping implemented; active session revocation remains RFC-0008 |
+| External Approval Systems | ⚠️ V1 Interface | - | Built-in approval provider is implemented; external adapters remain RFC-0004 |
 
-> **Legend**: ✅ Done = Implemented in V1 | ⚠️ Partial = Implemented subset, ADR gap remains | ❌ Deferred = planned but not implemented | ⚠️ V1 Interface = Only data interface defined
+> **Legend**: ✅ Done = Implemented in V1 | ✅ V1 Baseline = V1 product baseline implemented with optional enhancements deferred | ⚠️ V1 Interface = Core data/interface shape exists, external adapters deferred
 
 > **Interface-First Design**: Notification and Approval systems use **standard data interfaces** (ADR-0015 §20, §9).
 > V1 implements simple built-in solutions. External integrations (Slack, ServiceNow, Jira) are handled by plugin adapters without core interface changes.
