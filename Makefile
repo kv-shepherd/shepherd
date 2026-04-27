@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.9
@@ -218,6 +218,13 @@ ci-api-sync:
 	@$(MAKE) ci-api-generated-sync
 	@$(MAKE) ci-api-contract
 
+## ci-api-sync-local: Run local API checks for make pr without duplicating frontend typecheck
+ci-api-sync-local:
+	@$(MAKE) ci-api-lint
+	@$(MAKE) ci-api-breaking
+	@$(MAKE) ci-api-generated-sync-local
+	@$(MAKE) ci-api-contract
+
 ## ci-e2e-smoke: Run frontend mock smoke once
 ci-e2e-smoke:
 	@set -e; \
@@ -293,6 +300,13 @@ ci-api-breaking:
 
 ## ci-api-generated-sync: Run the API generated-sync target set used by the required API generated-code-sync job
 ci-api-generated-sync:
+	@$(MAKE) ci-api-generated-sync-check FRONTEND_API_TYPECHECK=1
+
+## ci-api-generated-sync-local: Run generated sync while relying on ci-frontend-unit for frontend typecheck
+ci-api-generated-sync-local:
+	@$(MAKE) ci-api-generated-sync-check FRONTEND_API_TYPECHECK=0
+
+ci-api-generated-sync-check:
 	@echo "🔍 Verifying generated API code sync..."
 	@VERSION="$$(go run github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@v2.5.1 -version | tail -n 1)"; \
 	if [ "$$VERSION" != "v2.5.1" ]; then \
@@ -300,7 +314,12 @@ ci-api-generated-sync:
 		exit 1; \
 	fi
 	@REQUIRE_OPENAPI_COMPAT=1 bash ./docs/design/ci/scripts/api-check.sh
-	@cd web && npm run api:generate && git diff --exit-code src/types/api.gen.ts && npm run typecheck
+	@cd web && npm run api:generate && git diff --exit-code src/types/api.gen.ts
+	@if [ "$(FRONTEND_API_TYPECHECK)" = "0" ]; then \
+		echo "Skipping duplicate frontend typecheck in local API sync; ci-frontend-unit runs it in make pr."; \
+	else \
+		cd web && npm run typecheck; \
+	fi
 	@if [ -n "$$(git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml 2>/dev/null)" ]; then \
 		echo "Generated code is out of sync with OpenAPI spec!"; \
 		git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml; \
@@ -318,7 +337,7 @@ pr: pr-ci
 pr-sequential:
 	@echo "Running sequential PR CI..."
 	@$(MAKE) ci-prep
-	@$(MAKE) ci-api-sync
+	@$(MAKE) ci-api-sync-local
 	@$(MAKE) ci-backend
 	@$(MAKE) ci-governance
 	@$(MAKE) ci-frontend

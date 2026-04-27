@@ -1,7 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { Button, Card, Flex, Input, Typography } from "antd";
+import { Button, Flex, Input, Typography } from "antd";
 
 export const filterOptionByLabel = (
   input: string,
@@ -143,9 +143,8 @@ export function PageSearchToolbar({
         </Flex>
       </Flex>
       {advancedSearch?.open ? (
-        <Card
+        <div
           className="page-search-toolbar__advanced"
-          size="small"
         >
           <Flex vertical gap={12}>
             <Typography.Text strong className="page-search-toolbar__advanced-title">
@@ -153,7 +152,7 @@ export function PageSearchToolbar({
             </Typography.Text>
             {advancedSearch.content}
           </Flex>
-        </Card>
+        </div>
       ) : null}
       </Flex>
     </div>

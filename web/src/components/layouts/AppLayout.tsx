@@ -187,7 +187,7 @@ export default function AppLayout({
                 >
                     <LocalTimezoneBadge />
                 </div>,
-                <div key="nav-search" style={{ display: 'flex', alignItems: 'center' }}>
+                <div key="nav-search" className="app-shell-nav-search-wrapper">
                     <AutoComplete
                         className="app-shell-nav-search"
                         style={{ width: 280 }}

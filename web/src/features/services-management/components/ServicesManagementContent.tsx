@@ -139,7 +139,6 @@ export function ServicesManagementContent() {
     const serviceRelatedVMs = serviceContextQuery.data?.visible_vms ?? [];
     const serviceRelatedRequests = serviceContextQuery.data?.recent_requests ?? [];
     const detailServiceSummary = serviceContextQuery.data?.summary;
-    const latestRelatedRequest = serviceRelatedRequests[0] ?? null;
 
     const columns: ColumnsType<Service> = [
         {
@@ -147,34 +146,11 @@ export function ServicesManagementContent() {
             dataIndex: 'name',
             key: 'name',
             render: (name: string) => (
-                <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '4px 14px 4px 6px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 12,
-                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)'
-                }}>
-                    <div style={{
-                        width: 26,
-                        height: 26,
-                        background: '#eff6ff',
-                        color: '#6366f1',
-                        borderRadius: 8,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 16
-                    }}>
+                <div className="services-table-name">
+                    <div className="services-table-name__icon">
                         <ServicesIcon />
                     </div>
-                    <Text strong style={{
-                        fontSize: 14,
-                        color: '#0f172a',
-                        letterSpacing: '-0.01em',
-                    }}>
+                    <Text strong className="services-table-name__text">
                         {name}
                     </Text>
                 </div>
@@ -191,7 +167,7 @@ export function ServicesManagementContent() {
                         type="link"
                         size="small"
                         data-testid={`service-action-open-system-${record.id}`}
-                        style={{ paddingInline: 0, justifyContent: 'flex-start' }}
+                        className="workbench-compact-link"
                         onClick={() => router.push(`/systems?detail_system_id=${record.system_id}`)}
                     >
                         {record.system_name}
@@ -212,7 +188,7 @@ export function ServicesManagementContent() {
                     ? (normalizedDescription.length > 36 ? `${normalizedDescription.slice(0, 36)}...` : normalizedDescription)
                     : '—';
                 return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div className="workbench-description-preview">
                         <Text type="secondary" className="workbench-table-description workbench-table-description--preview">
                             {previewText}
                         </Text>
@@ -221,8 +197,8 @@ export function ServicesManagementContent() {
                                 <Button
                                     type="text"
                                     size="small"
-                                    style={{ width: 24, height: 24, minWidth: 24, padding: 0 }}
-                                    icon={<InfoCircleOutlined style={{ color: '#94a3b8' }} />}
+                                    className="workbench-icon-button"
+                                    icon={<InfoCircleOutlined />}
                                     onClick={() => {
                                         setDetailService(record);
                                         setDetailOpen(true);
@@ -248,19 +224,19 @@ export function ServicesManagementContent() {
         {
             title: t('table.actions'),
             key: 'actions',
-            width: 320,
+            width: 380,
             render: (_, record) => (
-                <Space>
+                <Space wrap size={[8, 4]} className="workbench-row-actions">
                     <Button
                         type="link"
                         size="small"
                         data-testid={`service-action-detail-${record.id}`}
                         icon={<EyeOutlined />}
-                            onClick={() => {
-                                setDetailService(record);
-                                setDetailOpen(true);
-                                setDismissedQueryDetailServiceId(null);
-                            }}
+                        onClick={() => {
+                            setDetailService(record);
+                            setDetailOpen(true);
+                            setDismissedQueryDetailServiceId(null);
+                        }}
                     >
                         {t('common:button.detail', { defaultValue: 'Details' })}
                     </Button>
@@ -371,45 +347,19 @@ export function ServicesManagementContent() {
             ) : (
                 <>
                     <PageSurface className="services-page__table-surface" flush={true}>
-                        <div style={{ padding: '24px 24px 0', borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(3, 1fr)',
-                                gap: 24,
-                                marginBottom: 24,
-                            }}>
-                                <div style={{
-                                    display: 'flex', flexDirection: 'column', gap: 8,
-                                    padding: '20px 24px',
-                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
-                                    borderRadius: 16,
-                                    border: '1px solid rgba(15, 23, 42, 0.05)',
-                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
-                                }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('nav.services')}</span>
-                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>{services.servicesData?.pagination?.total ?? serviceItems.length}</span>
+                        <div className="services-table-workspace">
+                            <div className="services-table-workspace__metrics">
+                                <div className="services-table-workspace__metric">
+                                    <span className="services-table-workspace__metric-label">{t('nav.services')}</span>
+                                    <span className="services-table-workspace__metric-value">{services.servicesData?.pagination?.total ?? serviceItems.length}</span>
                                 </div>
-                                <div style={{
-                                    display: 'flex', flexDirection: 'column', gap: 8,
-                                    padding: '20px 24px',
-                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
-                                    borderRadius: 16,
-                                    border: '1px solid rgba(15, 23, 42, 0.05)',
-                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
-                                }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('services.summary.systems_title')}</span>
-                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#334155', lineHeight: 1 }}>{serviceSystemCount}</span>
+                                <div className="services-table-workspace__metric">
+                                    <span className="services-table-workspace__metric-label">{t('services.summary.systems_title')}</span>
+                                    <span className="services-table-workspace__metric-value services-table-workspace__metric-value--muted">{serviceSystemCount}</span>
                                 </div>
-                                <div style={{
-                                    display: 'flex', flexDirection: 'column', gap: 8,
-                                    padding: '20px 24px',
-                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
-                                    borderRadius: 16,
-                                    border: '1px solid rgba(15, 23, 42, 0.05)',
-                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
-                                }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('services.summary.visible_title')}</span>
-                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#334155', lineHeight: 1 }}>{serviceItems.length}</span>
+                                <div className="services-table-workspace__metric">
+                                    <span className="services-table-workspace__metric-label">{t('services.summary.visible_title')}</span>
+                                    <span className="services-table-workspace__metric-value services-table-workspace__metric-value--muted">{serviceItems.length}</span>
                                 </div>
                             </div>
                             <PageSearchToolbar
@@ -698,6 +648,7 @@ export function ServicesManagementContent() {
                     <Card size="small" className="workbench-detail-hero">
                         <Space direction="vertical" size={12} style={{ width: '100%' }}>
                             <Space size={[8, 8]} wrap>
+                                <Tag color="blue">{t('services.context_title')}</Tag>
                                 <Tag color="blue">{t('nav.services')}</Tag>
                                 <Tag>{detailSystemName}</Tag>
                                 <Tag>{t('services.detail_visible_vms_badge', {
@@ -717,7 +668,20 @@ export function ServicesManagementContent() {
                             <div className="workbench-detail-hero__grid">
                                 <div className="workbench-compact-grid__item">
                                     <Text className="workbench-compact-grid__label">{t('services.context_system')}</Text>
-                                    <Text strong className="workbench-compact-grid__value">{detailSystemName}</Text>
+                                    <div className="workbench-compact-grid__value">
+                                        {activeDetailService?.system_id && detailSystemName !== '—' ? (
+                                            <Button
+                                                type="link"
+                                                size="small"
+                                                className="workbench-compact-link"
+                                                onClick={() => router.push(`/systems?detail_system_id=${activeDetailService.system_id}`)}
+                                            >
+                                                {detailSystemName}
+                                            </Button>
+                                        ) : (
+                                            <Text strong>{detailSystemName}</Text>
+                                        )}
+                                    </div>
                                 </div>
                                 <div className="workbench-compact-grid__item">
                                     <Text className="workbench-compact-grid__label">{t('services.context_next_index')}</Text>
@@ -742,67 +706,6 @@ export function ServicesManagementContent() {
                                 </div>
                             </div>
                         </Space>
-                    </Card>
-
-                    <Card
-                        size="small"
-                        title={t('services.context_title')}
-                        className="workbench-detail-section-card workbench-detail-section-card--primary workbench-detail-section-card--wide"
-                    >
-                        <div className="workbench-context-grid">
-                            <div className="workbench-context-card">
-                                <Text className="workbench-context-card__label">{t('services.context_system')}</Text>
-                                <div className="workbench-context-card__value">
-                                    {activeDetailService?.system_id && detailSystemName !== '—' ? (
-                                        <Button
-                                            type="link"
-                                            size="small"
-                                            style={{ paddingInline: 0, justifyContent: 'flex-start' }}
-                                            onClick={() => router.push(`/systems?detail_system_id=${activeDetailService.system_id}`)}
-                                        >
-                                            {detailSystemName}
-                                        </Button>
-                                    ) : (
-                                        <Text strong>{detailSystemName}</Text>
-                                    )}
-                                </div>
-                            </div>
-                            <div className="workbench-context-card">
-                                <Text className="workbench-context-card__label">{t('services.context_next_index')}</Text>
-                                <div className="workbench-context-card__value">
-                                    <Text strong>
-                                        {formatNextInstanceIndex(serviceContextQuery.data?.service.next_instance_index ?? detailService?.next_instance_index)}
-                                    </Text>
-                                </div>
-                            </div>
-                            <div className="workbench-context-card">
-                                <Text className="workbench-context-card__label">{t('services.detail_visible_vms_label', { defaultValue: 'Visible VMs' })}</Text>
-                                <div className="workbench-context-card__value">
-                                    <Text strong>{detailServiceSummary?.visible_vm_count ?? serviceRelatedVMs.length}</Text>
-                                </div>
-                            </div>
-                            <div className="workbench-context-card">
-                                <Text className="workbench-context-card__label">{t('services.detail_recent_requests_label', { defaultValue: 'Recent Requests' })}</Text>
-                                <div className="workbench-context-card__value">
-                                    <Text strong>{detailServiceSummary?.recent_request_count ?? serviceRelatedRequests.length}</Text>
-                                </div>
-                            </div>
-                        </div>
-                        <div className="workbench-context-card workbench-context-card--wide">
-                            <Text className="workbench-context-card__label">{t('services.detail_latest_request', { defaultValue: 'Latest Request' })}</Text>
-                            <div className="workbench-context-card__value">
-                                {latestRelatedRequest ? (
-                                    <Space direction="vertical" size={2}>
-                                        <Text strong>{approvalSummaryTitle(latestRelatedRequest, t)}</Text>
-                                        <Text type="secondary">
-                                            {approvalSummaryMeta(latestRelatedRequest, t).join(' · ') || formatApprovalRecordID(latestRelatedRequest.id)}
-                                        </Text>
-                                    </Space>
-                                ) : (
-                                    <Text type="secondary">{t('services.related_requests_empty')}</Text>
-                                )}
-                            </div>
-                        </div>
                     </Card>
 
                     <Card size="small" title={t('table.description')}>

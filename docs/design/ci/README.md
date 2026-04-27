@@ -171,24 +171,22 @@ bash docs/design/ci/scripts/check_design_doc_governance.sh
 
 See the build job in `.github/workflows/ci.yml`.
 
-Current split (2026-03-26 optimization):
+Current split (2026-04-27 optimization):
 
 - `ci-checks` / `ci-governance`: canonical static governance and strict script gates only.
   Frontend typecheck/unit and API generated-code sync no longer duplicate here.
-- `ci-prep`: shared local preflight for repo-mutating checks (`npm ci`, Ent codegen sync,
-  OpenAPI generated-code sync). This runs once before parallel lanes so generated files do not
-  race each other.
+- `ci-prep`: shared local dependency preflight (`npm ci`) before parallel lanes.
 - `master-flow-strict`: PostgreSQL behavior suites + optional live e2e (`ENABLE_LIVE_E2E=true`).
 - `lint`: top-level blocking lint bundle. Runs `govulncheck`, frontend dead-code/dependency
   hygiene (`knip`), and the Go lint stack together.
 - `ci-backend`: local once-only Go lane (`govulncheck`, Go lint, race test, build).
-- `ci-frontend`: local once-only frontend lane (`lint`, `typecheck`, `vitest`, `build`, `knip`).
-- `ci-frontend`: local once-only frontend lane (`npm audit --audit-level=high`, `lint`, `typecheck`, `vitest`, `build`, `knip`).
-- `ci-api-sync`: local once-only API contract lane (`api-contract-test`) after shared preflight.
+- `ci-frontend`: local once-only frontend lane (`npm audit` high-severity gate, `knip`, `lint`, `typecheck`, `vitest`, `build`).
+- `ci-api-sync`: required API contract lane (`api lint`, `api breaking`, generated-code sync with frontend typecheck, `api-contract-test`).
+- `ci-api-sync-local`: local `make pr` API lane. It runs the same API lint/breaking/generated/contract checks, but skips the generated-sync frontend typecheck because `ci-frontend-unit` runs that exact frontend gate in the same local PR bundle.
 - `ci-e2e-smoke`: local once-only Playwright mock smoke lane.
 - `pr` / `pr-ci`: top-level local mirror for required GitHub Actions jobs. Runs the local
-  lanes in parallel after a shared `ci-prep` phase, so every gate still runs
-  at least once but the same quality dimension is not repeated in multiple lanes.
+  lanes in parallel after `ci-prep` and `ci-api-sync-local`, so every quality gate still runs
+  at least once while duplicate local typecheck work is avoided.
 - `pr-sequential`: serial fallback with the same gate coverage, useful when debugging failures.
 - GitHub Actions required jobs must call repository-owned `make` targets
   (`ci-go-lint`, `ci-go-build`, `ci-go-test`, `ci-governance`,

@@ -1,6 +1,6 @@
 'use client';
 
-import { Button, Empty, Space, Steps, Tag, Typography } from 'antd';
+import { Button, Space, Steps, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
@@ -432,7 +432,7 @@ export function SetupGuideCard({
                     </div>
                 </div>
             ) : focusMessage ? (
-                <Text strong style={{ color: '#1677ff' }}>
+                <Text strong className="setup-guide-next__focus">
                     {focusMessage}
                 </Text>
             ) : null}
@@ -478,9 +478,8 @@ export function SetupGuideCard({
     );
 
     const content = (
-        <PageSurface style={{ marginBottom: 24 }}>
+        <PageSurface className="setup-guide-card">
             <Space direction="vertical" size={16} style={{ width: '100%' }}>
-                {variant !== 'dashboard' ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} /> : null}
                 {setupHeader}
                 {dashboardQuickActionsMode ? quickActionsBlock : stepsBlock}
             </Space>
@@ -493,7 +492,6 @@ export function SetupGuideCard({
 
     return (
         <Space direction="vertical" size={16} style={{ width: '100%' }}>
-            {variant !== 'dashboard' ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={false} /> : null}
             {setupHeader}
             {dashboardQuickActionsMode ? quickActionsBlock : stepsBlock}
         </Space>

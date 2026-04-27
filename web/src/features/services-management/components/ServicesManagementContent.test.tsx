@@ -476,6 +476,9 @@ describe('ServicesManagementContent', () => {
 
         const modalQueries = within(detailModal!);
         expect(modalQueries.getByText('Service Context')).toBeInTheDocument();
+        expect(modalQueries.getAllByText('Service Context')).toHaveLength(1);
+        fireEvent.click(modalQueries.getByRole('button', { name: 'System A' }));
+        expect(pushMock).toHaveBeenCalledWith('/systems?detail_system_id=sys-1');
         expect(modalQueries.getByText('Visible Virtual Machines')).toBeInTheDocument();
         expect(modalQueries.getByText('My Recent Requests')).toBeInTheDocument();
         expect(modalQueries.getAllByText('vm-a').length).toBeGreaterThan(0);

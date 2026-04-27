@@ -173,61 +173,27 @@ function DashboardOverviewCard({
     return (
         <PageSurface className="dashboard-overview-card" styles={{ body: { padding: 0 } }}>
             <div className="dashboard-overview-card__shell">
-                <div className="dashboard-overview-card__header" style={{
-                    padding: '24px',
-                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.4) 100%)',
-                    borderBottom: '1px solid rgba(15, 23, 42, 0.04)',
-                }}>
-                    <div className="dashboard-overview-card__header-main" style={{ alignItems: 'center' }}>
-                        <div className="dashboard-overview-card__icon" style={{
-                            background: '#ffffff',
-                            boxShadow: '0 2px 8px rgba(15, 23, 42, 0.04), 0 1px 2px rgba(15, 23, 42, 0.02)',
-                            borderRadius: 12,
-                            padding: 10,
-                            border: '1px solid rgba(15, 23, 42, 0.03)'
-                        }}>
+                <div className="dashboard-overview-card__header">
+                    <div className="dashboard-overview-card__header-main">
+                        <div className="dashboard-overview-card__icon">
                             {icon}
                         </div>
                         <div className="dashboard-overview-card__copy">
-                            <div className="dashboard-overview-card__eyebrow" style={{ marginBottom: 4 }}>
-                                <Text strong style={{ fontSize: 16, color: '#0f172a', letterSpacing: '-0.01em' }}>{title}</Text>
-                                {badgeText ? <span className="dashboard-overview-card__badge" style={{ marginLeft: 8 }}>{badgeText}</span> : null}
+                            <div className="dashboard-overview-card__eyebrow">
+                                <Text strong className="dashboard-overview-card__title">{title}</Text>
+                                {badgeText ? <span className="dashboard-overview-card__badge">{badgeText}</span> : null}
                             </div>
-                            <Text type="secondary" className="dashboard-overview-card__description" style={{ fontSize: 13, color: '#64748b' }}>
+                            <Text type="secondary" className="dashboard-overview-card__description">
                                 {description}
                             </Text>
                         </div>
                     </div>
-                    <div className="dashboard-overview-card__metric" style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                        <Text className="dashboard-overview-card__metric-label" style={{
-                            display: 'inline-block',
-                            fontSize: 12,
-                            fontWeight: 700,
-                            color: '#64748b',
-                            letterSpacing: '0.04em',
-                            textTransform: 'uppercase',
-                        }}>
+                    <div className="dashboard-overview-card__metric">
+                        <Text className="dashboard-overview-card__metric-label">
                             {t('dashboard.overview.total_metric', { defaultValue: 'TOTAL' })}
                         </Text>
-                        <div style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            justifyContent: 'center',
-                            minWidth: 44,
-                            height: 44,
-                            background: '#ffffff',
-                            border: '1px solid #e2e8f0',
-                            borderRadius: 12,
-                            boxShadow: '0 2px 4px rgba(15, 23, 42, 0.02), inset 0 1px 0 rgba(255, 255, 255, 1)',
-                            padding: '0 12px'
-                        }}>
-                            <Text strong className="dashboard-overview-card__metric-value" style={{
-                                fontSize: 22,
-                                color: '#0f172a',
-                                lineHeight: 1,
-                                letterSpacing: '-0.02em',
-                                fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-                            }}>
+                        <div className="dashboard-overview-card__metric-box">
+                            <Text strong className="dashboard-overview-card__metric-value">
                                 {total}
                             </Text>
                         </div>
@@ -438,7 +404,7 @@ export function DashboardPageContent() {
                 preview.names.forEach((name, index) => {
                     facts.push({
                         key: `${system.id}-service-${index}`,
-                        value: <Text code style={{ fontSize: '13px', backgroundColor: '#f1f5f9' }}>{name}</Text>,
+                        value: <Text code className="dashboard-inline-code">{name}</Text>,
                         tone: 'default',
                     });
                 });
@@ -467,7 +433,7 @@ export function DashboardPageContent() {
                 ...(service.system_name ? [{
                     key: `${service.id}-system`,
                     label: t('vm:field.system'),
-                    value: <Text strong style={{ fontSize: '13px', color: '#334155' }}>{service.system_name}</Text>,
+                    value: <Text strong className="dashboard-overview-card__fact-strong">{service.system_name}</Text>,
                     tone: 'default' as const,
                 }] : []),
             ],
@@ -481,21 +447,17 @@ export function DashboardPageContent() {
             title: vm.name,
             titleTone: 'accent',
             meta: (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginTop: '2px' }}>
+                <div className="dashboard-vm-meta">
                     {vm.hostname && vm.hostname !== vm.name ? (
-                        <Text code style={{ fontSize: '13px', color: '#475569', backgroundColor: '#f1f5f9', border: 'none' }}>{vm.hostname}</Text>
+                        <Text code className="dashboard-inline-code dashboard-inline-code--muted">{vm.hostname}</Text>
                     ) : null}
-                    {vm.os_name ? <Text type="secondary" style={{ fontSize: '13px' }}>{vm.os_name}</Text> : null}
-                    {vm.ip_address ? <Text style={{ fontFamily: 'monospace', fontSize: '13px', color: '#64748b' }}>{vm.ip_address}</Text> : null}
+                    {vm.os_name ? <Text type="secondary" className="dashboard-vm-meta__os">{vm.os_name}</Text> : null}
+                    {vm.ip_address ? <Text className="dashboard-vm-meta__ip">{vm.ip_address}</Text> : null}
                 </div>
             ),
             aside: vm.status === 'RUNNING' ? (
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                    <span style={{
-                        width: 6, height: 6, borderRadius: '50%',
-                        backgroundColor: '#10b981',
-                        boxShadow: '0 0 0 2px rgba(16, 185, 129, 0.2)'
-                    }} className="app-pulse-dot" />
+                <div className="dashboard-runtime-state">
+                    <span className="app-pulse-dot dashboard-runtime-state__dot" />
                     <span>{t(`vm:status.${vm.status}`)}</span>
                 </div>
             ) : t(`vm:status.${vm.status}`),
@@ -506,7 +468,7 @@ export function DashboardPageContent() {
     const myRequestPreviewItems = useMemo<DashboardPreviewItem[]>(() => (
         (myRequests?.items ?? []).map((ticket) => ({
             key: ticket.id,
-            title: <Text strong style={{ color: '#1e293b' }}>{approvalSummaryTitle(ticket, t)}</Text>,
+            title: <Text strong className="dashboard-request-title">{approvalSummaryTitle(ticket, t)}</Text>,
             meta: approvalSummaryMeta(ticket, t).slice(0, 2).join(' · '),
             aside: t(`approval:status.${ticket.status}`),
             tone: statusTone(ticket.status),
@@ -521,21 +483,21 @@ export function DashboardPageContent() {
 
     if (isLoading) {
         return (
-            <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+            <div className="dashboard-page__loading">
                 <Spin size="large" />
             </div>
         );
     }
 
     return (
-        <div className="dashboard-page" style={{ position: 'relative', zIndex: 0 }}>
+        <div className="dashboard-page">
             <PageHeader
                 title={t('nav.dashboard')}
                 subtitle={t('dashboard.subtitle')}
             />
             <PageSurface className="dashboard-command-deck" styles={{ body: { padding: 0 } }}>
-                <div className="dashboard-command-deck__shell" style={{ position: 'relative', overflow: 'hidden' }}>
-                    <div className="dashboard-command-deck__main" style={{ position: 'relative', zIndex: 1 }}>
+                <div className="dashboard-command-deck__shell">
+                    <div className="dashboard-command-deck__main">
                         <div className="dashboard-command-deck__copy">
                             <Text className="dashboard-command-deck__eyebrow">{t('app.subtitle')}</Text>
                             <Text className="dashboard-command-deck__title">{t('app.name')}</Text>
@@ -563,7 +525,7 @@ export function DashboardPageContent() {
                             </Button>
                         </div>
                     </div>
-                    <div className="dashboard-command-deck__aside" style={{ position: 'relative', zIndex: 1 }}>
+                    <div className="dashboard-command-deck__aside">
                         <div className="dashboard-command-deck__aside-section">
                             <Text className="dashboard-command-deck__aside-eyebrow">{t('dashboard.status.ready')}</Text>
                             <div className="dashboard-status-strip">
