@@ -11,6 +11,7 @@
     "typecheck": "rm -f tsconfig.tsbuildinfo && node scripts/run-next-typecheck.mjs",
     "test": "vitest",
     "test:run": "vitest run",
+    "test:run:local": "node scripts/run-vitest-local.mjs",
     "test:coverage": "vitest run --coverage",
     "i18n:schema-help:audit": "node scripts/audit-schema-help.mjs",
     "i18n:schema-help:ci": "node scripts/audit-schema-help.mjs --ci",

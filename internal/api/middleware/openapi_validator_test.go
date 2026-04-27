@@ -17,7 +17,12 @@ import (
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
-var testLoggerInit sync.Once
+var (
+	testLoggerInit sync.Once
+
+	testOpenAPIValidatorMu    sync.Mutex
+	testOpenAPIValidatorCache = map[string]gin.HandlerFunc{}
+)
 
 func newOpenAPIValidatorTestRouter(t *testing.T) *gin.Engine {
 	t.Helper()
@@ -36,8 +41,27 @@ func newOpenAPIValidatorTestRouterWithMode(t *testing.T, mode string) *gin.Engin
 	})
 
 	router := gin.New()
-	router.Use(MustOpenAPIValidator("/api/v1"))
+	router.Use(cachedOpenAPIValidatorTestMiddleware(t, "/api/v1"))
 	return router
+}
+
+func cachedOpenAPIValidatorTestMiddleware(t *testing.T, basePath string) gin.HandlerFunc {
+	t.Helper()
+
+	key := gin.Mode() + "\x00" + normalizeBasePath(basePath)
+	testOpenAPIValidatorMu.Lock()
+	defer testOpenAPIValidatorMu.Unlock()
+
+	if middleware, ok := testOpenAPIValidatorCache[key]; ok {
+		return middleware
+	}
+
+	middleware, err := NewOpenAPIValidator(basePath)
+	if err != nil {
+		t.Fatalf("init openapi validator: %v", err)
+	}
+	testOpenAPIValidatorCache[key] = middleware
+	return middleware
 }
 
 func TestNormalizeValidationPath(t *testing.T) {

@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.9
@@ -209,7 +209,7 @@ ci-backend:
 ## ci-frontend: Run frontend required checks once
 ci-frontend:
 	@$(MAKE) ci-frontend-deadcode
-	@$(MAKE) ci-frontend-unit
+	@$(MAKE) ci-frontend-unit-local
 
 ## ci-api-sync: Run API contract and generated-code sync checks once
 ci-api-sync:
@@ -288,6 +288,13 @@ ci-frontend-unit:
 	@npm run lint --prefix web
 	@npm run typecheck --prefix web
 	@npm run test:run --prefix web
+	@npm run build --prefix web
+
+## ci-frontend-unit-local: Run the local frontend unit lane with Vitest sharding when the machine can support it
+ci-frontend-unit-local:
+	@npm run lint --prefix web
+	@npm run typecheck --prefix web
+	@npm run test:run:local --prefix web
 	@npm run build --prefix web
 
 ## ci-api-lint: Run the OpenAPI lint target set used by the required API lint job

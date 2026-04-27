@@ -72,7 +72,7 @@ export function PageSearchToolbar({
           className="page-search-toolbar__search"
           vertical
           gap={8}
-          style={{ flex: "1 1 420px", minWidth: 280, maxWidth: 760 }}
+          style={{ flex: "1 1 420px", minWidth: 0, maxWidth: 760 }}
         >
           <Input.Search
             className="page-search-toolbar__search-input"

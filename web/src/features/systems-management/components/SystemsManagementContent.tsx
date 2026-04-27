@@ -38,6 +38,7 @@ import { PermissionGuard } from '@/components/auth/PermissionGuard';
 import { ActionEmptyState } from '@/components/feedback/ActionEmptyState';
 
 import { SystemsOverviewGlyph } from '@/components/illustrations/DashboardIllustrations';
+import { SystemsIcon } from '@/components/layouts/MenuIcons';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
@@ -95,8 +96,6 @@ function buildDescriptionPreview(input: string, maxBytes: number): string {
     return truncateUtf8(normalized, maxBytes);
 }
 
-import { SystemsIcon } from '@/components/layouts/MenuIcons';
-
 interface SystemServicesCellProps {
     systemId: string;
     onOpenService: (service: Service) => void;
@@ -129,34 +128,23 @@ function SystemServicesCell({ systemId, onOpenService }: SystemServicesCellProps
 
     return (
         <Space size={[6, 6]} wrap>
-            <Tag color="blue" style={{ marginInlineEnd: 0 }}>
+            <Tag color="blue" className="system-service-chip__count">
                 {t('systems.detail_services_badge', { count: items.length })}
             </Tag>
             {previewItems.map((service) => (
-                <div
+                <button
+                    type="button"
                     key={service.id}
-                    className="system-service-chip hover-scale transition-all"
+                    className="system-service-chip"
                     data-testid={`system-service-link-${service.id}`}
-                    style={{
-                        padding: '2px 8px',
-                        background: '#f8fafc',
-                        border: '1px solid #e2e8f0',
-                        borderRadius: 12,
-                        fontSize: 13,
-                        color: '#475569',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6
-                    }}
                     onClick={() => onOpenService(service)}
                 >
-                    <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-                    <span style={{ fontWeight: 500 }}>{service.name}</span>
-                </div>
+                    <span className="system-service-chip__dot" />
+                    <span className="system-service-chip__label">{service.name}</span>
+                </button>
             ))}
             {remaining > 0 ? (
-                <div style={{ fontSize: 13, color: '#64748b', padding: '2px 4px', fontWeight: 500 }}>
+                <div className="system-service-chip__more">
                     +{remaining} more
                 </div>
             ) : null}
@@ -248,7 +236,7 @@ export function SystemsManagementContent() {
         ['system-related-members', activeDetailSystem?.id],
         () => api.GET('/systems/{system_id}/members', {
             params: {
-                                path: { system_id: activeDetailSystem!.id },
+                path: { system_id: activeDetailSystem!.id },
             },
         }),
         { enabled: detailModalOpen && Boolean(activeDetailSystem?.id) },
@@ -291,34 +279,11 @@ export function SystemsManagementContent() {
             dataIndex: 'name',
             key: 'name',
             render: (name: string) => (
-                <div style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '4px 14px 4px 6px',
-                    background: '#f8fafc',
-                    border: '1px solid #e2e8f0',
-                    borderRadius: 12,
-                    boxShadow: '0 1px 2px rgba(15, 23, 42, 0.03)'
-                }}>
-                    <div style={{
-                        width: 26,
-                        height: 26,
-                        background: '#eff6ff',
-                        color: '#3b82f6',
-                        borderRadius: 8,
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: 16
-                    }}>
+                <div className="systems-table-name">
+                    <div className="systems-table-name__icon">
                         <SystemsIcon />
                     </div>
-                    <Text strong style={{
-                        fontSize: 14,
-                        color: '#0f172a',
-                        letterSpacing: '-0.01em',
-                    }}>
+                    <Text strong className="systems-table-name__text">
                         {name}
                     </Text>
                 </div>
@@ -336,7 +301,7 @@ export function SystemsManagementContent() {
                 }
                 const preview = buildDescriptionPreview(normalizedDescription, 36);
                 return (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div className="workbench-description-preview">
                         <Text type="secondary" className="workbench-table-description workbench-table-description--preview">
                             {preview}
                         </Text>
@@ -344,8 +309,8 @@ export function SystemsManagementContent() {
                             <Button
                                 type="text"
                                 size="small"
-                                style={{ width: 24, height: 24, minWidth: 24, padding: 0 }}
-                                icon={<InfoCircleOutlined style={{ color: '#94a3b8' }} />}
+                                className="workbench-icon-button"
+                                icon={<InfoCircleOutlined />}
                                 onClick={() => {
                                     setDetailSystem(record);
                                     setDetailOpen(true);
@@ -364,7 +329,7 @@ export function SystemsManagementContent() {
             width: 160,
             render: (date: string) => (
                 <Space direction="vertical" size={2}>
-                    <Text style={{ color: '#334155' }}><LocalDateTimeText value={date} /></Text>
+                    <Text className="workbench-table-date"><LocalDateTimeText value={date} /></Text>
                 </Space>
             ),
         },
@@ -384,9 +349,9 @@ export function SystemsManagementContent() {
         {
             title: t('table.actions'),
             key: 'actions',
-            width: 200,
+            width: 220,
             render: (_, record) => (
-                <Space size={4}>
+                <Space wrap size={[4, 4]} className="workbench-row-actions">
                     <Tooltip title={t('common:button.detail', { defaultValue: 'Details' })}>
                         <Button
                             type="text"
@@ -513,45 +478,19 @@ export function SystemsManagementContent() {
                 <SetupGuideCard variant="systems" />
             ) : (
                     <PageSurface className="systems-page__table-surface" flush={true}>
-                        <div style={{ padding: '24px 24px 0', borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(3, 1fr)',
-                                gap: 24,
-                                marginBottom: 24,
-                            }}>
-                                <div style={{
-                                    display: 'flex', flexDirection: 'column', gap: 8,
-                                    padding: '20px 24px',
-                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
-                                    borderRadius: 16,
-                                    border: '1px solid rgba(15, 23, 42, 0.05)',
-                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
-                                }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('nav.systems')}</span>
-                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#0f172a', lineHeight: 1 }}>{systems.data?.pagination?.total ?? systemItems.length}</span>
+                        <div className="systems-table-workspace">
+                            <div className="systems-table-workspace__metrics">
+                                <div className="systems-table-workspace__metric">
+                                    <span className="systems-table-workspace__metric-label">{t('nav.systems')}</span>
+                                    <span className="systems-table-workspace__metric-value">{systems.data?.pagination?.total ?? systemItems.length}</span>
                                 </div>
-                                <div style={{
-                                    display: 'flex', flexDirection: 'column', gap: 8,
-                                    padding: '20px 24px',
-                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
-                                    borderRadius: 16,
-                                    border: '1px solid rgba(15, 23, 42, 0.05)',
-                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
-                                }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('systems.summary.related_services_title', 'Services')}</span>
-                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#334155', lineHeight: 1 }}>{serviceOptions.length}</span>
+                                <div className="systems-table-workspace__metric">
+                                    <span className="systems-table-workspace__metric-label">{t('systems.summary.related_services_title', 'Services')}</span>
+                                    <span className="systems-table-workspace__metric-value systems-table-workspace__metric-value--muted">{serviceOptions.length}</span>
                                 </div>
-                                <div style={{
-                                    display: 'flex', flexDirection: 'column', gap: 8,
-                                    padding: '20px 24px',
-                                    background: 'linear-gradient(135deg, rgba(248, 250, 252, 0.9) 0%, rgba(241, 245, 249, 0.6) 100%)',
-                                    borderRadius: 16,
-                                    border: '1px solid rgba(15, 23, 42, 0.05)',
-                                    boxShadow: 'inset 0 1px 0 rgba(255, 255, 255, 1)'
-                                }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: '#475569', letterSpacing: '0.04em' }}>{t('systems.summary.members_title', 'Members')}</span>
-                                    <span style={{ fontSize: 32, fontWeight: 700, color: '#334155', lineHeight: 1 }}>{memberOptions.length}</span>
+                                <div className="systems-table-workspace__metric">
+                                    <span className="systems-table-workspace__metric-label">{t('systems.summary.members_title', 'Members')}</span>
+                                    <span className="systems-table-workspace__metric-value systems-table-workspace__metric-value--muted">{memberOptions.length}</span>
                                 </div>
                             </div>
                             <PageSearchToolbar
@@ -705,7 +644,9 @@ export function SystemsManagementContent() {
                                     icon={createPreviewMode ? <EditOutlined /> : <FileTextOutlined />}
                                     onClick={() => setCreatePreviewMode(!createPreviewMode)}
                                 >
-                                    {createPreviewMode ? '[Edit]' : '[Preview]'}
+                                    {createPreviewMode
+                                        ? t('common:button.edit', { defaultValue: 'Edit' })
+                                        : t('common:button.preview', { defaultValue: 'Preview' })}
                                 </Button>
                                 <Upload
                                     accept=".md"
@@ -721,7 +662,7 @@ export function SystemsManagementContent() {
                                     }}
                                 >
                                     <Button type="link" size="small" icon={<UploadOutlined />}>
-                                        [Upload .md file]
+                                        {t('common:button.upload_markdown', { defaultValue: 'Upload .md' })}
                                     </Button>
                                 </Upload>
                             </Space>
@@ -729,7 +670,7 @@ export function SystemsManagementContent() {
                     >
                         <Form.Item noStyle shouldUpdate>
                             {(form) => (
-                                <div className="markdown-preview" style={{ display: createPreviewMode ? 'block' : 'none', padding: '4px 11px', border: '1px solid #d9d9d9', borderRadius: 6, minHeight: 76, maxHeight: 152, overflowY: 'auto' }}>
+                                <div className="markdown-preview markdown-editor-preview" hidden={!createPreviewMode}>
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                                         {form.getFieldValue('description') || '*No content provided*'}
                                     </ReactMarkdown>
@@ -765,7 +706,9 @@ export function SystemsManagementContent() {
                                     icon={editPreviewMode ? <EditOutlined /> : <FileTextOutlined />}
                                     onClick={() => setEditPreviewMode(!editPreviewMode)}
                                 >
-                                    {editPreviewMode ? '[Edit]' : '[Preview]'}
+                                    {editPreviewMode
+                                        ? t('common:button.edit', { defaultValue: 'Edit' })
+                                        : t('common:button.preview', { defaultValue: 'Preview' })}
                                 </Button>
                                 <Upload
                                     accept=".md"
@@ -781,7 +724,7 @@ export function SystemsManagementContent() {
                                     }}
                                 >
                                     <Button type="link" size="small" icon={<UploadOutlined />}>
-                                        [Upload .md file]
+                                        {t('common:button.upload_markdown', { defaultValue: 'Upload .md' })}
                                     </Button>
                                 </Upload>
                             </Space>
@@ -789,7 +732,7 @@ export function SystemsManagementContent() {
                     >
                         <Form.Item noStyle shouldUpdate>
                             {(form) => (
-                                <div className="markdown-preview" style={{ display: editPreviewMode ? 'block' : 'none', padding: '4px 11px', border: '1px solid #d9d9d9', borderRadius: 6, minHeight: 76, maxHeight: 152, overflowY: 'auto' }}>
+                                <div className="markdown-preview markdown-editor-preview" hidden={!editPreviewMode}>
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
                                         {form.getFieldValue('description') || '*No content provided*'}
                                     </ReactMarkdown>

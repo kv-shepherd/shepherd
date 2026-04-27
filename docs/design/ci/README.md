@@ -180,7 +180,9 @@ Current split (2026-04-27 optimization):
 - `lint`: top-level blocking lint bundle. Runs `govulncheck`, frontend dead-code/dependency
   hygiene (`knip`), and the Go lint stack together.
 - `ci-backend`: local once-only Go lane (`govulncheck`, Go lint, race test, build).
-- `ci-frontend`: local once-only frontend lane (`npm audit` high-severity gate, `knip`, `lint`, `typecheck`, `vitest`, `build`).
+- `ci-frontend`: local once-only frontend lane (`npm audit` high-severity gate, `knip`, `lint`, `typecheck`, sharded local `vitest`, `build`).
+- `ci-frontend-unit`: required GitHub Actions frontend unit job target. It keeps the canonical single-process `npm run test:run` behavior for predictable remote CI.
+- `ci-frontend-unit-local`: local `make pr` frontend unit lane. It runs the same lint/typecheck/test/build quality dimensions, but uses Vitest `--shard` on sufficiently parallel local machines to reduce wall time without skipping test files. Set `FRONTEND_LOCAL_TEST_SHARDS=1` to force the canonical single-process local test run, or a higher positive integer to override the automatic shard count.
 - `ci-api-sync`: required API contract lane (`api lint`, `api breaking`, generated-code sync with frontend typecheck, `api-contract-test`).
 - `ci-api-sync-local`: local `make pr` API lane. It runs the same API lint/breaking/generated/contract checks, but skips the generated-sync frontend typecheck because `ci-frontend-unit` runs that exact frontend gate in the same local PR bundle.
 - `ci-e2e-smoke`: local once-only Playwright mock smoke lane.

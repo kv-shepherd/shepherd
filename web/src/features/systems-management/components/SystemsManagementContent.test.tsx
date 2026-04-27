@@ -442,7 +442,10 @@ describe('SystemsManagementContent', () => {
             expect(screen.getAllByTestId('system-service-link-svc-1').length).toBeGreaterThan(0);
         });
 
-        await user.click(screen.getAllByTestId('system-service-link-svc-1')[0]);
+        const serviceLink = screen.getAllByTestId('system-service-link-svc-1')[0];
+        expect(serviceLink.tagName).toBe('BUTTON');
+
+        await user.click(serviceLink);
         expect(pushMock).toHaveBeenCalledWith('/services?system_id=sys-1&detail_service_id=svc-1');
     });
 
