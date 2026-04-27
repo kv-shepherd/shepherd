@@ -86,7 +86,7 @@ export default function Providers({
                         fontSizeLG: 17,
                         lineHeight: 1.6,
                         fontFamily: 'var(--font-ui-sans)',
-                        fontFamilyCode: 'var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace',
+                        fontFamilyCode: 'var(--font-ui-mono)',
                         boxShadowSecondary: '0 24px 70px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.04)',
                     },
                 }}

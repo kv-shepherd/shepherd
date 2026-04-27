@@ -32,6 +32,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Server.PublicBaseURL != "" {
 		t.Errorf("Server.PublicBaseURL = %q, want empty", cfg.Server.PublicBaseURL)
 	}
+	if cfg.Server.MaxRequestBodyBytes != 0 {
+		t.Errorf("Server.MaxRequestBodyBytes = %d, want 0", cfg.Server.MaxRequestBodyBytes)
+	}
 
 	// Database defaults
 	if cfg.Database.Host != "localhost" {
@@ -212,6 +215,30 @@ func TestLoad_ServerPublicBaseURLFromEnv(t *testing.T) {
 	}
 	if got := cfg.Server.AllowedOrigins[len(cfg.Server.AllowedOrigins)-1]; got != "https://console.example.com" {
 		t.Fatalf("Server.AllowedOrigins last item = %q, want %q", got, "https://console.example.com")
+	}
+}
+
+func TestLoad_ServerMaxRequestBodyBytesFromEnv(t *testing.T) {
+	t.Setenv("SERVER_MAX_REQUEST_BODY_BYTES", "1048576")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Server.MaxRequestBodyBytes; got != 1048576 {
+		t.Fatalf("Server.MaxRequestBodyBytes = %d, want 1048576", got)
+	}
+}
+
+func TestLoad_ServerMaxRequestBodyBytesRejectsNegative(t *testing.T) {
+	t.Setenv("SERVER_MAX_REQUEST_BODY_BYTES", "-1")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for negative request body limit")
+	}
+	if got := err.Error(); got != "validate config: server.max_request_body_bytes must be >= 0" {
+		t.Fatalf("Load() error = %q", got)
 	}
 }
 

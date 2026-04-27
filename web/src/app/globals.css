@@ -23,15 +23,16 @@
   --shell-shadow: 0 24px 70px rgba(15, 23, 42, 0.08), 0 8px 24px rgba(15, 23, 42, 0.04);
   --shell-shadow-strong: 0 30px 85px rgba(15, 23, 42, 0.12), 0 12px 30px rgba(15, 23, 42, 0.08);
   --shell-toolbar-height: 42px;
-  --font-ui-sans: var(--font-geist-sans), -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  --font-ui-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-ui-sans-zh: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Source Han Sans CN", "WenQuanYi Micro Hei", sans-serif;
+  --font-ui-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --font-sans: var(--font-ui-sans);
-  --font-mono: var(--font-ibm-plex-mono);
+  --font-mono: var(--font-ui-mono);
 }
 
 html,
@@ -107,7 +108,7 @@ h6 {
 code,
 pre,
 .ant-typography code {
-  font-family: var(--font-ibm-plex-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-ui-mono);
 }
 
 @keyframes fadeIn {

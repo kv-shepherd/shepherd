@@ -23,6 +23,8 @@ GITLEAKS_VERSION=v8.28.0
 GO_LINT_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/...
 GO_BUILD_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/... ./plugins/...
 GO_TEST_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/... ./plugins/...
+GO_VULN_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/... ./plugins/... \
+	./docs/design/ci/scripts
 
 # Build directories
 BUILD_DIR=bin
@@ -192,10 +194,9 @@ authproviderplugin-sdk-smoke:
 ## ci-checks: Backward-compatible alias for governance/static gates
 ci-checks: ci-governance
 
-## ci-prep: Run shared mutating checks once before parallel lanes
+## ci-prep: Install shared dependencies before local PR lanes
 ci-prep:
 	@npm ci --prefix web
-	@$(MAKE) ci-api-sync
 
 ## ci-backend: Run Go/backend required checks once
 ci-backend:
@@ -330,7 +331,7 @@ pr-ci:
 
 ## govulncheck: Run Go official vulnerability scanner (blocking when invoked directly)
 govulncheck:
-	@$(GOCMD) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) ./...
+	@$(GOCMD) run golang.org/x/vuln/cmd/govulncheck@$(GOVULNCHECK_VERSION) $(GO_VULN_TARGETS)
 
 ## frontend-deadcode-scan: Run Knip dead-code/dependency scan (blocking when invoked directly)
 frontend-deadcode-scan:

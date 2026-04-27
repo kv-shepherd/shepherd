@@ -4,12 +4,14 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/provider"
 )
@@ -93,6 +95,26 @@ func TestIsJWTOptionalPath_AllowsVMVNCBootstrap(t *testing.T) {
 	require.True(t, isJWTOptionalPath("/api/v1/vms/vm-1/vnc"))
 	require.True(t, isJWTOptionalPath("/api/v1/vms/vm-1/serial"))
 	require.False(t, isJWTOptionalPath("/api/v1/vms/vm-1/console/status"))
+}
+
+func TestNewRouterAppliesMaxRequestBodyBytesBeforeHandlers(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			MaxRequestBodyBytes: 4,
+			AllowCredentials:    true,
+		},
+	}
+	router := newRouter(cfg, nil, middleware.JWTConfig{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader("12345"))
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
+	require.Contains(t, rr.Body.String(), "REQUEST_TOO_LARGE")
 }
 
 func TestMapClusterHealthStatus(t *testing.T) {

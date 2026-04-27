@@ -33,13 +33,14 @@ type Config struct {
 
 // ServerConfig contains HTTP server settings.
 type ServerConfig struct {
-	Port             int           `mapstructure:"port"`
-	ReadTimeout      time.Duration `mapstructure:"read_timeout"`
-	WriteTimeout     time.Duration `mapstructure:"write_timeout"`
-	ShutdownTimeout  time.Duration `mapstructure:"shutdown_timeout"`
-	PublicBaseURL    string        `mapstructure:"public_base_url"`
-	AllowedOrigins   []string      `mapstructure:"allowed_origins"`
-	AllowCredentials bool          `mapstructure:"allow_credentials"`
+	Port                int           `mapstructure:"port"`
+	ReadTimeout         time.Duration `mapstructure:"read_timeout"`
+	WriteTimeout        time.Duration `mapstructure:"write_timeout"`
+	ShutdownTimeout     time.Duration `mapstructure:"shutdown_timeout"`
+	PublicBaseURL       string        `mapstructure:"public_base_url"`
+	MaxRequestBodyBytes int64         `mapstructure:"max_request_body_bytes"`
+	AllowedOrigins      []string      `mapstructure:"allowed_origins"`
+	AllowCredentials    bool          `mapstructure:"allow_credentials"`
 	// UnsafeAllowAllOrigins disables origin allowlist checks and must only be used in trusted local development.
 	UnsafeAllowAllOrigins bool `mapstructure:"unsafe_allow_all_origins"`
 }
@@ -202,6 +203,9 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("server.public_base_url must not include query or fragment")
 		}
 	}
+	if c.Server.MaxRequestBodyBytes < 0 {
+		return fmt.Errorf("server.max_request_body_bytes must be >= 0")
+	}
 	if key := strings.TrimSpace(c.Security.EncryptionKey); key != "" {
 		if _, err := c.Security.DecodeEncryptionKey(); err != nil {
 			return err
@@ -246,6 +250,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.write_timeout", "30s")
 	v.SetDefault("server.shutdown_timeout", "30s")
 	v.SetDefault("server.public_base_url", "")
+	v.SetDefault("server.max_request_body_bytes", 0)
 	v.SetDefault("server.allowed_origins", []string{"http://localhost:3000", "http://127.0.0.1:3000"})
 	v.SetDefault("server.allow_credentials", true)
 	v.SetDefault("server.unsafe_allow_all_origins", false)
@@ -300,6 +305,7 @@ func bindEnvKeys(v *viper.Viper) {
 		"server.write_timeout",
 		"server.shutdown_timeout",
 		"server.public_base_url",
+		"server.max_request_body_bytes",
 		"server.allowed_origins",
 		"server.allow_credentials",
 		"server.unsafe_allow_all_origins",

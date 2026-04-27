@@ -38,25 +38,12 @@ echo "Preparing local PR CI workspace..."
 (cd "${PROJECT_ROOT}" && make ci-prep)
 (cd "${PROJECT_ROOT}" && make ci-api-sync)
 
-run_lane backend bash -lc "cd '${PROJECT_ROOT}' && make ci-backend"
-backend_pid="${RUN_LANE_PID}"
-run_lane governance bash -lc "cd '${PROJECT_ROOT}' && make ci-governance"
-governance_pid="${RUN_LANE_PID}"
-run_lane frontend bash -lc "cd '${PROJECT_ROOT}' && make ci-frontend"
-frontend_pid="${RUN_LANE_PID}"
-run_lane e2e-smoke bash -lc "cd '${PROJECT_ROOT}' && make ci-e2e-smoke"
-e2e_pid="${RUN_LANE_PID}"
-
 failures=0
 lane_results=()
-for entry in \
-  "backend:${backend_pid}" \
-  "governance:${governance_pid}" \
-  "frontend:${frontend_pid}" \
-  "e2e-smoke:${e2e_pid}"
-do
-  name="${entry%%:*}"
-  pid="${entry##*:}"
+
+wait_lane() {
+  local name="$1"
+  local pid="$2"
   if ! wait "${pid}"; then
     failures=1
     lane_results+=("${name}:FAIL")
@@ -66,7 +53,36 @@ do
     lane_results+=("${name}:PASS")
     echo "Lane '${name}' passed."
   fi
-done
+}
+
+run_lane backend bash -lc "cd '${PROJECT_ROOT}' && make ci-backend"
+backend_pid="${RUN_LANE_PID}"
+run_lane governance bash -lc "cd '${PROJECT_ROOT}' && make ci-governance"
+governance_pid="${RUN_LANE_PID}"
+run_lane frontend bash -lc "cd '${PROJECT_ROOT}' && make ci-frontend"
+frontend_pid="${RUN_LANE_PID}"
+
+if wait "${frontend_pid}"; then
+  lane_results+=("frontend:PASS")
+  echo "Lane 'frontend' passed."
+  # The frontend lane has already produced a production Next.js build.
+  # Reuse it for local smoke tests to avoid a second concurrent Next build.
+  run_lane e2e-smoke bash -lc "cd '${PROJECT_ROOT}' && PW_USE_EXISTING_BUILD=1 make ci-e2e-smoke"
+  e2e_pid="${RUN_LANE_PID}"
+else
+  failures=1
+  lane_results+=("frontend:FAIL")
+  lane_results+=("e2e-smoke:SKIP")
+  echo "Lane 'frontend' failed. Recent log output:"
+  tail -n 120 "${LOG_DIR}/frontend.log" || true
+fi
+
+wait_lane backend "${backend_pid}"
+wait_lane governance "${governance_pid}"
+
+if [ -n "${e2e_pid:-}" ]; then
+  wait_lane e2e-smoke "${e2e_pid}"
+fi
 
 if [ "${failures}" -ne 0 ]; then
   print_summary "FAIL" "${lane_results[@]}"

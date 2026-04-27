@@ -41,6 +41,7 @@ func isJWTOptionalPath(path string) bool {
 func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg middleware.JWTConfig) *gin.Engine {
 	router := gin.New()
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ErrorHandler())
+	router.Use(middleware.MaxRequestBodyBytes(cfg.Server.MaxRequestBodyBytes))
 
 	var originChecker corsOriginChecker
 	if checker, ok := server.(corsOriginChecker); ok && checker != nil {

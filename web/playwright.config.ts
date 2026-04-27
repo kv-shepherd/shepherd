@@ -18,6 +18,10 @@ const e2eDistDir = `.next-e2e/${e2eRunId}`;
 const e2eCacheDir = `${e2eDistDir}/cache`;
 const e2eTsconfigPath = `tsconfig.e2e.${e2eRunId}.json`;
 const e2eTsconfigBackupPath = `tsconfig.e2e.${e2eRunId}.backup.json`;
+const useExistingBuild = process.env.PW_USE_EXISTING_BUILD === '1';
+const webServerCommand = useExistingBuild
+	? `sh -c 'DEV_ALLOWED_ORIGINS=${devAllowedOrigins} npx next start --port ${webPort}'`
+	: `sh -c 'trap "if [ -f ${e2eTsconfigBackupPath} ]; then mv ${e2eTsconfigBackupPath} tsconfig.json; fi; rm -f ${e2eTsconfigPath}" EXIT && mkdir -p ${e2eCacheDir} && find ${e2eDistDir} -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} + && rm -f ${e2eTsconfigPath} ${e2eTsconfigBackupPath} && cp tsconfig.json ${e2eTsconfigBackupPath} && cp tsconfig.json ${e2eTsconfigPath} && DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npx next build --webpack && DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npx next start --port ${webPort}'`;
 
 // Live E2E tests run against a real backend.
 // Set LIVE_E2E=true to include them in the test run.
@@ -77,15 +81,14 @@ export default defineConfig({
 	],
 	webServer: {
 		name: 'Next.js (dev)',
-		// Always run a dedicated production server for E2E. Smoke tests do not need
-		// HMR or file watching, so building once and serving with `next start`
-		// avoids dev-server watcher pressure and keeps local/remote behavior closer.
-		// Force a dedicated port, dist dir, and copied tsconfig so E2E never
-		// contends with an already-running local Next instance or mutates the
-		// repository tsconfig during `next build`.
+		// Run a dedicated production server for E2E. Smoke tests do not need HMR
+		// or file watching, so serving with `next start` keeps local/remote behavior
+		// closer. By default we build an isolated dist dir. Local PR validation can
+		// set PW_USE_EXISTING_BUILD=1 after the frontend lane has built `.next` to
+		// avoid a second Next build on the same machine.
 		// When launched via run_e2e_live.sh, the process stdout is already captured
 		// by the shell (nohup redirect in background mode, or tee in foreground).
-		command: `sh -c 'trap "if [ -f ${e2eTsconfigBackupPath} ]; then mv ${e2eTsconfigBackupPath} tsconfig.json; fi; rm -f ${e2eTsconfigPath}" EXIT && mkdir -p ${e2eCacheDir} && find ${e2eDistDir} -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} + && rm -f ${e2eTsconfigPath} ${e2eTsconfigBackupPath} && cp tsconfig.json ${e2eTsconfigBackupPath} && cp tsconfig.json ${e2eTsconfigPath} && DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npx next build --webpack && DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npx next start --port ${webPort}'`,
+		command: webServerCommand,
 		url: baseURL,
 		// MUST be false unconditionally: reusing an existing server risks pointing at
 		// a stale process bound to a different backend URL or a different database.
