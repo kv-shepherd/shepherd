@@ -85,6 +85,9 @@ var auditMessageActions = map[string]struct{}{
 	"vm_restart_requested":                         {},
 	"vm_batch_submit":                              {},
 	"vm_batch_power_submit":                        {},
+	"vm_create":                                    {},
+	"vm_update":                                    {},
+	"vm_delete":                                    {},
 	"vnc_request_submitted":                        {},
 	"vnc_access":                                   {},
 	"approval_approved":                            {},
@@ -102,9 +105,34 @@ var auditMessageActions = map[string]struct{}{
 	"auth_provider_directory_sync_failed":          {},
 	"auth_provider_directory_enrichment_scheduled": {},
 	"user_login":                                   {},
+	"user_external_login":                          {},
 	"user_password_change":                         {},
+	"system_create":                                {},
+	"system_update":                                {},
+	"system_delete":                                {},
+	"service_create":                               {},
+	"service_update":                               {},
+	"service_delete":                               {},
+	"cluster_create":                               {},
+	"cluster_update":                               {},
 	"cluster_update_environment":                   {},
+	"cluster_delete":                               {},
+	"namespace_create":                             {},
+	"namespace_update":                             {},
+	"namespace_delete":                             {},
+	"template_create":                              {},
+	"template_update":                              {},
+	"template_delete":                              {},
+	"instance_size_create":                         {},
+	"instance_size_update":                         {},
+	"instance_size_delete":                         {},
+	"role_create":                                  {},
+	"role_update":                                  {},
+	"role_delete":                                  {},
 	"system_member_update_role":                    {},
+	"auth_provider_create":                         {},
+	"auth_provider_update":                         {},
+	"auth_provider_delete":                         {},
 	"auth_provider_test_connection":                {},
 	"auth_provider_sync":                           {},
 	"auth_provider_mapping_create":                 {},
@@ -940,6 +968,7 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	}
 
 	actorSummaries, resourceSummaries, ticketSummaries := s.buildAuditPresentation(ctx, logs)
+	authProviderDisplayByID := s.loadAuditAuthProviderDisplays(ctx, logs)
 	items := make([]generated.AuditLog, 0, len(logs))
 	for _, l := range logs {
 		var actorSummary *generated.AuditActorSummary
@@ -960,7 +989,7 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 			Action:           l.Action,
 			Actor:            l.Actor,
 			ActorSummary:     actorSummary,
-			MessageI18n:      auditLogMessageI18n(l, actorSummary, resourceSummary, ticketSummary),
+			MessageI18n:      auditLogMessageI18n(l, actorSummary, resourceSummary, ticketSummary, authProviderDisplayByID),
 			ResourceType:     l.ResourceType,
 			ResourceId:       l.ResourceID,
 			ResourceSummary:  resourceSummary,
@@ -989,6 +1018,7 @@ func auditLogMessageI18n(
 	actorSummary *generated.AuditActorSummary,
 	resourceSummary *generated.AuditResourceSummary,
 	ticketSummary *generated.TicketSummary,
+	authProviderDisplayByID map[string]string,
 ) generated.I18nMessage {
 	actorDisplay := firstNonEmptyString(strings.TrimSpace(entry.Actor), "unknown")
 	resourceDisplay := firstNonEmptyString(strings.TrimSpace(entry.ResourceID), strings.TrimSpace(entry.ResourceType), "resource")
@@ -1021,6 +1051,13 @@ func auditLogMessageI18n(
 	}
 	if decision := auditStringField(entry.Details, "decision"); decision != "" {
 		params["decision"] = decision
+	}
+	if providerID := auditStringField(entry.Details, "auth_provider_id"); providerID != "" {
+		params["authProviderId"] = providerID
+		params["authProviderDisplay"] = firstNonEmptyString(
+			strings.TrimSpace(authProviderDisplayByID[providerID]),
+			providerID,
+		)
 	}
 	if ticketSummary != nil {
 		params["batchCount"] = ticketSummary.BatchCount

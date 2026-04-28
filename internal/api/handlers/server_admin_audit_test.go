@@ -278,14 +278,116 @@ func TestListAuditLogs_SupportsQuickSearchAcrossActionActorAndResource(t *testin
 	if resp.Items[0].ResourceId != "svc-payments" {
 		t.Fatalf("resource_id = %q, want svc-payments", resp.Items[0].ResourceId)
 	}
-	if resp.Items[0].MessageI18n.Key != "audit.message.generic" {
-		t.Fatalf("message_i18n.key = %q, want audit.message.generic", resp.Items[0].MessageI18n.Key)
+	if resp.Items[0].MessageI18n.Key != "audit.message.service_update" {
+		t.Fatalf("message_i18n.key = %q, want audit.message.service_update", resp.Items[0].MessageI18n.Key)
 	}
 	if resp.Items[0].MessageI18n.Params["actor"] != "bob" ||
 		resp.Items[0].MessageI18n.Params["actorDisplay"] != "bob" ||
 		resp.Items[0].MessageI18n.Params["resourceId"] != "svc-payments" ||
 		resp.Items[0].MessageI18n.Params["resourceDisplay"] != "svc-payments" {
 		t.Fatalf("message_i18n.params = %#v, want stable fallback params", resp.Items[0].MessageI18n.Params)
+	}
+}
+
+func TestListAuditLogs_ExternalLoginUsesSpecificLocalizedMessage(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	provider, err := client.AuthProvider.Create().
+		SetID("provider-oidc").
+		SetName("example OIDC").
+		SetAuthType("oidc").
+		SetCreatedBy("admin-1").
+		SetConfig(map[string]interface{}{}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create auth provider: %v", err)
+	}
+
+	_, err = client.AuditLog.Create().
+		SetID("audit-" + uuid.NewString()).
+		SetAction("user.external_login").
+		SetActor("user-1").
+		SetResourceType("user").
+		SetResourceID("user-1").
+		SetDetails(map[string]interface{}{
+			"auth_provider_id": provider.ID,
+			"created":          true,
+			"updated":          false,
+		}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create audit log: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/audit-logs",
+		"",
+		"admin-1",
+		[]string{"audit:read", "platform:admin"},
+	)
+	srv.ListAuditLogs(c, generated.ListAuditLogsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.AuditLogList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+	if resp.Items[0].MessageI18n.Key != "audit.message.user_external_login" {
+		t.Fatalf("message_i18n.key = %q, want audit.message.user_external_login", resp.Items[0].MessageI18n.Key)
+	}
+	if resp.Items[0].MessageI18n.Params["authProviderDisplay"] != "example OIDC" {
+		t.Fatalf("authProviderDisplay = %#v, want example OIDC", resp.Items[0].MessageI18n.Params["authProviderDisplay"])
+	}
+}
+
+func TestListAuditLogs_VMCreateUsesSpecificLocalizedMessage(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.AuditLog.Create().
+		SetID("audit-" + uuid.NewString()).
+		SetAction("vm.create").
+		SetActor("system:vm-create-worker").
+		SetResourceType("vm").
+		SetResourceID("vm-prod-1").
+		SetDetails(map[string]interface{}{}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create audit log: %v", err)
+	}
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/audit-logs",
+		"",
+		"admin-1",
+		[]string{"audit:read", "platform:admin"},
+	)
+	srv.ListAuditLogs(c, generated.ListAuditLogsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.AuditLogList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+	if resp.Items[0].MessageI18n.Key != "audit.message.vm_create" {
+		t.Fatalf("message_i18n.key = %q, want audit.message.vm_create", resp.Items[0].MessageI18n.Key)
 	}
 }
 

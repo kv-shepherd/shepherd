@@ -78,6 +78,7 @@ const DECISION_COLORS: Record<string, string> = {
 
 const COMMON_AUDIT_ACTIONS = [
     'user.login',
+    'user.external_login',
     'user.password_change',
     'vm.request',
     'vm.delete_requested',
@@ -106,6 +107,12 @@ const COMMON_AUDIT_ACTIONS = [
     'auth_provider.directory_sync_failed',
     'auth_provider.directory_enrichment_scheduled',
 ] as const;
+
+const USER_IDENTITY_AUDIT_ACTIONS = new Set([
+    'user_login',
+    'user_external_login',
+    'user_password_change',
+]);
 
 function normalizeActionKey(action?: string): string {
     return (action ?? '').trim().toLowerCase().replace(/[.\s-]+/g, '_');
@@ -265,11 +272,16 @@ function actorSecondary(record: AuditLog, t: AuditTranslation): string {
     return systemActor?.secondary ?? '';
 }
 
+function isUserIdentityAuditAction(action?: string): boolean {
+    return USER_IDENTITY_AUDIT_ACTIONS.has(normalizeActionKey(action));
+}
+
 function isUserIdentityAuditRecord(record: AuditLog): boolean {
-    const normalizedAction = normalizeActionKey(record.action);
-    return record.resource_type === 'user' && (
-        normalizedAction === 'user_login' || normalizedAction === 'user_password_change'
-    );
+    return record.resource_type === 'user' && isUserIdentityAuditAction(record.action);
+}
+
+function isExternalLoginAuditRecord(record: AuditLog): boolean {
+    return record.resource_type === 'user' && normalizeActionKey(record.action) === 'user_external_login';
 }
 
 function isLowSignalAuditRecord(record: AuditLog): boolean {
@@ -305,6 +317,53 @@ function auditDetailNumber(details: AuditLog['details'], key: string): number | 
         }
     }
     return undefined;
+}
+
+function auditDetailBoolean(details: AuditLog['details'], key: string): boolean | undefined {
+    if (!details || typeof details !== 'object') {
+        return undefined;
+    }
+    const value = details[key];
+    if (typeof value === 'boolean') {
+        return value;
+    }
+    if (typeof value === 'string') {
+        if (value === 'true') {
+            return true;
+        }
+        if (value === 'false') {
+            return false;
+        }
+    }
+    return undefined;
+}
+
+function auditMessageParam(record: AuditLog, key: string): string {
+    const value = record.message_i18n?.params?.[key];
+    return typeof value === 'string' ? value.trim() : '';
+}
+
+function buildExternalLoginResult(record: AuditLog, t: AuditTranslation): string {
+    const created = auditDetailBoolean(record.details, 'created');
+    const updated = auditDetailBoolean(record.details, 'updated');
+    if (created && updated) {
+        return t('audit.external_login_result.created_and_updated', {
+            defaultValue: 'Created and updated local account',
+        });
+    }
+    if (created) {
+        return t('audit.external_login_result.created', {
+            defaultValue: 'Created local account',
+        });
+    }
+    if (updated) {
+        return t('audit.external_login_result.updated', {
+            defaultValue: 'Updated local account',
+        });
+    }
+    return t('audit.external_login_result.reused', {
+        defaultValue: 'Reused existing local account',
+    });
 }
 
 function buildDirectorySyncResult(record: AuditLog, t: AuditTranslation): string {
@@ -348,8 +407,7 @@ function buildAuditHeadline(record: AuditLog, t: AuditTranslation): string {
         return fallbackResourceName;
     }
     if (record.resource_type === 'user') {
-        const normalizedAction = normalizeActionKey(record.action);
-        if (normalizedAction === 'user_login' || normalizedAction === 'user_password_change') {
+        if (isUserIdentityAuditAction(record.action)) {
             return fallbackResourceName;
         }
     }
@@ -375,7 +433,6 @@ function buildAuditFeedMeta(record: AuditLog, t: AuditTranslation): string[] {
 
     if (isUserIdentityAuditRecord(record)) {
         return listAuditParts(
-            translateAuditAction(t, record.action),
             resourceName !== headline ? resourceName : '',
             record.resource_summary?.secondary,
             actorSecondary(record, t),
@@ -438,7 +495,7 @@ function buildAuditFeedBadges(record: AuditLog, t: AuditTranslation): AuditFeedB
     if (
         record.resource_type !== 'ticket' &&
         record.resource_type !== 'directory_sync_job' &&
-        !(record.resource_type === 'user' && ['user_login', 'user_password_change'].includes(normalizeActionKey(record.action)))
+        !isUserIdentityAuditRecord(record)
     ) {
         badges.push({
             key: 'resource-type',
@@ -635,6 +692,22 @@ function buildContextRows(record: AuditLog, t: AuditTranslation): Array<{ key: s
     }
 
     if (isUserIdentityAuditRecord(record)) {
+        if (isExternalLoginAuditRecord(record)) {
+            const provider = auditMessageParam(record, 'authProviderDisplay')
+                || auditDetailString(record.details, 'auth_provider_id');
+            if (provider) {
+                rows.push({
+                    key: 'provider',
+                    label: t('audit.context.provider', { defaultValue: 'Auth provider' }),
+                    value: provider,
+                });
+            }
+            rows.push({
+                key: 'result',
+                label: t('audit.context.result', { defaultValue: 'Result' }),
+                value: buildExternalLoginResult(record, t),
+            });
+        }
         return rows;
     }
 
@@ -838,7 +911,7 @@ function buildAuditOverviewItems(record: AuditLog, t: AuditTranslation): Descrip
     }
 
     if (isUserIdentityAuditRecord(record)) {
-        return [
+        const items: DescriptionsProps['items'] = [
             {
                 key: 'action',
                 label: t('audit.detail_label.action', { defaultValue: 'Action' }),
@@ -857,6 +930,23 @@ function buildAuditOverviewItems(record: AuditLog, t: AuditTranslation): Descrip
             timeItem,
             auditIdItem,
         ];
+        if (isExternalLoginAuditRecord(record)) {
+            const provider = auditMessageParam(record, 'authProviderDisplay')
+                || auditDetailString(record.details, 'auth_provider_id');
+            if (provider) {
+                items.splice(3, 0, {
+                    key: 'provider',
+                    label: t('audit.context.provider', { defaultValue: 'Auth provider' }),
+                    children: provider,
+                });
+            }
+            items.splice(provider ? 4 : 3, 0, {
+                key: 'result',
+                label: t('audit.context.result', { defaultValue: 'Result' }),
+                children: buildExternalLoginResult(record, t),
+            });
+        }
+        return items;
     }
 
     if (record.resource_type === 'ticket') {
@@ -1019,9 +1109,10 @@ function buildAuditPlacementItems(summary: AuditPlacementSummary, t: AuditTransl
 }
 
 function buildAuditScalarDetailItems(
-    details: Record<string, unknown> | undefined,
+    record: AuditLog,
     t: AuditTranslation,
 ): DescriptionsProps['items'] {
+    const details = record.details;
     if (!details) {
         return [];
     }
@@ -1031,6 +1122,11 @@ function buildAuditScalarDetailItems(
         'request_snapshot',
         'batch_summary',
     ]);
+    if (isExternalLoginAuditRecord(record)) {
+        ignoredKeys.add('auth_provider_id');
+        ignoredKeys.add('created');
+        ignoredKeys.add('updated');
+    }
 
     return Object.entries(details)
         .filter(([key, value]) => !ignoredKeys.has(key) && typeof value !== 'object')
@@ -1332,7 +1428,7 @@ export function AdminAuditContent() {
     ];
 
     const scalarDetailItems: NonNullable<DescriptionsProps['items']> = selectedLog
-        ? (buildAuditScalarDetailItems(selectedLog.details, t) ?? [])
+        ? (buildAuditScalarDetailItems(selectedLog, t) ?? [])
         : [];
     const nestedDetailSections = selectedLog ? buildAuditNestedDetailSections(selectedLog.details, t) : [];
     const overviewItems = selectedLog ? buildAuditOverviewItems(selectedLog, t) : [];

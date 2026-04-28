@@ -488,6 +488,48 @@ func (s *Server) loadAuditResourceSummaries(
 	return byKey
 }
 
+func (s *Server) loadAuditAuthProviderDisplays(
+	ctx context.Context,
+	logs []*ent.AuditLog,
+) map[string]string {
+	byID := make(map[string]string)
+	if len(logs) == 0 {
+		return byID
+	}
+
+	providerIDSet := make(map[string]struct{})
+	for _, entry := range logs {
+		if entry == nil {
+			continue
+		}
+		if providerID := auditStringField(entry.Details, "auth_provider_id"); providerID != "" {
+			providerIDSet[providerID] = struct{}{}
+		}
+	}
+	if len(providerIDSet) == 0 {
+		return byID
+	}
+
+	providers, err := s.client.AuthProvider.Query().
+		Where(authprovider.IDIn(sortedStringSet(providerIDSet)...)).
+		All(ctx)
+	if err != nil {
+		logger.Warn("failed to fetch auth providers for audit message params", zap.Error(err))
+		return byID
+	}
+
+	for _, provider := range providers {
+		if provider == nil {
+			continue
+		}
+		byID[provider.ID] = firstNonEmptyString(
+			strings.TrimSpace(provider.Name),
+			strings.TrimSpace(provider.ID),
+		)
+	}
+	return byID
+}
+
 func (s *Server) loadAuditVMClusterNames(
 	ctx context.Context,
 	vmIDs map[string]struct{},

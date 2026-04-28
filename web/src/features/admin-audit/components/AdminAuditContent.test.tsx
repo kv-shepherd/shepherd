@@ -36,6 +36,9 @@ vi.mock('react-i18next', () => ({
                 'audit.context.target': 'Target',
                 'audit.context.requested_change': 'Requested change',
                 'audit.batch_item.pending_vm': `Pending VM #${options?.count ?? 0}`,
+                'audit.context.provider': 'Auth provider',
+                'audit.context.result': 'Result',
+                'audit.external_login_result.created': 'Created local account',
                 'audit.advanced_search_title': 'Advanced search',
                 'audit.advanced_search_help': 'Use advanced search for approval decisions, placement diagnostics, and exact resource context.',
                 'common:button.search': 'Search',
@@ -45,8 +48,10 @@ vi.mock('react-i18next', () => ({
                 'common:table.created_at': 'Created',
                 'common:table.total': `Total ${options?.total ?? 0}`,
                 'audit.action_code.create': 'Create',
+                'audit.action_code.user_external_login': 'External Login',
                 'audit.resource_option.vm': 'VM',
                 'audit.placement.eligible': 'Eligible',
+                'audit.message.user_external_login': 'Signed in with external provider',
             };
             return labels[key] ?? options?.defaultValue ?? key;
         },
@@ -130,6 +135,33 @@ vi.mock('@/hooks/useApiQuery', () => ({
                     created_at: '2026-04-02T04:41:00Z',
                     details: {},
                 },
+                {
+                    id: 'audit-3',
+                    action: 'user.external_login',
+                    actor: 'user-1',
+                    actor_summary: {
+                        display_name: 'example-user',
+                        secondary: 'example-user@example.com',
+                    },
+                    resource_type: 'user',
+                    resource_id: 'user-1',
+                    resource_summary: {
+                        display_name: 'example-user',
+                        secondary: 'example-user@example.com',
+                    },
+                    message_i18n: {
+                        key: 'audit.message.user_external_login',
+                        params: {
+                            authProviderDisplay: 'example OIDC',
+                        },
+                    },
+                    created_at: '2026-04-28T02:59:00Z',
+                    details: {
+                        auth_provider_id: 'provider-oidc',
+                        created: true,
+                        updated: false,
+                    },
+                },
             ],
             pagination: { total: 1, page: 1, per_page: 20 },
         },
@@ -162,6 +194,9 @@ describe('AdminAuditContent', () => {
         expect(screen.queryByText('019d4d16-f738-7266-a8a7-99148343435f')).not.toBeInTheDocument();
         expect(screen.getAllByText('shop · redis').length).toBeGreaterThan(0);
         expect(screen.getByText('Cluster A')).toBeVisible();
+        expect(screen.getAllByText('Signed in with external provider').length).toBeGreaterThan(0);
+        expect(screen.getByText('example OIDC')).toBeVisible();
+        expect(screen.queryByText(/user\.external_login/i)).not.toBeInTheDocument();
     });
 
     it('opens a detail drawer with readable sections', async () => {
@@ -187,5 +222,18 @@ describe('AdminAuditContent', () => {
         expect(screen.getAllByText('gtest1 · kubevirt-test02 · test').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Ubuntu 22.04 · M4 Large · 4 vCPU · 8 Gi · 80 Gi').length).toBeGreaterThan(0);
         expect(screen.queryByText('019d4d16-f738-7266-a8a7-99148343435f')).not.toBeInTheDocument();
+    });
+
+    it('renders external login audits with localized identity context', async () => {
+        const user = userEvent.setup();
+        render(<AdminAuditContent />);
+
+        await user.click(screen.getAllByRole('button', { name: /details/i })[2]);
+
+        expect(screen.getAllByText('Signed in with external provider').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('example OIDC').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Created local account').length).toBeGreaterThan(0);
+        expect(screen.queryByText(/user\.external_login/i)).not.toBeInTheDocument();
+        expect(screen.queryByText('provider-oidc')).not.toBeInTheDocument();
     });
 });
