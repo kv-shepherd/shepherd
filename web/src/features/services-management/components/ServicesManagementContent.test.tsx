@@ -54,6 +54,10 @@ vi.mock('react-i18next', () => ({
                 'button.filter': 'Filters',
                 'button.hide_filters': 'Hide filters',
                 'button.search': 'Search',
+                'common:button.edit': 'Edit',
+                'common:button.delete': 'Delete',
+                'common:button.refresh': 'Refresh',
+                'common:button.create': 'Create',
                 'services.request_vm': 'Request VM',
                 'table.total': 'Total',
                 'message.confirm_delete': 'Delete?',
@@ -422,6 +426,15 @@ describe('ServicesManagementContent', () => {
         fireEvent.click(screen.getByTestId('service-action-request-vm-svc-1'));
 
         expect(pushMock).toHaveBeenCalledWith('/vms?request=create&system_id=sys-1&service_id=svc-1');
+    });
+
+    it('renders compact row actions with accessible names', () => {
+        render(<ServicesManagementContent />);
+
+        expect(screen.getByRole('button', { name: 'Details Service A' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Edit Service A' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Request VM Service A' })).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: 'Delete Service A' })).toBeInTheDocument();
     });
 
     it('submits quick search only when the user confirms it', () => {

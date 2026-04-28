@@ -239,70 +239,74 @@ export function ServicesManagementContent() {
         {
             title: t('table.actions'),
             key: 'actions',
-            width: 380,
+            width: 168,
             render: (_, record) => (
-                <Space wrap size={[8, 4]} className="workbench-row-actions">
-                    <Button
-                        type="link"
-                        size="small"
-                        data-testid={`service-action-detail-${record.id}`}
-                        icon={<EyeOutlined />}
-                        onClick={() => {
-                            setDetailService(record);
-                            setDetailOpen(true);
-                            setDismissedQueryDetailServiceId(null);
-                        }}
-                    >
-                        {t('common:button.detail', { defaultValue: 'Details' })}
-                    </Button>
-                    <PermissionGuard permission="service:create">
+                <Space size={4} className="copy-friendly-actions">
+                    <Tooltip title={t('common:button.detail', { defaultValue: 'Details' })}>
                         <Button
-                            type="link"
+                            type="text"
                             size="small"
-                            data-testid={`service-action-edit-${record.id}`}
-                            icon={<EditOutlined />}
-                            loading={services.updatePending && services.editingService?.id === record.id}
-                            onClick={() => services.openEditModal(record)}
-                        >
-                            {t('common:button.edit')}
-                        </Button>
+                            aria-label={`${t('common:button.detail', { defaultValue: 'Details' })} ${record.name}`}
+                            data-testid={`service-action-detail-${record.id}`}
+                            icon={<EyeOutlined />}
+                            onClick={() => {
+                                setDetailService(record);
+                                setDetailOpen(true);
+                                setDismissedQueryDetailServiceId(null);
+                            }}
+                        />
+                    </Tooltip>
+                    <PermissionGuard permission="service:create">
+                        <Tooltip title={t('common:button.edit')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                aria-label={`${t('common:button.edit')} ${record.name}`}
+                                data-testid={`service-action-edit-${record.id}`}
+                                icon={<EditOutlined />}
+                                loading={services.updatePending && services.editingService?.id === record.id}
+                                onClick={() => services.openEditModal(record)}
+                            />
+                        </Tooltip>
                     </PermissionGuard>
                     <PermissionGuard permission="vm:create">
-                        <Button
-                            type="link"
-                            size="small"
-                            data-testid={`service-action-request-vm-${record.id}`}
-                            icon={<DesktopOutlined />}
-                            onClick={() => {
-                                const params = new URLSearchParams({
-                                    request: 'create',
-                                    system_id: record.system_id,
-                                    service_id: record.id,
-                                });
-                                router.push(`/vms?${params.toString()}`);
-                            }}
-                        >
-                            {t('services.request_vm')}
-                        </Button>
+                        <Tooltip title={t('services.request_vm')}>
+                            <Button
+                                type="text"
+                                size="small"
+                                aria-label={`${t('services.request_vm')} ${record.name}`}
+                                data-testid={`service-action-request-vm-${record.id}`}
+                                icon={<DesktopOutlined />}
+                                onClick={() => {
+                                    const params = new URLSearchParams({
+                                        request: 'create',
+                                        system_id: record.system_id,
+                                        service_id: record.id,
+                                    });
+                                    router.push(`/vms?${params.toString()}`);
+                                }}
+                            />
+                        </Tooltip>
                     </PermissionGuard>
                     <PermissionGuard permission="service:delete">
-                        <Popconfirm
-                            title={t('message.confirm_delete')}
-                            onConfirm={() => services.submitDelete(record.system_id, record.id)}
-                            okText={t('common:button.confirm')}
-                            cancelText={t('common:button.cancel')}
-                        >
-                            <Button
-                                type="link"
-                                size="small"
-                                data-testid={`service-action-delete-${record.id}`}
-                                danger
-                                icon={<DeleteOutlined />}
-                                loading={services.deletePending}
+                        <Tooltip title={t('common:button.delete')}>
+                            <Popconfirm
+                                title={t('message.confirm_delete')}
+                                onConfirm={() => services.submitDelete(record.system_id, record.id)}
+                                okText={t('common:button.confirm')}
+                                cancelText={t('common:button.cancel')}
                             >
-                                {t('common:button.delete')}
-                            </Button>
-                        </Popconfirm>
+                                <Button
+                                    type="text"
+                                    size="small"
+                                    aria-label={`${t('common:button.delete')} ${record.name}`}
+                                    data-testid={`service-action-delete-${record.id}`}
+                                    danger
+                                    icon={<DeleteOutlined />}
+                                    loading={services.deletePending}
+                                />
+                            </Popconfirm>
+                        </Tooltip>
                     </PermissionGuard>
                 </Space>
             ),
