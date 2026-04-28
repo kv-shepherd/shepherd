@@ -5,7 +5,11 @@
 
 # Go
 bin/
-build/
+build/*
+!build/bin/
+build/bin/*
+!build/bin/shepherd
+!build/bin/seed
 coverage.out
 coverage.html
 vendor/

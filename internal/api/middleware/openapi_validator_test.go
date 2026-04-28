@@ -1269,7 +1269,18 @@ func TestOpenAPIValidatorAllowsDynamicAuditLogDetailsInStrictMode(t *testing.T) 
 					"resource_type": "system",
 					"resource_id":   "sys-1",
 					"actor":         "admin",
-					"created_at":    "2026-01-01T00:00:00Z",
+					"message_i18n": gin.H{
+						"key": "audit.message.generic",
+						"params": gin.H{
+							"action":          "system.create",
+							"actor":           "admin",
+							"actorDisplay":    "admin",
+							"resourceType":    "system",
+							"resourceId":      "sys-1",
+							"resourceDisplay": "sys-1",
+						},
+					},
+					"created_at": "2026-01-01T00:00:00Z",
 					"details": gin.H{
 						"system_id": "sys-1",
 						"name":      "shop",
@@ -1284,7 +1295,18 @@ func TestOpenAPIValidatorAllowsDynamicAuditLogDetailsInStrictMode(t *testing.T) 
 					"resource_type": "cluster_policy",
 					"resource_id":   "policy-1",
 					"actor":         "admin",
-					"created_at":    "2026-01-01T00:00:00Z",
+					"message_i18n": gin.H{
+						"key": "audit.message.generic",
+						"params": gin.H{
+							"action":          "cluster.upsert_policy",
+							"actor":           "admin",
+							"actorDisplay":    "admin",
+							"resourceType":    "cluster_policy",
+							"resourceId":      "policy-1",
+							"resourceDisplay": "policy-1",
+						},
+					},
+					"created_at": "2026-01-01T00:00:00Z",
 					"details": gin.H{
 						"cluster_id":  "cl-1",
 						"environment": "test",

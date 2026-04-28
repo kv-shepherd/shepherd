@@ -278,6 +278,15 @@ func TestListAuditLogs_SupportsQuickSearchAcrossActionActorAndResource(t *testin
 	if resp.Items[0].ResourceId != "svc-payments" {
 		t.Fatalf("resource_id = %q, want svc-payments", resp.Items[0].ResourceId)
 	}
+	if resp.Items[0].MessageI18n.Key != "audit.message.generic" {
+		t.Fatalf("message_i18n.key = %q, want audit.message.generic", resp.Items[0].MessageI18n.Key)
+	}
+	if resp.Items[0].MessageI18n.Params["actor"] != "bob" ||
+		resp.Items[0].MessageI18n.Params["actorDisplay"] != "bob" ||
+		resp.Items[0].MessageI18n.Params["resourceId"] != "svc-payments" ||
+		resp.Items[0].MessageI18n.Params["resourceDisplay"] != "svc-payments" {
+		t.Fatalf("message_i18n.params = %#v, want stable fallback params", resp.Items[0].MessageI18n.Params)
+	}
 }
 
 func TestListAuditLogs_FiltersByCategory(t *testing.T) {

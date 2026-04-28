@@ -35,9 +35,56 @@ func TestValidateParams_RequiresMandatoryFields(t *testing.T) {
 		params Params
 		want   string
 	}{
-		{name: "recipient", params: Params{Title: "t", Message: "m"}, want: "recipient_id is required"},
-		{name: "title", params: Params{RecipientID: "u-1", Message: "m"}, want: "title is required"},
-		{name: "message", params: Params{RecipientID: "u-1", Title: "t"}, want: "message is required"},
+		{
+			name: "recipient",
+			params: Params{
+				Title:      "t",
+				TitleKey:   TitleKeyApprovalPending,
+				Message:    "m",
+				MessageKey: MessageKeyApprovalPending,
+			},
+			want: "recipient_id is required",
+		},
+		{
+			name: "title",
+			params: Params{
+				RecipientID: "u-1",
+				TitleKey:    TitleKeyApprovalPending,
+				Message:     "m",
+				MessageKey:  MessageKeyApprovalPending,
+			},
+			want: "title is required",
+		},
+		{
+			name: "title_key",
+			params: Params{
+				RecipientID: "u-1",
+				Title:       "t",
+				Message:     "m",
+				MessageKey:  MessageKeyApprovalPending,
+			},
+			want: "title_key is required",
+		},
+		{
+			name: "message",
+			params: Params{
+				RecipientID: "u-1",
+				Title:       "t",
+				TitleKey:    TitleKeyApprovalPending,
+				MessageKey:  MessageKeyApprovalPending,
+			},
+			want: "message is required",
+		},
+		{
+			name: "message_key",
+			params: Params{
+				RecipientID: "u-1",
+				Title:       "t",
+				TitleKey:    TitleKeyApprovalPending,
+				Message:     "m",
+			},
+			want: "message_key is required",
+		},
 	}
 
 	for _, tc := range cases {
@@ -112,6 +159,12 @@ func TestTriggers_OnTicketApproved_UsesTicketResource(t *testing.T) {
 	if sender.lastSend.ResourceID != "ticket-123" {
 		t.Fatalf("resource_id = %q, want ticket-123", sender.lastSend.ResourceID)
 	}
+	if sender.lastSend.MessageKey != MessageKeyApprovalCompleted {
+		t.Fatalf("message_key = %q, want %q", sender.lastSend.MessageKey, MessageKeyApprovalCompleted)
+	}
+	if sender.lastSend.MessageParams["ticketId"] != "ticket-123" {
+		t.Fatalf("message params = %#v, want ticket id", sender.lastSend.MessageParams)
+	}
 }
 
 func TestTriggers_OnTicketRejected_IncludesReason(t *testing.T) {
@@ -127,6 +180,12 @@ func TestTriggers_OnTicketRejected_IncludesReason(t *testing.T) {
 	}
 	if !strings.Contains(sender.lastSend.Message, "quota exceeded") {
 		t.Fatalf("message = %q, want rejection reason included", sender.lastSend.Message)
+	}
+	if sender.lastSend.MessageKey != MessageKeyApprovalRejectedWithReason {
+		t.Fatalf("message_key = %q, want %q", sender.lastSend.MessageKey, MessageKeyApprovalRejectedWithReason)
+	}
+	if sender.lastSend.MessageParams["reason"] != "quota exceeded" {
+		t.Fatalf("message params = %#v, want rejection reason", sender.lastSend.MessageParams)
 	}
 	if sender.lastSend.ResourceType != "ticket" {
 		t.Fatalf("resource_type = %q, want ticket", sender.lastSend.ResourceType)
@@ -149,5 +208,11 @@ func TestTriggers_OnVMStatusChanged_UsesVMResource(t *testing.T) {
 	}
 	if sender.lastSend.ResourceID != "vm-1" {
 		t.Fatalf("resource_id = %q, want vm-1", sender.lastSend.ResourceID)
+	}
+	if sender.lastSend.TitleKey != TitleKeyVMStatusChange || sender.lastSend.MessageKey != MessageKeyVMStatusChange {
+		t.Fatalf("i18n keys = %q/%q, want VM status keys", sender.lastSend.TitleKey, sender.lastSend.MessageKey)
+	}
+	if sender.lastSend.MessageParams["vmName"] != "vm-name" || sender.lastSend.MessageParams["state"] != "RUNNING" {
+		t.Fatalf("message params = %#v, want VM name/state", sender.lastSend.MessageParams)
 	}
 }

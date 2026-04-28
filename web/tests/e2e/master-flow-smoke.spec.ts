@@ -72,7 +72,15 @@ async function mockMasterFlowBaselineApi(
             id: "notif-1",
             type: "APPROVAL_PENDING",
             title: "VM Request Submitted",
+            title_i18n: {
+              key: "notification.message.legacy.title",
+              params: { text: "VM Request Submitted" },
+            },
             message: "Your VM request is pending approval",
+            message_i18n: {
+              key: "notification.message.legacy.body",
+              params: { text: "Your VM request is pending approval" },
+            },
             resource_type: "ticket",
             resource_id: "ticket-1",
             read: false,
@@ -82,7 +90,15 @@ async function mockMasterFlowBaselineApi(
             id: "notif-2",
             type: "APPROVAL_COMPLETED",
             title: "VM Approved",
+            title_i18n: {
+              key: "notification.message.legacy.title",
+              params: { text: "VM Approved" },
+            },
             message: "Your VM request has been approved",
+            message_i18n: {
+              key: "notification.message.legacy.body",
+              params: { text: "Your VM request has been approved" },
+            },
             resource_type: "ticket",
             resource_id: "ticket-1",
             read: false,

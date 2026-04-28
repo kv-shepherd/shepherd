@@ -321,16 +321,22 @@ ci-api-generated-sync-check:
 		exit 1; \
 	fi
 	@REQUIRE_OPENAPI_COMPAT=1 bash ./docs/design/ci/scripts/api-check.sh
-	@cd web && npm run api:generate && git diff --exit-code src/types/api.gen.ts
+	@set -e; \
+	TS_API_TMP="$$(mktemp)"; \
+	trap 'rm -f "$$TS_API_TMP"' EXIT; \
+	cp web/src/types/api.gen.ts "$$TS_API_TMP"; \
+	(cd web && npm run api:generate); \
+	if ! cmp -s "$$TS_API_TMP" web/src/types/api.gen.ts; then \
+		echo "Frontend API types changed after npm run api:generate."; \
+		echo "Run npm run api:generate --prefix web and keep the regenerated file."; \
+		git --no-pager diff -- web/src/types/api.gen.ts; \
+		exit 1; \
+	fi; \
+	echo "Frontend API types remained stable after npm run api:generate."
 	@if [ "$(FRONTEND_API_TYPECHECK)" = "0" ]; then \
 		echo "Skipping duplicate frontend typecheck in local API sync; ci-frontend-unit runs it in make pr."; \
 	else \
 		cd web && npm run typecheck; \
-	fi
-	@if [ -n "$$(git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml 2>/dev/null)" ]; then \
-		echo "Generated code is out of sync with OpenAPI spec!"; \
-		git status --porcelain internal/api/generated/ web/src/types/api.gen.ts api/openapi.compat.yaml internal/api/specembed/openapi.yaml; \
-		exit 1; \
 	fi
 
 ## ci-api-contract: Run the API runtime contract test target set used by the required API contract-test job

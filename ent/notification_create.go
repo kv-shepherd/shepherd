@@ -47,9 +47,49 @@ func (_c *NotificationCreate) SetTitle(v string) *NotificationCreate {
 	return _c
 }
 
+// SetTitleKey sets the "title_key" field.
+func (_c *NotificationCreate) SetTitleKey(v string) *NotificationCreate {
+	_c.mutation.SetTitleKey(v)
+	return _c
+}
+
+// SetNillableTitleKey sets the "title_key" field if the given value is not nil.
+func (_c *NotificationCreate) SetNillableTitleKey(v *string) *NotificationCreate {
+	if v != nil {
+		_c.SetTitleKey(*v)
+	}
+	return _c
+}
+
+// SetTitleParams sets the "title_params" field.
+func (_c *NotificationCreate) SetTitleParams(v map[string]interface{}) *NotificationCreate {
+	_c.mutation.SetTitleParams(v)
+	return _c
+}
+
 // SetMessage sets the "message" field.
 func (_c *NotificationCreate) SetMessage(v string) *NotificationCreate {
 	_c.mutation.SetMessage(v)
+	return _c
+}
+
+// SetMessageKey sets the "message_key" field.
+func (_c *NotificationCreate) SetMessageKey(v string) *NotificationCreate {
+	_c.mutation.SetMessageKey(v)
+	return _c
+}
+
+// SetNillableMessageKey sets the "message_key" field if the given value is not nil.
+func (_c *NotificationCreate) SetNillableMessageKey(v *string) *NotificationCreate {
+	if v != nil {
+		_c.SetMessageKey(*v)
+	}
+	return _c
+}
+
+// SetMessageParams sets the "message_params" field.
+func (_c *NotificationCreate) SetMessageParams(v map[string]interface{}) *NotificationCreate {
+	_c.mutation.SetMessageParams(v)
 	return _c
 }
 
@@ -165,6 +205,22 @@ func (_c *NotificationCreate) defaults() {
 		v := notification.DefaultCreatedAt()
 		_c.mutation.SetCreatedAt(v)
 	}
+	if _, ok := _c.mutation.TitleKey(); !ok {
+		v := notification.DefaultTitleKey
+		_c.mutation.SetTitleKey(v)
+	}
+	if _, ok := _c.mutation.TitleParams(); !ok {
+		v := notification.DefaultTitleParams()
+		_c.mutation.SetTitleParams(v)
+	}
+	if _, ok := _c.mutation.MessageKey(); !ok {
+		v := notification.DefaultMessageKey
+		_c.mutation.SetMessageKey(v)
+	}
+	if _, ok := _c.mutation.MessageParams(); !ok {
+		v := notification.DefaultMessageParams()
+		_c.mutation.SetMessageParams(v)
+	}
 	if _, ok := _c.mutation.Read(); !ok {
 		v := notification.DefaultRead
 		_c.mutation.SetRead(v)
@@ -192,6 +248,12 @@ func (_c *NotificationCreate) check() error {
 			return &ValidationError{Name: "title", err: fmt.Errorf(`ent: validator failed for field "Notification.title": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.TitleKey(); !ok {
+		return &ValidationError{Name: "title_key", err: errors.New(`ent: missing required field "Notification.title_key"`)}
+	}
+	if _, ok := _c.mutation.TitleParams(); !ok {
+		return &ValidationError{Name: "title_params", err: errors.New(`ent: missing required field "Notification.title_params"`)}
+	}
 	if _, ok := _c.mutation.Message(); !ok {
 		return &ValidationError{Name: "message", err: errors.New(`ent: missing required field "Notification.message"`)}
 	}
@@ -199,6 +261,12 @@ func (_c *NotificationCreate) check() error {
 		if err := notification.MessageValidator(v); err != nil {
 			return &ValidationError{Name: "message", err: fmt.Errorf(`ent: validator failed for field "Notification.message": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.MessageKey(); !ok {
+		return &ValidationError{Name: "message_key", err: errors.New(`ent: missing required field "Notification.message_key"`)}
+	}
+	if _, ok := _c.mutation.MessageParams(); !ok {
+		return &ValidationError{Name: "message_params", err: errors.New(`ent: missing required field "Notification.message_params"`)}
 	}
 	if _, ok := _c.mutation.Read(); !ok {
 		return &ValidationError{Name: "read", err: errors.New(`ent: missing required field "Notification.read"`)}
@@ -253,9 +321,25 @@ func (_c *NotificationCreate) createSpec() (*Notification, *sqlgraph.CreateSpec)
 		_spec.SetField(notification.FieldTitle, field.TypeString, value)
 		_node.Title = value
 	}
+	if value, ok := _c.mutation.TitleKey(); ok {
+		_spec.SetField(notification.FieldTitleKey, field.TypeString, value)
+		_node.TitleKey = value
+	}
+	if value, ok := _c.mutation.TitleParams(); ok {
+		_spec.SetField(notification.FieldTitleParams, field.TypeJSON, value)
+		_node.TitleParams = value
+	}
 	if value, ok := _c.mutation.Message(); ok {
 		_spec.SetField(notification.FieldMessage, field.TypeString, value)
 		_node.Message = value
+	}
+	if value, ok := _c.mutation.MessageKey(); ok {
+		_spec.SetField(notification.FieldMessageKey, field.TypeString, value)
+		_node.MessageKey = value
+	}
+	if value, ok := _c.mutation.MessageParams(); ok {
+		_spec.SetField(notification.FieldMessageParams, field.TypeJSON, value)
+		_node.MessageParams = value
 	}
 	if value, ok := _c.mutation.ResourceType(); ok {
 		_spec.SetField(notification.FieldResourceType, field.TypeString, value)

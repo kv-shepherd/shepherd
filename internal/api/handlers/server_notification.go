@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -180,7 +181,9 @@ func notificationToAPI(n *ent.Notification) generated.Notification {
 		Id:           n.ID,
 		Type:         generated.NotificationType(n.Type.String()),
 		Title:        n.Title,
+		TitleI18n:    notificationI18nMessage(n.TitleKey, n.TitleParams, "notification.message.legacy.title", map[string]interface{}{"text": n.Title}),
 		Message:      n.Message,
+		MessageI18n:  notificationI18nMessage(n.MessageKey, n.MessageParams, "notification.message.legacy.body", map[string]interface{}{"text": n.Message}),
 		Read:         n.Read,
 		ResourceType: n.ResourceType,
 		ResourceId:   n.ResourceID,
@@ -190,4 +193,20 @@ func notificationToAPI(n *ent.Notification) generated.Notification {
 		result.ReadAt = *n.ReadAt
 	}
 	return result
+}
+
+func notificationI18nMessage(key string, params map[string]interface{}, fallbackKey string, fallbackParams map[string]interface{}) generated.I18nMessage {
+	if strings.TrimSpace(key) == "" {
+		return generated.I18nMessage{
+			Key:    fallbackKey,
+			Params: fallbackParams,
+		}
+	}
+	if params == nil {
+		params = map[string]interface{}{}
+	}
+	return generated.I18nMessage{
+		Key:    key,
+		Params: params,
+	}
 }

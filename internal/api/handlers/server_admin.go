@@ -69,9 +69,47 @@ var auditResourceChangeActions = []string{
 	"auth_provider.create",
 	"auth_provider.update",
 	"auth_provider.delete",
-	"auth_provider.mapping.create",
-	"auth_provider.mapping.update",
-	"auth_provider.mapping.delete",
+	"auth_provider.test_connection",
+	"auth_provider.sync",
+	"auth_provider.mapping_create",
+	"auth_provider.mapping_update",
+	"auth_provider.mapping_delete",
+}
+
+var auditMessageActions = map[string]struct{}{
+	"vm_request":                                   {},
+	"vm_delete_requested":                          {},
+	"vm_modify_requested":                          {},
+	"vm_start_requested":                           {},
+	"vm_stop_requested":                            {},
+	"vm_restart_requested":                         {},
+	"vm_batch_submit":                              {},
+	"vm_batch_power_submit":                        {},
+	"vnc_request_submitted":                        {},
+	"vnc_access":                                   {},
+	"approval_approved":                            {},
+	"approval_rejected":                            {},
+	"approval_validation_failed":                   {},
+	"approval_power_approved":                      {},
+	"approval_delete_approved":                     {},
+	"approval_vnc_access_approved":                 {},
+	"approval_batch_approved":                      {},
+	"approval_batch_rejected":                      {},
+	"approval_cancelled":                           {},
+	"approval_batch_cancelled":                     {},
+	"auth_provider_directory_sync_requested":       {},
+	"auth_provider_directory_sync":                 {},
+	"auth_provider_directory_sync_failed":          {},
+	"auth_provider_directory_enrichment_scheduled": {},
+	"user_login":                                   {},
+	"user_password_change":                         {},
+	"cluster_update_environment":                   {},
+	"system_member_update_role":                    {},
+	"auth_provider_test_connection":                {},
+	"auth_provider_sync":                           {},
+	"auth_provider_mapping_create":                 {},
+	"auth_provider_mapping_update":                 {},
+	"auth_provider_mapping_delete":                 {},
 }
 
 // kubeConfig is a minimal struct for parsing kubeconfig YAML.
@@ -916,15 +954,17 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 			resourceSummary = &summaryCopy
 		}
 
+		ticketSummary := ticketSummaries[strings.TrimSpace(l.ResourceID)]
 		items = append(items, generated.AuditLog{
 			Id:               l.ID,
 			Action:           l.Action,
 			Actor:            l.Actor,
 			ActorSummary:     actorSummary,
+			MessageI18n:      auditLogMessageI18n(l, actorSummary, resourceSummary, ticketSummary),
 			ResourceType:     l.ResourceType,
 			ResourceId:       l.ResourceID,
 			ResourceSummary:  resourceSummary,
-			TicketSummary:    ticketSummaries[strings.TrimSpace(l.ResourceID)],
+			TicketSummary:    ticketSummary,
 			ApprovalDecision: auditStringField(l.Details, "decision"),
 			PlacementSummary: toAuditPlacementSummary(l.Details),
 			Details:          l.Details,
@@ -942,6 +982,81 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 			TotalPages: totalPages,
 		},
 	})
+}
+
+func auditLogMessageI18n(
+	entry *ent.AuditLog,
+	actorSummary *generated.AuditActorSummary,
+	resourceSummary *generated.AuditResourceSummary,
+	ticketSummary *generated.TicketSummary,
+) generated.I18nMessage {
+	actorDisplay := firstNonEmptyString(strings.TrimSpace(entry.Actor), "unknown")
+	resourceDisplay := firstNonEmptyString(strings.TrimSpace(entry.ResourceID), strings.TrimSpace(entry.ResourceType), "resource")
+	params := map[string]interface{}{
+		"action":          entry.Action,
+		"actor":           entry.Actor,
+		"actorDisplay":    actorDisplay,
+		"resourceType":    entry.ResourceType,
+		"resourceId":      entry.ResourceID,
+		"resourceDisplay": resourceDisplay,
+	}
+	if actorSummary != nil {
+		if displayName := strings.TrimSpace(actorSummary.DisplayName); displayName != "" {
+			params["actorDisplay"] = displayName
+		}
+		if secondary := strings.TrimSpace(actorSummary.Secondary); secondary != "" {
+			params["actorSecondary"] = secondary
+		}
+	}
+	if resourceSummary != nil {
+		if displayName := strings.TrimSpace(resourceSummary.DisplayName); displayName != "" {
+			params["resourceDisplay"] = displayName
+		}
+		if secondary := strings.TrimSpace(resourceSummary.Secondary); secondary != "" {
+			params["resourceSecondary"] = secondary
+		}
+		if tertiary := strings.TrimSpace(resourceSummary.Tertiary); tertiary != "" {
+			params["resourceTertiary"] = tertiary
+		}
+	}
+	if decision := auditStringField(entry.Details, "decision"); decision != "" {
+		params["decision"] = decision
+	}
+	if ticketSummary != nil {
+		params["batchCount"] = ticketSummary.BatchCount
+		params["namespace"] = ticketSummary.Namespace
+		params["systemName"] = ticketSummary.SystemName
+		params["serviceName"] = ticketSummary.ServiceName
+		params["vmName"] = ticketSummary.VmName
+		params["requesterDisplay"] = ticketSummary.RequesterDisplayName
+		params["approverDisplay"] = ticketSummary.ApproverDisplayName
+		params["powerAction"] = ticketSummary.PowerAction
+	}
+	return generated.I18nMessage{
+		Key:    auditLogMessageKey(entry.Action),
+		Params: params,
+	}
+}
+
+func auditLogMessageKey(action string) string {
+	normalized := normalizeAuditMessageKey(action)
+	if _, ok := auditMessageActions[normalized]; ok {
+		return "audit.message." + normalized
+	}
+	return "audit.message.generic"
+}
+
+func normalizeAuditMessageKey(action string) string {
+	normalized := strings.TrimSpace(strings.ToLower(action))
+	if normalized == "" {
+		return "generic"
+	}
+	normalized = strings.NewReplacer(".", "_", "-", "_", " ", "_").Replace(normalized)
+	normalized = strings.Trim(normalized, "_")
+	if normalized == "" {
+		return "generic"
+	}
+	return normalized
 }
 
 func auditCategoryPredicate(category string) predicate.AuditLog {

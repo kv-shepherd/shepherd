@@ -672,7 +672,7 @@ export function SystemsManagementContent() {
                             {(form) => (
                                 <div className="markdown-preview markdown-editor-preview" hidden={!createPreviewMode}>
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                                        {form.getFieldValue('description') || '*No content provided*'}
+                                        {form.getFieldValue('description') || t('common:markdown.empty', { defaultValue: 'No content provided' })}
                                     </ReactMarkdown>
                                 </div>
                             )}
@@ -734,7 +734,7 @@ export function SystemsManagementContent() {
                             {(form) => (
                                 <div className="markdown-preview markdown-editor-preview" hidden={!editPreviewMode}>
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                                        {form.getFieldValue('description') || '*No content provided*'}
+                                        {form.getFieldValue('description') || t('common:markdown.empty', { defaultValue: 'No content provided' })}
                                     </ReactMarkdown>
                                 </div>
                             )}

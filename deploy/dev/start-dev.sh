@@ -12,6 +12,7 @@ NODE_MODULES_DIR="${ROOT_DIR}/web/node_modules"
 LOCK_HASH_FILE="${NODE_MODULES_DIR}/.package-lock.hash"
 SERVICES_TO_DELETE=("db" "server" "web" "nginx")
 COMPOSE_CMD=(docker compose -f "${COMPOSE_FILE}")
+HOST_E2E_SEED_BIN="${ROOT_DIR}/build/bin/e2e-seed"
 DEV_INCLUDE_E2E_SEED="${DEV_INCLUDE_E2E_SEED:-0}"
 DEV_FRONTEND_MODE="${DEV_FRONTEND_MODE:-host}"
 DEV_FRONTEND_PORT="${DEV_FRONTEND_PORT:-3001}"
@@ -101,6 +102,49 @@ base64_file() {
     else
         base64 <"$file" | tr -d '\n'
     fi
+}
+
+build_dev_e2e_seed() {
+    mkdir -p "$(dirname "${HOST_E2E_SEED_BIN}")"
+    (
+        cd "${ROOT_DIR}"
+        GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 \
+            go build -ldflags="-s -w" -o "${HOST_E2E_SEED_BIN}" ./cmd/e2e-seed/...
+    )
+}
+
+run_dev_e2e_seed() {
+    local server_container=""
+    local -a e2e_seed_env=()
+    local dev_kubeconfig_file="${ROOT_DIR}/k8s-admin.yaml"
+    local seed_status=0
+
+    if [[ -f "${dev_kubeconfig_file}" ]]; then
+        echo " importing live dev cluster from ${dev_kubeconfig_file}"
+        e2e_seed_env=(-e "E2E_KUBECONFIG_B64=$(base64_file "${dev_kubeconfig_file}")")
+    else
+        echo " no local k8s-admin.yaml found; e2e seed will register an unreachable stub cluster"
+    fi
+
+    server_container="$("${COMPOSE_CMD[@]}" ps -q server | head -n 1)"
+    if [[ -z "${server_container}" ]]; then
+        echo "Unable to resolve the running server container for extended local fixtures."
+        return 1
+    fi
+
+    echo "Building extended local fixture seeder..."
+    build_dev_e2e_seed
+    echo "Injecting extended local fixture seeder into the running server container..."
+    docker cp "${HOST_E2E_SEED_BIN}" "${server_container}:/tmp/e2e-seed"
+
+    echo "Seeding extended local fixtures..."
+    if "${COMPOSE_CMD[@]}" exec -T "${e2e_seed_env[@]}" server /tmp/e2e-seed >/dev/null; then
+        :
+    else
+        seed_status=$?
+    fi
+    "${COMPOSE_CMD[@]}" exec -T server rm -f /tmp/e2e-seed >/dev/null 2>&1 || true
+    return "${seed_status}"
 }
 
 json_string() {
@@ -340,7 +384,16 @@ stop_host_frontend() {
     rm -f "${FRONTEND_PID_FILE}"
 }
 
+frontend_log_has_emfile() {
+    [[ -f "${FRONTEND_LOG_FILE}" ]] && grep -q "Watchpack Error (watcher): Error: EMFILE" "${FRONTEND_LOG_FILE}"
+}
+
+frontend_ready_status_code() {
+    curl -sS -o /dev/null --max-time 2 -w '%{http_code}' "http://127.0.0.1:${DEV_FRONTEND_PORT}/login" 2>/dev/null || true
+}
+
 start_host_frontend() {
+    local watch_mode="${1:-native}"
     local node_options="${DEV_FRONTEND_NODE_OPTIONS}"
     if [[ -z "${node_options}" ]] && [[ "${DEV_FRONTEND_OOM_GUARD}" == "1" ]]; then
         node_options="--max-old-space-size=${DEV_FRONTEND_OOM_GUARD_MAX_OLD_SPACE_MB} --heapsnapshot-signal=SIGUSR2"
@@ -409,6 +462,9 @@ start_host_frontend() {
 
     echo "Starting frontend on host (Next.js dev server on :${DEV_FRONTEND_PORT})..."
     echo "  - builder: ${DEV_FRONTEND_BUILDER}"
+    if [[ "${watch_mode}" == "polling" ]]; then
+        echo "  - watcher mode: polling"
+    fi
     if [[ "${DEV_FRONTEND_DISABLE_SOURCE_MAPS}" == "1" ]]; then
         echo "  - source maps: disabled"
     fi
@@ -426,6 +482,8 @@ start_host_frontend() {
         NEXT_PUBLIC_DEV_SECURE_ORIGIN="${DEV_PUBLIC_BASE_URL}" \
         NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT="${DEV_INGRESS_PORT}" \
         INTERNAL_API_URL="http://localhost:8080" \
+        WATCHPACK_POLLING="$([[ "${watch_mode}" == "polling" ]] && echo true || echo false)" \
+        CHOKIDAR_USEPOLLING="$([[ "${watch_mode}" == "polling" ]] && echo 1 || echo 0)" \
         NODE_OPTIONS="${node_options}" \
         setsid ./node_modules/.bin/next dev "${next_args[@]}" --hostname 0.0.0.0 --port "${DEV_FRONTEND_PORT}" >"${FRONTEND_LOG_FILE}" 2>&1 < /dev/null &
         echo $! > "${FRONTEND_PID_FILE}"
@@ -434,15 +492,34 @@ start_host_frontend() {
 
 wait_for_host_frontend() {
     local pid=""
+    local http_code=""
+    local restarted_with_polling=0
     pid="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
 
     echo "Waiting for frontend (http://127.0.0.1:${DEV_FRONTEND_PORT})..."
     for _ in {1..45}; do
-        if curl -fsS "http://127.0.0.1:${DEV_FRONTEND_PORT}/" >/dev/null; then
-            echo " frontend ready"
+        http_code="$(frontend_ready_status_code)"
+        if [[ "${http_code}" =~ ^[23][0-9][0-9]$ ]]; then
+            echo " frontend ready (HTTP ${http_code})"
             return 0
         fi
+        if [[ "${restarted_with_polling}" != "1" ]] && frontend_log_has_emfile; then
+            echo ""
+            echo " frontend watcher hit EMFILE; restarting with polling..."
+            start_host_frontend polling || return 1
+            pid="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
+            restarted_with_polling=1
+            continue
+        fi
         if [[ -n "${pid}" ]] && ! kill -0 "${pid}" >/dev/null 2>&1; then
+            if [[ "${restarted_with_polling}" != "1" ]] && frontend_log_has_emfile; then
+                echo ""
+                echo " frontend exited after EMFILE; restarting with polling..."
+                start_host_frontend polling || return 1
+                pid="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
+                restarted_with_polling=1
+                continue
+            fi
             echo " frontend exited unexpectedly"
             tail -n 200 "${FRONTEND_LOG_FILE}" || true
             return 1
@@ -640,7 +717,6 @@ mkdir -p "${ROOT_DIR}/build/bin"
     cd "${ROOT_DIR}"
     GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -ldflags="-s -w" -o build/bin/shepherd ./cmd/server/...
     GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -ldflags="-s -w" -o build/bin/seed ./cmd/seed/...
-    GOOS=linux GOARCH="$(go env GOARCH)" CGO_ENABLED=0 go build -ldflags="-s -w" -o build/bin/e2e-seed ./cmd/e2e-seed/...
 )
 
 echo "Packaging backend image (shepherd-server)..."
@@ -714,15 +790,7 @@ else
     "${COMPOSE_CMD[@]}" exec -T server /usr/local/bin/seed >/dev/null
     rotate_default_admin_password "${DEV_ADMIN_PASSWORD}"
     if [[ "${DEV_INCLUDE_E2E_SEED}" == "1" ]]; then
-        E2E_SEED_ENV=()
-        DEV_KUBECONFIG_FILE="${ROOT_DIR}/k8s-admin.yaml"
-        if [[ -f "${DEV_KUBECONFIG_FILE}" ]]; then
-            echo " importing live dev cluster from ${DEV_KUBECONFIG_FILE}"
-            E2E_SEED_ENV=(-e "E2E_KUBECONFIG_B64=$(base64_file "${DEV_KUBECONFIG_FILE}")")
-        else
-            echo " no local k8s-admin.yaml found; e2e seed will register an unreachable stub cluster"
-        fi
-        "${COMPOSE_CMD[@]}" exec -T "${E2E_SEED_ENV[@]}" server /usr/local/bin/e2e-seed >/dev/null
+        run_dev_e2e_seed
         echo " seed complete (baseline + extended fixtures)"
     else
         echo " seed complete (baseline only)"

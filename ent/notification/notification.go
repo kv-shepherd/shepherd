@@ -21,8 +21,16 @@ const (
 	FieldType = "type"
 	// FieldTitle holds the string denoting the title field in the database.
 	FieldTitle = "title"
+	// FieldTitleKey holds the string denoting the title_key field in the database.
+	FieldTitleKey = "title_key"
+	// FieldTitleParams holds the string denoting the title_params field in the database.
+	FieldTitleParams = "title_params"
 	// FieldMessage holds the string denoting the message field in the database.
 	FieldMessage = "message"
+	// FieldMessageKey holds the string denoting the message_key field in the database.
+	FieldMessageKey = "message_key"
+	// FieldMessageParams holds the string denoting the message_params field in the database.
+	FieldMessageParams = "message_params"
 	// FieldResourceType holds the string denoting the resource_type field in the database.
 	FieldResourceType = "resource_type"
 	// FieldResourceID holds the string denoting the resource_id field in the database.
@@ -50,7 +58,11 @@ var Columns = []string{
 	FieldCreatedAt,
 	FieldType,
 	FieldTitle,
+	FieldTitleKey,
+	FieldTitleParams,
 	FieldMessage,
+	FieldMessageKey,
+	FieldMessageParams,
 	FieldResourceType,
 	FieldResourceID,
 	FieldRead,
@@ -83,8 +95,16 @@ var (
 	DefaultCreatedAt func() time.Time
 	// TitleValidator is a validator for the "title" field. It is called by the builders before save.
 	TitleValidator func(string) error
+	// DefaultTitleKey holds the default value on creation for the "title_key" field.
+	DefaultTitleKey string
+	// DefaultTitleParams holds the default value on creation for the "title_params" field.
+	DefaultTitleParams func() map[string]interface{}
 	// MessageValidator is a validator for the "message" field. It is called by the builders before save.
 	MessageValidator func(string) error
+	// DefaultMessageKey holds the default value on creation for the "message_key" field.
+	DefaultMessageKey string
+	// DefaultMessageParams holds the default value on creation for the "message_params" field.
+	DefaultMessageParams func() map[string]interface{}
 	// DefaultRead holds the default value on creation for the "read" field.
 	DefaultRead bool
 )
@@ -137,9 +157,19 @@ func ByTitle(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldTitle, opts...).ToFunc()
 }
 
+// ByTitleKey orders the results by the title_key field.
+func ByTitleKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldTitleKey, opts...).ToFunc()
+}
+
 // ByMessage orders the results by the message field.
 func ByMessage(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldMessage, opts...).ToFunc()
+}
+
+// ByMessageKey orders the results by the message_key field.
+func ByMessageKey(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldMessageKey, opts...).ToFunc()
 }
 
 // ByResourceType orders the results by the resource_type field.

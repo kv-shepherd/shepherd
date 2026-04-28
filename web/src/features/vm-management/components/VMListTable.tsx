@@ -3,8 +3,11 @@
 import {
     Badge,
     Button,
+    Collapse,
     Dropdown,
+    Pagination,
     Popconfirm,
+    Segmented,
     Space,
     Table,
     Tag,
@@ -24,10 +27,11 @@ import {
     TagsOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
-import type { MenuProps } from 'antd';
+import type { MenuProps, TableProps } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { TFunction } from 'i18next';
-import type { ReactNode } from 'react';
+import type { Key, ReactNode } from 'react';
+import { useMemo, useState } from 'react';
 
 import type { VM, VMList } from '../types';
 import { formatMemory, VM_STATUS_MAP } from '../types';
@@ -71,6 +75,7 @@ const DiskResourceIcon = () => (
 );
 
 const { Text: TypographyText, Link: TypographyLink } = Typography;
+type VMListViewMode = 'grouped' | 'table';
 
 const formatCPU = (cpuCores: number | undefined): string => {
     if (!Number.isFinite(cpuCores) || cpuCores === undefined || cpuCores <= 0) {
@@ -154,6 +159,7 @@ export function VMListTable({
     selectedRowKeys,
     onSelectionChange,
 }: VMListTableProps) {
+    const [viewMode, setViewMode] = useState<VMListViewMode>('grouped');
     const actionLabel = (actionKey: string, vmName: string) => `${t(actionKey)} ${vmName}`;
 
     const columns: ColumnsType<VM> = [
@@ -488,28 +494,130 @@ export function VMListTable({
         },
     ];
 
+    const vmItems = useMemo(() => vmData?.items ?? [], [vmData?.items]);
+    const vmGroups = useMemo(() => {
+        const systems = new Map<string, {
+            key: string;
+            systemName: string;
+            items: VM[];
+            services: Map<string, { key: string; serviceName: string; items: VM[] }>;
+        }>();
+        vmItems.forEach((vm) => {
+            const systemKey = vm.system_id || vm.system_name || 'unknown-system';
+            const system = systems.get(systemKey) ?? {
+                key: systemKey,
+                systemName: vm.system_name || t('group.unknown_system'),
+                items: [],
+                services: new Map<string, { key: string; serviceName: string; items: VM[] }>(),
+            };
+            system.items.push(vm);
+            const serviceKey = vm.service_id || vm.service_name || `${systemKey}:unknown-service`;
+            const service = system.services.get(serviceKey) ?? {
+                key: serviceKey,
+                serviceName: vm.service_name || t('group.unknown_service'),
+                items: [],
+            };
+            service.items.push(vm);
+            system.services.set(serviceKey, service);
+            systems.set(systemKey, system);
+        });
+        return Array.from(systems.values())
+            .sort((a, b) => a.systemName.localeCompare(b.systemName))
+            .map((system) => ({
+                ...system,
+                services: Array.from(system.services.values()).sort((a, b) => a.serviceName.localeCompare(b.serviceName)),
+            }));
+    }, [t, vmItems]);
+
+    const rowSelection: TableProps<VM>['rowSelection'] = {
+        selectedRowKeys,
+        onChange: (keys: Key[]) => onSelectionChange(keys as string[]),
+        preserveSelectedRowKeys: true,
+    };
+
+    const pagination: TableProps<VM>['pagination'] = {
+        current: page,
+        pageSize,
+        total: vmData?.pagination?.total ?? 0,
+        showTotal: (total: number) => t('common:table.total', { total }),
+        onChange: onPageChange,
+    };
+
     return (
         <PageSurface className="vm-page-surface vm-page-surface--table" flush={true}>
-            <Table<VM>
-                columns={columns}
-                dataSource={vmData?.items ?? []}
-                rowKey="id"
-                loading={isLoading}
-                rowSelection={{
-                    selectedRowKeys,
-                    onChange: (keys) => onSelectionChange(keys as string[]),
-                    preserveSelectedRowKeys: true,
-                }}
-                pagination={{
-                    current: page,
-                    pageSize,
-                    total: vmData?.pagination?.total ?? 0,
-                    showTotal: (total) => t('common:table.total', { total }),
-                    onChange: onPageChange,
-                }}
-                size="middle"
-                scroll={{ x: 1400 }}
-            />
+            <div className="vm-list-view-toolbar">
+                <Segmented<VMListViewMode>
+                    value={viewMode}
+                    onChange={setViewMode}
+                    options={[
+                        { value: 'grouped', label: t('group.view_grouped') },
+                        { value: 'table', label: t('group.view_table') },
+                    ]}
+                />
+            </div>
+            {viewMode === 'grouped' && vmGroups.length > 0 ? (
+                <div className="vm-grouped-list">
+                    <Collapse
+                        defaultActiveKey={vmGroups.slice(0, 1).map((system) => system.key)}
+                        items={vmGroups.map((system) => ({
+                            key: system.key,
+                            label: (
+                                <div className="vm-grouped-list__system-label">
+                                    <TypographyText strong>{system.systemName}</TypographyText>
+                                    <Tag color="blue">{t('group.vm_count', { count: system.items.length })}</Tag>
+                                </div>
+                            ),
+                            children: (
+                                <Collapse
+                                    ghost
+                                    className="vm-grouped-list__service-collapse"
+                                    defaultActiveKey={system.services.slice(0, 1).map((service) => service.key)}
+                                    items={system.services.map((service) => ({
+                                        key: service.key,
+                                        label: (
+                                            <div className="vm-grouped-list__service-label">
+                                                <TypographyText>{service.serviceName}</TypographyText>
+                                                <Tag>{t('group.vm_count', { count: service.items.length })}</Tag>
+                                            </div>
+                                        ),
+                                        children: (
+                                            <Table<VM>
+                                                columns={columns}
+                                                dataSource={service.items}
+                                                rowKey="id"
+                                                loading={isLoading}
+                                                rowSelection={rowSelection}
+                                                pagination={false}
+                                                size="middle"
+                                                scroll={{ x: 1400 }}
+                                            />
+                                        ),
+                                    }))}
+                                />
+                            ),
+                        }))}
+                    />
+                    <Pagination
+                        className="vm-grouped-list__pagination"
+                        current={page}
+                        pageSize={pageSize}
+                        total={vmData?.pagination?.total ?? 0}
+                        showTotal={(total) => t('common:table.total', { total })}
+                        onChange={onPageChange}
+                    />
+                </div>
+            ) : (
+                <Table<VM>
+                    columns={columns}
+                    dataSource={vmItems}
+                    rowKey="id"
+                    loading={isLoading}
+                    rowSelection={rowSelection}
+                    pagination={pagination}
+                    size="middle"
+                    scroll={{ x: 1400 }}
+                />
+            )}
         </PageSurface>
     );
 }

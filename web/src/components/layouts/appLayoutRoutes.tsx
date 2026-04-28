@@ -69,7 +69,6 @@ export const getMenuRoutes = (
             path: '/notifications',
             name: t('nav.notifications'),
             icon: <NotificationsIcon />,
-            hideInMenu: true,
         },
         {
             path: '/systems',

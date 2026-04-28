@@ -32,6 +32,7 @@ import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { useApiGet } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
+import { translateI18nMessage } from '@/lib/i18n/messages';
 import type { components } from '@/types/api.gen';
 
 import { buildAuditLogQuery, type AuditLogFilters } from '../query';
@@ -98,6 +99,8 @@ const COMMON_AUDIT_ACTIONS = [
     'approval.batch_approved',
     'approval.batch_rejected',
     'approval.batch_cancelled',
+    'auth_provider.test_connection',
+    'auth_provider.sync',
     'auth_provider.directory_sync_requested',
     'auth_provider.directory_sync',
     'auth_provider.directory_sync_failed',
@@ -336,13 +339,18 @@ function buildDirectorySyncResult(record: AuditLog, t: AuditTranslation): string
 }
 
 function buildAuditHeadline(record: AuditLog, t: AuditTranslation): string {
+    const fallbackResourceName = resourcePrimary(record);
+    const messageHeadline = translateI18nMessage(t, record.message_i18n, '');
+    if (messageHeadline) {
+        return messageHeadline;
+    }
     if (record.resource_type === 'directory_sync_job') {
-        return resourcePrimary(record);
+        return fallbackResourceName;
     }
     if (record.resource_type === 'user') {
         const normalizedAction = normalizeActionKey(record.action);
         if (normalizedAction === 'user_login' || normalizedAction === 'user_password_change') {
-            return resourcePrimary(record);
+            return fallbackResourceName;
         }
     }
     const normalizedAction = normalizeActionKey(record.action);
@@ -357,7 +365,7 @@ function buildAuditHeadline(record: AuditLog, t: AuditTranslation): string {
             return translateAuditAction(t, record.action);
         }
     }
-    return resourcePrimary(record);
+    return fallbackResourceName;
 }
 
 function buildAuditFeedMeta(record: AuditLog, t: AuditTranslation): string[] {
@@ -1313,7 +1321,7 @@ export function AdminAuditContent() {
                 <Space className="copy-friendly-actions">
                     <Button
                         aria-label={t('audit.view_details', { defaultValue: 'Details' })}
-                        icon={<EyeOutlined />}
+                        icon={<EyeOutlined aria-hidden="true" />}
                         onClick={() => setSelectedLog(record)}
                     >
                         {t('audit.view_details', { defaultValue: 'Details' })}
@@ -1345,7 +1353,7 @@ export function AdminAuditContent() {
                 title={t('audit.title')}
                 subtitle={t('audit.subtitle')}
                 actions={(
-                    <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
+                    <Button icon={<ReloadOutlined aria-hidden="true" />} onClick={() => refetch()}>
                         {t('common:button.refresh')}
                     </Button>
                 )}
@@ -1385,8 +1393,8 @@ export function AdminAuditContent() {
                 />
             </div>
 
-            <PageSurface className="audit-page__toolbar-surface" style={{ marginBottom: 16 }}>
-                <Flex vertical gap={12} style={{ padding: '16px 16px 0' }}>
+            <PageSurface className="audit-page__toolbar-surface">
+                <Flex vertical gap={12} className="audit-page__preset-shell">
                     <Flex wrap gap={8} align="center" className="audit-preset-bar copy-friendly-actions">
                         <Text type="secondary" className="audit-preset-bar__label">
                             {t('audit.preset.label', { defaultValue: 'Quick views' })}
@@ -1430,13 +1438,6 @@ export function AdminAuditContent() {
                     onClear={resetFilters}
                     clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
                     clearTestId="audit-clear-filters"
-                    secondaryActions={(
-                        <Space className="copy-friendly-actions">
-                            <Button icon={<ReloadOutlined />} onClick={() => refetch()}>
-                                {t('common:button.refresh')}
-                            </Button>
-                        </Space>
-                    )}
                     advancedSearch={{
                         open: advancedOpen,
                         onToggle: () => setAdvancedOpen((current) => !current),
@@ -1450,7 +1451,7 @@ export function AdminAuditContent() {
                             <Flex vertical gap={12}>
                                 <Flex wrap gap={12}>
                                     <Select
-                                        style={{ flex: '1 1 220px', minWidth: 220 }}
+                                        className="audit-advanced-filter"
                                         placeholder={t('audit.filter.resource_type')}
                                         showSearch
                                         optionFilterProp="label"
@@ -1463,7 +1464,7 @@ export function AdminAuditContent() {
                                         allowClear
                                     />
                                     <Select
-                                        style={{ flex: '1 1 220px', minWidth: 220 }}
+                                        className="audit-advanced-filter"
                                         placeholder={t('audit.filter.action')}
                                         showSearch
                                         optionFilterProp="label"
@@ -1476,7 +1477,7 @@ export function AdminAuditContent() {
                                         allowClear
                                     />
                                     <Select
-                                        style={{ flex: '1 1 220px', minWidth: 220 }}
+                                        className="audit-advanced-filter"
                                         placeholder={t('audit.filter.approval_decision')}
                                         showSearch
                                         optionFilterProp="label"
@@ -1489,7 +1490,7 @@ export function AdminAuditContent() {
                                         allowClear
                                     />
                                     <AutoComplete
-                                        style={{ flex: '1 1 220px', minWidth: 220 }}
+                                        className="audit-advanced-filter"
                                         placeholder={t('audit.filter.actor')}
                                         value={draftFilters.actor}
                                         options={actorOptions}
@@ -1505,7 +1506,7 @@ export function AdminAuditContent() {
                                         allowClear
                                     />
                                     <AutoComplete
-                                        style={{ flex: '1 1 220px', minWidth: 220 }}
+                                        className="audit-advanced-filter"
                                         placeholder={t('audit.filter.resource_id', {
                                             defaultValue: 'Filter by Resource ID',
                                         })}
@@ -1523,7 +1524,7 @@ export function AdminAuditContent() {
                                         allowClear
                                     />
                                     <Select
-                                        style={{ flex: '1 1 220px', minWidth: 220 }}
+                                        className="audit-advanced-filter"
                                         placeholder={t('audit.filter.placement_advisory_code')}
                                         showSearch
                                         optionFilterProp="label"
@@ -1536,7 +1537,7 @@ export function AdminAuditContent() {
                                         allowClear
                                     />
                                     <Select
-                                        style={{ flex: '1 1 220px', minWidth: 220 }}
+                                        className="audit-advanced-filter"
                                         placeholder={t('audit.filter.placement_reason_code')}
                                         showSearch
                                         optionFilterProp="label"
@@ -1550,7 +1551,7 @@ export function AdminAuditContent() {
                                     />
                                 </Flex>
                                 <Flex justify="space-between" align="center" gap={12} wrap>
-                                    <Text type="secondary" style={{ fontSize: 13 }}>
+                                    <Text type="secondary" className="audit-advanced-help">
                                         {t('audit.advanced_search_help', {
                                             defaultValue: 'Use advanced search for approval decisions, placement diagnostics, and exact resource context.',
                                         })}
@@ -1590,7 +1591,7 @@ export function AdminAuditContent() {
                         onChange: (p, ps) => { setPage(p); setPageSize(ps); },
                     }}
                     size="middle"
-                    scroll={{ x: 'max-content' }}
+                    scroll={{ x: 1080 }}
                     locale={{
                         emptyText: (
                             <ActionEmptyState
@@ -1613,7 +1614,7 @@ export function AdminAuditContent() {
                 className="audit-page__drawer"
             >
                 {selectedLog ? (
-                    <Space direction="vertical" size={16} style={{ width: '100%' }}>
+                    <Space direction="vertical" size={16} className="audit-drawer-stack">
                         <div className="audit-drawer-hero">
                             <Space size={4} wrap className="audit-feed-card__eyebrow">
                                 {buildAuditFeedBadges(selectedLog, t).map((badge) => (

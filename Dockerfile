@@ -31,12 +31,13 @@ EXPOSE 8080
 ENTRYPOINT ["shepherd"]
 
 # Development runtime image:
-# binaries are built on host and copied in directly to reuse host Go caches.
+# baseline binaries are built on host and copied in directly to reuse host Go
+# caches. Extended e2e fixtures are injected into the running container only
+# when explicitly requested.
 FROM gcr.io/distroless/static-debian12:nonroot AS dev-runtime
 
 COPY build/bin/shepherd /usr/local/bin/shepherd
 COPY build/bin/seed /usr/local/bin/seed
-COPY build/bin/e2e-seed /usr/local/bin/e2e-seed
 
 USER nonroot:nonroot
 

@@ -3,6 +3,8 @@
 import {
     Badge,
     Button,
+    Collapse,
+    Pagination,
     Select,
     Segmented,
     Space,
@@ -11,8 +13,7 @@ import {
     Typography,
 } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { ReloadOutlined } from '@ant-design/icons';
-import dayjs from 'dayjs';
+import { CheckOutlined, ReloadOutlined } from '@ant-design/icons';
 import { useTranslation } from 'react-i18next';
 import { useMemo, useState } from 'react';
 
@@ -26,7 +27,9 @@ import {
     VirtualMachinesOverviewGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar, filterOptionByLabel } from '@/components/ui/PageSearchToolbar';
+import { getNotificationDisplay } from '@/lib/notifications/display';
 import { useNotificationsController } from '../hooks/useNotificationsController';
 import type { Notification } from '../types';
 
@@ -35,22 +38,22 @@ const { Text } = Typography;
 const typeConfig: Record<string, { color: string; icon: React.ReactNode; labelKey: string }> = {
     APPROVAL_PENDING: {
         color: 'orange',
-        icon: <QueueReviewGlyph style={{ width: 18, height: 18, display: 'block' }} />,
+        icon: <QueueReviewGlyph className="notification-type-cell__icon" />,
         labelKey: 'notification.type.approval_pending',
     },
     APPROVAL_COMPLETED: {
         color: 'green',
-        icon: <RequestsOverviewGlyph style={{ width: 18, height: 18, display: 'block' }} />,
+        icon: <RequestsOverviewGlyph className="notification-type-cell__icon" />,
         labelKey: 'notification.type.approval_completed',
     },
     APPROVAL_REJECTED: {
         color: 'red',
-        icon: <DecisionRejectedGlyph style={{ width: 18, height: 18, display: 'block' }} />,
+        icon: <DecisionRejectedGlyph className="notification-type-cell__icon" />,
         labelKey: 'notification.type.approval_rejected',
     },
     VM_STATUS_CHANGE: {
         color: 'blue',
-        icon: <VirtualMachinesOverviewGlyph style={{ width: 18, height: 18, display: 'block' }} />,
+        icon: <VirtualMachinesOverviewGlyph className="notification-type-cell__icon" />,
         labelKey: 'notification.type.vm_status_change',
     },
 };
@@ -70,7 +73,7 @@ export function NotificationsContent() {
             title: t('table.status'),
             dataIndex: 'read',
             key: 'read',
-            width: 120,
+            width: 104,
             render: (read: boolean) => (
                 <Tag color={read ? 'default' : 'blue'}>
                     {read ? t('notification.read') : t('notification.unread')}
@@ -81,11 +84,11 @@ export function NotificationsContent() {
             title: t('notification.type'),
             dataIndex: 'type',
             key: 'type',
-            width: 220,
+            width: 180,
             render: (type: Notification['type']) => {
                 const cfg = typeConfig[type] ?? typeConfig.APPROVAL_PENDING;
                 return (
-                    <Space>
+                    <Space className="notification-type-cell">
                         {cfg.icon}
                         <Tag color={cfg.color}>{t(cfg.labelKey)}</Tag>
                     </Space>
@@ -96,27 +99,36 @@ export function NotificationsContent() {
             title: t('table.name'),
             dataIndex: 'title',
             key: 'title',
-            render: (title: string, record: Notification) => (
-                <Space direction="vertical" size={0}>
-                    <Text strong={!record.read}>{title}</Text>
-                    <Text type="secondary">{record.message}</Text>
-                </Space>
-            ),
+            width: 360,
+            render: (_, record: Notification) => {
+                const display = getNotificationDisplay(record, t);
+                return (
+                    <Space direction="vertical" size={2} className="notification-title-cell">
+                        <Text strong={!record.read} className="notification-title-cell__title">{display.title}</Text>
+                        <Text type="secondary" className="notification-title-cell__message">{display.message}</Text>
+                    </Space>
+                );
+            },
         },
         {
             title: t('table.created_at'),
             dataIndex: 'created_at',
             key: 'created_at',
-            width: 180,
-            render: (createdAt: string) => dayjs(createdAt).format('YYYY-MM-DD HH:mm:ss'),
+            width: 160,
+            render: (createdAt: string) => (
+                <Text className="workbench-table-date">
+                    <LocalDateTimeText value={createdAt} />
+                </Text>
+            ),
         },
         {
             title: t('table.actions'),
             key: 'actions',
-            width: 120,
+            width: 132,
             render: (_, record) => (
                 <Button
                     size="small"
+                    icon={<CheckOutlined aria-hidden="true" />}
                     data-testid={`notification-action-read-${record.id}`}
                     disabled={record.read}
                     loading={notifications.markReadPending}
@@ -131,11 +143,12 @@ export function NotificationsContent() {
     const filteredItems = useMemo(
         () =>
             (notifications.data?.items ?? []).filter((item) => {
+                const display = getNotificationDisplay(item, t);
                 const matchesSearch =
                     !normalizedQuickSearch ||
                     [
-                        item.title,
-                        item.message,
+                        display.title,
+                        display.message,
                         t(typeConfig[item.type]?.labelKey ?? 'notification.type.approval_pending'),
                     ]
                         .join(' ')
@@ -146,10 +159,20 @@ export function NotificationsContent() {
             }),
         [normalizedQuickSearch, notifications.data?.items, t, typeFilter],
     );
+    const unreadItems = filteredItems.filter((item) => !item.read);
+    const readItems = filteredItems.filter((item) => item.read);
+    const primaryTableItems = notifications.unreadOnly ? filteredItems : unreadItems;
     const pendingVisible = filteredItems.filter((item) => item.type === 'APPROVAL_PENDING').length;
     const resolvedVisible = filteredItems.filter((item) => item.type === 'APPROVAL_COMPLETED' || item.type === 'APPROVAL_REJECTED').length;
     const vmEventsVisible = filteredItems.filter((item) => item.type === 'VM_STATUS_CHANGE').length;
     const hasActiveFilters = quickSearch.trim().length > 0 || typeFilter !== 'all';
+    const paginationTotal = hasActiveFilters
+        ? filteredItems.length
+        : notifications.data?.pagination?.total ?? filteredItems.length;
+    const onPageChange = (page: number, pageSize: number) => {
+        notifications.setPage(page);
+        notifications.setPageSize(pageSize);
+    };
     const applyFilters = (nextSearch = quickSearchDraft) => {
         setQuickSearch(nextSearch);
         setTypeFilter(typeFilterDraft);
@@ -163,33 +186,23 @@ export function NotificationsContent() {
                 title={t('notification.title')}
                 subtitle={t('notification.subtitle')}
                 actions={(
-                    <Space>
-                    <Badge count={notifications.unreadCount} showZero color="#1677ff" />
-                    <Segmented
-                        value={notifications.unreadOnly ? 'unread' : 'all'}
-                        options={[
-                            { value: 'all', label: t('notification.filter_all') },
-                            { value: 'unread', label: t('notification.filter_unread') },
-                        ]}
-                        onChange={(value) => {
-                            notifications.setUnreadOnly(value === 'unread');
-                            notifications.setPage(1);
-                        }}
-                    />
-                    <Button
-                        icon={<ReloadOutlined />}
-                        onClick={() => notifications.refetch()}
-                    >
-                        {t('common:button.refresh')}
-                    </Button>
-                    <Button
-                        type="primary"
-                        data-testid="notifications-mark-all-read-button"
-                        onClick={notifications.markAllRead}
-                        loading={notifications.markAllReadPending}
-                    >
-                        {t('notification.markAllRead')}
-                    </Button>
+                    <Space wrap className="notifications-page__header-actions">
+                        <Badge count={notifications.unreadCount} showZero color="#1677ff" />
+                        <Button
+                            icon={<ReloadOutlined aria-hidden="true" />}
+                            onClick={() => notifications.refetch()}
+                        >
+                            {t('common:button.refresh')}
+                        </Button>
+                        <Button
+                            type="primary"
+                            icon={<CheckOutlined aria-hidden="true" />}
+                            data-testid="notifications-mark-all-read-button"
+                            onClick={notifications.markAllRead}
+                            loading={notifications.markAllReadPending}
+                        >
+                            {t('notification.markAllRead')}
+                        </Button>
                     </Space>
                 )}
             />
@@ -229,7 +242,7 @@ export function NotificationsContent() {
             </div>
 
             <PageSurface className="notifications-page__workspace-surface" flush={true}>
-                <div className="notifications-page__search-stack" style={{ padding: 16, paddingBottom: 0 }}>
+                <div className="notifications-page__search-stack">
                     <PageSearchToolbar
                         searchValue={quickSearch}
                         searchDraftValue={quickSearchDraft}
@@ -262,36 +275,36 @@ export function NotificationsContent() {
                             closeLabel: t('search.hide_advanced', 'Hide advanced search'),
                             title: t('search.advanced', 'Advanced search'),
                             content: (
-                                <Space direction="vertical" size={12} style={{ width: '100%' }}>
-                                    <Text type="secondary">
+                                <Space direction="vertical" size={12} className="notifications-advanced-search">
+                                    <Text type="secondary" className="notifications-advanced-search__help">
                                         {t('notification.advanced_search_help', 'Select exact notification filters here. Options support keyword matching, but the applied filter remains an exact value.')}
                                     </Text>
-                                    <Space wrap size={[12, 12]} align="end" style={{ width: '100%' }}>
-                                    <Select
-                                        style={{ minWidth: 240, width: '100%' }}
-                                        placeholder={t('notification.type')}
-                                        showSearch
-                                        filterOption={filterOptionByLabel}
-                                        optionFilterProp="label"
-                                        value={typeFilterDraft}
-                                        onChange={(value) => {
-                                            setTypeFilterDraft(value);
-                                        }}
-                                        options={[
-                                            { value: 'all', label: t('filter.all', 'All') },
-                                            { value: 'APPROVAL_PENDING', label: t('notification.type.approval_pending') },
-                                            { value: 'APPROVAL_COMPLETED', label: t('notification.type.approval_completed') },
-                                            { value: 'APPROVAL_REJECTED', label: t('notification.type.approval_rejected') },
-                                            { value: 'VM_STATUS_CHANGE', label: t('notification.type.vm_status_change') },
-                                        ]}
-                                    />
-                                    <Button
-                                        type="primary"
-                                        data-testid="notifications-advanced-search-submit"
-                                        onClick={() => applyFilters()}
-                                    >
-                                        {t('common:button.search')}
-                                    </Button>
+                                    <Space wrap size={[12, 12]} align="end" className="notifications-advanced-search__controls">
+                                        <Select
+                                            className="notifications-advanced-search__type"
+                                            placeholder={t('notification.type')}
+                                            showSearch
+                                            filterOption={filterOptionByLabel}
+                                            optionFilterProp="label"
+                                            value={typeFilterDraft}
+                                            onChange={(value) => {
+                                                setTypeFilterDraft(value);
+                                            }}
+                                            options={[
+                                                { value: 'all', label: t('filter.all', 'All') },
+                                                { value: 'APPROVAL_PENDING', label: t('notification.type.approval_pending') },
+                                                { value: 'APPROVAL_COMPLETED', label: t('notification.type.approval_completed') },
+                                                { value: 'APPROVAL_REJECTED', label: t('notification.type.approval_rejected') },
+                                                { value: 'VM_STATUS_CHANGE', label: t('notification.type.vm_status_change') },
+                                            ]}
+                                        />
+                                        <Button
+                                            type="primary"
+                                            data-testid="notifications-advanced-search-submit"
+                                            onClick={() => applyFilters()}
+                                        >
+                                            {t('common:button.search')}
+                                        </Button>
                                     </Space>
                                 </Space>
                             ),
@@ -309,7 +322,7 @@ export function NotificationsContent() {
                     />
                 </div>
                 {filteredItems.length === 0 && !notifications.isLoading ? (
-                    <div style={{ padding: 48 }}>
+                    <div className="notifications-page__empty">
                         <ActionEmptyState
                             title={hasActiveFilters ? t('notification.empty_filtered', 'No notifications match the current filters') : t('notification.empty')}
                             description={hasActiveFilters ? t('notification.empty_filtered_description', 'Try a broader search or clear the current filters.') : t('notification.empty_description', 'Approval decisions and VM lifecycle changes will appear here.')}
@@ -317,22 +330,62 @@ export function NotificationsContent() {
                         />
                     </div>
                 ) : (
-                    <Table<Notification>
-                        rowKey="id"
-                        columns={columns}
-                        dataSource={filteredItems}
-                        loading={notifications.isLoading}
-                        pagination={{
-                            current: notifications.page,
-                            pageSize: notifications.pageSize,
-                            total: filteredItems.length,
-                            showTotal: (total) => t('table.total', { total }),
-                            onChange: (page, pageSize) => {
-                                notifications.setPage(page);
-                                notifications.setPageSize(pageSize);
-                            },
-                        }}
-                    />
+                    <>
+                        {primaryTableItems.length > 0 || notifications.isLoading ? (
+                            <Table<Notification>
+                                rowKey="id"
+                                columns={columns}
+                                dataSource={primaryTableItems}
+                                loading={notifications.isLoading}
+                                scroll={{ x: 960 }}
+                                pagination={notifications.unreadOnly
+                                    ? {
+                                        current: notifications.page,
+                                        pageSize: notifications.pageSize,
+                                        total: paginationTotal,
+                                        showTotal: (total) => t('table.total', { total }),
+                                        onChange: onPageChange,
+                                    }
+                                    : false}
+                            />
+                        ) : null}
+                        {!notifications.unreadOnly && readItems.length > 0 ? (
+                            <Collapse
+                                className="notifications-read-collapse"
+                                ghost={false}
+                                items={[
+                                    {
+                                        key: 'read',
+                                        label: t('notification.read_collapsed', {
+                                            count: readItems.length,
+                                            defaultValue: '{{count}} read notifications',
+                                        }),
+                                        children: (
+                                            <Table<Notification>
+                                                rowKey="id"
+                                                columns={columns}
+                                                dataSource={readItems}
+                                                loading={notifications.isLoading}
+                                                pagination={false}
+                                                scroll={{ x: 960 }}
+                                            />
+                                        ),
+                                    },
+                                ]}
+                            />
+                        ) : null}
+                        {!notifications.unreadOnly && filteredItems.length > 0 ? (
+                            <div className="notifications-page__pagination">
+                                <Pagination
+                                    current={notifications.page}
+                                    pageSize={notifications.pageSize}
+                                    total={paginationTotal}
+                                    showTotal={(total) => t('table.total', { total })}
+                                    onChange={onPageChange}
+                                />
+                            </div>
+                        ) : null}
+                    </>
                 )}
             </PageSurface>
         </div>

@@ -267,7 +267,12 @@ func shouldIgnoreDynamicSchemaResponseBody(request *http.Request, basePath strin
 
 func responseStrictIgnorePaths(request *http.Request, basePath string) []string {
 	// Error.params is explicitly declared as free-form (additionalProperties: true).
-	ignorePaths := []string{"$.body.params.**"}
+	// I18nMessage.params is the same kind of structured interpolation bag.
+	ignorePaths := []string{
+		"$.body.params.**",
+		"$.body.**.message_i18n.params.**",
+		"$.body.**.title_i18n.params.**",
+	}
 
 	if request == nil || request.URL == nil {
 		return ignorePaths

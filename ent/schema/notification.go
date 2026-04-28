@@ -41,9 +41,25 @@ func (Notification) Fields() []ent.Field {
 		field.String("title").
 			NotEmpty().
 			MaxLen(255),
+		field.String("title_key").
+			Default("").
+			Immutable().
+			Comment("Stable frontend translation key for the title"),
+		field.JSON("title_params", map[string]interface{}{}).
+			Default(emptyNotificationI18nParams).
+			Immutable().
+			Comment("Structured interpolation parameters for title_key"),
 		field.String("message").
 			NotEmpty().
 			MaxLen(2048),
+		field.String("message_key").
+			Default("").
+			Immutable().
+			Comment("Stable frontend translation key for the message"),
+		field.JSON("message_params", map[string]interface{}{}).
+			Default(emptyNotificationI18nParams).
+			Immutable().
+			Comment("Structured interpolation parameters for message_key"),
 		field.String("resource_type").
 			Optional().
 			Comment("Related resource type (e.g. vm, ticket)"),
@@ -58,6 +74,10 @@ func (Notification) Fields() []ent.Field {
 			Nillable().
 			Comment("When the notification was marked as read"),
 	}
+}
+
+func emptyNotificationI18nParams() map[string]interface{} {
+	return map[string]interface{}{}
 }
 
 // Edges of the Notification.

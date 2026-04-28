@@ -13388,23 +13388,27 @@ func (m *NamespaceRegistryMutation) ResetEdge(name string) error {
 // NotificationMutation represents an operation that mutates the Notification nodes in the graph.
 type NotificationMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *string
-	created_at    *time.Time
-	_type         *notification.Type
-	title         *string
-	message       *string
-	resource_type *string
-	resource_id   *string
-	read          *bool
-	read_at       *time.Time
-	clearedFields map[string]struct{}
-	user          *string
-	cleareduser   bool
-	done          bool
-	oldValue      func(context.Context) (*Notification, error)
-	predicates    []predicate.Notification
+	op             Op
+	typ            string
+	id             *string
+	created_at     *time.Time
+	_type          *notification.Type
+	title          *string
+	title_key      *string
+	title_params   *map[string]interface{}
+	message        *string
+	message_key    *string
+	message_params *map[string]interface{}
+	resource_type  *string
+	resource_id    *string
+	read           *bool
+	read_at        *time.Time
+	clearedFields  map[string]struct{}
+	user           *string
+	cleareduser    bool
+	done           bool
+	oldValue       func(context.Context) (*Notification, error)
+	predicates     []predicate.Notification
 }
 
 var _ ent.Mutation = (*NotificationMutation)(nil)
@@ -13619,6 +13623,78 @@ func (m *NotificationMutation) ResetTitle() {
 	m.title = nil
 }
 
+// SetTitleKey sets the "title_key" field.
+func (m *NotificationMutation) SetTitleKey(s string) {
+	m.title_key = &s
+}
+
+// TitleKey returns the value of the "title_key" field in the mutation.
+func (m *NotificationMutation) TitleKey() (r string, exists bool) {
+	v := m.title_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTitleKey returns the old "title_key" field's value of the Notification entity.
+// If the Notification object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationMutation) OldTitleKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTitleKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTitleKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTitleKey: %w", err)
+	}
+	return oldValue.TitleKey, nil
+}
+
+// ResetTitleKey resets all changes to the "title_key" field.
+func (m *NotificationMutation) ResetTitleKey() {
+	m.title_key = nil
+}
+
+// SetTitleParams sets the "title_params" field.
+func (m *NotificationMutation) SetTitleParams(value map[string]interface{}) {
+	m.title_params = &value
+}
+
+// TitleParams returns the value of the "title_params" field in the mutation.
+func (m *NotificationMutation) TitleParams() (r map[string]interface{}, exists bool) {
+	v := m.title_params
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTitleParams returns the old "title_params" field's value of the Notification entity.
+// If the Notification object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationMutation) OldTitleParams(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTitleParams is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTitleParams requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTitleParams: %w", err)
+	}
+	return oldValue.TitleParams, nil
+}
+
+// ResetTitleParams resets all changes to the "title_params" field.
+func (m *NotificationMutation) ResetTitleParams() {
+	m.title_params = nil
+}
+
 // SetMessage sets the "message" field.
 func (m *NotificationMutation) SetMessage(s string) {
 	m.message = &s
@@ -13653,6 +13729,78 @@ func (m *NotificationMutation) OldMessage(ctx context.Context) (v string, err er
 // ResetMessage resets all changes to the "message" field.
 func (m *NotificationMutation) ResetMessage() {
 	m.message = nil
+}
+
+// SetMessageKey sets the "message_key" field.
+func (m *NotificationMutation) SetMessageKey(s string) {
+	m.message_key = &s
+}
+
+// MessageKey returns the value of the "message_key" field in the mutation.
+func (m *NotificationMutation) MessageKey() (r string, exists bool) {
+	v := m.message_key
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMessageKey returns the old "message_key" field's value of the Notification entity.
+// If the Notification object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationMutation) OldMessageKey(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMessageKey is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMessageKey requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMessageKey: %w", err)
+	}
+	return oldValue.MessageKey, nil
+}
+
+// ResetMessageKey resets all changes to the "message_key" field.
+func (m *NotificationMutation) ResetMessageKey() {
+	m.message_key = nil
+}
+
+// SetMessageParams sets the "message_params" field.
+func (m *NotificationMutation) SetMessageParams(value map[string]interface{}) {
+	m.message_params = &value
+}
+
+// MessageParams returns the value of the "message_params" field in the mutation.
+func (m *NotificationMutation) MessageParams() (r map[string]interface{}, exists bool) {
+	v := m.message_params
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldMessageParams returns the old "message_params" field's value of the Notification entity.
+// If the Notification object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *NotificationMutation) OldMessageParams(ctx context.Context) (v map[string]interface{}, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldMessageParams is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldMessageParams requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldMessageParams: %w", err)
+	}
+	return oldValue.MessageParams, nil
+}
+
+// ResetMessageParams resets all changes to the "message_params" field.
+func (m *NotificationMutation) ResetMessageParams() {
+	m.message_params = nil
 }
 
 // SetResourceType sets the "resource_type" field.
@@ -13911,7 +14059,7 @@ func (m *NotificationMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *NotificationMutation) Fields() []string {
-	fields := make([]string, 0, 8)
+	fields := make([]string, 0, 12)
 	if m.created_at != nil {
 		fields = append(fields, notification.FieldCreatedAt)
 	}
@@ -13921,8 +14069,20 @@ func (m *NotificationMutation) Fields() []string {
 	if m.title != nil {
 		fields = append(fields, notification.FieldTitle)
 	}
+	if m.title_key != nil {
+		fields = append(fields, notification.FieldTitleKey)
+	}
+	if m.title_params != nil {
+		fields = append(fields, notification.FieldTitleParams)
+	}
 	if m.message != nil {
 		fields = append(fields, notification.FieldMessage)
+	}
+	if m.message_key != nil {
+		fields = append(fields, notification.FieldMessageKey)
+	}
+	if m.message_params != nil {
+		fields = append(fields, notification.FieldMessageParams)
 	}
 	if m.resource_type != nil {
 		fields = append(fields, notification.FieldResourceType)
@@ -13950,8 +14110,16 @@ func (m *NotificationMutation) Field(name string) (ent.Value, bool) {
 		return m.GetType()
 	case notification.FieldTitle:
 		return m.Title()
+	case notification.FieldTitleKey:
+		return m.TitleKey()
+	case notification.FieldTitleParams:
+		return m.TitleParams()
 	case notification.FieldMessage:
 		return m.Message()
+	case notification.FieldMessageKey:
+		return m.MessageKey()
+	case notification.FieldMessageParams:
+		return m.MessageParams()
 	case notification.FieldResourceType:
 		return m.ResourceType()
 	case notification.FieldResourceID:
@@ -13975,8 +14143,16 @@ func (m *NotificationMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldType(ctx)
 	case notification.FieldTitle:
 		return m.OldTitle(ctx)
+	case notification.FieldTitleKey:
+		return m.OldTitleKey(ctx)
+	case notification.FieldTitleParams:
+		return m.OldTitleParams(ctx)
 	case notification.FieldMessage:
 		return m.OldMessage(ctx)
+	case notification.FieldMessageKey:
+		return m.OldMessageKey(ctx)
+	case notification.FieldMessageParams:
+		return m.OldMessageParams(ctx)
 	case notification.FieldResourceType:
 		return m.OldResourceType(ctx)
 	case notification.FieldResourceID:
@@ -14015,12 +14191,40 @@ func (m *NotificationMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetTitle(v)
 		return nil
+	case notification.FieldTitleKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTitleKey(v)
+		return nil
+	case notification.FieldTitleParams:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTitleParams(v)
+		return nil
 	case notification.FieldMessage:
 		v, ok := value.(string)
 		if !ok {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetMessage(v)
+		return nil
+	case notification.FieldMessageKey:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMessageKey(v)
+		return nil
+	case notification.FieldMessageParams:
+		v, ok := value.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetMessageParams(v)
 		return nil
 	case notification.FieldResourceType:
 		v, ok := value.(string)
@@ -14129,8 +14333,20 @@ func (m *NotificationMutation) ResetField(name string) error {
 	case notification.FieldTitle:
 		m.ResetTitle()
 		return nil
+	case notification.FieldTitleKey:
+		m.ResetTitleKey()
+		return nil
+	case notification.FieldTitleParams:
+		m.ResetTitleParams()
+		return nil
 	case notification.FieldMessage:
 		m.ResetMessage()
+		return nil
+	case notification.FieldMessageKey:
+		m.ResetMessageKey()
+		return nil
+	case notification.FieldMessageParams:
+		m.ResetMessageParams()
 		return nil
 	case notification.FieldResourceType:
 		m.ResetResourceType()

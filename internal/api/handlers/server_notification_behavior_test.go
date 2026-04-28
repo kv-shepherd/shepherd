@@ -12,6 +12,7 @@ import (
 	entnotification "kv-shepherd.io/shepherd/ent/notification"
 	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/api/generated"
+	platformnotification "kv-shepherd.io/shepherd/internal/notification"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -75,6 +76,12 @@ func TestNotificationHandler_ListNotifications_UserScopedAndUnreadFilter(t *test
 		}
 		if resp.Items[0].Id != "n-2" || resp.Items[1].Id != "n-1" {
 			t.Fatalf("unexpected order/items: got [%s, %s], want [n-2, n-1]", resp.Items[0].Id, resp.Items[1].Id)
+		}
+		if resp.Items[0].TitleI18n.Key == "" || resp.Items[0].MessageI18n.Key == "" {
+			t.Fatalf("notification i18n contract missing: %+v", resp.Items[0])
+		}
+		if resp.Items[0].MessageI18n.Params["namespace"] != "test-namespace" {
+			t.Fatalf("message i18n params = %#v, want namespace", resp.Items[0].MessageI18n.Params)
 		}
 	}
 }
@@ -274,7 +281,14 @@ func mustCreateNotification(t *testing.T, client *ent.Client, id, userID string,
 		SetID(id).
 		SetType(entnotification.TypeAPPROVAL_PENDING).
 		SetTitle("title-" + id).
+		SetTitleKey(platformnotification.TitleKeyApprovalPending).
+		SetTitleParams(map[string]interface{}{}).
 		SetMessage("message-" + id).
+		SetMessageKey(platformnotification.MessageKeyApprovalPending).
+		SetMessageParams(map[string]interface{}{
+			"requester": "alice",
+			"namespace": "test-namespace",
+		}).
 		SetUserID(userID).
 		SetCreatedAt(createdAt).
 		SetRead(read)

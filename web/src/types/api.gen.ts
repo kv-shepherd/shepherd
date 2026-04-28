@@ -1800,6 +1800,14 @@ export interface components {
             };
             field_errors?: components["schemas"]["FieldError"][];
         };
+        I18nMessage: {
+            /** @description Stable frontend translation key. */
+            key: string;
+            /** @description Structured interpolation parameters for the translation key. */
+            params?: {
+                [key: string]: unknown;
+            };
+        };
         FieldError: {
             field: string;
             code: string;
@@ -3316,6 +3324,8 @@ export interface components {
             resource_type: string;
             resource_id: string;
             actor: string;
+            /** @description Machine-readable message key and interpolation parameters for localized audit display. */
+            message_i18n: components["schemas"]["I18nMessage"];
             actor_summary?: components["schemas"]["AuditActorSummary"];
             approval_decision?: string;
             resource_summary?: components["schemas"]["AuditResourceSummary"];
@@ -3380,8 +3390,14 @@ export interface components {
             id: string;
             /** @enum {string} */
             type: "APPROVAL_PENDING" | "APPROVAL_COMPLETED" | "APPROVAL_REJECTED" | "VM_STATUS_CHANGE";
+            /** @description English fallback/log text; not used for localized UI when title_i18n is present. */
             title: string;
+            /** @description Machine-readable title key and interpolation parameters for localized notification display. */
+            title_i18n: components["schemas"]["I18nMessage"];
+            /** @description English fallback/log text; not used for localized UI when message_i18n is present. */
             message: string;
+            /** @description Machine-readable message key and interpolation parameters for localized notification display. */
+            message_i18n: components["schemas"]["I18nMessage"];
             resource_type?: string;
             resource_id?: string;
             read: boolean;

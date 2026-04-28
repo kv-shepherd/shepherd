@@ -53,9 +53,15 @@ func (t *Triggers) OnTicketSubmitted(ctx context.Context, ticketID, requesterNam
 	}
 
 	params := Params{
-		Type:         TypeApprovalPending,
-		Title:        "New VM request pending approval",
-		Message:      fmt.Sprintf("User %s submitted a VM request in namespace %s", requesterName, namespace),
+		Type:       TypeApprovalPending,
+		Title:      "New VM request pending approval",
+		TitleKey:   TitleKeyApprovalPending,
+		Message:    fmt.Sprintf("User %s submitted a VM request in namespace %s", requesterName, namespace),
+		MessageKey: MessageKeyApprovalPending,
+		MessageParams: map[string]interface{}{
+			"requester": requesterName,
+			"namespace": namespace,
+		},
 		ResourceType: "ticket",
 		ResourceID:   ticketID,
 	}
@@ -80,10 +86,16 @@ func (t *Triggers) OnTicketSubmitted(ctx context.Context, ticketID, requesterNam
 //	VALUES (ticket.requested_by, 'APPROVAL_COMPLETED', ...)
 func (t *Triggers) OnTicketApproved(ctx context.Context, ticketID, requesterID, approver string) {
 	params := Params{
-		RecipientID:  requesterID,
-		Type:         TypeApprovalCompleted,
-		Title:        "Your VM request has been approved",
-		Message:      fmt.Sprintf("Your request (ticket %s) was approved by %s", ticketID, approver),
+		RecipientID: requesterID,
+		Type:        TypeApprovalCompleted,
+		Title:       "Your VM request has been approved",
+		TitleKey:    TitleKeyApprovalCompleted,
+		Message:     fmt.Sprintf("Your request (ticket %s) was approved by %s", ticketID, approver),
+		MessageKey:  MessageKeyApprovalCompleted,
+		MessageParams: map[string]interface{}{
+			"ticketId": ticketID,
+			"approver": approver,
+		},
 		ResourceType: "ticket",
 		ResourceID:   ticketID,
 	}
@@ -101,17 +113,27 @@ func (t *Triggers) OnTicketApproved(ctx context.Context, ticketID, requesterID, 
 // Notifies the requester that their request was rejected.
 func (t *Triggers) OnTicketRejected(ctx context.Context, ticketID, requesterID, approver, reason string) {
 	msg := fmt.Sprintf("Your request (ticket %s) was rejected by %s", ticketID, approver)
+	messageKey := MessageKeyApprovalRejected
+	messageParams := map[string]interface{}{
+		"ticketId": ticketID,
+		"approver": approver,
+	}
 	if reason != "" {
 		msg += fmt.Sprintf(": %s", reason)
+		messageKey = MessageKeyApprovalRejectedWithReason
+		messageParams["reason"] = reason
 	}
 
 	params := Params{
-		RecipientID:  requesterID,
-		Type:         TypeApprovalRejected,
-		Title:        "Your VM request has been rejected",
-		Message:      msg,
-		ResourceType: "ticket",
-		ResourceID:   ticketID,
+		RecipientID:   requesterID,
+		Type:          TypeApprovalRejected,
+		Title:         "Your VM request has been rejected",
+		TitleKey:      TitleKeyApprovalRejected,
+		Message:       msg,
+		MessageKey:    messageKey,
+		MessageParams: messageParams,
+		ResourceType:  "ticket",
+		ResourceID:    ticketID,
 	}
 
 	if err := t.sender.Send(ctx, params); err != nil {
@@ -132,10 +154,20 @@ func (t *Triggers) OnTicketRejected(ctx context.Context, ticketID, requesterID, 
 //	VALUES (vm.owner_id, 'VM_STATUS_CHANGE', 'VM vm-name-01 is now Running', ...)
 func (t *Triggers) OnVMStatusChanged(ctx context.Context, vmID, vmName, ownerID, newState string) {
 	params := Params{
-		RecipientID:  ownerID,
-		Type:         TypeVMStatusChange,
-		Title:        fmt.Sprintf("VM %s is now %s", vmName, newState),
-		Message:      fmt.Sprintf("Virtual machine %s has transitioned to state: %s", vmName, newState),
+		RecipientID: ownerID,
+		Type:        TypeVMStatusChange,
+		Title:       fmt.Sprintf("VM %s is now %s", vmName, newState),
+		TitleKey:    TitleKeyVMStatusChange,
+		TitleParams: map[string]interface{}{
+			"vmName": vmName,
+			"state":  newState,
+		},
+		Message:    fmt.Sprintf("Virtual machine %s has transitioned to state: %s", vmName, newState),
+		MessageKey: MessageKeyVMStatusChange,
+		MessageParams: map[string]interface{}{
+			"vmName": vmName,
+			"state":  newState,
+		},
 		ResourceType: "vm",
 		ResourceID:   vmID,
 	}

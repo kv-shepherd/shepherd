@@ -87,7 +87,9 @@ run_lane backend bash -lc "cd '${PROJECT_ROOT}' && make ci-backend"
 backend_pid="${RUN_LANE_PID}"
 run_lane governance bash -lc "cd '${PROJECT_ROOT}' && make ci-governance"
 governance_pid="${RUN_LANE_PID}"
-run_lane frontend bash -lc "cd '${PROJECT_ROOT}' && make ci-frontend"
+# Keep frontend tests in one Vitest shard while backend/governance lanes run in
+# parallel. This avoids local CPU starvation without reducing test coverage.
+run_lane frontend bash -lc "cd '${PROJECT_ROOT}' && FRONTEND_LOCAL_TEST_SHARDS='${FRONTEND_LOCAL_TEST_SHARDS:-1}' make ci-frontend"
 frontend_pid="${RUN_LANE_PID}"
 
 if wait "${frontend_pid}"; then

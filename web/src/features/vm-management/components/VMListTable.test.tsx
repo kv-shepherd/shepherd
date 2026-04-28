@@ -7,7 +7,7 @@ import type { VM } from '../types';
 
 describe('VMListTable', () => {
     it('renders the VM list inside the shared page surface with key row actions', () => {
-        const t = ((key: string, options?: { total?: number }) => {
+        const t = ((key: string, options?: { count?: number; total?: number }) => {
             const labels: Record<string, string> = {
                 'field.name': 'Name',
                 'common:table.status': 'Status',
@@ -28,6 +28,9 @@ describe('VMListTable', () => {
                 'common:table.created_at': 'Created',
                 'common:table.actions': 'Actions',
                 'context.row_badge': 'Current service',
+                'group.view_grouped': 'Grouped',
+                'group.view_table': 'Table',
+                'group.vm_count': `${options?.count ?? options?.total ?? 0} VMs`,
                 'action.start': 'Start',
                 'action.stop': 'Stop',
                 'action.restart': 'Restart',
@@ -102,8 +105,8 @@ describe('VMListTable', () => {
         expect(screen.getByText(/team-prod/)).toBeVisible();
         expect(screen.getByText(/Production Cluster/)).toBeVisible();
         expect(screen.getByText(/10\.0\.0\.18/)).toBeVisible();
-        expect(screen.getByText('Payments')).toBeVisible();
-        expect(screen.getByText('Billing API')).toBeVisible();
+        expect(screen.getAllByText('Payments').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Billing API').length).toBeGreaterThan(0);
         expect(screen.getByText('Current service')).toBeVisible();
         expect(screen.getByText(/Ubuntu 24\.04\.2 LTS/)).toBeVisible();
         expect(screen.getByText(/4 vCPU/)).toBeVisible();
@@ -114,10 +117,15 @@ describe('VMListTable', () => {
         expect(screen.getByTestId('vm-action-detail-vm-1')).toBeVisible();
         expect(screen.getByTestId('vm-action-more-vm-1')).toBeVisible();
 
-        fireEvent.click(screen.getByText('Payments'));
+        const clickableText = (text: string) => {
+            const matches = screen.getAllByText(text);
+            return matches.find((node) => node.closest('a')) ?? matches[0];
+        };
+
+        fireEvent.click(clickableText('Payments'));
         expect(onOpenSystem).toHaveBeenCalledWith('sys-1');
 
-        fireEvent.click(screen.getByText('Billing API'));
+        fireEvent.click(clickableText('Billing API'));
         expect(onOpenService).toHaveBeenCalledWith('sys-1', 'svc-1');
     });
 

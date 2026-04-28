@@ -21,8 +21,8 @@ services:
     environment:
       DATABASE_URL: "postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable"
       DATABASE_AUTO_MIGRATE: "true"
-      SECURITY_SESSION_SECRET: "dev-session-secret-0123456789abcdef0123456789abcdef"
-      SECURITY_ENCRYPTION_KEY: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      SECURITY_SESSION_SECRET: "${SECURITY_SESSION_SECRET:-dev-session-secret-0123456789abcdef0123456789abcdef}"
+      SECURITY_ENCRYPTION_KEY: "${SECURITY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
       GIN_MODE: debug
       SERVER_PUBLIC_BASE_URL: "${DEV_PUBLIC_BASE_URL:-http://localhost:3000}"
       SERVER_ALLOWED_ORIGINS: "${DEV_ALLOWED_ORIGIN_URLS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001}"

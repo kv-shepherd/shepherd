@@ -4709,6 +4709,17 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FieldError'
+    I18nMessage:
+      type: object
+      required: [key]
+      properties:
+        key:
+          type: string
+          description: Stable frontend translation key.
+        params:
+          type: object
+          description: Structured interpolation parameters for the translation key.
+          additionalProperties: true
     FieldError:
       type: object
       required: [field, code]
@@ -7719,7 +7730,7 @@ components:
     # ── Audit Log ──────────────────────────────────────
     AuditLog:
       type: object
-      required: [id, action, resource_type, resource_id, actor, created_at]
+      required: [id, action, resource_type, resource_id, actor, message_i18n, created_at]
       properties:
         id:
           type: string
@@ -7731,6 +7742,10 @@ components:
           type: string
         actor:
           type: string
+        message_i18n:
+          description: Machine-readable message key and interpolation parameters for localized audit display.
+          allOf:
+            - $ref: '#/components/schemas/I18nMessage'
         actor_summary:
           x-go-type-skip-optional-pointer: false
           allOf:
@@ -7864,7 +7879,7 @@ components:
     # ── Notification (ADR-0015 §20) ──────────────────
     Notification:
       type: object
-      required: [id, type, title, message, read, created_at]
+      required: [id, type, title, title_i18n, message, message_i18n, read, created_at]
       properties:
         id:
           type: string
@@ -7873,8 +7888,18 @@ components:
           enum: [APPROVAL_PENDING, APPROVAL_COMPLETED, APPROVAL_REJECTED, VM_STATUS_CHANGE]
         title:
           type: string
+          description: English fallback/log text; not used for localized UI when title_i18n is present.
+        title_i18n:
+          description: Machine-readable title key and interpolation parameters for localized notification display.
+          allOf:
+            - $ref: '#/components/schemas/I18nMessage'
         message:
           type: string
+          description: English fallback/log text; not used for localized UI when message_i18n is present.
+        message_i18n:
+          description: Machine-readable message key and interpolation parameters for localized notification display.
+          allOf:
+            - $ref: '#/components/schemas/I18nMessage'
         resource_type:
           type: string
         resource_id:

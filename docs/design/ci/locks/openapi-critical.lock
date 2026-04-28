@@ -1,7 +1,7 @@
 # OpenAPI critical fingerprint lock.
 # Update command:
 #   go run docs/design/ci/scripts/check_openapi_critical_fingerprint.go -write-lock
-components.schemas.Notification=5dc129d55513433392f5b9955b4e2b4f2d9e13cf0affcf8fd3e165d899db5099
+components.schemas.Notification=c3df064a1fdb6fead50f8f546b13ea15d6f04bbb80116a3d66c1e6dfd8be3a4a
 components.schemas.NotificationList=49afa8b7d2f766e57460419fc3521b77f0e329df8de6dffe40bc323bcab0ca2b
 components.schemas.UnreadCount=7c22e164d178ed3da05645ab1b84cffd1c25abcb43a4575b117e477cd4f82f6d
 components.schemas.VMConsoleRequestResponse=0c0536d43f9c165235a27b1de7646a5a6aaf1f5c9a5f1d44e6114ef9416b42f8

@@ -30,11 +30,12 @@ describe('getMenuRoutes', () => {
         expect(myRequests?.name).toBe('nav.my_requests');
     });
 
-    it('keeps notifications route alive but hidden from the side menu', () => {
+    it('shows notifications as a direct inbox navigation entry', () => {
         const route = getMenuRoutes(t, false);
         const notifications = route.routes?.find((item: MenuRouteItem) => item.path === '/notifications');
 
-        expect(notifications?.hideInMenu).toBe(true);
+        expect(notifications?.name).toBe('nav.notifications');
+        expect(notifications?.hideInMenu).toBeUndefined();
     });
 
     it('surfaces admin approval tasks as a dedicated built-in route', () => {
@@ -65,6 +66,10 @@ describe('getMenuRoutes', () => {
                 expect.objectContaining({
                     path: '/systems',
                     label: 'nav.systems',
+                }),
+                expect.objectContaining({
+                    path: '/notifications',
+                    label: 'nav.notifications',
                 }),
                 expect.objectContaining({
                     path: '/admin/templates',

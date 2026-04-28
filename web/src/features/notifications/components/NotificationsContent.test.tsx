@@ -8,12 +8,13 @@ const controllerState = vi.hoisted(() => ({
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
-        t: (key: string, options?: { total?: number }) => {
+        t: (key: string, options?: { count?: number; total?: number; text?: string }) => {
             const labels: Record<string, string> = {
                 'notification.title': 'Notifications',
                 'notification.subtitle': 'Track approvals and VM events',
                 'notification.filter_all': 'All',
                 'notification.filter_unread': 'Unread',
+                'common:button.refresh': 'Refresh',
                 'button.refresh': 'Refresh',
                 'notification.markAllRead': 'Mark All Read',
                 'table.status': 'Status',
@@ -25,6 +26,9 @@ vi.mock('react-i18next', () => ({
                 'table.created_at': 'Created',
                 'table.actions': 'Actions',
                 'notification.markRead': 'Mark Read',
+                'notification.read_collapsed': `${options?.count ?? 0} read notifications`,
+                'notification.message.legacy.title': String(options?.text ?? ''),
+                'notification.message.legacy.body': String(options?.text ?? ''),
                 'notification.empty': 'No notifications',
                 'table.total': `Total ${options?.total ?? 0}`,
             };
@@ -48,7 +52,15 @@ vi.mock('../hooks/useNotificationsController', () => ({
                     read: false,
                     type: 'APPROVAL_PENDING',
                     title: 'Approval pending',
+                    title_i18n: {
+                        key: 'notification.message.legacy.title',
+                        params: { text: 'Approval pending' },
+                    },
                     message: 'A request is waiting for review.',
+                    message_i18n: {
+                        key: 'notification.message.legacy.body',
+                        params: { text: 'A request is waiting for review.' },
+                    },
                     created_at: '2026-03-17T00:00:00Z',
                 },
                 {
@@ -56,7 +68,15 @@ vi.mock('../hooks/useNotificationsController', () => ({
                     read: true,
                     type: 'VM_STATUS_CHANGE',
                     title: 'VM migrated',
+                    title_i18n: {
+                        key: 'notification.message.legacy.title',
+                        params: { text: 'VM migrated' },
+                    },
                     message: 'The VM moved to another node.',
+                    message_i18n: {
+                        key: 'notification.message.legacy.body',
+                        params: { text: 'The VM moved to another node.' },
+                    },
                     created_at: '2026-03-17T01:00:00Z',
                 },
             ],
@@ -112,7 +132,8 @@ describe('NotificationsContent', () => {
         });
         fireEvent.click(screen.getAllByRole('button', { name: /search/i })[0]);
 
-        expect(screen.getByText('VM migrated')).toBeVisible();
+        expect(screen.getByText('1 read notifications')).toBeVisible();
+        expect(screen.queryByText('VM migrated')).not.toBeInTheDocument();
         expect(screen.queryByText('Approval pending')).not.toBeInTheDocument();
     });
 });

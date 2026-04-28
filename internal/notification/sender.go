@@ -27,14 +27,31 @@ const (
 	TypeVMStatusChange    = "VM_STATUS_CHANGE"
 )
 
+const (
+	TitleKeyApprovalPending   = "notification.message.approval_pending.title"
+	TitleKeyApprovalCompleted = "notification.message.approval_completed.title"
+	TitleKeyApprovalRejected  = "notification.message.approval_rejected.title"
+	TitleKeyVMStatusChange    = "notification.message.vm_status_change.title"
+
+	MessageKeyApprovalPending            = "notification.message.approval_pending.body"
+	MessageKeyApprovalCompleted          = "notification.message.approval_completed.body"
+	MessageKeyApprovalRejected           = "notification.message.approval_rejected.body"
+	MessageKeyApprovalRejectedWithReason = "notification.message.approval_rejected.body_with_reason"
+	MessageKeyVMStatusChange             = "notification.message.vm_status_change.body"
+)
+
 // Params holds the required fields for creating a notification.
 type Params struct {
-	RecipientID  string // User ID of the recipient
-	Type         string // One of Type* constants above
-	Title        string // Human-readable title
-	Message      string // Body text
-	ResourceType string // e.g. "ticket", "vm"
-	ResourceID   string // ID of the related resource for navigation
+	RecipientID   string // User ID of the recipient
+	Type          string // One of Type* constants above
+	Title         string // English fallback/log title
+	TitleKey      string // Stable frontend translation key for title
+	TitleParams   map[string]interface{}
+	Message       string // English fallback/log body
+	MessageKey    string // Stable frontend translation key for body
+	MessageParams map[string]interface{}
+	ResourceType  string // e.g. "ticket", "vm"
+	ResourceID    string // ID of the related resource for navigation
 }
 
 // Sender defines the interface for sending notifications.
@@ -78,7 +95,11 @@ func (s *InboxSender) Send(ctx context.Context, params Params) error {
 		SetID(uuid.NewString()).
 		SetType(notifType).
 		SetTitle(params.Title).
+		SetTitleKey(params.TitleKey).
+		SetTitleParams(cloneParams(params.TitleParams)).
 		SetMessage(params.Message).
+		SetMessageKey(params.MessageKey).
+		SetMessageParams(cloneParams(params.MessageParams)).
 		SetResourceType(params.ResourceType).
 		SetResourceID(params.ResourceID).
 		SetRead(false).
@@ -136,10 +157,27 @@ func validateParams(p Params) error {
 	if p.Title == "" {
 		return fmt.Errorf("title is required")
 	}
+	if p.TitleKey == "" {
+		return fmt.Errorf("title_key is required")
+	}
 	if p.Message == "" {
 		return fmt.Errorf("message is required")
 	}
+	if p.MessageKey == "" {
+		return fmt.Errorf("message_key is required")
+	}
 	return nil
+}
+
+func cloneParams(params map[string]interface{}) map[string]interface{} {
+	if len(params) == 0 {
+		return map[string]interface{}{}
+	}
+	cloned := make(map[string]interface{}, len(params))
+	for key, value := range params {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func toEntType(t string) (entnotification.Type, error) {

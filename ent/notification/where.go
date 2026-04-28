@@ -75,9 +75,19 @@ func Title(v string) predicate.Notification {
 	return predicate.Notification(sql.FieldEQ(FieldTitle, v))
 }
 
+// TitleKey applies equality check predicate on the "title_key" field. It's identical to TitleKeyEQ.
+func TitleKey(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldEQ(FieldTitleKey, v))
+}
+
 // Message applies equality check predicate on the "message" field. It's identical to MessageEQ.
 func Message(v string) predicate.Notification {
 	return predicate.Notification(sql.FieldEQ(FieldMessage, v))
+}
+
+// MessageKey applies equality check predicate on the "message_key" field. It's identical to MessageKeyEQ.
+func MessageKey(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldEQ(FieldMessageKey, v))
 }
 
 // ResourceType applies equality check predicate on the "resource_type" field. It's identical to ResourceTypeEQ.
@@ -225,6 +235,71 @@ func TitleContainsFold(v string) predicate.Notification {
 	return predicate.Notification(sql.FieldContainsFold(FieldTitle, v))
 }
 
+// TitleKeyEQ applies the EQ predicate on the "title_key" field.
+func TitleKeyEQ(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldEQ(FieldTitleKey, v))
+}
+
+// TitleKeyNEQ applies the NEQ predicate on the "title_key" field.
+func TitleKeyNEQ(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldNEQ(FieldTitleKey, v))
+}
+
+// TitleKeyIn applies the In predicate on the "title_key" field.
+func TitleKeyIn(vs ...string) predicate.Notification {
+	return predicate.Notification(sql.FieldIn(FieldTitleKey, vs...))
+}
+
+// TitleKeyNotIn applies the NotIn predicate on the "title_key" field.
+func TitleKeyNotIn(vs ...string) predicate.Notification {
+	return predicate.Notification(sql.FieldNotIn(FieldTitleKey, vs...))
+}
+
+// TitleKeyGT applies the GT predicate on the "title_key" field.
+func TitleKeyGT(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldGT(FieldTitleKey, v))
+}
+
+// TitleKeyGTE applies the GTE predicate on the "title_key" field.
+func TitleKeyGTE(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldGTE(FieldTitleKey, v))
+}
+
+// TitleKeyLT applies the LT predicate on the "title_key" field.
+func TitleKeyLT(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldLT(FieldTitleKey, v))
+}
+
+// TitleKeyLTE applies the LTE predicate on the "title_key" field.
+func TitleKeyLTE(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldLTE(FieldTitleKey, v))
+}
+
+// TitleKeyContains applies the Contains predicate on the "title_key" field.
+func TitleKeyContains(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldContains(FieldTitleKey, v))
+}
+
+// TitleKeyHasPrefix applies the HasPrefix predicate on the "title_key" field.
+func TitleKeyHasPrefix(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldHasPrefix(FieldTitleKey, v))
+}
+
+// TitleKeyHasSuffix applies the HasSuffix predicate on the "title_key" field.
+func TitleKeyHasSuffix(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldHasSuffix(FieldTitleKey, v))
+}
+
+// TitleKeyEqualFold applies the EqualFold predicate on the "title_key" field.
+func TitleKeyEqualFold(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldEqualFold(FieldTitleKey, v))
+}
+
+// TitleKeyContainsFold applies the ContainsFold predicate on the "title_key" field.
+func TitleKeyContainsFold(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldContainsFold(FieldTitleKey, v))
+}
+
 // MessageEQ applies the EQ predicate on the "message" field.
 func MessageEQ(v string) predicate.Notification {
 	return predicate.Notification(sql.FieldEQ(FieldMessage, v))
@@ -288,6 +363,71 @@ func MessageEqualFold(v string) predicate.Notification {
 // MessageContainsFold applies the ContainsFold predicate on the "message" field.
 func MessageContainsFold(v string) predicate.Notification {
 	return predicate.Notification(sql.FieldContainsFold(FieldMessage, v))
+}
+
+// MessageKeyEQ applies the EQ predicate on the "message_key" field.
+func MessageKeyEQ(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldEQ(FieldMessageKey, v))
+}
+
+// MessageKeyNEQ applies the NEQ predicate on the "message_key" field.
+func MessageKeyNEQ(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldNEQ(FieldMessageKey, v))
+}
+
+// MessageKeyIn applies the In predicate on the "message_key" field.
+func MessageKeyIn(vs ...string) predicate.Notification {
+	return predicate.Notification(sql.FieldIn(FieldMessageKey, vs...))
+}
+
+// MessageKeyNotIn applies the NotIn predicate on the "message_key" field.
+func MessageKeyNotIn(vs ...string) predicate.Notification {
+	return predicate.Notification(sql.FieldNotIn(FieldMessageKey, vs...))
+}
+
+// MessageKeyGT applies the GT predicate on the "message_key" field.
+func MessageKeyGT(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldGT(FieldMessageKey, v))
+}
+
+// MessageKeyGTE applies the GTE predicate on the "message_key" field.
+func MessageKeyGTE(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldGTE(FieldMessageKey, v))
+}
+
+// MessageKeyLT applies the LT predicate on the "message_key" field.
+func MessageKeyLT(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldLT(FieldMessageKey, v))
+}
+
+// MessageKeyLTE applies the LTE predicate on the "message_key" field.
+func MessageKeyLTE(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldLTE(FieldMessageKey, v))
+}
+
+// MessageKeyContains applies the Contains predicate on the "message_key" field.
+func MessageKeyContains(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldContains(FieldMessageKey, v))
+}
+
+// MessageKeyHasPrefix applies the HasPrefix predicate on the "message_key" field.
+func MessageKeyHasPrefix(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldHasPrefix(FieldMessageKey, v))
+}
+
+// MessageKeyHasSuffix applies the HasSuffix predicate on the "message_key" field.
+func MessageKeyHasSuffix(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldHasSuffix(FieldMessageKey, v))
+}
+
+// MessageKeyEqualFold applies the EqualFold predicate on the "message_key" field.
+func MessageKeyEqualFold(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldEqualFold(FieldMessageKey, v))
+}
+
+// MessageKeyContainsFold applies the ContainsFold predicate on the "message_key" field.
+func MessageKeyContainsFold(v string) predicate.Notification {
+	return predicate.Notification(sql.FieldContainsFold(FieldMessageKey, v))
 }
 
 // ResourceTypeEQ applies the EQ predicate on the "resource_type" field.

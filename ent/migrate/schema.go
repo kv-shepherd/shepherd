@@ -525,7 +525,11 @@ var (
 		{Name: "created_at", Type: field.TypeTime},
 		{Name: "type", Type: field.TypeEnum, Enums: []string{"APPROVAL_PENDING", "APPROVAL_COMPLETED", "APPROVAL_REJECTED", "VM_STATUS_CHANGE"}},
 		{Name: "title", Type: field.TypeString, Size: 255},
+		{Name: "title_key", Type: field.TypeString, Default: ""},
+		{Name: "title_params", Type: field.TypeJSON},
 		{Name: "message", Type: field.TypeString, Size: 2048},
+		{Name: "message_key", Type: field.TypeString, Default: ""},
+		{Name: "message_params", Type: field.TypeJSON},
 		{Name: "resource_type", Type: field.TypeString, Nullable: true},
 		{Name: "resource_id", Type: field.TypeString, Nullable: true},
 		{Name: "read", Type: field.TypeBool, Default: false},
@@ -540,7 +544,7 @@ var (
 		ForeignKeys: []*schema.ForeignKey{
 			{
 				Symbol:     "notifications_users_notifications",
-				Columns:    []*schema.Column{NotificationsColumns[9]},
+				Columns:    []*schema.Column{NotificationsColumns[13]},
 				RefColumns: []*schema.Column{UsersColumns[0]},
 				OnDelete:   schema.NoAction,
 			},
@@ -549,12 +553,12 @@ var (
 			{
 				Name:    "notification_read_user_notifications",
 				Unique:  false,
-				Columns: []*schema.Column{NotificationsColumns[7], NotificationsColumns[9]},
+				Columns: []*schema.Column{NotificationsColumns[11], NotificationsColumns[13]},
 			},
 			{
 				Name:    "notification_created_at_user_notifications",
 				Unique:  false,
-				Columns: []*schema.Column{NotificationsColumns[1], NotificationsColumns[9]},
+				Columns: []*schema.Column{NotificationsColumns[1], NotificationsColumns[13]},
 			},
 			{
 				Name:    "notification_created_at",

@@ -3,11 +3,14 @@
 import {
     Button,
     Card,
+    Collapse,
     Form,
     Input,
     Modal,
+    Pagination,
     Popconfirm,
     Select,
+    Segmented,
     Space,
     Table,
     Tag,
@@ -50,6 +53,7 @@ import { ALL_SYSTEMS_FILTER, useServicesManagementController } from '../hooks/us
 import type { Ticket, Service, ServiceWorkspaceContext, VM } from '../types';
 
 const { Paragraph, Text } = Typography;
+type ServicesViewMode = 'grouped' | 'table';
 
 function formatNextInstanceIndex(value: number | undefined): string {
     if (!Number.isFinite(value) || value === undefined || value < 0) {
@@ -89,6 +93,7 @@ export function ServicesManagementContent() {
     const [quickSearchDraft, setQuickSearchDraft] = useState(() => services.filters.search);
     const [systemFilterDraft, setSystemFilterDraft] = useState(() => services.filters.systemId);
     const [filtersOpen, setFiltersOpen] = useState(() => services.filters.systemId !== ALL_SYSTEMS_FILTER);
+    const [viewMode, setViewMode] = useState<ServicesViewMode>('grouped');
 
     useAutoOpenIntent('create-service', (params) => {
         services.openCreateModal(params.get('system_id') ?? undefined);
@@ -297,6 +302,29 @@ export function ServicesManagementContent() {
         () => services.servicesData?.items ?? [],
         [services.servicesData?.items],
     );
+    const serviceGroups = useMemo(() => {
+        const grouped = new Map<string, {
+            key: string;
+            systemId?: string;
+            systemName: string;
+            items: Service[];
+        }>();
+        serviceItems.forEach((service) => {
+            const key = service.system_id || service.system_name || 'unassigned';
+            const existing = grouped.get(key);
+            if (existing) {
+                existing.items.push(service);
+                return;
+            }
+            grouped.set(key, {
+                key,
+                systemId: service.system_id,
+                systemName: service.system_name || t('services.group.unknown_system'),
+                items: [service],
+            });
+        });
+        return Array.from(grouped.values()).sort((a, b) => a.systemName.localeCompare(b.systemName));
+    }, [serviceItems, t]);
     const serviceSystemCount = services.activeSystemId === ALL_SYSTEMS_FILTER
         ? (services.systemsData?.items?.length ?? 0)
         : (services.activeSystemId ? 1 : 0);
@@ -376,6 +404,16 @@ export function ServicesManagementContent() {
                                 searchPlaceholder={t('services.search_placeholder', 'Search services by name, system, description, or instance index')}
                                 searchTestId="services-quick-search"
                                 searchHelp={t('services.search_help', 'Press Enter or click Search. Quick search matches service names, descriptions, system names, and instance indexes.')}
+                                secondaryActions={(
+                                    <Segmented<ServicesViewMode>
+                                        value={viewMode}
+                                        onChange={setViewMode}
+                                        options={[
+                                            { value: 'grouped', label: t('services.view.grouped') },
+                                            { value: 'table', label: t('services.view.table') },
+                                        ]}
+                                    />
+                                )}
                                 advancedSearch={{
                                     open: filtersOpen,
                                     onToggle: () => setFiltersOpen((current) => !current),
@@ -426,34 +464,75 @@ export function ServicesManagementContent() {
                                 clearLabel={t('common:button.clear_filters', { defaultValue: 'Clear filters' })}
                             />
                         </div>
-                        <Table<Service>
-                            columns={columns}
-                            dataSource={serviceItems}
-                            rowKey="id"
-                            loading={services.isLoading}
-                            scroll={{ x: 'max-content' }}
-                            pagination={{
-                                current: services.page,
-                                pageSize: services.pageSize,
-                                total: services.servicesData?.pagination?.total ?? 0,
-                                showTotal: (total) => t('table.total', { total }),
-                                onChange: (page, pageSize) => {
-                                    services.setPage(page);
-                                    services.setPageSize(pageSize);
-                                },
-                            }}
-                            size="middle"
-                            locale={{
-                                emptyText: (
-                                    <ActionEmptyState
-                                        compact={true}
-                                        title={t('services.empty_filtered_title', 'No services match the current search')}
-                                        description={t('services.empty_filtered_description', 'Try a broader search or clear the current filters.')}
-                                        visual={<ServiceWorkspaceGlyph className="action-empty-state__art action-empty-state__art--compact" />}
-                                    />
-                                ),
-                            }}
-                        />
+                        {viewMode === 'grouped' && serviceGroups.length > 0 ? (
+                            <div className="services-grouped-list">
+                                <Collapse
+                                    defaultActiveKey={serviceGroups.slice(0, 1).map((group) => group.key)}
+                                    items={serviceGroups.map((group) => ({
+                                        key: group.key,
+                                        label: (
+                                            <div className="services-grouped-list__label">
+                                                <Text strong>{group.systemName}</Text>
+                                                <Tag color="blue">
+                                                    {t('services.group.service_count', { count: group.items.length })}
+                                                </Tag>
+                                            </div>
+                                        ),
+                                        children: (
+                                            <Table<Service>
+                                                columns={columns}
+                                                dataSource={group.items}
+                                                rowKey="id"
+                                                loading={services.isLoading}
+                                                pagination={false}
+                                                scroll={{ x: 1080 }}
+                                                size="middle"
+                                            />
+                                        ),
+                                    }))}
+                                />
+                                <Pagination
+                                    className="services-grouped-list__pagination"
+                                    current={services.page}
+                                    pageSize={services.pageSize}
+                                    total={services.servicesData?.pagination?.total ?? 0}
+                                    showTotal={(total) => t('table.total', { total })}
+                                    onChange={(page, pageSize) => {
+                                        services.setPage(page);
+                                        services.setPageSize(pageSize);
+                                    }}
+                                />
+                            </div>
+                        ) : (
+                            <Table<Service>
+                                columns={columns}
+                                dataSource={serviceItems}
+                                rowKey="id"
+                                loading={services.isLoading}
+                                scroll={{ x: 1080 }}
+                                pagination={{
+                                    current: services.page,
+                                    pageSize: services.pageSize,
+                                    total: services.servicesData?.pagination?.total ?? 0,
+                                    showTotal: (total) => t('table.total', { total }),
+                                    onChange: (page, pageSize) => {
+                                        services.setPage(page);
+                                        services.setPageSize(pageSize);
+                                    },
+                                }}
+                                size="middle"
+                                locale={{
+                                    emptyText: (
+                                        <ActionEmptyState
+                                            compact={true}
+                                            title={t('services.empty_filtered_title', 'No services match the current search')}
+                                            description={t('services.empty_filtered_description', 'Try a broader search or clear the current filters.')}
+                                            visual={<ServiceWorkspaceGlyph className="action-empty-state__art action-empty-state__art--compact" />}
+                                        />
+                                    ),
+                                }}
+                            />
+                        )}
                     </PageSurface>
                 </>
             )}
@@ -509,7 +588,9 @@ export function ServicesManagementContent() {
                                     icon={createPreviewMode ? <EditOutlined /> : <FileTextOutlined />}
                                     onClick={() => setCreatePreviewMode(!createPreviewMode)}
                                 >
-                                    {createPreviewMode ? '[Edit]' : '[Preview]'}
+                                    {createPreviewMode
+                                        ? t('common:button.edit', { defaultValue: 'Edit' })
+                                        : t('common:button.preview', { defaultValue: 'Preview' })}
                                 </Button>
                                 <Upload
                                     accept=".md"
@@ -525,7 +606,7 @@ export function ServicesManagementContent() {
                                     }}
                                 >
                                     <Button type="link" size="small" icon={<UploadOutlined />}>
-                                        [Upload .md file]
+                                        {t('common:button.upload_markdown', { defaultValue: 'Upload .md' })}
                                     </Button>
                                 </Upload>
                             </Space>
@@ -533,9 +614,9 @@ export function ServicesManagementContent() {
                     >
                         <Form.Item noStyle shouldUpdate>
                             {(form) => (
-                                <div className="markdown-preview" style={{ display: createPreviewMode ? 'block' : 'none', padding: '4px 11px', border: '1px solid #d9d9d9', borderRadius: 6, minHeight: 76, maxHeight: 152, overflowY: 'auto' }}>
+                                <div className="markdown-preview markdown-editor-preview" hidden={!createPreviewMode}>
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                                        {form.getFieldValue('description') || '*No content provided*'}
+                                        {form.getFieldValue('description') || t('common:markdown.empty', { defaultValue: 'No content provided' })}
                                     </ReactMarkdown>
                                 </div>
                             )}
@@ -569,7 +650,9 @@ export function ServicesManagementContent() {
                                     icon={editPreviewMode ? <EditOutlined /> : <FileTextOutlined />}
                                     onClick={() => setEditPreviewMode(!editPreviewMode)}
                                 >
-                                    {editPreviewMode ? '[Edit]' : '[Preview]'}
+                                    {editPreviewMode
+                                        ? t('common:button.edit', { defaultValue: 'Edit' })
+                                        : t('common:button.preview', { defaultValue: 'Preview' })}
                                 </Button>
                                 <Upload
                                     accept=".md"
@@ -585,7 +668,7 @@ export function ServicesManagementContent() {
                                     }}
                                 >
                                     <Button type="link" size="small" icon={<UploadOutlined />}>
-                                        [Upload .md file]
+                                        {t('common:button.upload_markdown', { defaultValue: 'Upload .md' })}
                                     </Button>
                                 </Upload>
                             </Space>
@@ -593,9 +676,9 @@ export function ServicesManagementContent() {
                     >
                         <Form.Item noStyle shouldUpdate>
                             {(form) => (
-                                <div className="markdown-preview" style={{ display: editPreviewMode ? 'block' : 'none', padding: '4px 11px', border: '1px solid #d9d9d9', borderRadius: 6, minHeight: 76, maxHeight: 152, overflowY: 'auto' }}>
+                                <div className="markdown-preview markdown-editor-preview" hidden={!editPreviewMode}>
                                     <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeSanitize]}>
-                                        {form.getFieldValue('description') || '*No content provided*'}
+                                        {form.getFieldValue('description') || t('common:markdown.empty', { defaultValue: 'No content provided' })}
                                     </ReactMarkdown>
                                 </div>
                             )}

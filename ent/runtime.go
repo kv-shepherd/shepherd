@@ -589,8 +589,16 @@ func init() {
 			return nil
 		}
 	}()
+	// notificationDescTitleKey is the schema descriptor for title_key field.
+	notificationDescTitleKey := notificationFields[3].Descriptor()
+	// notification.DefaultTitleKey holds the default value on creation for the title_key field.
+	notification.DefaultTitleKey = notificationDescTitleKey.Default.(string)
+	// notificationDescTitleParams is the schema descriptor for title_params field.
+	notificationDescTitleParams := notificationFields[4].Descriptor()
+	// notification.DefaultTitleParams holds the default value on creation for the title_params field.
+	notification.DefaultTitleParams = notificationDescTitleParams.Default.(func() map[string]interface{})
 	// notificationDescMessage is the schema descriptor for message field.
-	notificationDescMessage := notificationFields[3].Descriptor()
+	notificationDescMessage := notificationFields[5].Descriptor()
 	// notification.MessageValidator is a validator for the "message" field. It is called by the builders before save.
 	notification.MessageValidator = func() func(string) error {
 		validators := notificationDescMessage.Validators
@@ -607,8 +615,16 @@ func init() {
 			return nil
 		}
 	}()
+	// notificationDescMessageKey is the schema descriptor for message_key field.
+	notificationDescMessageKey := notificationFields[6].Descriptor()
+	// notification.DefaultMessageKey holds the default value on creation for the message_key field.
+	notification.DefaultMessageKey = notificationDescMessageKey.Default.(string)
+	// notificationDescMessageParams is the schema descriptor for message_params field.
+	notificationDescMessageParams := notificationFields[7].Descriptor()
+	// notification.DefaultMessageParams holds the default value on creation for the message_params field.
+	notification.DefaultMessageParams = notificationDescMessageParams.Default.(func() map[string]interface{})
 	// notificationDescRead is the schema descriptor for read field.
-	notificationDescRead := notificationFields[6].Descriptor()
+	notificationDescRead := notificationFields[10].Descriptor()
 	// notification.DefaultRead holds the default value on creation for the read field.
 	notification.DefaultRead = notificationDescRead.Default.(bool)
 	pendingadoptionMixin := schema.PendingAdoption{}.Mixin()

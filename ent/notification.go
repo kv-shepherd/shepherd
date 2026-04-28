@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -24,8 +25,16 @@ type Notification struct {
 	Type notification.Type `json:"type,omitempty"`
 	// Title holds the value of the "title" field.
 	Title string `json:"title,omitempty"`
+	// Stable frontend translation key for the title
+	TitleKey string `json:"title_key,omitempty"`
+	// Structured interpolation parameters for title_key
+	TitleParams map[string]interface{} `json:"title_params,omitempty"`
 	// Message holds the value of the "message" field.
 	Message string `json:"message,omitempty"`
+	// Stable frontend translation key for the message
+	MessageKey string `json:"message_key,omitempty"`
+	// Structured interpolation parameters for message_key
+	MessageParams map[string]interface{} `json:"message_params,omitempty"`
 	// Related resource type (e.g. vm, ticket)
 	ResourceType string `json:"resource_type,omitempty"`
 	// Related resource ID for navigation
@@ -66,9 +75,11 @@ func (*Notification) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case notification.FieldTitleParams, notification.FieldMessageParams:
+			values[i] = new([]byte)
 		case notification.FieldRead:
 			values[i] = new(sql.NullBool)
-		case notification.FieldID, notification.FieldType, notification.FieldTitle, notification.FieldMessage, notification.FieldResourceType, notification.FieldResourceID:
+		case notification.FieldID, notification.FieldType, notification.FieldTitle, notification.FieldTitleKey, notification.FieldMessage, notification.FieldMessageKey, notification.FieldResourceType, notification.FieldResourceID:
 			values[i] = new(sql.NullString)
 		case notification.FieldCreatedAt, notification.FieldReadAt:
 			values[i] = new(sql.NullTime)
@@ -113,11 +124,39 @@ func (_m *Notification) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.Title = value.String
 			}
+		case notification.FieldTitleKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field title_key", values[i])
+			} else if value.Valid {
+				_m.TitleKey = value.String
+			}
+		case notification.FieldTitleParams:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field title_params", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.TitleParams); err != nil {
+					return fmt.Errorf("unmarshal field title_params: %w", err)
+				}
+			}
 		case notification.FieldMessage:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field message", values[i])
 			} else if value.Valid {
 				_m.Message = value.String
+			}
+		case notification.FieldMessageKey:
+			if value, ok := values[i].(*sql.NullString); !ok {
+				return fmt.Errorf("unexpected type %T for field message_key", values[i])
+			} else if value.Valid {
+				_m.MessageKey = value.String
+			}
+		case notification.FieldMessageParams:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field message_params", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.MessageParams); err != nil {
+					return fmt.Errorf("unmarshal field message_params: %w", err)
+				}
 			}
 		case notification.FieldResourceType:
 			if value, ok := values[i].(*sql.NullString); !ok {
@@ -201,8 +240,20 @@ func (_m *Notification) String() string {
 	builder.WriteString("title=")
 	builder.WriteString(_m.Title)
 	builder.WriteString(", ")
+	builder.WriteString("title_key=")
+	builder.WriteString(_m.TitleKey)
+	builder.WriteString(", ")
+	builder.WriteString("title_params=")
+	builder.WriteString(fmt.Sprintf("%v", _m.TitleParams))
+	builder.WriteString(", ")
 	builder.WriteString("message=")
 	builder.WriteString(_m.Message)
+	builder.WriteString(", ")
+	builder.WriteString("message_key=")
+	builder.WriteString(_m.MessageKey)
+	builder.WriteString(", ")
+	builder.WriteString("message_params=")
+	builder.WriteString(fmt.Sprintf("%v", _m.MessageParams))
 	builder.WriteString(", ")
 	builder.WriteString("resource_type=")
 	builder.WriteString(_m.ResourceType)

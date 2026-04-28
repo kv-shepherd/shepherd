@@ -40,6 +40,7 @@ import type { TFunction } from 'i18next';
 import { useApiGet, useApiAction } from '@/hooks/useApiQuery';
 import type { components } from '@/types/api.gen';
 import { api } from '@/lib/api/client';
+import { getNotificationDisplay } from '@/lib/notifications/display';
 
 const { Text, Paragraph } = Typography;
 
@@ -47,28 +48,45 @@ type Notification = components['schemas']['Notification'];
 type NotificationType = Notification['type'];
 
 /** Notification type → UI config mapping */
-const typeConfig: Record<NotificationType, { color: string; icon: React.ReactNode; label: string }> = {
+const typeConfig: Record<NotificationType, {
+    accent: string;
+    surface: string;
+    tagColor: string;
+    icon: React.ReactNode;
+    label: string;
+}> = {
     APPROVAL_PENDING: {
-        color: 'orange',
-        icon: <ClockCircleOutlined />,
+        accent: '#D97706',
+        surface: '#FFF4E5',
+        tagColor: 'orange',
+        icon: <ClockCircleOutlined aria-hidden="true" />,
         label: 'notification.type.approval_pending',
     },
     APPROVAL_COMPLETED: {
-        color: 'green',
-        icon: <CheckCircleOutlined />,
+        accent: '#0F8F57',
+        surface: '#E8FFF2',
+        tagColor: 'green',
+        icon: <CheckCircleOutlined aria-hidden="true" />,
         label: 'notification.type.approval_completed',
     },
     APPROVAL_REJECTED: {
-        color: 'red',
-        icon: <CloseCircleOutlined />,
+        accent: '#DC2626',
+        surface: '#FEF2F2',
+        tagColor: 'red',
+        icon: <CloseCircleOutlined aria-hidden="true" />,
         label: 'notification.type.approval_rejected',
     },
     VM_STATUS_CHANGE: {
-        color: 'blue',
-        icon: <DesktopOutlined />,
+        accent: '#2563EB',
+        surface: '#EFF6FF',
+        tagColor: 'blue',
+        icon: <DesktopOutlined aria-hidden="true" />,
         label: 'notification.type.vm_status_change',
     },
 };
+
+const NOTIFICATION_BELL_PREVIEW_LIMIT = 5;
+const NOTIFICATION_BELL_FETCH_LIMIT = NOTIFICATION_BELL_PREVIEW_LIMIT + 1;
 
 /** Relative time formatter */
 function formatRelativeTime(dateStr: string, t: TFunction<'common'>): string {
@@ -98,8 +116,8 @@ export default function NotificationBell() {
 
     // Fetch recent notifications when popover is open.
     const { data: listData, isLoading: listLoading } = useApiGet(
-        ['notifications', 'list'],
-        () => api.GET('/notifications', { params: { query: { per_page: 10 } } }),
+        ['notifications', 'list', NOTIFICATION_BELL_FETCH_LIMIT],
+        () => api.GET('/notifications', { params: { query: { per_page: NOTIFICATION_BELL_FETCH_LIMIT } } }),
         { enabled: open }
     );
 
@@ -143,27 +161,22 @@ export default function NotificationBell() {
 
     const unreadCount = unreadData?.count ?? 0;
     const notifications = listData?.items ?? [];
+    const previewNotifications = notifications.slice(0, NOTIFICATION_BELL_PREVIEW_LIMIT);
+    const totalNotifications = listData?.pagination?.total ?? notifications.length;
+    const hiddenNotificationCount = Math.max(totalNotifications - previewNotifications.length, 0);
 
     const content = (
-        <div style={{ width: 380, maxHeight: 460 }}>
+        <div className="notification-bell-popover">
             {/* Header */}
-            <div
-                style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '8px 12px',
-                    borderBottom: '1px solid #f0f0f0',
-                }}
-            >
-                <Text strong style={{ fontSize: 15 }}>
+            <div className="notification-bell-popover__header">
+                <Text strong className="notification-bell-popover__title">
                     {t('notification.title', 'Notifications')}
                 </Text>
                 {unreadCount > 0 && (
                     <Button
                         type="link"
                         size="small"
-                        icon={<CheckOutlined />}
+                        icon={<CheckOutlined aria-hidden="true" />}
                         onClick={() => markAllRead.mutate()}
                         loading={markAllRead.isPending}
                     >
@@ -174,68 +187,53 @@ export default function NotificationBell() {
 
             {/* Notification List */}
             {listLoading ? (
-                <div style={{ textAlign: 'center', padding: 40 }}>
+                <div className="notification-bell-popover__loading">
                     <Spin size="small" />
                 </div>
             ) : notifications.length === 0 ? (
                 <Empty
                     image={Empty.PRESENTED_IMAGE_SIMPLE}
                     description={t('notification.empty', 'No notifications')}
-                    style={{ padding: '24px 0' }}
+                    className="notification-bell-popover__empty"
                 />
             ) : (
                 <List
-                    dataSource={notifications}
+                    className="notification-bell-popover__list"
+                    dataSource={previewNotifications}
                     renderItem={(item: Notification) => {
                         const config = typeConfig[item.type];
+                        const display = getNotificationDisplay(item, t);
                         return (
                             <List.Item
                                 onClick={() => handleNotificationClick(item)}
-                                style={{
-                                    cursor: 'pointer',
-                                    padding: '10px 12px',
-                                    backgroundColor: item.read ? 'transparent' : '#f6ffed',
-                                    transition: 'background-color 0.2s',
-                                }}
-                                onMouseEnter={(e) => {
-                                    (e.currentTarget as HTMLElement).style.backgroundColor = '#fafafa';
-                                }}
-                                onMouseLeave={(e) => {
-                                    (e.currentTarget as HTMLElement).style.backgroundColor = item.read
-                                        ? 'transparent'
-                                        : '#f6ffed';
-                                }}
+                                className={item.read
+                                    ? 'notification-bell-popover__item'
+                                    : 'notification-bell-popover__item notification-bell-popover__item--unread'}
                             >
                                 <List.Item.Meta
                                     avatar={
                                         <div
+                                            className="notification-bell-popover__avatar"
                                             style={{
-                                                width: 32,
-                                                height: 32,
-                                                borderRadius: '50%',
-                                                backgroundColor: `${config.color}15`,
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                justifyContent: 'center',
-                                                fontSize: 16,
-                                                color: config.color,
-                                            }}
+                                                '--notification-bell-accent': config.accent,
+                                                '--notification-bell-surface': config.surface,
+                                            } as React.CSSProperties}
                                         >
                                             {config.icon}
                                         </div>
                                     }
                                     title={
-                                        <Space size={4}>
+                                        <Space size={4} wrap className="notification-bell-popover__item-title">
                                             <Text
                                                 strong={!item.read}
                                                 ellipsis
-                                                style={{ maxWidth: 220, fontSize: 13 }}
+                                                className="notification-bell-popover__item-heading"
                                             >
-                                                {item.title}
+                                                {display.title}
                                             </Text>
                                             <Tag
-                                                color={config.color}
-                                                style={{ fontSize: 12, lineHeight: '16px', padding: '0 4px' }}
+                                                color={config.tagColor}
+                                                className="notification-bell-popover__tag"
                                             >
                                                 {t(config.label, { defaultValue: config.label })}
                                             </Tag>
@@ -246,26 +244,18 @@ export default function NotificationBell() {
                                             <Paragraph
                                                 type="secondary"
                                                 ellipsis={{ rows: 1 }}
-                                                style={{ marginBottom: 2, fontSize: 13 }}
+                                                className="notification-bell-popover__message"
                                             >
-                                                {item.message}
+                                                {display.message}
                                             </Paragraph>
-                                            <Text type="secondary" style={{ fontSize: 13 }}>
+                                            <Text type="secondary" className="notification-bell-popover__time">
                                                 {formatRelativeTime(item.created_at, t)}
                                             </Text>
                                         </div>
                                     }
                                 />
                                 {!item.read && (
-                                    <div
-                                        style={{
-                                            width: 8,
-                                            height: 8,
-                                            borderRadius: '50%',
-                                            backgroundColor: '#1677ff',
-                                            flexShrink: 0,
-                                        }}
-                                    />
+                                    <div className="notification-bell-popover__unread-dot" />
                                 )}
                             </List.Item>
                         );
@@ -273,14 +263,15 @@ export default function NotificationBell() {
                 />
             )}
 
-            <div
-                style={{
-                    borderTop: '1px solid #f0f0f0',
-                    padding: '8px 12px',
-                    display: 'flex',
-                    justifyContent: 'flex-end',
-                }}
-            >
+            <div className="notification-bell-popover__footer">
+                {hiddenNotificationCount > 0 ? (
+                    <Text type="secondary" className="notification-bell-popover__more">
+                        {t('notification.moreInInbox', {
+                            count: hiddenNotificationCount,
+                            defaultValue: `${hiddenNotificationCount} more in inbox`,
+                        })}
+                    </Text>
+                ) : <span />}
                 <Button
                     type="link"
                     size="small"
@@ -313,7 +304,7 @@ export default function NotificationBell() {
                         className="app-shell-icon-action app-shell-notification-trigger"
                         data-testid="notification-bell-trigger"
                         aria-label={t('notification.title', 'Notifications')}
-                        icon={<BellOutlined />}
+                        icon={<BellOutlined aria-hidden="true" />}
                     />
                 </Badge>
             </Tooltip>
