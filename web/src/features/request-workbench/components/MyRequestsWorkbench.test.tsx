@@ -466,6 +466,12 @@ describe('MyRequestsWorkbench', () => {
         expect(screen.getByTestId('workbench-quick-search')).toBeVisible();
         expect(screen.getByTestId('approval-action-details-ticket-pending-1')).toBeVisible();
         expect(screen.getByTestId('approval-action-more-ticket-pending-1')).toBeVisible();
+        expect(
+            screen.getByRole('button', { name: 'Details ticket-pending-1' }),
+        ).toBeInTheDocument();
+        expect(
+            screen.getByRole('button', { name: 'Actions ticket-pending-1' }),
+        ).toBeInTheDocument();
     });
 
     it('submits request quick search only after explicit submit', async () => {

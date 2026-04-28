@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from 'react';
 import {
     AuditOutlined,
+    EyeOutlined,
     MoreOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
@@ -21,6 +22,7 @@ import {
     Tag,
     List,
     Table,
+    Tooltip,
     Typography,
 } from 'antd';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -545,6 +547,23 @@ export function MyRequestsWorkbench() {
                 );
 
                 const renderActions = () => {
+                    const detailActionLabel = `${t('workbench.actions.details')} ${record.id}`;
+                    const detailAction = (
+                        <Tooltip
+                            title={t('workbench.actions.details')}
+                            trigger={['hover', 'focus']}
+                        >
+                            <Button
+                                type="text"
+                                size="small"
+                                data-testid={`approval-action-details-${record.id}`}
+                                aria-label={detailActionLabel}
+                                icon={<EyeOutlined />}
+                                onClick={() => openRequestDetails(record)}
+                            />
+                        </Tooltip>
+                    );
+
                     if (record.status === 'PENDING') {
                         const moreContent = (
                             <div className="workbench-row-menu">
@@ -564,14 +583,8 @@ export function MyRequestsWorkbench() {
                             </div>
                         );
                         return (
-                            <Space wrap size="small" className="workbench-row-actions">
-                                <Button
-                                    size="small"
-                                    data-testid={`approval-action-details-${record.id}`}
-                                    onClick={() => openRequestDetails(record)}
-                                >
-                                    {t('workbench.actions.details')}
-                                </Button>
+                            <Space wrap size="small" className="copy-friendly-actions workbench-row-actions">
+                                {detailAction}
                                 <Popover
                                     trigger="click"
                                     placement="bottomRight"
@@ -579,12 +592,18 @@ export function MyRequestsWorkbench() {
                                     onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)}
                                     content={moreContent}
                                 >
-                                    <Button
-                                        size="small"
-                                        data-testid={`approval-action-more-${record.id}`}
-                                        aria-label={`${t('common:table.actions')} ${record.id}`}
-                                        icon={<MoreOutlined />}
-                                    />
+                                    <Tooltip
+                                        title={t('common:table.actions')}
+                                        trigger={['hover', 'focus']}
+                                    >
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            data-testid={`approval-action-more-${record.id}`}
+                                            aria-label={`${t('common:table.actions')} ${record.id}`}
+                                            icon={<MoreOutlined />}
+                                        />
+                                    </Tooltip>
                                 </Popover>
                             </Space>
                         );
@@ -606,14 +625,8 @@ export function MyRequestsWorkbench() {
                             </div>
                         );
                         return (
-                            <Space wrap size="small" className="workbench-row-actions">
-                                <Button
-                                    size="small"
-                                    data-testid={`approval-action-details-${record.id}`}
-                                    onClick={() => openRequestDetails(record)}
-                                >
-                                    {t('workbench.actions.details')}
-                                </Button>
+                            <Space wrap size="small" className="copy-friendly-actions workbench-row-actions">
+                                {detailAction}
                                 <Popover
                                     trigger="click"
                                     placement="bottomRight"
@@ -621,25 +634,23 @@ export function MyRequestsWorkbench() {
                                     onOpenChange={(open) => setOpenActionMenuId(open ? record.id : null)}
                                     content={moreContent}
                                 >
-                                    <Button
-                                        size="small"
-                                        data-testid={`approval-action-more-${record.id}`}
-                                        aria-label={`${t('common:table.actions')} ${record.id}`}
-                                        icon={<MoreOutlined />}
-                                    />
+                                    <Tooltip
+                                        title={t('common:table.actions')}
+                                        trigger={['hover', 'focus']}
+                                    >
+                                        <Button
+                                            type="text"
+                                            size="small"
+                                            data-testid={`approval-action-more-${record.id}`}
+                                            aria-label={`${t('common:table.actions')} ${record.id}`}
+                                            icon={<MoreOutlined />}
+                                        />
+                                    </Tooltip>
                                 </Popover>
                             </Space>
                         );
                     }
-                    return (
-                        <Button
-                            size="small"
-                            data-testid={`approval-action-details-${record.id}`}
-                            onClick={() => openRequestDetails(record)}
-                        >
-                            {t('workbench.actions.details')}
-                        </Button>
-                    );
+                    return detailAction;
                 };
 
                 return (
