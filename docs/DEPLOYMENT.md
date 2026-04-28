@@ -132,7 +132,8 @@ cluster, export `E2E_KUBECONFIG_PATH=/path/to/kubeconfig` (or
 | `SECURITY_ENCRYPTION_KEY` | Optional explicit data-encryption override; leave blank to use the PostgreSQL-backed bootstrap secret flow |
 | `SERVER_PUBLIC_BASE_URL` | External URL (e.g. `https://shepherd.example.com`) |
 | `SERVER_ALLOWED_ORIGINS` | CORS origins (comma-separated) |
-| `DATABASE_AUTO_MIGRATE` | Auto-migrate schema on startup (`true` / `false`) |
+| `DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS` | Apply reviewed Atlas migrations before the server starts (`true` / `false`) |
+| `DATABASE_AUTO_MIGRATE` | Ent schema auto-migrate fallback (`true` / `false`, dev-only) |
 
 See [`deploy/prod/.env.prod.example`](../deploy/prod/.env.prod.example) for the
 complete variable reference. Production security checklist:

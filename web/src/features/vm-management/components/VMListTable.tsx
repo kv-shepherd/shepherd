@@ -167,7 +167,7 @@ export function VMListTable({
             title: t('field.name'),
             dataIndex: 'name',
             key: 'name',
-            width: 400,
+            width: 220,
             render: (name: string, record) => {
                 const osLabel = formatVMOperatingSystem(record);
 
@@ -221,7 +221,7 @@ export function VMListTable({
             title: t('common:table.status'),
             dataIndex: 'status',
             key: 'status',
-            width: 130,
+            width: 104,
             render: (status: VM['status'], record) => {
                 const mapped = VM_STATUS_MAP[status] ?? VM_STATUS_MAP.UNKNOWN;
                 return (
@@ -237,7 +237,7 @@ export function VMListTable({
         {
             title: t('field.scope'),
             key: 'scope',
-            width: 220,
+            width: 152,
             render: (_, record) => {
                 const inCurrentServiceContext =
                     Boolean(contextSystemId)
@@ -300,7 +300,7 @@ export function VMListTable({
         {
             title: t('field.placement', { defaultValue: 'Runtime location' }),
             key: 'placement',
-            width: 220,
+            width: 160,
             render: (_, record) => (
                 <Space direction="vertical" size={4} className="workbench-table-stack">
                     <div className="vm-list-labeled-lines">
@@ -327,7 +327,7 @@ export function VMListTable({
         {
             title: t('field.resources'),
             key: 'resources',
-            width: 280,
+            width: 132,
             render: (_, record) => {
                 const cpuValue = formatCPU(record.cpu_cores);
                 const memoryValue = formatMemory(record.memory_gi ?? 0);
@@ -367,7 +367,7 @@ export function VMListTable({
         {
             title: t('common:table.actions'),
             key: 'actions',
-            width: 200,
+            width: 176,
             render: (_, record) => {
                 const isRunning = record.status === 'RUNNING';
                 const isStoppable = record.status === 'RUNNING' || record.status === 'STARTING';
@@ -589,7 +589,7 @@ export function VMListTable({
                                                 rowSelection={rowSelection}
                                                 pagination={false}
                                                 size="middle"
-                                                scroll={{ x: 1400 }}
+                                                scroll={{ x: 980 }}
                                             />
                                         ),
                                     }))}
@@ -615,7 +615,7 @@ export function VMListTable({
                     rowSelection={rowSelection}
                     pagination={pagination}
                     size="middle"
-                    scroll={{ x: 1400 }}
+                    scroll={{ x: 980 }}
                 />
             )}
         </PageSurface>

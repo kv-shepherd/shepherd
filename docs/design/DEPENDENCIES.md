@@ -42,9 +42,9 @@ ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
 | Component | Version | Notes |
 |-----------|---------|-------|
 | PostgreSQL | `18` | Development and production baseline |
-| Ent migrations | Ent-generated schema | Dev auto-migrate is available behind `database.auto_migrate`; production uses reviewed migrations |
+| Ent migrations | Ent-generated schema | Clean local bootstrap can use `database.auto_migrate`; production startup applies reviewed Atlas migrations and uses Ent only for empty-database bootstrap |
 | Atlas config | `migrations/atlas/atlas.hcl` | Atlas CLI is an external tool; `ariga.io/atlas` appears indirectly through Ent |
-| River migrations | River `rivermigrate` | Created by `DatabaseClients.AutoMigrate` in development paths |
+| River migrations | River `rivermigrate` | Applied during startup after app schema preparation |
 
 ### Kubernetes and KubeVirt
 

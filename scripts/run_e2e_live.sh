@@ -1097,7 +1097,7 @@ cleanup_residual_pg_on_port() {
 
   if (( ${#to_remove[@]} > 0 )); then
     log_info "removing residual PostgreSQL containers on port ${target_port}: ${to_remove[*]}"
-    docker rm -f "${to_remove[@]}" >/dev/null 2>&1 || true
+    docker rm -f -v "${to_remove[@]}" >/dev/null 2>&1 || true
   fi
 }
 
@@ -1123,7 +1123,7 @@ cleanup_residual_e2e_containers() {
 
   if (( ${#to_remove[@]} > 0 )); then
     log_info "removing ${#to_remove[@]} residual shepherd E2E container(s): ${to_remove[*]}"
-    docker rm -f "${to_remove[@]}" > /dev/null 2>&1 || true
+    docker rm -f -v "${to_remove[@]}" > /dev/null 2>&1 || true
   fi
 }
 
@@ -1345,7 +1345,8 @@ export PW_WEB_PORT
 export PW_BASE_URL
 # Expose run directory to Playwright config (used for webServer stdout/stderr logs).
 export E2E_RUN_DIR
-export DATABASE_AUTO_MIGRATE="${DATABASE_AUTO_MIGRATE:-true}"
+export DATABASE_AUTO_MIGRATE="${DATABASE_AUTO_MIGRATE:-false}"
+export DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS="${DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS:-true}"
 export SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-0123456789abcdef0123456789abcdef}"
 export SECURITY_ENCRYPTION_KEY="${SECURITY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
 # Strict live e2e runs on random Playwright web ports; allow all origins in this

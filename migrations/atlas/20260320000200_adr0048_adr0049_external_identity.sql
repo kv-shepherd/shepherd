@@ -11,19 +11,19 @@ CREATE TABLE IF NOT EXISTS "external_cohorts" (
     "created_at"    timestamptz       NOT NULL,
     "updated_at"    timestamptz       NOT NULL,
     "provider_id"   character varying NOT NULL,
-    "kind"          character varying NOT NULL,
-    "key"           character varying NOT NULL,
-    "display_name"  character varying DEFAULT NULL,
+    "cohort_kind"   character varying NOT NULL,
+    "cohort_key"    character varying NOT NULL,
+    "display_name"  character varying NOT NULL,
     "source_field"  character varying DEFAULT NULL,
     "description"   character varying DEFAULT NULL,
     "last_synced_at" timestamptz      DEFAULT NULL,
     PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "externalcohort_provider_id_kind_key"
-    ON "external_cohorts" ("provider_id", "kind", "key");
-CREATE INDEX IF NOT EXISTS "externalcohort_provider_id_kind"
-    ON "external_cohorts" ("provider_id", "kind");
+CREATE UNIQUE INDEX IF NOT EXISTS "externalcohort_provider_id_cohort_kind_cohort_key"
+    ON "external_cohorts" ("provider_id", "cohort_kind", "cohort_key");
+CREATE INDEX IF NOT EXISTS "externalcohort_provider_id_display_name"
+    ON "external_cohorts" ("provider_id", "display_name");
 
 CREATE TABLE IF NOT EXISTS "external_cohort_mappings" (
     "id"                   character varying NOT NULL,
@@ -32,7 +32,6 @@ CREATE TABLE IF NOT EXISTS "external_cohort_mappings" (
     "provider_id"          character varying NOT NULL,
     "cohort_kind"          character varying NOT NULL,
     "cohort_key"           character varying NOT NULL,
-    "cohort_display_name"  character varying DEFAULT NULL,
     "role_id"              character varying NOT NULL,
     "scope_type"           character varying DEFAULT NULL,
     "scope_id"             character varying DEFAULT NULL,
@@ -41,8 +40,10 @@ CREATE TABLE IF NOT EXISTS "external_cohort_mappings" (
     PRIMARY KEY ("id")
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "externalcohortmapping_provider_id_cohort_kind_cohort_key"
+CREATE INDEX IF NOT EXISTS "externalcohortmapping_provider_id_cohort_kind_cohort_key"
     ON "external_cohort_mappings" ("provider_id", "cohort_kind", "cohort_key");
+CREATE UNIQUE INDEX IF NOT EXISTS "externalcohortmapping_provider_id_cohort_kind_cohort_key_role_id_scope_type_scope_id"
+    ON "external_cohort_mappings" ("provider_id", "cohort_kind", "cohort_key", "role_id", "scope_type", "scope_id");
 CREATE INDEX IF NOT EXISTS "externalcohortmapping_provider_id_role_id"
     ON "external_cohort_mappings" ("provider_id", "role_id");
 
@@ -51,29 +52,30 @@ CREATE TABLE IF NOT EXISTS "external_cohort_grants" (
     "created_at"       timestamptz       NOT NULL,
     "updated_at"       timestamptz       NOT NULL,
     "provider_id"      character varying NOT NULL,
-    "mapping_id"       character varying NOT NULL,
-    "user_id"          character varying NOT NULL,
+    "binding_key"      character varying NOT NULL,
+    "source_mapping_ids" jsonb           DEFAULT NULL,
+    "last_applied_at"  timestamptz       NOT NULL,
     "role_binding_id"  character varying NOT NULL,
-    "cohort_kind"      character varying NOT NULL,
-    "cohort_key"       character varying NOT NULL,
-    "managed_by"       character varying NOT NULL DEFAULT 'external_cohort',
-    PRIMARY KEY ("id")
+    "user_id"          character varying NOT NULL,
+    PRIMARY KEY ("id"),
+    CONSTRAINT "external_cohort_grants_role_bindings_external_cohort_grants"
+        FOREIGN KEY ("role_binding_id") REFERENCES "role_bindings" ("id"),
+    CONSTRAINT "external_cohort_grants_users_external_cohort_grants"
+        FOREIGN KEY ("user_id") REFERENCES "users" ("id")
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "externalcohortgrant_mapping_id_user_id"
-    ON "external_cohort_grants" ("mapping_id", "user_id");
 CREATE UNIQUE INDEX IF NOT EXISTS "externalcohortgrant_role_binding_id"
     ON "external_cohort_grants" ("role_binding_id");
-CREATE INDEX IF NOT EXISTS "externalcohortgrant_user_id"
-    ON "external_cohort_grants" ("user_id");
+CREATE UNIQUE INDEX IF NOT EXISTS "externalcohortgrant_user_id_provider_id_binding_key"
+    ON "external_cohort_grants" ("user_id", "provider_id", "binding_key");
 
 CREATE TABLE IF NOT EXISTS "user_directory_profiles" (
     "id"             character varying NOT NULL,
     "created_at"     timestamptz       NOT NULL,
     "updated_at"     timestamptz       NOT NULL,
-    "user_id"        character varying NOT NULL,
     "attributes"     jsonb             NOT NULL,
     "last_synced_at" timestamptz       NOT NULL,
+    "user_id"        character varying NOT NULL,
     PRIMARY KEY ("id"),
     CONSTRAINT "user_directory_profiles_users_directory_profile"
         FOREIGN KEY ("user_id") REFERENCES "users" ("id")

@@ -12,6 +12,7 @@ import (
 
 	"kv-shepherd.io/shepherd/internal/app"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
@@ -45,11 +46,23 @@ func Run() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	normalizeStartupMigrationConfig(&cfg.Database)
+	if migrateErr := infrastructure.EnsureStartupMigrations(ctx, cfg.Database); migrateErr != nil {
+		return fmt.Errorf("prepare database schema: %w", migrateErr)
+	}
+
 	signalCh := make(chan os.Signal, 1)
 	signal.Notify(signalCh, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signalCh)
 
 	return runWithConfig(ctx, cfg, signalCh, app.Bootstrap, defaultServe)
+}
+
+func normalizeStartupMigrationConfig(database *config.DatabaseConfig) {
+	if database.AutoApplyVersionedMigrations && database.AutoMigrate {
+		logger.Warn("Ignoring database.auto_migrate because versioned migrations are enabled")
+		database.AutoMigrate = false
+	}
 }
 
 func runWithConfig(

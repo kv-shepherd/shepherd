@@ -2835,6 +2835,8 @@ a {
 .systems-table-name,
 .services-table-name {
   display: inline-flex;
+  max-width: 100%;
+  min-width: 96px;
   align-items: center;
   gap: 8px;
   padding: 4px 12px 4px 6px;
@@ -2862,9 +2864,13 @@ a {
 
 .systems-table-name__text,
 .services-table-name__text {
+  min-width: 0;
   color: #0f172a;
   font-size: 14px;
   letter-spacing: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .workbench-description-preview {
@@ -3819,10 +3825,6 @@ a {
   width: 100%;
 }
 
-.admin-users-page__banner-surface .ant-card-body {
-  padding: 14px 16px;
-}
-
 .admin-users-page__toolbar {
   align-items: flex-start;
 }
@@ -3836,6 +3838,15 @@ a {
 .admin-users-page__section-heading .ant-typography-secondary {
   color: var(--foreground-secondary);
   font-size: 14px;
+}
+
+.admin-users-page__workspace-links {
+  margin-top: 8px;
+}
+
+.admin-users-page__workspace-links .ant-btn {
+  border-color: #d8e2ef;
+  background: #f8fafc;
 }
 
 .admin-users-page__search-stack {

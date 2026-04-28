@@ -87,8 +87,14 @@ run_lane backend bash -lc "cd '${PROJECT_ROOT}' && make ci-backend"
 backend_pid="${RUN_LANE_PID}"
 run_lane governance bash -lc "cd '${PROJECT_ROOT}' && make ci-governance"
 governance_pid="${RUN_LANE_PID}"
-# Keep frontend tests in one Vitest shard while backend/governance lanes run in
-# parallel. This avoids local CPU starvation without reducing test coverage.
+
+wait_lane backend "${backend_pid}"
+wait_lane governance "${governance_pid}"
+
+# Keep frontend isolated from the Go/governance lanes. The frontend lane uses a
+# shared node_modules tree and heavy Vitest worker startup; on local machines,
+# running it alongside Go race tests and filesystem scanners has produced false
+# missing-module failures without adding coverage.
 run_lane frontend bash -lc "cd '${PROJECT_ROOT}' && FRONTEND_LOCAL_TEST_SHARDS='${FRONTEND_LOCAL_TEST_SHARDS:-1}' make ci-frontend"
 frontend_pid="${RUN_LANE_PID}"
 
@@ -106,9 +112,6 @@ else
   echo "Lane 'frontend' failed. Recent log output:"
   tail -n 120 "${LOG_DIR}/frontend.log" || true
 fi
-
-wait_lane backend "${backend_pid}"
-wait_lane governance "${governance_pid}"
 
 if [ -n "${e2e_pid:-}" ]; then
   wait_lane e2e-smoke "${e2e_pid}"

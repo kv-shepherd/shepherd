@@ -67,7 +67,8 @@ type DatabaseConfig struct {
 	WorkerHost string `mapstructure:"worker_host"`
 	WorkerPort int    `mapstructure:"worker_port"`
 
-	AutoMigrate bool `mapstructure:"auto_migrate"`
+	AutoMigrate                  bool `mapstructure:"auto_migrate"`
+	AutoApplyVersionedMigrations bool `mapstructure:"auto_apply_versioned_migrations"`
 }
 
 // DSN returns the PostgreSQL connection string.
@@ -268,6 +269,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.max_conn_lifetime", "1h")
 	v.SetDefault("database.max_conn_idle_time", "10m")
 	v.SetDefault("database.auto_migrate", false)
+	v.SetDefault("database.auto_apply_versioned_migrations", false)
 
 	// Session (PostgreSQL-based, replaces Redis)
 	v.SetDefault("session.lifetime", "24h")
@@ -323,6 +325,7 @@ func bindEnvKeys(v *viper.Viper) {
 		"database.worker_host",
 		"database.worker_port",
 		"database.auto_migrate",
+		"database.auto_apply_versioned_migrations",
 		"session.lifetime",
 		"session.idle_timeout",
 		"session.cookie",

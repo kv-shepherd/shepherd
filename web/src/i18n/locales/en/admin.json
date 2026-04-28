@@ -824,8 +824,6 @@
   "users.directory.no_roles": "No global roles",
   "users.directory.empty": "No users yet",
   "users.directory.empty_description": "Create the first platform account before assigning access, system membership, or rate-limit policy from their dedicated pages.",
-  "users.directory.boundary_title": "User Management is the main workspace for accounts and access bindings",
-  "users.directory.boundary_description": "Grant or revoke explicit bindings directly here. Systems still owns system membership, Rate Limits still owns throttling overrides, and Access & Roles remains available for role catalog and elevated-access audit views.",
   "users.directory.open_rbac": "Open Access & Roles",
   "users.directory.open_systems": "Open Systems",
   "users.directory.open_rate_limits": "Open Rate Limits",

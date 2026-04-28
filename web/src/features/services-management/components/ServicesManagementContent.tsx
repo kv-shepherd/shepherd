@@ -144,12 +144,20 @@ export function ServicesManagementContent() {
     const serviceRelatedVMs = serviceContextQuery.data?.visible_vms ?? [];
     const serviceRelatedRequests = serviceContextQuery.data?.recent_requests ?? [];
     const detailServiceSummary = serviceContextQuery.data?.summary;
+    const serviceItems = useMemo(
+        () => services.servicesData?.items ?? [],
+        [services.servicesData?.items],
+    );
+    const systemNameById = useMemo(() => {
+        return new Map((services.systemsData?.items ?? []).map((system) => [system.id, system.name]));
+    }, [services.systemsData?.items]);
 
     const columns: ColumnsType<Service> = [
         {
             title: t('table.name'),
             dataIndex: 'name',
             key: 'name',
+            width: 220,
             render: (name: string) => (
                 <div className="services-table-name">
                     <div className="services-table-name__icon">
@@ -166,8 +174,10 @@ export function ServicesManagementContent() {
             dataIndex: 'system_name',
             key: 'system_name',
             width: 180,
-            render: (_: string | undefined, record) => (
-                record.system_id && record.system_name ? (
+            render: (_: string | undefined, record) => {
+                const systemName = record.system_name
+                    || (record.system_id ? systemNameById.get(record.system_id) : undefined);
+                return record.system_id && systemName ? (
                     <Button
                         type="link"
                         size="small"
@@ -175,12 +185,12 @@ export function ServicesManagementContent() {
                         className="workbench-compact-link"
                         onClick={() => router.push(`/systems?detail_system_id=${record.system_id}`)}
                     >
-                        {record.system_name}
+                        {systemName}
                     </Button>
                 ) : (
-                    <Text strong>{record.system_name || '—'}</Text>
-                )
-            ),
+                    <Text strong>{systemName || '—'}</Text>
+                );
+            },
         },
         {
             title: t('table.description'),
@@ -298,10 +308,6 @@ export function ServicesManagementContent() {
             ),
         },
     ];
-    const serviceItems = useMemo(
-        () => services.servicesData?.items ?? [],
-        [services.servicesData?.items],
-    );
     const serviceGroups = useMemo(() => {
         const grouped = new Map<string, {
             key: string;
@@ -311,6 +317,9 @@ export function ServicesManagementContent() {
         }>();
         serviceItems.forEach((service) => {
             const key = service.system_id || service.system_name || 'unassigned';
+            const systemName = service.system_name
+                || (service.system_id ? systemNameById.get(service.system_id) : undefined)
+                || t('services.group.unknown_system');
             const existing = grouped.get(key);
             if (existing) {
                 existing.items.push(service);
@@ -319,12 +328,12 @@ export function ServicesManagementContent() {
             grouped.set(key, {
                 key,
                 systemId: service.system_id,
-                systemName: service.system_name || t('services.group.unknown_system'),
+                systemName,
                 items: [service],
             });
         });
         return Array.from(grouped.values()).sort((a, b) => a.systemName.localeCompare(b.systemName));
-    }, [serviceItems, t]);
+    }, [serviceItems, systemNameById, t]);
     const serviceSystemCount = services.activeSystemId === ALL_SYSTEMS_FILTER
         ? (services.systemsData?.items?.length ?? 0)
         : (services.activeSystemId ? 1 : 0);

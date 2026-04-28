@@ -49,6 +49,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Database.MinConns != 5 {
 		t.Errorf("Database.MinConns = %d, want 5", cfg.Database.MinConns)
 	}
+	if cfg.Database.AutoApplyVersionedMigrations {
+		t.Errorf("Database.AutoApplyVersionedMigrations = %v, want false", cfg.Database.AutoApplyVersionedMigrations)
+	}
 
 	// K8s defaults
 	if cfg.K8s.ClusterConcurrency != 20 {
@@ -188,6 +191,18 @@ func TestLoad_RiverConsumeJobsFromEnv(t *testing.T) {
 
 	if cfg.River.ConsumeJobs {
 		t.Fatalf("River.ConsumeJobs = %v, want false", cfg.River.ConsumeJobs)
+	}
+}
+
+func TestLoad_DatabaseAutoApplyVersionedMigrationsFromEnv(t *testing.T) {
+	t.Setenv("DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS", "true")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if !cfg.Database.AutoApplyVersionedMigrations {
+		t.Fatalf("Database.AutoApplyVersionedMigrations = %v, want true", cfg.Database.AutoApplyVersionedMigrations)
 	}
 }
 

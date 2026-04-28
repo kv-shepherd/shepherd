@@ -48,6 +48,7 @@ import {
     UserDirectoryGlyph,
 } from '@/components/illustrations/DashboardIllustrations';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import { useDisplayTimeZone } from '@/components/providers/DisplayTimeZoneProvider';
 import { LocalDateTimeText } from '@/components/ui/LocalDateTimeText';
 import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { useUserPreference } from '@/hooks/useUserPreference';
@@ -180,7 +181,29 @@ function dedupeUserSearchValueOptions(options: UserSearchValueOption[]) {
     return normalized.sort((left, right) => left.label.localeCompare(right.label));
 }
 
-function formatAdminUsersLocalDateTime(value?: string | null) {
+function formatAdminUsersLocalDate(value?: string | null, timeZone?: string | null) {
+    if (!value || value.trim() === '') {
+        return null;
+    }
+
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) {
+        return value;
+    }
+
+    const formatter = new Intl.DateTimeFormat(undefined, {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        ...(timeZone ? { timeZone } : {}),
+    });
+    const parts = formatter.formatToParts(parsed);
+    const pick = (type: Intl.DateTimeFormatPartTypes) =>
+        parts.find((part) => part.type === type)?.value ?? '';
+    return `${pick('year')}-${pick('month')}-${pick('day')}`;
+}
+
+function formatAdminUsersLocalDateTime(value?: string | null, timeZone?: string | null) {
     if (!value || value.trim() === '') {
         return null;
     }
@@ -197,6 +220,7 @@ function formatAdminUsersLocalDateTime(value?: string | null) {
         hour: '2-digit',
         minute: '2-digit',
         hourCycle: 'h23',
+        ...(timeZone ? { timeZone } : {}),
     });
     const parts = formatter.formatToParts(parsed);
     const pick = (type: Intl.DateTimeFormatPartTypes) =>
@@ -214,11 +238,12 @@ function buildMergedColumnDrafts(groups: NormalizedUserTableMergedColumn[]): Use
 }
 
 function estimateUsersTableScrollWidth(visibleConfigurableColumnCount: number) {
-    return 320 + visibleConfigurableColumnCount * 200 + 220;
+    return 460 + visibleConfigurableColumnCount * 190;
 }
 
 export function AdminUsersContent() {
     const { t } = useTranslation(['admin', 'common']);
+    const { displayTimeZone } = useDisplayTimeZone();
     const router = useRouter();
     const currentUser = useAuthStore((state) => state.user);
     const canManageUsers = hasPermission(currentUser, 'user:manage');
@@ -890,7 +915,7 @@ export function AdminUsersContent() {
                                             return record.enabled ? t('users.status.enabled') : t('users.status.disabled');
                                         }
                                         if (column.key === 'created_at') {
-                                            return formatAdminUsersLocalDateTime(record.created_at) || EMPTY_VALUE;
+                                            return formatAdminUsersLocalDateTime(record.created_at, displayTimeZone) || EMPTY_VALUE;
                                         }
                                         return EMPTY_VALUE;
                                     })(),
@@ -978,19 +1003,25 @@ export function AdminUsersContent() {
                 return {
                     title: column.label,
                     key: column.key,
-                    width: 150,
-                        render: (_: unknown, record: User) => (
-                            <Text className="admin-users-table__single-line admin-users-table__created-at">
-                                <LocalDateTimeText value={record.created_at} />
+                    width: 130,
+                    render: (_: unknown, record: User) => {
+                        const displayDate = formatAdminUsersLocalDate(record.created_at, displayTimeZone) || EMPTY_VALUE;
+                        const fullDateTime = formatAdminUsersLocalDateTime(record.created_at, displayTimeZone);
+                        return (
+                            <Text
+                                className="admin-users-table__single-line admin-users-table__created-at"
+                                title={fullDateTime ?? undefined}
+                            >
+                                {displayDate}
                             </Text>
-                        ),
+                        );
+                    },
                 };
             }),
             {
                 title: t('common:table.actions'),
                 key: USER_TABLE_FIXED_ACTIONS_COLUMN_KEY,
                 width: 148,
-                fixed: 'right' as const,
                 render: (_: unknown, record: User) => (
                     <Space size={0} wrap className="admin-users-table__actions">
                         {canManageUsers ? (
@@ -1090,33 +1121,22 @@ export function AdminUsersContent() {
                 />
             </div>
 
-            <PageSurface className="admin-users-page__banner-surface" style={{ marginBottom: 16 }}>
-                <Alert
-                    showIcon
-                    type="info"
-                    message={t('users.directory.boundary_title')}
-                    description={t('users.directory.boundary_description')}
-                    action={(
-                        <Space wrap>
-                            <Button onClick={() => router.push('/admin/rbac')}>
-                                {t('users.directory.open_rbac')}
-                            </Button>
-                            <Button onClick={() => router.push('/systems')}>
-                                {t('users.directory.open_systems')}
-                            </Button>
-                            <Button onClick={() => router.push('/admin/rate-limits')}>
-                                {t('users.directory.open_rate_limits')}
-                            </Button>
-                        </Space>
-                    )}
-                />
-            </PageSurface>
-
             <PageSurface className="admin-users-page__table-surface" style={{ marginBottom: 16 }}>
                 <Space className="admin-users-page__toolbar" style={{ width: '100%', justifyContent: 'space-between' }} wrap>
                     <Space direction="vertical" size={0} className="admin-users-page__section-heading">
                         <Text strong>{t('users.directory.title')}</Text>
                         <Text type="secondary">{t('users.directory.subtitle')}</Text>
+                        <Space wrap size={[8, 4]} className="admin-users-page__workspace-links">
+                            <Button size="small" onClick={() => router.push('/admin/rbac')}>
+                                {t('users.directory.open_rbac')}
+                            </Button>
+                            <Button size="small" onClick={() => router.push('/systems')}>
+                                {t('users.directory.open_systems')}
+                            </Button>
+                            <Button size="small" onClick={() => router.push('/admin/rate-limits')}>
+                                {t('users.directory.open_rate_limits')}
+                            </Button>
+                        </Space>
                     </Space>
                     <Space wrap>
                         <Text type="secondary">

@@ -297,7 +297,7 @@ export default function NotificationBell() {
             arrow={false}
             styles={{ body: { padding: 0 } }}
         >
-            <Tooltip title={t('notification.title', 'Notifications')}>
+            <Tooltip title={t('notification.title', 'Notifications')} open={open ? false : undefined}>
                 <Badge count={unreadCount} size="small" offset={[-2, 4]}>
                     <Button
                         type="text"

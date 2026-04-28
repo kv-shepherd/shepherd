@@ -1,6 +1,5 @@
 import { Form } from 'antd';
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -203,18 +202,15 @@ vi.mock('@/components/workbench/WorkbenchDetailModal', () => ({
     WorkbenchDetailModal: ({
         open,
         title,
-        children,
         footer,
     }: {
         open?: boolean;
         title?: ReactNode;
-        children?: ReactNode;
         footer?: ReactNode;
     }) =>
         open ? (
             <div className="ant-modal">
                 <div>{title}</div>
-                <div>{children}</div>
                 <div>{footer}</div>
             </div>
         ) : null,
@@ -435,7 +431,6 @@ describe('SystemsManagementContent', () => {
     });
 
     it('shows related service names in the systems list and lets the user open a service detail', async () => {
-        const user = userEvent.setup();
         render(<SystemsManagementContent />);
 
         await waitFor(() => {
@@ -445,18 +440,22 @@ describe('SystemsManagementContent', () => {
         const serviceLink = screen.getAllByTestId('system-service-link-svc-1')[0];
         expect(serviceLink.tagName).toBe('BUTTON');
 
-        await user.click(serviceLink);
+        fireEvent.click(serviceLink);
         expect(pushMock).toHaveBeenCalledWith('/services?system_id=sys-1&detail_service_id=svc-1');
     });
 
     it('submits quick search only when the user confirms it', async () => {
-        const user = userEvent.setup();
         render(<SystemsManagementContent />);
 
-        await user.type(screen.getByTestId('systems-quick-search'), 'finance');
+        fireEvent.change(screen.getByTestId('systems-quick-search'), {
+            target: { value: 'finance' },
+        });
 
         expect(applyFiltersMock).not.toHaveBeenCalled();
-        await user.keyboard('{Enter}');
+        fireEvent.keyDown(screen.getByTestId('systems-quick-search'), {
+            key: 'Enter',
+            code: 'Enter',
+        });
 
         expect(applyFiltersMock).toHaveBeenCalledWith({
             search: 'finance',
@@ -467,15 +466,20 @@ describe('SystemsManagementContent', () => {
     });
 
     it('shows advanced search and submits creator, service, and member filters', async () => {
-        const user = userEvent.setup();
         render(<SystemsManagementContent />);
 
-        await user.click(screen.getByTestId('systems-search-filters-toggle'));
+        fireEvent.click(screen.getByTestId('systems-search-filters-toggle'));
 
-        await user.selectOptions(screen.getByTestId('systems-filter-created-by'), 'user-alice');
-        await user.selectOptions(screen.getByTestId('systems-filter-service'), 'svc-1');
-        await user.selectOptions(screen.getByTestId('systems-filter-member'), 'user-bob');
-        await user.click(screen.getByTestId('systems-advanced-search-submit'));
+        fireEvent.change(screen.getByTestId('systems-filter-created-by'), {
+            target: { value: 'user-alice' },
+        });
+        fireEvent.change(screen.getByTestId('systems-filter-service'), {
+            target: { value: 'svc-1' },
+        });
+        fireEvent.change(screen.getByTestId('systems-filter-member'), {
+            target: { value: 'user-bob' },
+        });
+        fireEvent.click(screen.getByTestId('systems-advanced-search-submit'));
 
         expect(applyFiltersMock).toHaveBeenCalledWith({
             search: '',
@@ -486,17 +490,14 @@ describe('SystemsManagementContent', () => {
     });
 
     it('opens the services workspace from the system detail modal', async () => {
-        const user = userEvent.setup();
         window.history.replaceState({}, '', '/systems?detail_system_id=sys-1');
 
         render(<SystemsManagementContent />);
 
-        await waitFor(() => {
-            expect(screen.getAllByText('Retail platform').length).toBeGreaterThan(0);
-        });
+        const openServicesButton = await screen.findByRole('button', { name: 'Open Services' });
 
         pushMock.mockClear();
-        await user.click(screen.getByRole('button', { name: 'Open Services' }));
+        fireEvent.click(openServicesButton);
         expect(pushMock).toHaveBeenCalledWith('/services?system_id=sys-1');
     });
 });

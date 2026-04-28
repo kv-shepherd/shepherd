@@ -22,8 +22,8 @@ informed: ["@jindyzhao"]
 > |-------|------|--------|-----------|
 > | Phase 1 | Ent Schema: added `polling_tier`, `poll_interval_sec`, `last_k8s_rv`, `last_polled_at`, `high_tier_since` to `vm.go` | ✅ **Done** | `ent/schema/vm.go` |
 > | Phase 1 | Ent codegen: `go generate ./ent/...` — all new fields generated correctly | ✅ **Done** | `ent/vm.go`, `ent/vm_update.go` |
-> | Phase 1 | Atlas migration SQL: `migrations/atlas/20260303_adr0038_vm_polling_fields.sql` | ✅ **Done** | ready for `atlas migrate apply` |
-> | Phase 1 | Atlas follow-up SQL: `migrations/atlas/20260304_adr0038_high_tier_since.sql` | ✅ **Done** | precise high-tier transition clock |
+> | Phase 1 | Atlas migration SQL: `migrations/atlas/20260303000100_adr0038_vm_polling_fields.sql` | ✅ **Done** | ready for `atlas migrate apply` |
+> | Phase 1 | Atlas follow-up SQL: `migrations/atlas/20260304000100_adr0038_high_tier_since.sql` | ✅ **Done** | precise high-tier transition clock |
 > | Phase 2 | River Worker refactor: read `polling_tier`/`poll_interval_sec` → compute `ScheduledAt` | ✅ **Done** | `internal/jobs/vm_status_sync.go` |
 > | Phase 3 | CI gate: `k8spollingrv` analyzer enforcing ResourceVersion requirement | ✅ **Done** | `tools/shepherd-linter/analyzer/k8spollingrv/` |
 >

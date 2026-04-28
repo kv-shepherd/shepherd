@@ -72,6 +72,23 @@ func TestRunWithConfig_ShutdownSignal(t *testing.T) {
 	}
 }
 
+func TestNormalizeStartupMigrationConfig_PrefersVersionedMigrations(t *testing.T) {
+	t.Parallel()
+
+	database := config.DatabaseConfig{
+		AutoMigrate:                  true,
+		AutoApplyVersionedMigrations: true,
+	}
+	normalizeStartupMigrationConfig(&database)
+
+	if database.AutoMigrate {
+		t.Fatal("AutoMigrate = true, want false when versioned migrations are enabled")
+	}
+	if !database.AutoApplyVersionedMigrations {
+		t.Fatal("AutoApplyVersionedMigrations = false, want true")
+	}
+}
+
 func testConfig() *config.Config {
 	return &config.Config{
 		Server: config.ServerConfig{

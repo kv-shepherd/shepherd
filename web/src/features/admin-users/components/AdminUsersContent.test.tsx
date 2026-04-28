@@ -84,8 +84,6 @@ vi.mock('react-i18next', () => ({
                 'users.directory.batch_reset_access': 'Reset access',
                 'users.directory.select_users_placeholder': 'Search and select one or more users',
                 'users.directory.no_matching_users': 'No matching users',
-                'users.directory.boundary_title': 'User Management is the primary workspace for accounts and access',
-                'users.directory.boundary_description': 'Grant or revoke explicit bindings directly here. Systems still owns system membership, Rate Limits still owns throttling overrides, and Access & Roles remains available for role catalog and elevated-access audit views.',
                 'users.directory.open_rbac': 'Open Access & Roles',
                 'users.directory.open_systems': 'Open Systems',
                 'users.directory.open_rate_limits': 'Open Rate Limits',
@@ -606,7 +604,7 @@ describe('AdminUsersContent', () => {
 
         expect(screen.getByTestId('admin-users-page')).toBeVisible();
         expect(screen.getByText('User Management')).toBeVisible();
-        expect(screen.getByText('User Management is the primary workspace for accounts and access')).toBeVisible();
+        expect(screen.queryByText('User Management is the primary workspace for accounts and access')).not.toBeInTheDocument();
         expect(screen.getByRole('button', { name: 'Open Access & Roles' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open Systems' })).toBeVisible();
         expect(screen.getByRole('button', { name: 'Open Rate Limits' })).toBeVisible();

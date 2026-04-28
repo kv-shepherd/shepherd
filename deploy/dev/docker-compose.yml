@@ -20,7 +20,8 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: "postgres://shepherd:shepherd_password@db:5432/shepherd_db?sslmode=disable"
-      DATABASE_AUTO_MIGRATE: "true"
+      DATABASE_AUTO_MIGRATE: "false"
+      DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS: "true"
       SECURITY_SESSION_SECRET: "${SECURITY_SESSION_SECRET:-dev-session-secret-0123456789abcdef0123456789abcdef}"
       SECURITY_ENCRYPTION_KEY: "${SECURITY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
       GIN_MODE: debug

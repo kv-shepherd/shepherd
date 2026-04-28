@@ -24,8 +24,8 @@ This note captures concrete implementation details and impact analysis for ADR-0
 
 **Files changed**:
 - `ent/schema/vm.go` — 5 new fields + 1 index
-- `migrations/atlas/20260303_adr0038_vm_polling_fields.sql` — Atlas migration
-- `migrations/atlas/20260304_adr0038_high_tier_since.sql` — follow-up migration for precise high-tier timing
+- `migrations/atlas/20260303000100_adr0038_vm_polling_fields.sql` — Atlas migration
+- `migrations/atlas/20260304000100_adr0038_high_tier_since.sql` — follow-up migration for precise high-tier timing
 
 New fields on the `vms` table:
 

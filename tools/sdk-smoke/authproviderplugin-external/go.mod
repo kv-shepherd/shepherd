@@ -5,7 +5,7 @@ go 1.25.9
 require kv-shepherd.io/shepherd v0.0.0
 
 require (
-	ariga.io/atlas v0.36.2-0.20250730182955-2c6300d0a3e1 // indirect
+	ariga.io/atlas v1.2.0 // indirect
 	entgo.io/ent v0.14.6 // indirect
 	github.com/Azure/go-ntlmssp v0.1.0 // indirect
 	github.com/Masterminds/semver/v3 v3.4.0 // indirect

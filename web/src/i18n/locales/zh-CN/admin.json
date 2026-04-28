@@ -823,8 +823,6 @@
   "users.directory.no_roles": "暂无全局角色",
   "users.directory.empty": "还没有用户",
   "users.directory.empty_description": "先创建第一个平台账号；显式权限可直接在这里配置，系统成员和限流策略仍在独立页面中配置。",
-  "users.directory.boundary_title": "用户管理页是账号和权限绑定的主工作区",
-  "users.directory.boundary_description": "显式权限直接在这里授予或撤销；系统成员仍由“系统”页面管理，限流覆盖仍由“限流控制”页面管理，而“权限与角色”保留作角色目录和敏感权限审计视图。",
   "users.directory.open_rbac": "打开权限与角色",
   "users.directory.open_systems": "打开系统",
   "users.directory.open_rate_limits": "打开限流控制",

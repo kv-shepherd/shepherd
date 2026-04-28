@@ -270,6 +270,7 @@
         "docs/adr/ADR-0012-hybrid-transaction.md",
         "docs/adr/ADR-0017-vm-request-flow-clarification.md",
         "docs/adr/ADR-0018-instance-size-abstraction.md",
+        "docs/adr/ADR-0038-adaptive-k8s-polling.md",
         "docs/adr/ADR-0040-catalog-scope-for-template-and-instancesize.md",
         "docs/adr/ADR-0042-cluster-policy-governance-model.md",
         "docs/adr/ADR-0045-cluster-resolved-root-volume-provisioning.md"

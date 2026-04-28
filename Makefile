@@ -196,7 +196,7 @@ ci-checks: ci-governance
 
 ## ci-prep: Install shared dependencies before local PR lanes
 ci-prep:
-	@npm ci --prefix web
+	@bash scripts/ensure_frontend_deps.sh
 
 ## ci-backend: Run Go/backend required checks once
 ci-backend:
@@ -227,6 +227,7 @@ ci-api-sync-local:
 
 ## ci-e2e-smoke: Run frontend mock smoke once
 ci-e2e-smoke:
+	@cd web && npx playwright install chromium
 	@set -e; \
 	trap 'find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete' EXIT; \
 	find web -maxdepth 1 -name "tsconfig.e2e.*.json" -delete; \

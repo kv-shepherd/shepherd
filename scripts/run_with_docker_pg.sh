@@ -120,7 +120,10 @@ cleanup() {
     log_info "keeping container ${CONTAINER_NAME}"
     return
   fi
-  docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+  # The test container uses PostgreSQL's anonymous data volume by default.
+  # Remove the container and its anonymous volumes together to avoid leaking
+  # hundreds of stale pgdata volumes across repeated local runs.
+  docker rm -f -v "${CONTAINER_NAME}" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT INT TERM
 
@@ -148,7 +151,7 @@ if ! docker run -d \
   "${PG_IMAGE}" >/dev/null 2>"${RUN_ERR_LOG}"; then
   if [[ -n "${PG_PORT}" ]] && rg -q "Unable to enable OPEN PORT rule|failed to set up container networking" "${RUN_ERR_LOG}"; then
     log_warn "bridge networking failed; retrying PostgreSQL container in host mode on port ${PG_PORT}"
-    docker rm -f "${CONTAINER_NAME}" >/dev/null 2>&1 || true
+    docker rm -f -v "${CONTAINER_NAME}" >/dev/null 2>&1 || true
     if ! docker run -d \
       --name "${CONTAINER_NAME}" \
       --network host \

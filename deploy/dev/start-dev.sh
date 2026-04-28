@@ -385,7 +385,7 @@ stop_host_frontend() {
 }
 
 frontend_log_has_emfile() {
-    [[ -f "${FRONTEND_LOG_FILE}" ]] && grep -q "Watchpack Error (watcher): Error: EMFILE" "${FRONTEND_LOG_FILE}"
+    [[ -f "${FRONTEND_LOG_FILE}" ]] && grep -q "EMFILE" "${FRONTEND_LOG_FILE}"
 }
 
 frontend_ready_status_code() {
@@ -494,22 +494,29 @@ wait_for_host_frontend() {
     local pid=""
     local http_code=""
     local restarted_with_polling=0
+    local stable_ready_count=0
     pid="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
 
     echo "Waiting for frontend (http://127.0.0.1:${DEV_FRONTEND_PORT})..."
     for _ in {1..45}; do
-        http_code="$(frontend_ready_status_code)"
-        if [[ "${http_code}" =~ ^[23][0-9][0-9]$ ]]; then
-            echo " frontend ready (HTTP ${http_code})"
-            return 0
-        fi
         if [[ "${restarted_with_polling}" != "1" ]] && frontend_log_has_emfile; then
             echo ""
             echo " frontend watcher hit EMFILE; restarting with polling..."
             start_host_frontend polling || return 1
             pid="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
             restarted_with_polling=1
+            stable_ready_count=0
             continue
+        fi
+        http_code="$(frontend_ready_status_code)"
+        if [[ "${http_code}" =~ ^[23][0-9][0-9]$ ]]; then
+            stable_ready_count=$((stable_ready_count + 1))
+            if [[ "${stable_ready_count}" -ge 2 ]]; then
+                echo " frontend ready (HTTP ${http_code})"
+                return 0
+            fi
+        else
+            stable_ready_count=0
         fi
         if [[ -n "${pid}" ]] && ! kill -0 "${pid}" >/dev/null 2>&1; then
             if [[ "${restarted_with_polling}" != "1" ]] && frontend_log_has_emfile; then
@@ -518,6 +525,7 @@ wait_for_host_frontend() {
                 start_host_frontend polling || return 1
                 pid="$(cat "${FRONTEND_PID_FILE}" 2>/dev/null || true)"
                 restarted_with_polling=1
+                stable_ready_count=0
                 continue
             fi
             echo " frontend exited unexpectedly"
@@ -686,10 +694,10 @@ if [[ "${DEV_FRONTEND_RUNTIME}" == "prod" && "${DEV_FRONTEND_MODE}" != "host" ]]
 fi
 
 WEB_UPSTREAM="host.docker.internal:${DEV_FRONTEND_PORT}"
-COMPOSE_SERVICES=("db" "server" "nginx")
+APP_COMPOSE_SERVICES=("server" "nginx")
 if [[ "${DEV_FRONTEND_MODE}" == "docker" ]]; then
     WEB_UPSTREAM="web:3000"
-    COMPOSE_SERVICES=("db" "server" "web" "nginx")
+    APP_COMPOSE_SERVICES=("server" "web" "nginx")
 fi
 
 echo "Checking development environment status..."
@@ -742,7 +750,17 @@ if [[ "${DEV_FRONTEND_MODE}" == "docker" ]]; then
         -t shepherd-web -f "${ROOT_DIR}/deploy/dev/web.Dockerfile" "${ROOT_DIR}/web"
 fi
 
-echo "Starting development environment (${COMPOSE_SERVICES[*]})..."
+echo "Starting development database (db)..."
+"${COMPOSE_CMD[@]}" up -d db
+
+echo "Waiting for database..."
+until "${COMPOSE_CMD[@]}" exec -T db pg_isready -U shepherd -d shepherd_db >/dev/null 2>&1; do
+    printf "."
+    sleep 2
+done
+echo " db ready"
+
+echo "Starting development environment (${APP_COMPOSE_SERVICES[*]})..."
 generate_dev_tls_certificate
 dev_allowed_origin_urls="$(compute_allowed_dev_origin_urls)"
 dev_public_base_url="$(compute_public_dev_base_url)"
@@ -757,14 +775,7 @@ WEB_UPSTREAM="${WEB_UPSTREAM}" \
 DEV_ALLOWED_ORIGIN_URLS="${dev_allowed_origin_urls}" \
 DEV_PUBLIC_BASE_URL="${dev_public_base_url}" \
 DEV_HTTPS_INGRESS_PORT="${DEV_HTTPS_INGRESS_PORT}" \
-"${COMPOSE_CMD[@]}" up -d "${COMPOSE_SERVICES[@]}"
-
-echo "Waiting for database..."
-until "${COMPOSE_CMD[@]}" exec -T db pg_isready -U shepherd -d shepherd_db >/dev/null 2>&1; do
-    printf "."
-    sleep 2
-done
-echo " db ready"
+"${COMPOSE_CMD[@]}" up -d "${APP_COMPOSE_SERVICES[@]}"
 
 echo "Waiting for backend (http://localhost:8080/api/v1/health/live)..."
 backend_ready=false

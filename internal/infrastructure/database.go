@@ -122,7 +122,15 @@ func NewDatabaseClients(ctx context.Context, cfg config.DatabaseConfig) (*Databa
 // AutoMigrate runs Ent schema migration and River queue table migration.
 // Only use in development; production should use Atlas-managed migrations.
 func (c *DatabaseClients) AutoMigrate(ctx context.Context) error {
-	// 1. Ent schema creation (creates all tables defined in ent/schema)
+	if err := c.ApplyEntSchema(ctx); err != nil {
+		return err
+	}
+	return c.ApplyRiverMigrations(ctx)
+}
+
+// ApplyEntSchema creates or updates the application schema directly from Ent models.
+// Only use for clean local bootstrap or controlled development workflows.
+func (c *DatabaseClients) ApplyEntSchema(ctx context.Context) error {
 	logger.Info("Running Ent auto-migration...")
 	if err := c.EntClient.Schema.Create(ctx,
 		entmigrate.WithDropIndex(true),
@@ -132,8 +140,11 @@ func (c *DatabaseClients) AutoMigrate(ctx context.Context) error {
 		return fmt.Errorf("ent auto-migrate: %w", err)
 	}
 	logger.Info("Ent auto-migration completed")
+	return nil
+}
 
-	// 2. River queue table migration (creates river_job, river_queue, etc.)
+// ApplyRiverMigrations ensures River queue tables are up to date.
+func (c *DatabaseClients) ApplyRiverMigrations(ctx context.Context) error {
 	logger.Info("Running River migration...")
 	migrator, err := rivermigrate.New(riverpgxv5.New(c.Pool), nil)
 	if err != nil {
@@ -150,7 +161,6 @@ func (c *DatabaseClients) AutoMigrate(ctx context.Context) error {
 	} else {
 		logger.Info("River migration: already up-to-date")
 	}
-
 	return nil
 }
 
