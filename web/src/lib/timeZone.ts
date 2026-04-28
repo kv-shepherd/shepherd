@@ -10,6 +10,8 @@ const FALLBACK_TIME_ZONES = [
   "America/Los_Angeles",
 ];
 
+const PRIORITY_TIME_ZONES = FALLBACK_TIME_ZONES;
+
 type IntlWithSupportedValues = typeof Intl & {
   supportedValuesOf?: (key: "timeZone") => string[];
 };
@@ -25,7 +27,7 @@ export function getBrowserTimeZone(): string | null {
 export function getSupportedTimeZones(): string[] {
   const supported = (Intl as IntlWithSupportedValues).supportedValuesOf?.("timeZone");
   if (Array.isArray(supported) && supported.length > 0) {
-    return supported;
+    return Array.from(new Set([...PRIORITY_TIME_ZONES, ...supported]));
   }
   return FALLBACK_TIME_ZONES;
 }
@@ -55,13 +57,30 @@ function formatTimeZoneOffsetLabel(
   }
 }
 
-export function formatTimeZoneShortLabel(timeZone: string): string {
-  const locationLabel = timeZone.split("/").at(-1)?.replaceAll("_", " ") ?? timeZone;
+export function getTimeZoneLocationFallback(timeZone: string): string {
+  if (timeZone === "UTC") {
+    return "UTC";
+  }
+  if (timeZone === "Asia/Shanghai") {
+    return "Beijing";
+  }
+  return timeZone.split("/").at(-1)?.replaceAll("_", " ") ?? timeZone;
+}
+
+export function formatTimeZoneShortLabel(
+  timeZone: string,
+  locationLabel = getTimeZoneLocationFallback(timeZone),
+): string {
   const offsetLabel = formatTimeZoneOffsetLabel(timeZone);
   return offsetLabel ? `${offsetLabel} · ${locationLabel}` : locationLabel;
 }
 
-export function formatTimeZoneOptionLabel(timeZone: string): string {
+export function formatTimeZoneOptionLabel(
+  timeZone: string,
+  locationLabel = getTimeZoneLocationFallback(timeZone),
+): string {
   const offsetLabel = formatTimeZoneOffsetLabel(timeZone);
-  return offsetLabel ? `${timeZone} (${offsetLabel})` : timeZone;
+  return offsetLabel
+    ? `${locationLabel} · ${timeZone} (${offsetLabel})`
+    : `${locationLabel} · ${timeZone}`;
 }

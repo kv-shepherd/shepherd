@@ -14,14 +14,12 @@ import Image from 'next/image';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
-    ThunderboltOutlined,
     LogoutOutlined,
-    SearchOutlined,
     DownOutlined,
     GithubOutlined,
 } from '@ant-design/icons';
 import { ProLayout } from '@ant-design/pro-components';
-import { AutoComplete, Button, Dropdown, Input, Typography, Avatar } from 'antd';
+import { Dropdown, Typography, Avatar } from 'antd';
 import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import {
@@ -32,12 +30,9 @@ import NotificationBell from '@/components/ui/NotificationBell';
 import LocalTimezoneBadge from '@/components/ui/LocalTimezoneBadge';
 import LanguageSwitcher from '@/components/ui/LanguageSwitcher';
 import {
-    canAccessAdminMenuRoute,
     hasAnyPermission,
 } from '@/lib/auth/permissions';
 import {
-    filterMenuSearchEntries,
-    flattenMenuRoutes,
     getMenuRoutes,
     resolveMenuHref,
 } from './appLayoutRoutes';
@@ -53,12 +48,13 @@ export default function AppLayout({
     const pathname = usePathname();
     const { t } = useTranslation('common');
     const { user, logout } = useAuthStore();
-    const canAccessApprovalCenter = canAccessAdminMenuRoute(user, 'approvalTasks');
+    const [isSiderCollapsed, setIsSiderCollapsed] = React.useState(false);
     const route = React.useMemo(
-        () => getMenuRoutes(t, (permissions) => hasAnyPermission(user, permissions)),
-        [t, user],
+        () => getMenuRoutes(t, (permissions) => hasAnyPermission(user, permissions), {
+            flattenAdmin: isSiderCollapsed,
+        }),
+        [isSiderCollapsed, t, user],
     );
-    const [menuSearch, setMenuSearch] = React.useState('');
     const secureDevOrigin = process.env.NEXT_PUBLIC_DEV_SECURE_ORIGIN?.trim() ?? '';
     const devIngressPort = process.env.NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT?.trim() ?? '';
 
@@ -90,55 +86,7 @@ export default function AppLayout({
         }
     }, [devIngressPort, secureDevOrigin]);
 
-    const quickActionItems = React.useMemo(() => {
-        const items = [
-            {
-                key: 'new-vm-request',
-                label: t('quick_actions.new_vm_request'),
-                onClick: () => router.push('/vms?request=create'),
-            },
-            {
-                key: 'my-requests',
-                label: t('quick_actions.open_my_requests'),
-                onClick: () => router.push('/tickets'),
-            },
-        ];
-        if (canAccessApprovalCenter) {
-            items.push({
-                key: 'approval-center',
-                label: t('quick_actions.open_approval_tasks'),
-                onClick: () => router.push('/admin/approval-tasks'),
-            });
-        }
-        return items;
-    }, [canAccessApprovalCenter, router, t]);
-
-    const searchableMenuEntries = React.useMemo(
-        () => flattenMenuRoutes(route.routes),
-        [route.routes],
-    );
     const displayName = user?.display_name ?? user?.username ?? 'User';
-    const filteredMenuEntries = React.useMemo(
-        () => filterMenuSearchEntries(searchableMenuEntries, menuSearch).slice(0, 8),
-        [menuSearch, searchableMenuEntries],
-    );
-
-    const menuSearchOptions = React.useMemo(
-        () => filteredMenuEntries.map((entry) => ({
-            value: entry.path,
-            label: (
-                <div className="app-shell-search-option">
-                    <span>{entry.label}</span>
-                    {entry.groupLabel ? (
-                        <Text type="secondary" className="app-shell-search-option__group">
-                            {entry.groupLabel}
-                        </Text>
-                    ) : null}
-                </div>
-            ),
-        })),
-        [filteredMenuEntries],
-    );
 
     const avatarSvg = encodeURIComponent(`
 <svg viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -158,6 +106,8 @@ export default function AppLayout({
             location={{ pathname }}
             fixSiderbar
             fixedHeader
+            collapsed={isSiderCollapsed}
+            onCollapse={setIsSiderCollapsed}
             layout="mix"
             splitMenus={false}
             headerTitleRender={(logo) => (
@@ -172,7 +122,10 @@ export default function AppLayout({
                 sider: {
                     colorMenuBackground: '#091423',
                     colorTextMenu: 'rgba(226, 232, 240, 0.8)',
+                    colorTextMenuItemHover: '#f8fafc',
                     colorTextMenuSelected: '#ffffff',
+                    colorBgMenuItemHover: 'rgba(59, 130, 246, 0.16)',
+                    colorBgMenuItemActive: 'rgba(59, 130, 246, 0.2)',
                     colorBgMenuItemSelected: 'rgba(37, 99, 235, 0.22)',
                 },
                 header: {
@@ -183,54 +136,26 @@ export default function AppLayout({
             actionsRender={() => [
                 <div
                     key="local-timezone"
-                    className="app-shell-toolbar-badge"
+                    className="app-shell-header-control app-shell-toolbar-badge"
                 >
                     <LocalTimezoneBadge />
                 </div>,
-                <div key="nav-search" className="app-shell-nav-search-wrapper">
-                    <AutoComplete
-                        className="app-shell-nav-search"
-                        style={{ width: 280 }}
-                        value={menuSearch}
-                        options={menuSearchOptions}
-                        onSearch={setMenuSearch}
-                        onChange={(value) => setMenuSearch(String(value))}
-                        onSelect={(value) => {
-                            setMenuSearch('');
-                            router.push(String(value));
-                        }}
-                        notFoundContent={t('nav.search_empty')}
-                    >
-                        <Input
-                            allowClear={true}
-                            prefix={<SearchOutlined />}
-                            placeholder={t('nav.search_placeholder')}
-                        />
-                    </AutoComplete>
-                </div>,
-                <Dropdown
-                    key="quick-actions"
-                    menu={{ items: quickActionItems }}
-                    placement="bottomRight"
+                <LanguageSwitcher
+                    key="language"
+                    buttonClassName="app-shell-header-control app-shell-header-control--language"
+                />,
+                <div
+                    key="notification"
+                    className="app-shell-header-control app-shell-header-control--notification"
                 >
-                    <Button
-                        type="primary"
-                        icon={<ThunderboltOutlined />}
-                        className="app-shell-action-button app-shell-action-button--primary"
-                        data-testid="quick-actions-trigger"
-                    >
-                        {t('quick_actions.label')}
-                    </Button>
-                </Dropdown>,
-                <LanguageSwitcher key="language" />,
-                <NotificationBell key="notification" />,
+                    <NotificationBell />
+                </div>,
             ]}
             menuItemRender={(item, dom) => {
                 const href = resolveMenuHref(item);
                 return href ? (
                     <Link
                         href={href}
-                        legacyBehavior={false}
                         style={{ width: '100%', display: 'block' }}
                         data-testid={`nav-item-${String(item.key || href)
                             .replace(/^\//, '')

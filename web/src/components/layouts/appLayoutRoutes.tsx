@@ -29,16 +29,14 @@ import {
 type TranslateFn = (key: string) => string;
 export type MenuRouteItem = NonNullable<NonNullable<ProLayoutProps['route']>['routes']>[number];
 type MenuPermissionChecker = boolean | ((permissions: readonly string[]) => boolean);
-interface MenuSearchEntry {
-    key: string;
-    path: string;
-    label: string;
-    groupLabel?: string;
-}
 
 interface AdminMenuRouteDefinition extends MenuRouteItem {
     routeKey: AdminMenuRouteKey;
     requiredPermissions: readonly string[];
+}
+
+interface MenuRouteOptions {
+    flattenAdmin?: boolean;
 }
 
 export const resolveMenuHref = (item: {
@@ -54,6 +52,7 @@ export const resolveMenuHref = (item: {
 export const getMenuRoutes = (
     t: TranslateFn,
     includeAdmin: MenuPermissionChecker,
+    options: MenuRouteOptions = {},
 ): NonNullable<ProLayoutProps['route']> => {
     const canAccessMenuItem =
         typeof includeAdmin === 'function'
@@ -173,7 +172,9 @@ export const getMenuRoutes = (
         icon: route.icon,
     }));
 
-    if (adminRoutes.length > 0) {
+    if (adminRoutes.length > 0 && options.flattenAdmin) {
+        routes.push(...adminRoutes);
+    } else if (adminRoutes.length > 0) {
         routes.push({
             key: 'admin',
             path: '/admin',
@@ -187,45 +188,4 @@ export const getMenuRoutes = (
         path: '/',
         routes,
     };
-};
-
-const normalizeSearchValue = (value: string): string =>
-    value.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, ' ').trim();
-
-export const flattenMenuRoutes = (routes: MenuRouteItem[] | undefined, parentLabel?: string): MenuSearchEntry[] => {
-    if (!routes || routes.length === 0) {
-        return [];
-    }
-    return routes.flatMap((route) => {
-        const currentLabel = typeof route.name === 'string' ? route.name : '';
-        const currentParentLabel = parentLabel && parentLabel !== currentLabel ? parentLabel : undefined;
-        const current: MenuSearchEntry[] = [];
-
-        if (!route.hideInMenu && typeof route.path === 'string' && route.path.trim() !== '' && !route.routes?.length) {
-            current.push({
-                key: String(route.key || route.path),
-                path: route.path,
-                label: currentLabel,
-                groupLabel: currentParentLabel,
-            });
-        }
-
-        return current.concat(flattenMenuRoutes(route.routes as MenuRouteItem[] | undefined, currentLabel || currentParentLabel));
-    });
-};
-
-export const filterMenuSearchEntries = (entries: MenuSearchEntry[], query: string): MenuSearchEntry[] => {
-    const normalizedQuery = normalizeSearchValue(query);
-    if (normalizedQuery === '') {
-        return entries;
-    }
-    const queryTerms = normalizedQuery.split(/\s+/).filter(Boolean);
-    return entries.filter((entry) => {
-        const haystack = normalizeSearchValue(
-            [entry.label, entry.groupLabel, entry.path]
-                .filter(Boolean)
-                .join(' '),
-        );
-        return queryTerms.every((term) => haystack.includes(term));
-    });
 };

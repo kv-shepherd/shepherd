@@ -19,10 +19,15 @@
   --accent-lime: #84cc16;
   --shell-sidebar: #091423;
   --shell-sidebar-raised: #102038;
+  --shell-sidebar-hover: rgba(59, 130, 246, 0.16);
+  --shell-sidebar-active: rgba(59, 130, 246, 0.2);
+  --shell-sidebar-selected: rgba(37, 99, 235, 0.24);
+  --shell-sidebar-text-hover: #f8fafc;
   --shell-sidebar-border: rgba(255, 255, 255, 0.08);
   --shell-shadow: 0 10px 24px rgba(15, 23, 42, 0.07);
   --shell-shadow-strong: 0 16px 32px rgba(15, 23, 42, 0.1);
   --shell-toolbar-height: 42px;
+  --shell-header-control-height: 40px;
   --font-ui-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
   --font-ui-sans-zh: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Helvetica, Arial, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei UI", "Microsoft YaHei", "Source Han Sans CN", "WenQuanYi Micro Hei", sans-serif;
   --font-ui-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -153,32 +158,119 @@ a {
 
 .app-shell-layout .ant-menu-item,
 .app-shell-layout .ant-menu-submenu-title {
+  width: calc(100% - 32px) !important;
   height: 44px !important;
   line-height: 44px !important;
-  margin-inline: 10px !important;
+  margin-inline: 16px !important;
   margin-block: 6px !important;
   border-radius: 8px !important;
 }
 
+.app-shell-layout .ant-menu-item .ant-pro-base-menu-item-icon,
+.app-shell-layout .ant-menu-item .anticon,
+.app-shell-layout .ant-menu-submenu-title .ant-pro-base-menu-item-icon,
+.app-shell-layout .ant-menu-submenu-title .anticon {
+  flex-shrink: 0 !important;
+  min-width: 14px;
+}
+
+
 .app-shell-layout .ant-menu-item-selected {
-  background: rgba(37, 99, 235, 0.22) !important;
-  box-shadow: inset 3px 0 0 rgba(96, 165, 250, 0.95);
+  color: #ffffff !important;
+  background: var(--shell-sidebar-selected) !important;
+  outline: 1px solid rgba(147, 197, 253, 0.5);
+  outline-offset: -1px;
+  box-shadow:
+    inset 0 0 0 1px rgba(59, 130, 246, 0.18),
+    0 10px 22px rgba(37, 99, 235, 0.16);
 }
 
 .app-shell-layout .ant-menu-item:not(.ant-menu-item-selected):hover,
 .app-shell-layout .ant-menu-submenu-title:hover {
-  background: rgba(255, 255, 255, 0.06) !important;
+  color: var(--shell-sidebar-text-hover) !important;
+  background: var(--shell-sidebar-hover) !important;
+}
+
+.app-shell-layout .ant-menu-item:active,
+.app-shell-layout .ant-menu-submenu-title:active {
+  color: var(--shell-sidebar-text-hover) !important;
+  background: var(--shell-sidebar-active) !important;
+}
+
+.app-shell-layout .ant-menu-item-selected .ant-pro-base-menu-item-title,
+.app-shell-layout .ant-menu-item-selected .ant-pro-base-menu-item-icon,
+.app-shell-layout .ant-menu-item-selected .anticon,
+.app-shell-layout .ant-menu-item:not(.ant-menu-item-selected):hover .ant-pro-base-menu-item-title,
+.app-shell-layout .ant-menu-item:not(.ant-menu-item-selected):hover .ant-pro-base-menu-item-icon,
+.app-shell-layout .ant-menu-item:not(.ant-menu-item-selected):hover .anticon,
+.app-shell-layout .ant-menu-submenu-title:hover .ant-pro-base-menu-item-title,
+.app-shell-layout .ant-menu-submenu-title:hover .ant-pro-base-menu-item-icon,
+.app-shell-layout .ant-menu-submenu-title:hover .anticon,
+.app-shell-layout .ant-menu-submenu-title:hover .ant-menu-submenu-arrow {
+  color: inherit !important;
+}
+
+.app-shell-layout .ant-layout-sider-collapsed .ant-menu-item,
+.app-shell-layout .ant-layout-sider-collapsed .ant-menu-submenu-title {
+  margin-inline: 8px !important;
+  padding-inline: 0 !important;
+  width: calc(100% - 16px) !important;
 }
 
 .app-shell-layout .ant-layout-header,
 .app-shell-layout .ant-pro-layout-header {
   border-bottom: 1px solid rgba(17, 24, 39, 0.06);
-  background: rgba(248, 250, 252, 0.94) !important;
-  backdrop-filter: blur(10px);
+  background: rgba(248, 250, 252, 0.96) !important;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.04);
+  backdrop-filter: blur(12px);
 }
 
 .app-shell-layout .ant-pro-global-header {
   padding-inline: 22px !important;
+}
+
+.app-shell-layout .ant-pro-global-header-right-content,
+.app-shell-layout .ant-pro-global-header-right-content > div {
+  display: flex;
+  align-items: center;
+}
+
+.app-shell-layout .ant-pro-global-header-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: var(--shell-header-control-height);
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.app-shell-layout .ant-pro-global-header-header-actions-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding-inline: 0 !important;
+}
+
+.app-shell-layout .ant-pro-global-header-header-actions-item > *,
+.app-shell-layout .ant-pro-global-header-header-actions-avatar {
+  padding: 0 !important;
+}
+
+.app-shell-layout .ant-pro-global-header-header-actions-hover > *:hover {
+  background: transparent !important;
+}
+
+.app-shell-layout .ant-pro-global-header-header-actions-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  margin-inline-start: 2px;
 }
 
 .app-shell-brand {
@@ -526,34 +618,6 @@ a {
   line-height: 1.65;
 }
 
-.app-shell-nav-search .ant-input-affix-wrapper {
-  height: var(--shell-toolbar-height);
-  min-height: var(--shell-toolbar-height);
-  padding-inline: 12px;
-  border-radius: 8px;
-  border-color: rgba(15, 23, 42, 0.08);
-  background: #ffffff;
-  box-shadow: none;
-}
-
-.app-shell-nav-search-wrapper {
-  display: flex;
-  align-items: center;
-}
-
-.app-shell-nav-search .ant-input {
-  font-size: 14px;
-}
-
-.app-shell-search-option {
-  display: flex;
-  flex-direction: column;
-}
-
-.app-shell-search-option__group {
-  font-size: 13px;
-}
-
 .app-shell-action-button.ant-btn {
   height: var(--shell-toolbar-height);
   padding-inline: 15px;
@@ -579,18 +643,33 @@ a {
   background: var(--accent-strong);
 }
 
+.app-shell-header-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--shell-header-control-height);
+}
+
 .app-shell-icon-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  height: var(--shell-toolbar-height);
-  min-height: var(--shell-toolbar-height);
-  padding-inline: 12px;
-  border: 1px solid var(--surface-border);
-  border-radius: 8px;
-  background: #ffffff;
+  height: var(--shell-header-control-height);
+  min-height: var(--shell-header-control-height);
+  padding-inline: 10px;
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
   box-shadow: none;
+}
+
+.app-shell-icon-action:hover,
+.app-shell-icon-action:focus-visible,
+.app-shell-profile-trigger:hover,
+.app-shell-profile-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 28%, white);
+  background: var(--accent-soft);
 }
 
 .app-shell-toolbar-badge {
@@ -600,15 +679,19 @@ a {
 }
 
 .app-shell-timezone-select {
-  width: 196px;
+  display: inline-flex !important;
+  align-items: center;
+  width: 188px;
+  height: var(--shell-header-control-height) !important;
 }
 
 .app-shell-timezone-select .ant-select-selector {
-  height: var(--shell-toolbar-height) !important;
+  flex: 1 1 auto;
+  height: var(--shell-header-control-height) !important;
   padding-inline: 12px !important;
-  border-radius: 8px !important;
-  border-color: rgba(15, 23, 42, 0.08) !important;
-  background: #ffffff !important;
+  border-radius: 10px !important;
+  border-color: rgba(203, 213, 225, 0.8) !important;
+  background: rgba(255, 255, 255, 0.82) !important;
   box-shadow: none !important;
 }
 
@@ -618,6 +701,7 @@ a {
 .app-shell-timezone-select .ant-select-selection-placeholder {
   display: flex;
   align-items: center;
+  height: 100%;
 }
 
 .app-shell-timezone-select .ant-select-selection-item,
@@ -635,18 +719,13 @@ a {
 .app-shell-profile-trigger {
   cursor: pointer;
   transition:
-    transform 0.2s ease,
     border-color 0.2s ease,
     background 0.2s ease;
 }
 
 .app-shell-lang-trigger {
   color: var(--foreground);
-}
-
-.app-shell-lang-trigger:hover,
-.app-shell-profile-trigger:hover {
-  transform: translateY(-1px);
+  width: 72px;
 }
 
 .app-shell-lang-trigger__label {
@@ -661,11 +740,11 @@ a {
   justify-content: flex-start;
   gap: 9px;
   max-width: 196px;
-  height: var(--shell-toolbar-height);
+  height: var(--shell-header-control-height);
   padding: 4px 10px 4px 4px;
-  border: 1px solid var(--surface-border);
-  border-radius: 8px;
-  background: #ffffff;
+  border: 1px solid rgba(203, 213, 225, 0.8);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
   box-shadow: none;
 }
 
@@ -697,16 +776,27 @@ a {
 }
 
 .app-shell-notification-trigger.ant-btn {
-  width: var(--shell-toolbar-height);
-  min-width: var(--shell-toolbar-height);
+  width: var(--shell-header-control-height);
+  min-width: var(--shell-header-control-height);
+  height: var(--shell-header-control-height);
   padding: 0;
+  border: 1px solid rgba(203, 213, 225, 0.8) !important;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82) !important;
   color: var(--foreground);
+}
+
+.app-shell-header-control--notification .ant-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .app-shell-notification-trigger.ant-btn:hover,
 .app-shell-notification-trigger.ant-btn:focus-visible {
   color: var(--foreground) !important;
-  background: #ffffff !important;
+  border-color: color-mix(in srgb, var(--accent) 28%, white) !important;
+  background: var(--accent-soft) !important;
 }
 
 .notification-bell-popover {
@@ -1622,7 +1712,9 @@ a {
 .workbench-overview-card__art {
   width: 24px;
   height: 24px;
-  flex: 0 0 auto;
+  flex-shrink: 0;
+  min-width: 24px;
+  min-height: 24px;
   opacity: 0.85;
 }
 
@@ -4097,19 +4189,8 @@ a {
     width: 164px;
   }
 
-  .app-shell-toolbar-badge,
-  .app-shell-nav-search-wrapper {
+  .app-shell-toolbar-badge {
     display: none !important;
-  }
-
-  .app-shell-action-button--primary[data-testid="quick-actions-trigger"].ant-btn {
-    width: var(--shell-toolbar-height);
-    min-width: var(--shell-toolbar-height);
-    padding: 0;
-  }
-
-  .app-shell-action-button--primary[data-testid="quick-actions-trigger"] > span:not(.ant-btn-icon) {
-    display: none;
   }
 
   .app-shell-profile-trigger {

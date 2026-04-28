@@ -298,7 +298,7 @@ export default function NotificationBell() {
             styles={{ body: { padding: 0 } }}
         >
             <Tooltip title={t('notification.title', 'Notifications')} open={open ? false : undefined}>
-                <Badge count={unreadCount} size="small" offset={[-2, 4]}>
+                <Badge count={unreadCount} size="small" offset={[-4, 6]}>
                     <Button
                         type="text"
                         className="app-shell-icon-action app-shell-notification-trigger"

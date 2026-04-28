@@ -1,8 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    filterMenuSearchEntries,
-    flattenMenuRoutes,
     getMenuRoutes,
     resolveMenuHref,
     type MenuRouteItem,
@@ -57,39 +55,13 @@ describe('getMenuRoutes', () => {
         expect(resolveMenuHref(admin ?? {})).toBe('/admin/approval-tasks');
     });
 
-    it('flattens visible leaf routes for global navigation search', () => {
-        const route = getMenuRoutes(t, true);
-        const entries = flattenMenuRoutes(route.routes as MenuRouteItem[]);
+    it('flattens admin routes when the sidebar is collapsed', () => {
+        const route = getMenuRoutes(t, true, { flattenAdmin: true });
+        const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
+        const approvalTasks = route.routes?.find((item: MenuRouteItem) => item.path === '/admin/approval-tasks');
 
-        expect(entries).toEqual(
-            expect.arrayContaining([
-                expect.objectContaining({
-                    path: '/systems',
-                    label: 'nav.systems',
-                }),
-                expect.objectContaining({
-                    path: '/notifications',
-                    label: 'nav.notifications',
-                }),
-                expect.objectContaining({
-                    path: '/admin/templates',
-                    label: 'nav.templates',
-                    groupLabel: 'nav.admin',
-                }),
-            ]),
-        );
-    });
-
-    it('filters flattened routes using case-insensitive fuzzy terms', () => {
-        const route = getMenuRoutes(t, true);
-        const entries = flattenMenuRoutes(route.routes as MenuRouteItem[]);
-        const results = filterMenuSearchEntries(entries, 'admin templ');
-
-        expect(results).toEqual([
-            expect.objectContaining({
-                path: '/admin/templates',
-            }),
-        ]);
+        expect(admin).toBeUndefined();
+        expect(approvalTasks?.name).toBe('nav.approval_tasks');
     });
 
     it('filters cluster admin routes by canonical permission groups', () => {
