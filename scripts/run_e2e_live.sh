@@ -1347,11 +1347,10 @@ export PW_BASE_URL
 export E2E_RUN_DIR
 export DATABASE_AUTO_MIGRATE="${DATABASE_AUTO_MIGRATE:-false}"
 export DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS="${DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS:-true}"
-export SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-0123456789abcdef0123456789abcdef}"
-export SECURITY_ENCRYPTION_KEY="${SECURITY_ENCRYPTION_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}"
-# Strict live e2e runs on random Playwright web ports; allow all origins in this
-# test harness to prevent CORS false negatives unrelated to product behavior.
-export SERVER_UNSAFE_ALLOW_ALL_ORIGINS="${SERVER_UNSAFE_ALLOW_ALL_ORIGINS:-true}"
+export SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-}"
+export SECURITY_ENCRYPTION_KEY="${SECURITY_ENCRYPTION_KEY:-}"
+export SERVER_ALLOWED_ORIGINS="${SERVER_ALLOWED_ORIGINS:-${PW_BASE_URL}}"
+export SERVER_UNSAFE_ALLOW_ALL_ORIGINS="${SERVER_UNSAFE_ALLOW_ALL_ORIGINS:-false}"
 # Unified live E2E auth defaults (master-flow first-login reality):
 # default account is admin/admin, and first-login password change target is admin123.
 DEFAULT_E2E_USERNAME="${E2E_USERNAME:-${E2E_ADMIN_USERNAME:-admin}}"

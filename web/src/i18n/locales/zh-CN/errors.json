@@ -4,6 +4,7 @@
   "CLUSTER_UNHEALTHY": "集群 '{{cluster}}' 当前不可用",
   "APPROVAL_REQUIRED": "此操作需要审批",
   "INVALID_CREDENTIALS": "用户名或密码无效",
+  "LOGIN_RATE_LIMITED": "登录尝试过多，请稍后再试。",
   "POPUP_BLOCKED": "浏览器阻止了登录弹窗",
   "EXTERNAL_AUTH_START_FAILED": "发起外部登录失败",
   "AUTH_LOGIN_MODE_UNAVAILABLE": "当前登录方式只能在企业微信客户端中使用。",

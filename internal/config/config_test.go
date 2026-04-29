@@ -29,6 +29,9 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Server.UnsafeAllowAllOrigins {
 		t.Errorf("Server.UnsafeAllowAllOrigins = %v, want false", cfg.Server.UnsafeAllowAllOrigins)
 	}
+	if cfg.Server.UnsafeAllowAllOriginsAck != "" {
+		t.Errorf("Server.UnsafeAllowAllOriginsAck = %q, want empty", cfg.Server.UnsafeAllowAllOriginsAck)
+	}
 	if cfg.Server.PublicBaseURL != "" {
 		t.Errorf("Server.PublicBaseURL = %q, want empty", cfg.Server.PublicBaseURL)
 	}
@@ -78,6 +81,18 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Security.PasswordPolicy.Mode != "nist" {
 		t.Errorf("PasswordPolicy.Mode = %q, want nist", cfg.Security.PasswordPolicy.Mode)
 	}
+	if !cfg.Security.LoginRateLimit.Enabled {
+		t.Errorf("LoginRateLimit.Enabled = %v, want true", cfg.Security.LoginRateLimit.Enabled)
+	}
+	if cfg.Security.LoginRateLimit.MaxFailures != 5 {
+		t.Errorf("LoginRateLimit.MaxFailures = %d, want 5", cfg.Security.LoginRateLimit.MaxFailures)
+	}
+	if cfg.Security.LoginRateLimit.Window != 15*time.Minute {
+		t.Errorf("LoginRateLimit.Window = %v, want 15m", cfg.Security.LoginRateLimit.Window)
+	}
+	if cfg.Security.LoginRateLimit.BlockDuration != 15*time.Minute {
+		t.Errorf("LoginRateLimit.BlockDuration = %v, want 15m", cfg.Security.LoginRateLimit.BlockDuration)
+	}
 	if !cfg.Session.HTTPOnly {
 		t.Errorf("Session.HTTPOnly = %v, want true", cfg.Session.HTTPOnly)
 	}
@@ -126,7 +141,7 @@ func TestDatabaseConfig_DSN(t *testing.T) {
 				Password: "pass",
 				Database: "db",
 			},
-			want: "postgres://user:pass@localhost:5432/db?sslmode=disable",
+			want: "postgres://user:pass@localhost:5432/db?sslmode=require",
 		},
 	}
 
@@ -161,6 +176,7 @@ func TestLoad_ServerCORSFlagsFromEnv(t *testing.T) {
 	t.Setenv("SERVER_ALLOWED_ORIGINS", "https://example.com")
 	t.Setenv("SERVER_ALLOW_CREDENTIALS", "false")
 	t.Setenv("SERVER_UNSAFE_ALLOW_ALL_ORIGINS", "true")
+	t.Setenv("SERVER_UNSAFE_ALLOW_ALL_ORIGINS_ACK", unsafeAllowAllOriginsAckValue)
 
 	cfg, err := Load()
 	if err != nil {
@@ -178,6 +194,9 @@ func TestLoad_ServerCORSFlagsFromEnv(t *testing.T) {
 	}
 	if !cfg.Server.UnsafeAllowAllOrigins {
 		t.Fatalf("Server.UnsafeAllowAllOrigins = %v, want true", cfg.Server.UnsafeAllowAllOrigins)
+	}
+	if cfg.Server.UnsafeAllowAllOriginsAck != unsafeAllowAllOriginsAckValue {
+		t.Fatalf("Server.UnsafeAllowAllOriginsAck = %q, want %q", cfg.Server.UnsafeAllowAllOriginsAck, unsafeAllowAllOriginsAckValue)
 	}
 }
 
@@ -289,5 +308,50 @@ func TestLoad_SecuritySecretsFromEnv(t *testing.T) {
 	}
 	if got := cfg.Security.EncryptionKey; got != "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" {
 		t.Fatalf("Security.EncryptionKey = %q, want env value", got)
+	}
+}
+
+func TestLoad_UnsafeAllowAllOriginsRequiresAck(t *testing.T) {
+	t.Setenv("SERVER_ALLOW_CREDENTIALS", "false")
+	t.Setenv("SERVER_UNSAFE_ALLOW_ALL_ORIGINS", "true")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error when unsafe wildcard CORS is enabled without ack")
+	}
+	want := `validate config: server.unsafe_allow_all_origins requires server.unsafe_allow_all_origins_ack="I_UNDERSTAND_THIS_IS_UNSAFE"`
+	if got := err.Error(); got != want {
+		t.Fatalf("Load() error = %q, want %q", got, want)
+	}
+}
+
+func TestLoad_UnsafeAllowAllOriginsRejectsCredentials(t *testing.T) {
+	t.Setenv("SERVER_ALLOW_CREDENTIALS", "true")
+	t.Setenv("SERVER_UNSAFE_ALLOW_ALL_ORIGINS", "true")
+	t.Setenv("SERVER_UNSAFE_ALLOW_ALL_ORIGINS_ACK", unsafeAllowAllOriginsAckValue)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error when unsafe wildcard CORS keeps credentials enabled")
+	}
+	want := "validate config: server.allow_credentials must be false when server.unsafe_allow_all_origins is enabled"
+	if got := err.Error(); got != want {
+		t.Fatalf("Load() error = %q, want %q", got, want)
+	}
+}
+
+func TestLoad_UnsafeAllowAllOriginsRejectedInReleaseMode(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+	t.Setenv("SERVER_ALLOW_CREDENTIALS", "false")
+	t.Setenv("SERVER_UNSAFE_ALLOW_ALL_ORIGINS", "true")
+	t.Setenv("SERVER_UNSAFE_ALLOW_ALL_ORIGINS_ACK", unsafeAllowAllOriginsAckValue)
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error when unsafe wildcard CORS is enabled in release mode")
+	}
+	want := "validate config: server.unsafe_allow_all_origins must remain false when GIN_MODE=release"
+	if got := err.Error(); got != want {
+		t.Fatalf("Load() error = %q, want %q", got, want)
 	}
 }

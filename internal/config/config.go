@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -42,7 +43,8 @@ type ServerConfig struct {
 	AllowedOrigins      []string      `mapstructure:"allowed_origins"`
 	AllowCredentials    bool          `mapstructure:"allow_credentials"`
 	// UnsafeAllowAllOrigins disables origin allowlist checks and must only be used in trusted local development.
-	UnsafeAllowAllOrigins bool `mapstructure:"unsafe_allow_all_origins"`
+	UnsafeAllowAllOrigins    bool   `mapstructure:"unsafe_allow_all_origins"`
+	UnsafeAllowAllOriginsAck string `mapstructure:"unsafe_allow_all_origins_ack"`
 }
 
 // DatabaseConfig contains PostgreSQL connection settings.
@@ -79,7 +81,7 @@ func (c DatabaseConfig) DSN() string {
 	}
 	sslmode := c.SSLMode
 	if sslmode == "" {
-		sslmode = "disable"
+		sslmode = "require"
 	}
 	return fmt.Sprintf(
 		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
@@ -124,6 +126,7 @@ type SecurityConfig struct {
 	SessionSecret       string         `mapstructure:"session_secret"` //nolint:gosec // Configuration schema intentionally models a secret field.
 	JWTVerificationKeys []string       `mapstructure:"jwt_verification_keys"`
 	PasswordPolicy      PasswordPolicy `mapstructure:"password_policy"`
+	LoginRateLimit      LoginRateLimit `mapstructure:"login_rate_limit"`
 }
 
 // PasswordPolicy defines password validation rules.
@@ -136,11 +139,21 @@ type PasswordPolicy struct {
 	RequireSpecial   bool   `mapstructure:"require_special"`
 }
 
+// LoginRateLimit defines application-layer throttling for login attempts.
+type LoginRateLimit struct {
+	Enabled       bool          `mapstructure:"enabled"`
+	MaxFailures   int           `mapstructure:"max_failures"`
+	Window        time.Duration `mapstructure:"window"`
+	BlockDuration time.Duration `mapstructure:"block_duration"`
+}
+
 // WorkerConfig contains worker pool settings.
 type WorkerConfig struct {
 	GeneralPoolSize int `mapstructure:"general_pool_size"`
 	K8sPoolSize     int `mapstructure:"k8s_pool_size"`
 }
+
+const unsafeAllowAllOriginsAckValue = "I_UNDERSTAND_THIS_IS_UNSAFE"
 
 // Load reads configuration from file and environment variables.
 // ADR-0018: Standard environment variables without prefix (DATABASE_URL, SERVER_PORT, etc.).
@@ -207,12 +220,41 @@ func (c *Config) Validate() error {
 	if c.Server.MaxRequestBodyBytes < 0 {
 		return fmt.Errorf("server.max_request_body_bytes must be >= 0")
 	}
+	if c.Server.UnsafeAllowAllOrigins {
+		if strings.TrimSpace(c.Server.UnsafeAllowAllOriginsAck) != unsafeAllowAllOriginsAckValue {
+			return fmt.Errorf(
+				"server.unsafe_allow_all_origins requires server.unsafe_allow_all_origins_ack=%q",
+				unsafeAllowAllOriginsAckValue,
+			)
+		}
+		if c.Server.AllowCredentials {
+			return fmt.Errorf("server.allow_credentials must be false when server.unsafe_allow_all_origins is enabled")
+		}
+		if isReleaseMode() {
+			return fmt.Errorf("server.unsafe_allow_all_origins must remain false when GIN_MODE=release")
+		}
+	}
+	if c.Security.LoginRateLimit.Enabled {
+		if c.Security.LoginRateLimit.MaxFailures < 1 {
+			return fmt.Errorf("security.login_rate_limit.max_failures must be >= 1")
+		}
+		if c.Security.LoginRateLimit.Window <= 0 {
+			return fmt.Errorf("security.login_rate_limit.window must be > 0")
+		}
+		if c.Security.LoginRateLimit.BlockDuration <= 0 {
+			return fmt.Errorf("security.login_rate_limit.block_duration must be > 0")
+		}
+	}
 	if key := strings.TrimSpace(c.Security.EncryptionKey); key != "" {
 		if _, err := c.Security.DecodeEncryptionKey(); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func isReleaseMode() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("GIN_MODE")), "release")
 }
 
 // ValidateResolvedSecuritySecrets validates the runtime-required security
@@ -255,6 +297,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.allowed_origins", []string{"http://localhost:3000", "http://127.0.0.1:3000"})
 	v.SetDefault("server.allow_credentials", true)
 	v.SetDefault("server.unsafe_allow_all_origins", false)
+	v.SetDefault("server.unsafe_allow_all_origins_ack", "")
 
 	// Database (ADR-0012 shared pool)
 	v.SetDefault("database.url", "")
@@ -263,7 +306,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("database.user", "shepherd")
 	v.SetDefault("database.password", "")
 	v.SetDefault("database.database", "shepherd")
-	v.SetDefault("database.sslmode", "disable")
+	v.SetDefault("database.sslmode", "require")
 	v.SetDefault("database.max_conns", 50)
 	v.SetDefault("database.min_conns", 5)
 	v.SetDefault("database.max_conn_lifetime", "1h")
@@ -274,7 +317,7 @@ func setDefaults(v *viper.Viper) {
 	// Session (PostgreSQL-based, replaces Redis)
 	v.SetDefault("session.lifetime", "24h")
 	v.SetDefault("session.idle_timeout", "30m")
-	v.SetDefault("session.cookie", "session_id")
+	v.SetDefault("session.cookie", "shepherd_session")
 	v.SetDefault("session.secure", true)
 	v.SetDefault("session.http_only", true)
 
@@ -294,6 +337,10 @@ func setDefaults(v *viper.Viper) {
 	// Security (ADR-0025)
 	v.SetDefault("security.password_policy.mode", "nist")
 	v.SetDefault("security.jwt_verification_keys", []string{})
+	v.SetDefault("security.login_rate_limit.enabled", true)
+	v.SetDefault("security.login_rate_limit.max_failures", 5)
+	v.SetDefault("security.login_rate_limit.window", "15m")
+	v.SetDefault("security.login_rate_limit.block_duration", "15m")
 
 	// Worker Pool (ADR-0031)
 	v.SetDefault("worker.general_pool_size", 100)
@@ -311,6 +358,7 @@ func bindEnvKeys(v *viper.Viper) {
 		"server.allowed_origins",
 		"server.allow_credentials",
 		"server.unsafe_allow_all_origins",
+		"server.unsafe_allow_all_origins_ack",
 		"database.url",
 		"database.host",
 		"database.port",
@@ -346,6 +394,10 @@ func bindEnvKeys(v *viper.Viper) {
 		"security.password_policy.require_lowercase",
 		"security.password_policy.require_digit",
 		"security.password_policy.require_special",
+		"security.login_rate_limit.enabled",
+		"security.login_rate_limit.max_failures",
+		"security.login_rate_limit.window",
+		"security.login_rate_limit.block_duration",
 		"worker.general_pool_size",
 		"worker.k8s_pool_size",
 	} {

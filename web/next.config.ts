@@ -13,6 +13,29 @@ const allowedDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const isProduction = process.env.NODE_ENV === "production";
+
+function buildContentSecurityPolicy(): string {
+  const scriptSources = ["'self'", "'unsafe-inline'"];
+  if (!isProduction) {
+    scriptSources.push("'unsafe-eval'");
+  }
+
+  return [
+    "default-src 'self'",
+    `script-src ${scriptSources.join(" ")}`,
+    "style-src 'self' 'unsafe-inline'",
+    "img-src 'self' data: blob:",
+    "font-src 'self' data:",
+    "connect-src 'self' ws: wss:",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+    "frame-ancestors 'none'",
+  ].join("; ");
+}
+
+const contentSecurityPolicy = buildContentSecurityPolicy();
 
 const nextConfig: NextConfig = {
   allowedDevOrigins,
@@ -59,12 +82,34 @@ const nextConfig: NextConfig = {
 
     return [
       {
-        source: "/health/:path*",
-        destination: `${apiUrl}/health/:path*`,
-      },
-      {
         source: "/api/v1/:path*",
         destination: `${apiUrl}/api/v1/:path*`,
+      },
+    ];
+  },
+
+  async headers() {
+    const securityHeaders = [
+      { key: "Content-Security-Policy", value: contentSecurityPolicy },
+      { key: "X-Frame-Options", value: "DENY" },
+      { key: "X-Content-Type-Options", value: "nosniff" },
+      { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+      {
+        key: "Permissions-Policy",
+        value: "camera=(), microphone=(), geolocation=()",
+      },
+    ];
+    if (isProduction) {
+      securityHeaders.push({
+        key: "Strict-Transport-Security",
+        value: "max-age=31536000; includeSubDomains",
+      });
+    }
+
+    return [
+      {
+        source: "/:path*",
+        headers: securityHeaders,
       },
     ];
   },

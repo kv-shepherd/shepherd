@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -84,6 +85,9 @@ func buildCORSConfig(cfg *config.Config, checker corsOriginChecker) cors.Config 
 
 	if checker != nil {
 		corsCfg.AllowOriginWithContextFunc = func(c *gin.Context, origin string) bool {
+			if isExternalAuthCallbackRequest(c) {
+				return true
+			}
 			return checker.IsAllowedOrigin(c.Request.Context(), origin)
 		}
 		return corsCfg
@@ -103,6 +107,22 @@ func sanitizeAllowedOrigins(origins []string) []string {
 		cleaned = append(cleaned, origin)
 	}
 	return slices.Compact(cleaned)
+}
+
+func isExternalAuthCallbackRequest(c *gin.Context) bool {
+	if c == nil || c.Request == nil || c.Request.URL == nil {
+		return false
+	}
+	switch c.Request.Method {
+	case http.MethodGet, http.MethodPost:
+	default:
+		return false
+	}
+	return isExternalAuthCallbackPath(c.Request.URL.Path)
+}
+
+func isExternalAuthCallbackPath(path string) bool {
+	return strings.HasPrefix(path, "/api/v1/auth/providers/") && strings.HasSuffix(path, "/callback")
 }
 
 // jwtSkipPublic returns middleware that applies JWT auth only on non-public routes.

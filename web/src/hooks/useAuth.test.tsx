@@ -46,10 +46,11 @@ import { useAuth } from "./useAuth";
 
 function resetAuthStore() {
   useAuthStore.setState({
-    token: null,
     user: null,
     isAuthenticated: false,
     forcePasswordChange: false,
+    hasHydrated: true,
+    hasValidatedSession: false,
   });
 }
 
@@ -60,7 +61,7 @@ describe("useAuth", () => {
     resetAuthStore();
   });
 
-  it("stores token and redirects to dashboard on successful login", async () => {
+  it("stores session user and redirects to dashboard on successful login", async () => {
     postMock.mockResolvedValue({
       data: {
         token: "token-1",
@@ -80,11 +81,11 @@ describe("useAuth", () => {
     });
 
     expect(pushMock).toHaveBeenCalledWith("/dashboard");
-    expect(useAuthStore.getState().token).toBe("token-1");
     expect(useAuthStore.getState().user).toEqual({
       id: "u-1",
       username: "alice",
     });
+    expect(useAuthStore.getState().isAuthenticated).toBe(true);
   });
 
   it("redirects to change-password when backend requires password reset", async () => {
@@ -148,18 +149,20 @@ describe("useAuth", () => {
     expect(tMock).toHaveBeenCalledWith("INVALID_CREDENTIALS");
   });
 
-  it("clears auth state and redirects to login on logout", () => {
+  it("clears auth state and redirects to login on logout", async () => {
+    postMock.mockResolvedValue({});
     useAuthStore
       .getState()
-      .login("token-logout", { id: "u-9", username: "eve" }, false);
+      .login({ id: "u-9", username: "eve" }, false);
 
     const { result } = renderHook(() => useAuth());
-    act(() => {
-      result.current.logout();
+    await act(async () => {
+      await result.current.logout();
     });
 
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
-    expect(useAuthStore.getState().token).toBeNull();
+    expect(useAuthStore.getState().user).toBeNull();
+    expect(postMock).toHaveBeenCalledWith("/auth/logout");
     expect(pushMock).toHaveBeenCalledWith("/login");
     expect(window.sessionStorage.getItem("shepherd-login-entry-override")).toBe("/login");
   });
@@ -215,7 +218,7 @@ describe("useAuth", () => {
         }),
       );
       expect(assignMock).toHaveBeenCalledWith("https://login.example.com/start");
-      expect(useAuthStore.getState().token).toBeNull();
+      expect(useAuthStore.getState().user).toBeNull();
       expect(pushMock).not.toHaveBeenCalled();
     } finally {
       Object.defineProperty(window, "location", {
@@ -225,7 +228,7 @@ describe("useAuth", () => {
     }
   });
 
-  it("submits credential-based provider login and stores the returned token", async () => {
+  it("submits credential-based provider login and stores the returned session user", async () => {
     postMock.mockResolvedValue({
       data: {
         token: "token-ldap",
@@ -260,7 +263,10 @@ describe("useAuth", () => {
         }),
       }),
     );
-    expect(useAuthStore.getState().token).toBe("token-ldap");
+    expect(useAuthStore.getState().user).toEqual({
+      id: "u-ldap",
+      username: "alice",
+    });
     expect(pushMock).toHaveBeenCalledWith("/dashboard");
   });
 });

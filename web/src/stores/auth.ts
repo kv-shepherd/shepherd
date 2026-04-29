@@ -1,8 +1,8 @@
 /**
  * Authentication store (Zustand 5 — ADR-0020).
  *
- * Manages JWT token, user info, and auth state.
- * Persisted to localStorage under key 'shepherd-auth'.
+ * Manages user info and auth state.
+ * Persisted schema is intentionally empty so browser storage cannot retain tokens.
  *
  * AGENTS.md §3.5: Exported for use in AuthGuard and API middleware.
  */
@@ -15,18 +15,20 @@ type UserInfo = components['schemas']['UserInfo'];
 
 interface AuthState {
     // State
-    token: string | null;
     user: UserInfo | null;
     isAuthenticated: boolean;
     forcePasswordChange: boolean;
     hasHydrated: boolean;
+    hasValidatedSession: boolean;
 
     // Actions
-    login: (token: string, user: UserInfo, forcePasswordChange?: boolean) => void;
+    login: (user: UserInfo, forcePasswordChange?: boolean) => void;
+    restoreSession: (user: UserInfo) => void;
     logout: () => void;
     updateUser: (user: UserInfo) => void;
     clearForcePasswordChange: () => void;
     setHasHydrated: (value: boolean) => void;
+    setHasValidatedSession: (value: boolean) => void;
 }
 
 /** Zustand store key used in localStorage */
@@ -36,37 +38,57 @@ export const useAuthStore = create<AuthState>()(
     persist(
         (set) => ({
             // Initial state
-            token: null,
             user: null,
             isAuthenticated: false,
             forcePasswordChange: false,
             hasHydrated: false,
+            hasValidatedSession: false,
 
             // Actions
-            login: (token, user, forcePasswordChange = false) =>
+            login: (user, forcePasswordChange = false) =>
                 set({
-                    token,
                     user,
                     isAuthenticated: true,
                     forcePasswordChange,
+                    hasValidatedSession: true,
+                }),
+
+            restoreSession: (user) =>
+                set({
+                    user,
+                    isAuthenticated: true,
+                    forcePasswordChange: user.force_password_change ?? false,
+                    hasValidatedSession: true,
                 }),
 
             logout: () =>
                 set({
-                    token: null,
                     user: null,
                     isAuthenticated: false,
                     forcePasswordChange: false,
+                    hasValidatedSession: true,
                 }),
 
-            updateUser: (user) => set({ user }),
+            updateUser: (user) =>
+                set((state) => ({
+                    user,
+                    forcePasswordChange: user.force_password_change ?? state.forcePasswordChange,
+                })),
 
-            clearForcePasswordChange: () => set({ forcePasswordChange: false }),
+            clearForcePasswordChange: () =>
+                set((state) => ({
+                    forcePasswordChange: false,
+                    user: state.user
+                        ? { ...state.user, force_password_change: false }
+                        : state.user,
+                })),
 
             setHasHydrated: (value) => set({ hasHydrated: value }),
+            setHasValidatedSession: (value) => set({ hasValidatedSession: value }),
         }),
         {
             name: AUTH_STORAGE_KEY,
+            version: 1,
             storage: createJSONStorage(() =>
                 typeof window !== 'undefined' ? localStorage : {
                     getItem: () => null,
@@ -74,11 +96,8 @@ export const useAuthStore = create<AuthState>()(
                     removeItem: () => { },
                 }
             ),
-            partialize: (state) => ({
-                token: state.token,
-                user: state.user,
-                isAuthenticated: state.isAuthenticated,
-            }),
+            migrate: () => ({}),
+            partialize: () => ({}),
             onRehydrateStorage: () => (state) => {
                 state?.setHasHydrated(true);
             },

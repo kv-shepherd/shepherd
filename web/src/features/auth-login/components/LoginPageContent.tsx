@@ -90,6 +90,7 @@ export default function LoginPageContent() {
     const { t: tErrors } = useTranslation('errors');
     const { login, startExternalLogin, submitExternalCredentialLogin, isAuthenticated, forcePasswordChange } = useAuth();
     const hasHydrated = useAuthStore((state) => state.hasHydrated);
+    const hasValidatedSession = useAuthStore((state) => state.hasValidatedSession);
     const [loading, setLoading] = useState(false);
     const [externalLoadingKey, setExternalLoadingKey] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -101,7 +102,7 @@ export default function LoginPageContent() {
     const providersQuery = useApiGet<LoginAuthProviderList>(
         ['login-auth-providers'],
         () => api.GET('/auth/providers'),
-        { enabled: mounted && hasHydrated && !isAuthenticated },
+        { enabled: mounted && hasHydrated && hasValidatedSession && !isAuthenticated },
     );
 
     useEffect(() => {
@@ -109,11 +110,11 @@ export default function LoginPageContent() {
     }, []);
 
     useEffect(() => {
-        if (!mounted || !hasHydrated || !isAuthenticated) {
+        if (!mounted || !hasHydrated || !hasValidatedSession || !isAuthenticated) {
             return;
         }
         router.replace(forcePasswordChange ? '/auth/change-password' : '/');
-    }, [forcePasswordChange, hasHydrated, isAuthenticated, mounted, router]);
+    }, [forcePasswordChange, hasHydrated, hasValidatedSession, isAuthenticated, mounted, router]);
 
     const showDevLoginHint = typeof window !== 'undefined'
         && isLocalOrCodespacesDemoHost(window.location.hostname);
@@ -253,7 +254,7 @@ export default function LoginPageContent() {
         });
     };
 
-    if (!mounted || !hasHydrated || isAuthenticated) {
+    if (!mounted || !hasHydrated || !hasValidatedSession || isAuthenticated) {
         return null;
     }
 

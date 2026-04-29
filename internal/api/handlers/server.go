@@ -18,6 +18,7 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
+	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
 	approvalbuiltin "kv-shepherd.io/shepherd/internal/governance/approval/builtin"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
@@ -50,6 +51,10 @@ type Server struct {
 	authProviderConfig   *configcodec.AuthProviderConfigCodec
 	publicBaseURL        string
 	allowedOrigins       []string
+	sessionCfg           config.SessionConfig
+	passwordPolicy       config.PasswordPolicy
+	loginRateLimitCfg    config.LoginRateLimit
+	loginRateLimiter     *loginAttemptLimiter
 	settingsMu           sync.RWMutex
 	externalAuthBaseURL  string
 	refreshClusterHealth func(context.Context, string) error
@@ -80,6 +85,9 @@ type ServerDeps struct {
 	Notifier             *notification.Triggers // Optional: notification trigger service
 	PublicBaseURL        string
 	AllowedOrigins       []string
+	SessionConfig        config.SessionConfig
+	PasswordPolicy       config.PasswordPolicy
+	LoginRateLimitConfig config.LoginRateLimit
 }
 
 // NewServer creates a new Server with all dependencies.
@@ -122,6 +130,10 @@ func NewServer(deps ServerDeps) *Server {
 		authProviderConfig:   configcodec.NewAuthProviderConfigCodec(deps.EncryptionKey),
 		publicBaseURL:        deps.PublicBaseURL,
 		allowedOrigins:       append([]string(nil), deps.AllowedOrigins...),
+		sessionCfg:           deps.SessionConfig,
+		passwordPolicy:       deps.PasswordPolicy,
+		loginRateLimitCfg:    normalizeLoginRateLimitConfig(deps.LoginRateLimitConfig),
+		loginRateLimiter:     newLoginAttemptLimiter(deps.LoginRateLimitConfig),
 		refreshClusterHealth: deps.RefreshClusterHealth,
 		riverClient:          deps.RiverClient,
 		notifier:             deps.Notifier,

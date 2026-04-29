@@ -4,6 +4,7 @@
   "CLUSTER_UNHEALTHY": "Cluster '{{cluster}}' is currently unavailable",
   "APPROVAL_REQUIRED": "This action requires approval",
   "INVALID_CREDENTIALS": "Invalid username or password",
+  "LOGIN_RATE_LIMITED": "Too many login attempts. Try again later.",
   "POPUP_BLOCKED": "The login popup was blocked by the browser",
   "EXTERNAL_AUTH_START_FAILED": "Failed to start external login",
   "AUTH_LOGIN_MODE_UNAVAILABLE": "This login mode is only available inside the WeCom client.",

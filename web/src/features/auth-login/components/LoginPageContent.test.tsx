@@ -17,6 +17,7 @@ const authHookState = {
 
 const authStoreState = {
     hasHydrated: true,
+    hasValidatedSession: true,
 };
 
 vi.mock('next/image', () => ({
@@ -90,6 +91,7 @@ describe('LoginPageContent', () => {
         authHookState.isAuthenticated = false;
         authHookState.forcePasswordChange = false;
         authStoreState.hasHydrated = true;
+        authStoreState.hasValidatedSession = true;
         replaceMock.mockReset();
     });
 

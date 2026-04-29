@@ -3781,6 +3781,12 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Login rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '404':
           $ref: '#/components/responses/NotFound'
 
@@ -3877,6 +3883,12 @@ paths:
                 $ref: '#/components/schemas/LoginResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: Login rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
 
   /auth/me:
     get:
@@ -3895,6 +3907,22 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/UserInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+  /auth/logout:
+    post:
+      tags: [auth]
+      summary: Clear current authentication session
+      operationId: logout
+      security:
+        - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: false
+      responses:
+        '204':
+          description: Session cleared successfully
         '401':
           $ref: '#/components/responses/Unauthorized'
 
@@ -6908,6 +6936,8 @@ components:
           type: array
           items:
             type: string
+        force_password_change:
+          type: boolean
         created_at:
           type: string
           format: date-time

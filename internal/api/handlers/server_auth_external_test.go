@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
@@ -21,6 +22,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
+	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
@@ -484,20 +486,21 @@ func TestCompleteLoginAuthProviderGet_JITProvisionsUserAndReturnsBridge(t *testi
 	if !strings.Contains(w.Body.String(), `"return_to":"https://console.example.com/login"`) {
 		t.Fatalf("callback body missing return_to payload: %s", w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), `"username":"`+username+`"`) {
-		t.Fatalf("callback body missing user payload: %s", w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), `window.localStorage.setItem(authStorageKey`) {
-		t.Fatalf("callback body missing localStorage bridge: %s", w.Body.String())
+	if strings.Contains(w.Body.String(), `"token":"`) {
+		t.Fatalf("callback body should not embed token payload: %s", w.Body.String())
 	}
 	if !strings.Contains(w.Body.String(), `window.location.replace(successTarget)`) {
 		t.Fatalf("callback body missing success redirect: %s", w.Body.String())
 	}
-	tokenMatch := regexp.MustCompile(`"token":"([^"]+)"`).FindStringSubmatch(w.Body.String())
-	if len(tokenMatch) != 2 {
-		t.Fatalf("callback body missing token payload: %s", w.Body.String())
+	cookieHeader := w.Header().Get("Set-Cookie")
+	if !strings.Contains(cookieHeader, "shepherd_session=") {
+		t.Fatalf("callback response missing auth session cookie: %s", cookieHeader)
 	}
-	claims, err := srv.jwtCfg.ValidateToken(t.Context(), tokenMatch[1])
+	cookieMatch := regexp.MustCompile(`shepherd_session=([^;]+)`).FindStringSubmatch(cookieHeader)
+	if len(cookieMatch) != 2 {
+		t.Fatalf("unable to extract auth session cookie: %s", cookieHeader)
+	}
+	claims, err := srv.jwtCfg.ValidateToken(t.Context(), cookieMatch[1])
 	if err != nil {
 		t.Fatalf("validate callback token: %v", err)
 	}
@@ -667,6 +670,9 @@ func TestSubmitLoginAuthProvider_CredentialMode_JITProvisionsUserAndReturnsLogin
 	if strings.TrimSpace(resp.Token) == "" {
 		t.Fatalf("token = %q, want non-empty", resp.Token)
 	}
+	if !strings.Contains(w.Header().Get("Set-Cookie"), "shepherd_session=") {
+		t.Fatalf("submit response missing auth session cookie: %s", w.Header().Get("Set-Cookie"))
+	}
 	claims, err := srv.jwtCfg.ValidateToken(t.Context(), resp.Token)
 	if err != nil {
 		t.Fatalf("validate token: %v", err)
@@ -689,6 +695,65 @@ func TestSubmitLoginAuthProvider_CredentialMode_JITProvisionsUserAndReturnsLogin
 	}
 	if createdUser.Username != username {
 		t.Fatalf("created username = %q, want %q", createdUser.Username, username)
+	}
+}
+
+func TestSubmitLoginAuthProvider_CredentialMode_RateLimitedAfterRepeatedInvalidCredentials(t *testing.T) {
+	t.Parallel()
+
+	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
+		loginModes: []provider.AuthLoginMode{
+			{Key: "password", DisplayName: "Password", Interaction: provider.AuthInteractionCredentials, Default: true},
+		},
+		credentialErr: provider.NewAuthCredentialError("INVALID_CREDENTIALS", "invalid credentials"),
+	})
+	srv, client := newExternalAuthTestServer(t, nil)
+	srv.loginRateLimiter = newLoginAttemptLimiter(config.LoginRateLimit{
+		Enabled:       true,
+		MaxFailures:   2,
+		Window:        time.Minute,
+		BlockDuration: time.Minute,
+	})
+
+	if _, err := client.AuthProvider.Create().
+		SetID("runtime-credential-rate-limit").
+		SetName("Runtime Credential Rate Limit").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create runtime provider: %v", err)
+	}
+
+	attempt := func() (*httptest.ResponseRecorder, generated.Error) {
+		ctx, w := newPublicGinContext(
+			t,
+			http.MethodPost,
+			"/auth/providers/runtime-credential-rate-limit/login/submit",
+			`{"login_mode":"password","credentials":{"username":"alice","password":"bad-password"}}`,
+		)
+		srv.SubmitLoginAuthProvider(ctx, "runtime-credential-rate-limit")
+
+		var apiErr generated.Error
+		if w.Body.Len() > 0 {
+			if err := json.Unmarshal(w.Body.Bytes(), &apiErr); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+		}
+		return w, apiErr
+	}
+
+	if w, apiErr := attempt(); w.Code != http.StatusUnauthorized || apiErr.Code != "INVALID_CREDENTIALS" {
+		t.Fatalf("first attempt status=%d code=%q", w.Code, apiErr.Code)
+	}
+	if w, apiErr := attempt(); w.Code != http.StatusUnauthorized || apiErr.Code != "INVALID_CREDENTIALS" {
+		t.Fatalf("second attempt status=%d code=%q", w.Code, apiErr.Code)
+	}
+	if w, apiErr := attempt(); w.Code != http.StatusTooManyRequests || apiErr.Code != loginRateLimitedErrorCode {
+		t.Fatalf("third attempt status=%d code=%q", w.Code, apiErr.Code)
+	} else if got := w.Header().Get("Retry-After"); got == "" {
+		t.Fatal("expected Retry-After header on rate-limited credential login response")
 	}
 }
 

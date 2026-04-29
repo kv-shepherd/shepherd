@@ -28,7 +28,10 @@ function normalizeArgs(args: unknown): string[] {
 }
 
 export async function POST(request: Request) {
-  if (process.env.NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE !== "1") {
+  if (
+    process.env.NODE_ENV !== "development"
+    || process.env.NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE !== "1"
+  ) {
     return new Response(null, { status: 404 });
   }
 

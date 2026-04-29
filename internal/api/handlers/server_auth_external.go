@@ -31,7 +31,7 @@ const externalAuthStateTTL = 5 * time.Minute
 const externalAuthBridgeMessageType = "shepherd.external_auth.complete"
 const externalAuthSchemeHTTP = "http"
 const externalAuthSchemeHTTPS = "https"
-const externalAuthBridgeStorageKey = "shepherd-auth"
+const loginFailureCode = "INVALID_CREDENTIALS"
 
 var errExternalAuthUserDisabled = errors.New("external auth user disabled")
 
@@ -53,13 +53,11 @@ func (c externalAuthStateClaims) Validate() error {
 }
 
 type externalAuthCallbackPayload struct {
-	Type                string              `json:"type"`
-	Success             bool                `json:"success"`
-	Token               string              `json:"token,omitempty"`
-	User                *generated.UserInfo `json:"user,omitempty"`
-	ForcePasswordChange bool                `json:"force_password_change,omitempty"`
-	Code                string              `json:"code,omitempty"`
-	ReturnTo            string              `json:"return_to,omitempty"`
+	Type                string `json:"type"`
+	Success             bool   `json:"success"`
+	ForcePasswordChange bool   `json:"force_password_change,omitempty"`
+	Code                string `json:"code,omitempty"`
+	ReturnTo            string `json:"return_to,omitempty"`
 }
 
 func (s *Server) ListLoginAuthProviders(c *gin.Context) {
@@ -94,6 +92,10 @@ func (s *Server) SubmitLoginAuthProvider(c *gin.Context, providerID generated.Pr
 	if !bindAndValidateJSON(c, &req) {
 		return
 	}
+	loginIdentity := credentialLoginIdentity(providerID, req.Credentials)
+	if !s.enforceLoginRateLimit(c, loginIdentity) {
+		return
+	}
 
 	providerRow, adapter, ok := s.resolveLoginAuthProviderAdapter(ctx, c, providerID)
 	if !ok {
@@ -125,8 +127,9 @@ func (s *Server) SubmitLoginAuthProvider(c *gin.Context, providerID generated.Pr
 		var credentialErr *runtimecontract.AuthCredentialError
 		if errors.As(err, &credentialErr) && strings.TrimSpace(credentialErr.Code) != "" {
 			status := http.StatusBadRequest
-			if credentialErr.Code == "INVALID_CREDENTIALS" {
+			if credentialErr.Code == loginFailureCode {
 				status = http.StatusUnauthorized
+				s.recordLoginFailure(c, loginIdentity)
 			}
 			c.JSON(status, generated.Error{
 				Code:    credentialErr.Code,
@@ -152,6 +155,10 @@ func (s *Server) SubmitLoginAuthProvider(c *gin.Context, providerID generated.Pr
 		return
 	}
 
+	s.recordLoginSuccess(c, loginIdentity)
+	s.setAuthSessionCookie(c, loginResp.Token, loginResp.ExpiresAt)
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
 	c.JSON(http.StatusOK, loginResp)
 }
 
@@ -339,7 +346,7 @@ func (s *Server) completeExternalAuthLogin(c *gin.Context, providerID string, ca
 		return
 	}
 
-	loginResp, userInfo, upsertResult, txErr := s.finalizeExternalAuthLogin(ctx, providerID, authResult)
+	loginResp, upsertResult, txErr := s.finalizeExternalAuthLogin(ctx, providerID, authResult)
 	if txErr != nil {
 		switch {
 		case errors.Is(txErr, errExternalAuthUserDisabled):
@@ -379,11 +386,10 @@ func (s *Server) completeExternalAuthLogin(c *gin.Context, providerID string, ca
 		})
 	}
 
+	s.setAuthSessionCookie(c, loginResp.Token, loginResp.ExpiresAt)
 	s.renderExternalAuthBridge(c, http.StatusOK, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
 		Type:                externalAuthBridgeMessageType,
 		Success:             true,
-		Token:               loginResp.Token,
-		User:                &userInfo,
 		ForcePasswordChange: loginResp.ForcePasswordChange,
 		ReturnTo:            stateClaims.ReturnTo,
 	})
@@ -734,6 +740,8 @@ func (s *Server) renderExternalAuthBridge(
 	}
 	payloadJSON, _ := json.Marshal(payload)
 	body := buildExternalAuthBridgeHTML(string(payloadJSON), targetOrigin, targetURL)
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
 	c.Data(status, "text/html; charset=utf-8", []byte(body))
 }
 
@@ -752,31 +760,9 @@ func buildExternalAuthBridgeHTML(payloadJSON, targetOrigin, targetURL string) st
       const payload = ` + payloadJSON + `;
       const targetOrigin = ` + jsonStringLiteral(targetOrigin) + `;
       const targetURL = ` + jsonStringLiteral(targetURL) + `;
-      const authStorageKey = ` + jsonStringLiteral(externalAuthBridgeStorageKey) + `;
       const successTarget = payload && payload.force_password_change
         ? '/auth/change-password'
         : (targetURL || payload.return_to || '/dashboard');
-
-      function persistLogin(payload) {
-        if (!payload || !payload.success || !payload.token || !payload.user) {
-          return;
-        }
-        try {
-          window.localStorage.setItem(authStorageKey, JSON.stringify({
-            state: {
-              token: payload.token,
-              user: payload.user,
-              isAuthenticated: true,
-              forcePasswordChange: !!payload.force_password_change
-            },
-            version: 0
-          }));
-        } catch (_) {
-          // ignore storage failures and continue with redirect
-        }
-      }
-
-      persistLogin(payload);
 
       if (window.opener && targetOrigin) {
         try {
@@ -789,7 +775,7 @@ func buildExternalAuthBridgeHTML(payloadJSON, targetOrigin, targetURL string) st
         }, 150);
         return;
       }
-      if (payload && payload.success && payload.token && payload.user) {
+      if (payload && payload.success) {
         window.location.replace(successTarget);
         return;
       }
@@ -825,14 +811,13 @@ func (s *Server) finalizeExternalAuthLogin(
 	ctx context.Context,
 	providerID string,
 	authResult *runtimecontract.AuthResult,
-) (generated.LoginResponse, generated.UserInfo, *service.ExternalAuthUpsertResult, error) {
+) (generated.LoginResponse, *service.ExternalAuthUpsertResult, error) {
 	if authResult == nil {
-		return generated.LoginResponse{}, generated.UserInfo{}, nil, fmt.Errorf("external auth result is required")
+		return generated.LoginResponse{}, nil, fmt.Errorf("external auth result is required")
 	}
 
 	var upsertResult *service.ExternalAuthUpsertResult
 	var loginResp generated.LoginResponse
-	var userInfo generated.UserInfo
 	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
 		txServer := &Server{
 			client: tx.Client(),
@@ -857,16 +842,12 @@ func (s *Server) finalizeExternalAuthLogin(
 		if issueErr != nil {
 			return issueErr
 		}
-		userInfo, issueErr = txServer.buildUserInfo(ctx, upsertResult.User)
-		if issueErr != nil {
-			return issueErr
-		}
 		if issueErr := txExternalAuth.RecordLogin(ctx, upsertResult.User.ID); issueErr != nil {
 			return fmt.Errorf("record last_login_at: %w", issueErr)
 		}
 		return nil
 	})
-	return loginResp, userInfo, upsertResult, err
+	return loginResp, upsertResult, err
 }
 
 func (s *Server) completeExternalAuthResultLogin(
@@ -874,7 +855,7 @@ func (s *Server) completeExternalAuthResultLogin(
 	providerID string,
 	authResult *runtimecontract.AuthResult,
 ) (generated.LoginResponse, error) {
-	loginResp, _, upsertResult, err := s.finalizeExternalAuthLogin(ctx, providerID, authResult)
+	loginResp, upsertResult, err := s.finalizeExternalAuthLogin(ctx, providerID, authResult)
 	if err != nil {
 		return generated.LoginResponse{}, err
 	}

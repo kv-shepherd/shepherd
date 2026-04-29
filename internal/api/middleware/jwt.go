@@ -24,6 +24,11 @@ type JWTClaims struct {
 
 const defaultJWTLeeway = 30 * time.Second
 
+const (
+	tokenSourceHeader = "header"
+	tokenSourceCookie = "cookie"
+)
+
 var (
 	ErrJWTSigningKeyMissing = errors.New("jwt signing key is not configured")
 	ErrTokenRevoked         = errors.New("token revoked")
@@ -42,6 +47,7 @@ type JWTConfig struct {
 	Issuer            string
 	ExpiresIn         time.Duration
 	Leeway            time.Duration
+	CookieName        string
 	RevocationChecker TokenRevocationChecker
 }
 
@@ -173,25 +179,14 @@ func (cfg JWTConfig) ValidateToken(ctx context.Context, tokenString string) (*JW
 // JWTAuth returns a Gin middleware that validates Bearer tokens and populates context.
 func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		authHeader := c.GetHeader("Authorization")
-		if authHeader == "" {
+		tokenString, source, err := extractJWTToken(c.Request, cfg.CookieName)
+		if err != nil {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    "UNAUTHORIZED",
-				"message": "missing authorization header",
+				"message": err.Error(),
 			})
 			return
 		}
-
-		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
-				"code":    "UNAUTHORIZED",
-				"message": "invalid authorization header format",
-			})
-			return
-		}
-
-		tokenString := parts[1]
 		claims, err := cfg.ValidateToken(c.Request.Context(), tokenString)
 
 		if err != nil {
@@ -208,6 +203,7 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    code,
 				"message": msg,
+				"source":  source,
 			})
 			return
 		}
@@ -217,6 +213,9 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 		c.Set("username", claims.Username)
 		c.Set("roles", claims.Roles)
 		c.Set("permissions", claims.Permissions)
+		if source == tokenSourceCookie && strings.TrimSpace(c.Request.Header.Get("Authorization")) == "" {
+			c.Request.Header.Set("Authorization", "Bearer "+tokenString)
+		}
 		c.Request = c.Request.WithContext(
 			SetUserContext(c.Request.Context(), claims.UserID, claims.Username, claims.Roles),
 		)
@@ -228,4 +227,37 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 // JWTAuth is a compatibility wrapper for legacy call sites.
 func JWTAuth(signingKey []byte) gin.HandlerFunc {
 	return JWTAuthWithConfig(JWTConfig{SigningKey: signingKey})
+}
+
+func extractJWTToken(r *http.Request, cookieName string) (token, source string, err error) {
+	if r == nil {
+		return "", "", fmt.Errorf("request is required")
+	}
+
+	authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if authHeader != "" {
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+			return "", "", fmt.Errorf("invalid authorization header format")
+		}
+		token := strings.TrimSpace(parts[1])
+		if token == "" {
+			return "", "", fmt.Errorf("missing bearer token")
+		}
+		return token, tokenSourceHeader, nil
+	}
+
+	cookieName = strings.TrimSpace(cookieName)
+	if cookieName != "" {
+		cookie, err := r.Cookie(cookieName)
+		if err == nil {
+			token := strings.TrimSpace(cookie.Value)
+			if token == "" {
+				return "", "", fmt.Errorf("missing auth session cookie")
+			}
+			return token, tokenSourceCookie, nil
+		}
+	}
+
+	return "", "", fmt.Errorf("missing authorization header or auth session cookie")
 }

@@ -12,11 +12,9 @@
  */
 import type { paths } from '@/types/api.gen';
 import createClient from 'openapi-fetch';
-import { AUTH_STORAGE_KEY } from '@/stores/auth';
 import { getLoginEntryPath } from '@/lib/auth/loginEntry';
 import {
   getRequestPath,
-  shouldAttachAuthHeader,
   shouldLogoutOnUnauthorized,
   shouldRedirectToLoginOnUnauthorized,
 } from './authPolicy';
@@ -27,36 +25,9 @@ const baseUrl = process.env.NEXT_PUBLIC_API_URL ?? '/api/v1';
 
 export const api = createClient<paths>({
   baseUrl,
+  fetch: (request: Request) => fetch(new Request(request, { credentials: 'include' })),
   headers: {
     'Content-Type': 'application/json',
-  },
-});
-
-/**
- * Middleware: attach JWT token from localStorage to all requests.
- * Reads from the Zustand persisted store key.
- */
-api.use({
-  async onRequest({ request }) {
-    if (typeof window !== 'undefined') {
-      const requestPath = getRequestPath(request, window.location.origin);
-      if (!shouldAttachAuthHeader(requestPath)) {
-        return request;
-      }
-      try {
-        const stored = localStorage.getItem(AUTH_STORAGE_KEY);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          const token = parsed?.state?.token;
-          if (token) {
-            request.headers.set('Authorization', `Bearer ${token}`);
-          }
-        }
-      } catch {
-        // ignore parse errors
-      }
-    }
-    return request;
   },
 });
 
@@ -74,11 +45,6 @@ api.use({
 
       const { useAuthStore } = await import('@/stores/auth');
       useAuthStore.getState().logout();
-      try {
-        localStorage.removeItem(AUTH_STORAGE_KEY);
-      } catch {
-        // ignore storage errors
-      }
 
       if (!shouldRedirectToLoginOnUnauthorized(requestPath, window.location.pathname)) {
         return response;

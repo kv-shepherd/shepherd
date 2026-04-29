@@ -4,12 +4,15 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
+	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/testutil"
 
 	"golang.org/x/crypto/bcrypt"
@@ -87,5 +90,157 @@ func TestGetCurrentUser_IncludesPermissions(t *testing.T) {
 	}
 	if got.Permissions[0] != "system:read" || got.Permissions[1] != "vm:read" {
 		t.Fatalf("permissions not sorted/stable: %+v", got.Permissions)
+	}
+}
+
+func TestLogin_SetsSessionCookieAndNoStore(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := testutil.OpenEntPostgres(t, "auth_handler_login_cookie")
+	server := NewServer(ServerDeps{
+		EntClient: client,
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-signing-key-12345678901234567890"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  time.Hour,
+		},
+		SessionConfig: config.SessionConfig{
+			Cookie:   "shepherd_session",
+			HTTPOnly: true,
+			Secure:   true,
+		},
+	})
+
+	hash, err := HashPassword("Passw0rd!Example")
+	if err != nil {
+		t.Fatalf("HashPassword() error = %v", err)
+	}
+	if _, err := client.User.Create().
+		SetID("user-login").
+		SetUsername("alice").
+		SetPasswordHash(hash).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed login user: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"Passw0rd!Example"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	server.Login(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("Cache-Control = %q, want no-store", got)
+	}
+	if got := w.Header().Get("Pragma"); got != "no-cache" {
+		t.Fatalf("Pragma = %q, want no-cache", got)
+	}
+	cookieHeader := w.Header().Get("Set-Cookie")
+	if !strings.Contains(cookieHeader, "shepherd_session=") {
+		t.Fatalf("missing auth cookie header: %s", cookieHeader)
+	}
+	if !strings.Contains(cookieHeader, "HttpOnly") {
+		t.Fatalf("auth cookie should be HttpOnly: %s", cookieHeader)
+	}
+	if strings.Contains(cookieHeader, "Secure") {
+		t.Fatalf("auth cookie should not mark Secure on plain HTTP test requests: %s", cookieHeader)
+	}
+}
+
+func TestLogout_ClearsSessionCookie(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	server := NewServer(ServerDeps{
+		SessionConfig: config.SessionConfig{
+			Cookie:   "shepherd_session",
+			HTTPOnly: true,
+		},
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/auth/logout", http.NoBody)
+
+	server.Logout(c)
+	if w.Code != http.StatusNoContent {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	cookieHeader := w.Header().Get("Set-Cookie")
+	if !strings.Contains(cookieHeader, "shepherd_session=") {
+		t.Fatalf("missing cleared auth cookie header: %s", cookieHeader)
+	}
+	if !strings.Contains(cookieHeader, "Max-Age=0") {
+		t.Fatalf("logout cookie should expire immediately: %s", cookieHeader)
+	}
+}
+
+func TestLogin_ReturnsTooManyRequestsAfterRepeatedFailures(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := testutil.OpenEntPostgres(t, "auth_handler_login_rate_limit")
+	server := NewServer(ServerDeps{
+		EntClient: client,
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-signing-key-12345678901234567890"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  time.Hour,
+		},
+		LoginRateLimitConfig: config.LoginRateLimit{
+			Enabled:       true,
+			MaxFailures:   2,
+			Window:        time.Minute,
+			BlockDuration: time.Minute,
+		},
+	})
+
+	hash, err := HashPassword("Passw0rd!Example")
+	if err != nil {
+		t.Fatalf("HashPassword() error = %v", err)
+	}
+	if _, err := client.User.Create().
+		SetID("user-login-rate-limit").
+		SetUsername("alice").
+		SetPasswordHash(hash).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed login user: %v", err)
+	}
+
+	attempt := func(password string) (*httptest.ResponseRecorder, generated.Error) {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"`+password+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		c.Request = req
+
+		server.Login(c)
+
+		var apiErr generated.Error
+		if w.Body.Len() > 0 {
+			if err := json.Unmarshal(w.Body.Bytes(), &apiErr); err != nil {
+				t.Fatalf("decode error response: %v", err)
+			}
+		}
+		return w, apiErr
+	}
+
+	if w, apiErr := attempt("wrong-password"); w.Code != http.StatusUnauthorized || apiErr.Code != "INVALID_CREDENTIALS" {
+		t.Fatalf("first attempt status=%d code=%q", w.Code, apiErr.Code)
+	}
+	if w, apiErr := attempt("wrong-password"); w.Code != http.StatusUnauthorized || apiErr.Code != "INVALID_CREDENTIALS" {
+		t.Fatalf("second attempt status=%d code=%q", w.Code, apiErr.Code)
+	}
+	if w, apiErr := attempt("wrong-password"); w.Code != http.StatusTooManyRequests || apiErr.Code != loginRateLimitedErrorCode {
+		t.Fatalf("third attempt status=%d code=%q", w.Code, apiErr.Code)
+	} else if got := w.Header().Get("Retry-After"); got == "" {
+		t.Fatal("expected Retry-After header on rate-limited login response")
 	}
 }

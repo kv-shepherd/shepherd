@@ -11,7 +11,7 @@
  */
 import React from 'react';
 import Image from 'next/image';
-import { useRouter, usePathname } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import {
     LogoutOutlined,
@@ -21,11 +21,8 @@ import {
 import { ProLayout } from '@ant-design/pro-components';
 import { Dropdown, Typography, Avatar } from 'antd';
 import { useTranslation } from 'react-i18next';
+import { useAuth } from '@/hooks/useAuth';
 import { useAuthStore } from '@/stores/auth';
-import {
-    getStandardLoginPath,
-    setNextLoginEntryOverride,
-} from '@/lib/auth/loginEntry';
 import NotificationBell from '@/components/ui/NotificationBell';
 import LocalTimezoneBadge from '@/components/ui/LocalTimezoneBadge';
 import LanguageSwitcher from '@/components/ui/LanguageSwitcher';
@@ -44,10 +41,10 @@ export default function AppLayout({
 }: {
     children: React.ReactNode;
 }) {
-    const router = useRouter();
     const pathname = usePathname();
     const { t } = useTranslation('common');
-    const { user, logout } = useAuthStore();
+    const user = useAuthStore((state) => state.user);
+    const { logout } = useAuth();
     const [isSiderCollapsed, setIsSiderCollapsed] = React.useState(false);
     const route = React.useMemo(
         () => getMenuRoutes(t, (permissions) => hasAnyPermission(user, permissions), {
@@ -202,9 +199,7 @@ export default function AppLayout({
                                     label: t('auth.logout'),
                                     danger: true,
                                     onClick: () => {
-                                        setNextLoginEntryOverride(getStandardLoginPath());
-                                        logout();
-                                        router.push(getStandardLoginPath());
+                                        void logout();
                                     },
                                 },
                             ],

@@ -38,6 +38,7 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 			VerificationKeys: verificationKeys,
 			Issuer:           "shepherd",
 			ExpiresIn:        cfg.Session.Lifetime,
+			CookieName:       cfg.Session.Cookie,
 		},
 		EncryptionKey:        encryptionKey,
 		Audit:                infra.AuditLogger,
@@ -46,6 +47,9 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		RiverClient:          infra.RiverClient,
 		PublicBaseURL:        cfg.Server.PublicBaseURL,
 		AllowedOrigins:       append([]string(nil), cfg.Server.AllowedOrigins...),
+		SessionConfig:        cfg.Session,
+		PasswordPolicy:       cfg.Security.PasswordPolicy,
+		LoginRateLimitConfig: cfg.Security.LoginRateLimit,
 	}
 	for _, mod := range mods {
 		if mod == nil {

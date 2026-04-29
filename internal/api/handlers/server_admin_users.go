@@ -61,9 +61,13 @@ func (s *Server) CreateUser(c *gin.Context) {
 	}
 
 	username := strings.TrimSpace(req.Username)
-	password := strings.TrimSpace(req.Password)
-	if username == "" || password == "" {
+	password := req.Password
+	if username == "" || strings.TrimSpace(password) == "" {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "username and password are required"})
+		return
+	}
+	if err := s.validatePassword(password, username, valueOrEmpty(req.Email), valueOrEmpty(req.DisplayName)); err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
 		return
 	}
 
@@ -159,9 +163,21 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 		update = update.SetEnabled(*req.Enabled)
 	}
 	if req.Password != nil {
-		password := strings.TrimSpace(*req.Password)
-		if password == "" {
+		password := *req.Password
+		if strings.TrimSpace(password) == "" {
 			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "password cannot be empty"})
+			return
+		}
+		emailHint := existing.Email
+		if req.Email != nil {
+			emailHint = strings.TrimSpace(*req.Email)
+		}
+		displayNameHint := existing.DisplayName
+		if req.DisplayName != nil {
+			displayNameHint = strings.TrimSpace(*req.DisplayName)
+		}
+		if validationErr := s.validatePassword(password, existing.Username, emailHint, displayNameHint); validationErr != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validationErr.Error()})
 			return
 		}
 		hash, hashErr := HashPassword(password)
@@ -200,6 +216,13 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 	}
 
 	c.JSON(http.StatusOK, userToAPI(updated, roles))
+}
+
+func valueOrEmpty(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return strings.TrimSpace(*value)
 }
 
 // DeleteUser handles DELETE /admin/users/{user_id}.

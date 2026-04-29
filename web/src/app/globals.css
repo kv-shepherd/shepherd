@@ -212,9 +212,34 @@ a {
 
 .app-shell-layout .ant-layout-sider-collapsed .ant-menu-item,
 .app-shell-layout .ant-layout-sider-collapsed .ant-menu-submenu-title {
-  margin-inline: 8px !important;
+  margin-inline: calc((100% - 40px) / 2) !important;
   padding-inline: 0 !important;
-  width: calc(100% - 16px) !important;
+  width: 40px !important;
+  height: 40px !important;
+  line-height: 40px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.app-shell-layout .ant-layout-sider-collapsed .ant-menu-item .ant-pro-base-menu-item-icon,
+.app-shell-layout .ant-layout-sider-collapsed .ant-menu-item .anticon,
+.app-shell-layout .ant-layout-sider-collapsed .ant-menu-submenu-title .ant-pro-base-menu-item-icon,
+.app-shell-layout .ant-layout-sider-collapsed .ant-menu-submenu-title .anticon {
+  margin: 0 !important;
+  width: 20px !important;
+  height: 20px !important;
+  line-height: 20px !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.app-shell-layout .ant-layout-sider-collapsed .ant-menu-item .anticon svg,
+.app-shell-layout .ant-layout-sider-collapsed .ant-menu-submenu-title .anticon svg {
+  width: 20px !important;
+  height: 20px !important;
+  object-fit: contain;
 }
 
 .app-shell-layout .ant-layout-header,

@@ -3,6 +3,7 @@ package modules
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/riverqueue/river"
 
@@ -41,6 +42,12 @@ func TestNewServerDeps_BuildsSecurityDeps(t *testing.T) {
 			SessionSecret:       "session-secret-1234567890123456789012",
 			EncryptionKey:       "3031323334353637383961626364656630313233343536373839616263646566",
 			JWTVerificationKeys: []string{" verify-a ", "", "verify-b"},
+			LoginRateLimit: config.LoginRateLimit{
+				Enabled:       true,
+				MaxFailures:   7,
+				Window:        time.Minute,
+				BlockDuration: 2 * time.Minute,
+			},
 		},
 	}
 	infra := &Infrastructure{
@@ -63,5 +70,8 @@ func TestNewServerDeps_BuildsSecurityDeps(t *testing.T) {
 	}
 	if got := len(deps.EncryptionKey); got != 32 {
 		t.Fatalf("EncryptionKey len = %d, want 32", got)
+	}
+	if got, want := deps.LoginRateLimitConfig.MaxFailures, 7; got != want {
+		t.Fatalf("LoginRateLimitConfig.MaxFailures = %d, want %d", got, want)
 	}
 }

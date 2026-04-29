@@ -17,7 +17,7 @@
  *   - Built-in approval API path is /builtin-approval/tasks with ?status=PENDING.
  *   - Approve/Reject API paths are /builtin-approval/tasks/{id}/approve|reject.
  *   - Reject modal has a required "reason" field.
- *   - Auth is injected via addInitScript so the app skips the login redirect.
+ *   - Auth is injected with a mock session cookie and /auth/me response.
  */
 
 import { expect, test, type Page } from '@playwright/test';
@@ -28,25 +28,26 @@ import { getAntModal, selectAntOption } from './lib/helpers';
 // Auth helpers
 // ---------------------------------------------------------------------------
 
-function authStorageState() {
-    return JSON.stringify({
-        state: {
-            token: 'test-token',
-            user: {
-                id: 'user-admin',
-                username: 'admin',
-                permissions: ['platform:admin'],
-            },
-            isAuthenticated: true,
-        },
-        version: 0,
-    });
-}
+const e2eBaseURL =
+    process.env.PW_BASE_URL ??
+    `http://127.0.0.1:${process.env.PW_WEB_PORT ?? '3210'}`;
+const mockAuthUser = {
+    id: 'user-admin',
+    username: 'admin',
+    permissions: ['platform:admin'],
+    roles: ['PlatformAdmin'],
+};
 
 async function injectAuth(page: Page) {
-    await page.addInitScript((storageValue: string) => {
-        window.localStorage.setItem('shepherd-auth', storageValue);
-    }, authStorageState());
+    await page.context().addCookies([
+        {
+            name: 'shepherd_session',
+            value: 'test-session',
+            url: e2eBaseURL,
+            httpOnly: true,
+            sameSite: 'Lax',
+        },
+    ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -66,6 +67,10 @@ async function mountBaselineMock(page: Page) {
                 contentType: 'application/json',
                 body: JSON.stringify(body),
             });
+
+        if (method === 'GET' && path.endsWith('/auth/me')) {
+            return json(mockAuthUser);
+        }
 
         // ── Notifications (layout header) ──────────────────────────────────────
         if (method === 'GET' && path.endsWith('/notifications/unread-count')) {

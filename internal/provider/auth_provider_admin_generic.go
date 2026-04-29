@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -59,12 +62,35 @@ func (a *genericAuthProviderAdminAdapter) TestConnection(ctx context.Context, co
 		return true, "configuration accepted (no healthcheck endpoint configured)", nil
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
+	parsedURL, err := validateGenericProviderHealthcheckEndpoint(ctx, endpoint)
+	if err != nil {
+		return false, err.Error(), nil
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, parsedURL.String(), http.NoBody)
 	if err != nil {
 		return false, "invalid healthcheck endpoint", nil
 	}
-	client := &http.Client{Timeout: 8 * time.Second}
-	resp, err := client.Do(req) // #nosec G704 -- endpoint is admin-supplied configuration and validated by privileged operators.
+	client := &http.Client{
+		Timeout:       8 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Transport: &http.Transport{
+			Proxy: nil,
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				host, port, splitErr := net.SplitHostPort(addr)
+				if splitErr != nil {
+					return nil, splitErr
+				}
+				if resolveErr := validateGenericProviderDialTarget(ctx, host); resolveErr != nil {
+					return nil, resolveErr
+				}
+				var dialer net.Dialer
+				return dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+			},
+		},
+	}
+	//nolint:gosec // Request target is constrained to validated http(s) endpoints with private/reserved IPs rejected and redirects disabled.
+	resp, err := client.Do(req)
 	if err != nil {
 		return false, "healthcheck request failed: " + err.Error(), nil
 	}
@@ -73,6 +99,110 @@ func (a *genericAuthProviderAdminAdapter) TestConnection(ctx context.Context, co
 		return false, fmt.Sprintf("healthcheck status %d", resp.StatusCode), nil
 	}
 	return true, "healthcheck endpoint reachable", nil
+}
+
+var genericProviderDisallowedNets = mustParseNetipPrefixes(
+	"0.0.0.0/8",
+	"10.0.0.0/8",
+	"100.64.0.0/10",
+	"127.0.0.0/8",
+	"169.254.0.0/16",
+	"172.16.0.0/12",
+	"192.0.0.0/24",
+	"192.0.2.0/24",
+	"192.168.0.0/16",
+	"198.18.0.0/15",
+	"198.51.100.0/24",
+	"203.0.113.0/24",
+	"224.0.0.0/4",
+	"240.0.0.0/4",
+	"::/128",
+	"::1/128",
+	"fc00::/7",
+	"fe80::/10",
+	"fec0::/10",
+	"ff00::/8",
+	"2001:db8::/32",
+)
+
+func validateGenericProviderHealthcheckEndpoint(ctx context.Context, raw string) (*url.URL, error) {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return nil, fmt.Errorf("healthcheck endpoint must be a valid URL")
+	}
+	if parsed.Scheme != "http" && parsed.Scheme != "https" {
+		return nil, fmt.Errorf("healthcheck endpoint must use http or https")
+	}
+	if parsed.Host == "" {
+		return nil, fmt.Errorf("healthcheck endpoint host is required")
+	}
+	if parsed.User != nil {
+		return nil, fmt.Errorf("healthcheck endpoint must not include userinfo")
+	}
+	if err := validateGenericProviderDialTarget(ctx, parsed.Hostname()); err != nil {
+		return nil, err
+	}
+	return parsed, nil
+}
+
+func validateGenericProviderDialTarget(ctx context.Context, host string) error {
+	host = strings.Trim(strings.TrimSpace(host), "[]")
+	if host == "" {
+		return fmt.Errorf("healthcheck endpoint host is required")
+	}
+
+	if ip, err := netip.ParseAddr(host); err == nil {
+		if genericProviderIPBlocked(ip) {
+			return fmt.Errorf("healthcheck endpoint must not target private or reserved addresses")
+		}
+		return nil
+	}
+
+	lookupCtx := ctx
+	if lookupCtx == nil {
+		var cancel context.CancelFunc
+		lookupCtx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+	}
+
+	addrs, err := net.DefaultResolver.LookupNetIP(lookupCtx, "ip", host)
+	if err != nil {
+		return fmt.Errorf("healthcheck endpoint host resolution failed")
+	}
+	if len(addrs) == 0 {
+		return fmt.Errorf("healthcheck endpoint host did not resolve")
+	}
+	for _, ip := range addrs {
+		if genericProviderIPBlocked(ip) {
+			return fmt.Errorf("healthcheck endpoint must not target private or reserved addresses")
+		}
+	}
+	return nil
+}
+
+func genericProviderIPBlocked(ip netip.Addr) bool {
+	ip = ip.Unmap()
+	if !ip.IsValid() || ip.IsLoopback() || ip.IsMulticast() || ip.IsPrivate() || ip.IsUnspecified() {
+		return true
+	}
+	for _, prefix := range genericProviderDisallowedNets {
+		if prefix.Contains(ip) {
+			return true
+		}
+	}
+	return false
+}
+
+func mustParseNetipPrefixes(raw ...string) []netip.Prefix {
+	prefixes := make([]netip.Prefix, 0, len(raw))
+	for _, item := range raw {
+		prefix, err := netip.ParsePrefix(item)
+		if err != nil {
+			panic(err)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	return prefixes
 }
 
 func (a *genericAuthProviderAdminAdapter) SampleFields(_ context.Context, config map[string]interface{}) ([]AuthProviderSampleField, error) {

@@ -5,24 +5,19 @@ import { selectAntOption } from "./lib/helpers";
 // Helpers
 // ─────────────────────────────────────────────────────────────────────────────
 
-function authStorageState() {
-  return JSON.stringify({
-    state: {
-      token: "test-token",
-      user: {
-        id: "user-1",
-        username: "alice",
-        permissions: ["platform:admin"],
-      },
-      isAuthenticated: true,
-    },
-    version: 0,
-  });
-}
-
 interface MockMasterFlowOptions {
   onRequest?: (method: string, path: string, body: unknown) => void;
 }
+
+const e2eBaseURL =
+  process.env.PW_BASE_URL ??
+  `http://127.0.0.1:${process.env.PW_WEB_PORT ?? "3210"}`;
+const mockAuthUser = {
+  id: "user-1",
+  username: "alice",
+  permissions: ["platform:admin"],
+  roles: ["PlatformAdmin"],
+};
 
 const MOCK_SYSTEM_NAME = "shop";
 const MOCK_SERVICE_NAME = "redis";
@@ -31,6 +26,18 @@ const MOCK_INSTANCE_SIZE_NAME = "Small";
 
 function visibleModal(page: Page) {
   return page.locator(".ant-modal-content:visible");
+}
+
+async function injectAuth(page: Page) {
+  await page.context().addCookies([
+    {
+      name: "shepherd_session",
+      value: "test-session",
+      url: e2eBaseURL,
+      httpOnly: true,
+      sameSite: "Lax",
+    },
+  ]);
 }
 
 /**
@@ -60,6 +67,10 @@ async function mockMasterFlowBaselineApi(
         contentType: "application/json",
         body: JSON.stringify(data),
       });
+
+    if (method === "GET" && path.endsWith("/auth/me")) {
+      return json(mockAuthUser);
+    }
 
     // ── Notifications ──────────────────────────────────────────────────────
     if (method === "GET" && path.endsWith("/notifications/unread-count")) {
@@ -396,9 +407,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("authenticated user can navigate core Stage 4/5 pages and open VM request wizard", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
     await mockMasterFlowBaselineApi(page);
 
     await page.goto("/systems");
@@ -427,9 +436,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 4.A: user can create a System via modal (POST /systems)", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string; body: unknown }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -467,9 +474,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 4.A: user can edit System description (PATCH /systems/{id})", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -509,9 +514,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 4.A: user can delete System with name confirmation (DELETE /systems/{id})", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -551,9 +554,7 @@ test.describe("master-flow mock smoke interactions", () => {
 
   // ── Stage 4.A+: Resource Member Management ───────────────────────────────
   test("Stage 4.A+: owner can open System members modal", async ({ page }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     await mockMasterFlowBaselineApi(page);
 
@@ -572,9 +573,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 4.B: user can create a Service under a System (POST /systems/{id}/services)", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string; body: unknown }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -611,9 +610,7 @@ test.describe("master-flow mock smoke interactions", () => {
 
   // ── Stage 4.B: Edit Service (PATCH /systems/{id}/services/{id}) ──────────
   test("Stage 4.B: user can edit Service description", async ({ page }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -653,9 +650,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 4.B: user can delete Service via Popconfirm", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -689,9 +684,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 5.A: VM request wizard opens and submits POST /vms/request", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string; body: unknown }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -783,9 +776,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 5.D: VM delete action triggers approval flow (POST /vms/{id}/delete)", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -857,9 +848,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 5.D: System delete requires name confirmation (cascade guard)", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     await mockMasterFlowBaselineApi(page);
 
@@ -892,9 +881,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 5.E: batch power action from VM page triggers POST /vms/batch/power", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string; body: unknown }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -956,9 +943,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 5.E: batch VM request triggers POST /vms/batch", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string; body: unknown }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -1051,9 +1036,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 5.F: notification bell shows unread count and navigates to notifications page", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
     await mockMasterFlowBaselineApi(page);
 
     await page.goto("/dashboard");
@@ -1079,9 +1062,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 5.F: notifications page renders notification items from API", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
     await mockMasterFlowBaselineApi(page);
 
     await page.goto("/notifications");
@@ -1100,9 +1081,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 6: VM console request follows request → open flow", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const seen = {
       vmDetail: false,
@@ -1198,9 +1177,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 6: VM start action triggers POST /vms/{id}/start", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -1249,9 +1226,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 6: VM stop action triggers POST /vms/{id}/stop", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
 
     const captured: Array<{ method: string; path: string }> = [];
     await mockMasterFlowBaselineApi(page, {
@@ -1301,9 +1276,7 @@ test.describe("master-flow mock smoke interactions", () => {
   test("Stage 5.B: built-in approval task page renders pending tickets", async ({
     page,
   }) => {
-    await page.addInitScript((storageValue) => {
-      window.localStorage.setItem("shepherd-auth", storageValue);
-    }, authStorageState());
+    await injectAuth(page);
     await mockMasterFlowBaselineApi(page);
 
     await page.goto("/admin/approval-tasks");

@@ -18,6 +18,7 @@ import { useTranslation } from 'react-i18next';
 
 // Initialize i18n (side-effect import)
 import '@/i18n';
+import { SessionBootstrap } from '@/components/auth/SessionBootstrap';
 import { DevBrowserLogBridge } from '@/components/dev/DevBrowserLogBridge';
 
 const antdLocaleMap: Record<string, typeof enUS> = {
@@ -54,10 +55,14 @@ export default function Providers({
                 },
             })
     );
+    const enableDevBrowserLogBridge =
+        process.env.NODE_ENV === 'development'
+        && process.env.NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE === '1';
 
     return (
         <QueryClientProvider client={queryClient}>
-            {process.env.NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE === '1' && <DevBrowserLogBridge />}
+            <SessionBootstrap />
+            {enableDevBrowserLogBridge && <DevBrowserLogBridge />}
             <ConfigProvider
                 locale={antdLocaleMap[normalizedLanguage] ?? enUS}
                 theme={{

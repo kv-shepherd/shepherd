@@ -12,7 +12,7 @@ import { useEffect } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { Spin } from 'antd';
 import { useAuthStore } from '@/stores/auth';
-import { consumeNextLoginEntry, getLoginEntryPath } from '@/lib/auth/loginEntry';
+import { consumeNextLoginEntry } from '@/lib/auth/loginEntry';
 
 export default function AuthGuard({
     children,
@@ -21,11 +21,10 @@ export default function AuthGuard({
 }) {
     const router = useRouter();
     const pathname = usePathname();
-    const { isAuthenticated, forcePasswordChange, hasHydrated } = useAuthStore();
-    const loginEntryPath = getLoginEntryPath();
+    const { isAuthenticated, forcePasswordChange, hasHydrated, hasValidatedSession } = useAuthStore();
 
     useEffect(() => {
-        if (!hasHydrated) {
+        if (!hasHydrated || !hasValidatedSession) {
             return;
         }
 
@@ -37,9 +36,9 @@ export default function AuthGuard({
         if (forcePasswordChange && pathname !== '/auth/change-password') {
             router.replace('/auth/change-password');
         }
-    }, [forcePasswordChange, hasHydrated, isAuthenticated, loginEntryPath, pathname, router]);
+    }, [forcePasswordChange, hasHydrated, hasValidatedSession, isAuthenticated, pathname, router]);
 
-    if (!hasHydrated || !isAuthenticated) {
+    if (!hasHydrated || !hasValidatedSession || !isAuthenticated) {
         return (
             <div
                 style={{

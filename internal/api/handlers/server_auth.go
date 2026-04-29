@@ -28,6 +28,9 @@ func (s *Server) Login(c *gin.Context) {
 	if !bindAndValidateJSON(c, &req) {
 		return
 	}
+	if !s.enforceLoginRateLimit(c, req.Username) {
+		return
+	}
 
 	user, err := s.client.User.Query().
 		Where(entuser.UsernameEQ(req.Username)).
@@ -35,12 +38,14 @@ func (s *Server) Login(c *gin.Context) {
 		Only(c.Request.Context())
 	if err != nil {
 		logger.Warn("login failed: invalid credentials")
+		s.recordLoginFailure(c, req.Username)
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_CREDENTIALS"})
 		return
 	}
 
 	if compareErr := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); compareErr != nil {
 		logger.Warn("login failed: invalid credentials")
+		s.recordLoginFailure(c, req.Username)
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_CREDENTIALS"})
 		return
 	}
@@ -51,6 +56,8 @@ func (s *Server) Login(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	s.recordLoginSuccess(c, req.Username)
+	s.setAuthSessionCookie(c, loginResp.Token, loginResp.ExpiresAt)
 
 	now := time.Now()
 	if err := s.client.User.UpdateOneID(user.ID).SetLastLoginAt(now).Exec(c.Request.Context()); err != nil {
@@ -67,6 +74,8 @@ func (s *Server) Login(c *gin.Context) {
 		}
 	}
 
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
 	c.JSON(http.StatusOK, loginResp)
 }
 
@@ -118,6 +127,11 @@ func (s *Server) ChangePassword(c *gin.Context) {
 		return
 	}
 
+	if validationErr := s.validatePassword(req.NewPassword, user.Username, user.Email, user.DisplayName); validationErr != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validationErr.Error()})
+		return
+	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), passwordHashCost)
 	if err != nil {
 		logger.Error("failed to hash new password", zap.Error(err), zap.String("user_id", userID))
@@ -147,6 +161,14 @@ func (s *Server) ChangePassword(c *gin.Context) {
 	}
 
 	c.Status(http.StatusNoContent)
+	c.Writer.WriteHeaderNow()
+}
+
+// Logout handles POST /auth/logout.
+func (s *Server) Logout(c *gin.Context) {
+	s.clearAuthSessionCookie(c)
+	c.Status(http.StatusNoContent)
+	c.Writer.WriteHeaderNow()
 }
 
 // loadUserRolesAndPermissions fetches roles and flattened permissions for a user.
@@ -198,12 +220,13 @@ func (s *Server) buildUserInfo(ctx context.Context, user *ent.User) (generated.U
 	}
 
 	return generated.UserInfo{
-		Id:          user.ID,
-		Username:    user.Username,
-		Email:       user.Email,
-		DisplayName: user.DisplayName,
-		Roles:       roleNames,
-		Permissions: permissions,
+		Id:                  user.ID,
+		Username:            user.Username,
+		Email:               user.Email,
+		DisplayName:         user.DisplayName,
+		Roles:               roleNames,
+		Permissions:         permissions,
+		ForcePasswordChange: user.ForcePasswordChange,
 	}, nil
 }
 
@@ -220,6 +243,10 @@ func HashPassword(password string) (string, error) {
 func GenerateUserID() string {
 	id, _ := uuid.NewV7()
 	return id.String()
+}
+
+func (s *Server) validatePassword(password string, identityHints ...string) error {
+	return s.passwordPolicy.ValidatePassword(password, identityHints...)
 }
 
 func (s *Server) issueLoginResponse(ctx context.Context, user *ent.User) (generated.LoginResponse, error) {

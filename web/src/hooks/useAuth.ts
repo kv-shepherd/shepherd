@@ -48,36 +48,32 @@ export function useAuth() {
   const { t } = useTranslation("errors");
 
   const {
-    token,
     user,
     isAuthenticated,
     forcePasswordChange,
-    login,
+    login: storeLogin,
     logout: clearAuth,
   } = useAuthStore();
 
   const completeLoginWithToken = useCallback(
     async (
-      token: string,
       fallbackUser: UserInfo,
       forcePasswordChange: boolean,
       successTarget: string,
     ) => {
-      const { data: userInfo } = await api.GET("/auth/me", {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const { data: userInfo } = await api.GET("/auth/me");
 
       const resolvedUser = userInfo ?? fallbackUser;
-      login(token, resolvedUser, forcePasswordChange);
-      if (forcePasswordChange) {
+      const requiresPasswordChange =
+        forcePasswordChange || (resolvedUser.force_password_change ?? false);
+      storeLogin(resolvedUser, requiresPasswordChange);
+      if (requiresPasswordChange) {
         router.push("/auth/change-password");
       } else {
         router.push(successTarget);
       }
     },
-    [login, router],
+    [router, storeLogin],
   );
 
   const handleLogin = useCallback(
@@ -95,7 +91,6 @@ export function useAuth() {
 
       if (data) {
         await completeLoginWithToken(
-          data.token,
           {
             id: payload.username,
             username: payload.username,
@@ -108,8 +103,13 @@ export function useAuth() {
     [completeLoginWithToken, message, t],
   );
 
-  const handleLogout = useCallback(() => {
+  const handleLogout = useCallback(async () => {
     setNextLoginEntryOverride(getStandardLoginPath());
+    try {
+      await api.POST("/auth/logout");
+    } catch {
+      // Clear local state even if the server session is already absent.
+    }
     clearAuth();
     router.push(getStandardLoginPath());
   }, [clearAuth, router]);
@@ -169,7 +169,6 @@ export function useAuth() {
       const fallbackUsername =
         typeof credentials.username === "string" ? credentials.username : providerId;
       await completeLoginWithToken(
-        data.token,
         {
           id: fallbackUsername,
           username: fallbackUsername,
@@ -182,7 +181,6 @@ export function useAuth() {
   );
 
   return {
-    token,
     user,
     isAuthenticated,
     forcePasswordChange,
