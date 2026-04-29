@@ -39,6 +39,11 @@ func isJWTOptionalPath(path string) bool {
 		(strings.HasSuffix(path, "/vnc") || strings.HasSuffix(path, "/serial"))
 }
 
+var defaultTrustedLoopbackProxies = []string{
+	"127.0.0.1/8",
+	"::1/128",
+}
+
 func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg middleware.JWTConfig) *gin.Engine {
 	router := gin.New()
 	configureTrustedProxies(router, cfg.Server.TrustedProxies)
@@ -132,12 +137,10 @@ func configureTrustedProxies(router *gin.Engine, trustedProxies []string) {
 	}
 
 	proxies := sanitizeAllowedOrigins(trustedProxies)
-	var err error
 	if len(proxies) == 0 {
-		err = router.SetTrustedProxies(nil)
-	} else {
-		err = router.SetTrustedProxies(proxies)
+		proxies = defaultTrustedLoopbackProxies
 	}
+	err := router.SetTrustedProxies(proxies)
 	if err != nil {
 		panic("configure trusted proxies: " + err.Error())
 	}

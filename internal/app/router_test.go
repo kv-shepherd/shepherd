@@ -134,7 +134,27 @@ func TestNewRouterAppliesMaxRequestBodyBytesBeforeHandlers(t *testing.T) {
 	require.Contains(t, rr.Body.String(), "REQUEST_TOO_LARGE")
 }
 
-func TestConfigureTrustedProxies_DisablesForwardedClientIPByDefault(t *testing.T) {
+func TestConfigureTrustedProxies_UsesLoopbackForwardedClientIPByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	configureTrustedProxies(router, nil)
+	router.GET("/client-ip", func(c *gin.Context) {
+		c.String(http.StatusOK, c.ClientIP())
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/client-ip", http.NoBody)
+	req.RemoteAddr = "127.0.0.1:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "203.0.113.10", rr.Body.String())
+}
+
+func TestConfigureTrustedProxies_IgnoresForwardedClientIPFromUntrustedProxyByDefault(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
 	router := gin.New()

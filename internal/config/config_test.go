@@ -143,6 +143,18 @@ func TestDatabaseConfig_DSN(t *testing.T) {
 			},
 			want: "postgres://user:pass@localhost:5432/db?sslmode=require",
 		},
+		{
+			name: "escapes reserved characters in password",
+			cfg: DatabaseConfig{
+				Host:     "localhost",
+				Port:     5432,
+				User:     "shepherd",
+				Password: "pa:ss@word?1#frag",
+				Database: "shepherd",
+				SSLMode:  "disable",
+			},
+			want: "postgres://shepherd:pa%3Ass%40word%3F1%23frag@localhost:5432/shepherd?sslmode=disable",
+		},
 	}
 
 	for _, tt := range tests {

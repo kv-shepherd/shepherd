@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 import { headers } from 'next/headers';
-import NextTopLoader from 'nextjs-toploader';
 import './globals.css';
 import AntdNonceRegistry from '../components/security/AntdNonceRegistry';
+import ClientTopLoader from '../components/security/ClientTopLoader';
 import Providers from './providers';
 
 export const metadata: Metadata = {
@@ -24,7 +24,7 @@ export default async function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <NextTopLoader showSpinner={false} color="#2563eb" nonce={nonce} />
+        <ClientTopLoader nonce={nonce} />
         <AntdNonceRegistry nonce={nonce}>
           <Providers nonce={nonce}>{children}</Providers>
         </AntdNonceRegistry>

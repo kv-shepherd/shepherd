@@ -10,9 +10,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 
@@ -182,6 +184,85 @@ func TestLogout_ClearsSessionCookie(t *testing.T) {
 	}
 }
 
+func TestLogin_SetsSecureCookieWhenPublicBaseURLUsesHTTPS(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := testutil.OpenEntPostgres(t, "auth_handler_login_secure_public_base_url")
+	server := NewServer(ServerDeps{
+		EntClient:     client,
+		PublicBaseURL: "https://console.example.com",
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-signing-key-12345678901234567890"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  time.Hour,
+		},
+		SessionConfig: config.SessionConfig{
+			Cookie:   "shepherd_session",
+			HTTPOnly: true,
+			Secure:   true,
+		},
+	})
+
+	hash, err := HashPassword("Passw0rd!Example")
+	if err != nil {
+		t.Fatalf("HashPassword() error = %v", err)
+	}
+	if _, err := client.User.Create().
+		SetID("user-login-secure-public-base-url").
+		SetUsername("alice").
+		SetPasswordHash(hash).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed login user: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"Passw0rd!Example"}`))
+	req.Header.Set("Content-Type", "application/json")
+	c.Request = req
+
+	server.Login(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	if cookieHeader := w.Header().Get("Set-Cookie"); !strings.Contains(cookieHeader, "Secure") {
+		t.Fatalf("auth cookie should mark Secure when public base URL is HTTPS: %s", cookieHeader)
+	}
+}
+
+func TestSecureCookieByPolicy_ReleaseModeForcesSecure(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest(http.MethodGet, "/auth/login", http.NoBody)
+
+	if !secureCookieByPolicyWithReleaseMode(c, true, "", true) {
+		t.Fatal("secureCookieByPolicyWithReleaseMode() should force Secure in release mode")
+	}
+}
+
+func TestSetConsoleBootstrapCookie_UsesSecurePolicy(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	server := NewServer(ServerDeps{
+		PublicBaseURL: "https://console.example.com",
+	})
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodPost, "/api/v1/vms/vm-1/vnc/bootstrap", http.NoBody)
+
+	server.setConsoleBootstrapCookie(c, "token-value", "/api/v1/vms/vm-1/vnc")
+
+	if cookieHeader := w.Header().Get("Set-Cookie"); !strings.Contains(cookieHeader, "Secure") {
+		t.Fatalf("console bootstrap cookie should mark Secure when public base URL is HTTPS: %s", cookieHeader)
+	}
+}
+
 func TestLogin_ReturnsTooManyRequestsAfterRepeatedFailures(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
@@ -243,6 +324,73 @@ func TestLogin_ReturnsTooManyRequestsAfterRepeatedFailures(t *testing.T) {
 		t.Fatalf("third attempt status=%d code=%q", w.Code, apiErr.Code)
 	} else if got := w.Header().Get("Retry-After"); got == "" {
 		t.Fatal("expected Retry-After header on rate-limited login response")
+	}
+}
+
+func TestLogin_AuditIncludesClientIPAndRequestID(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := testutil.OpenEntPostgres(t, "auth_handler_login_audit_details")
+	server := NewServer(ServerDeps{
+		EntClient: client,
+		Audit:     audit.NewLogger(client),
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-signing-key-12345678901234567890"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  time.Hour,
+		},
+		SessionConfig: config.SessionConfig{
+			Cookie:   "shepherd_session",
+			HTTPOnly: true,
+		},
+	})
+
+	hash, err := HashPassword("Passw0rd!Example")
+	if err != nil {
+		t.Fatalf("HashPassword() error = %v", err)
+	}
+	if _, createErr := client.User.Create().
+		SetID("user-login-audit").
+		SetUsername("alice").
+		SetPasswordHash(hash).
+		SetEnabled(true).
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("seed login user: %v", createErr)
+	}
+
+	router := gin.New()
+	router.Use(middleware.RequestID())
+	router.POST("/auth/login", server.Login)
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"Passw0rd!Example"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(middleware.RequestIDHeader, "req-login-audit")
+	req.RemoteAddr = "203.0.113.10:4321"
+	w := httptest.NewRecorder()
+
+	router.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	row, err := client.AuditLog.Query().
+		Where(auditlog.ActionEQ("user.login")).
+		Only(t.Context())
+	if err != nil {
+		t.Fatalf("query audit log: %v", err)
+	}
+	if got := row.Details["username"]; got != "alice" {
+		t.Fatalf("details.username = %v, want alice", got)
+	}
+	if got := row.Details["provider"]; got != "local" {
+		t.Fatalf("details.provider = %v, want local", got)
+	}
+	if got := row.Details["client_ip"]; got != "203.0.113.10" {
+		t.Fatalf("details.client_ip = %v, want 203.0.113.10", got)
+	}
+	if got := row.Details["request_id"]; got != "req-login-audit" {
+		t.Fatalf("details.request_id = %v, want req-login-audit", got)
 	}
 }
 

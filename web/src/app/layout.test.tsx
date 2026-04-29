@@ -9,7 +9,7 @@ vi.mock('../components/security/AntdNonceRegistry', () => ({
   default: ({ children }: { children: React.ReactNode }) => children,
 }));
 
-vi.mock('nextjs-toploader', () => ({
+vi.mock('../components/security/ClientTopLoader', () => ({
   default: () => null,
 }));
 

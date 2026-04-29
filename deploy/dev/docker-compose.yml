@@ -27,6 +27,7 @@ services:
       GIN_MODE: debug
       SERVER_PUBLIC_BASE_URL: "${DEV_PUBLIC_BASE_URL:-http://localhost:3000}"
       SERVER_ALLOWED_ORIGINS: "${DEV_ALLOWED_ORIGIN_URLS:-http://localhost:3000,http://127.0.0.1:3000,http://localhost:3001,http://127.0.0.1:3001}"
+      SERVER_TRUSTED_PROXIES: "${SERVER_TRUSTED_PROXIES:-127.0.0.1/8,::1/128,172.16.0.0/12}"
       # Keep wildcard disabled by default; use nginx single-origin ingress instead.
       SERVER_ALLOW_CREDENTIALS: "true"
       SERVER_UNSAFE_ALLOW_ALL_ORIGINS: "false"

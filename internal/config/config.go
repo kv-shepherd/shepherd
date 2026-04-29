@@ -85,10 +85,13 @@ func (c DatabaseConfig) DSN() string {
 	if sslmode == "" {
 		sslmode = "require"
 	}
-	return fmt.Sprintf(
-		"postgres://%s:%s@%s:%d/%s?sslmode=%s",
-		c.User, c.Password, c.Host, c.Port, c.Database, sslmode,
-	)
+	return (&url.URL{
+		Scheme:   "postgres",
+		User:     url.UserPassword(c.User, c.Password),
+		Host:     net.JoinHostPort(c.Host, fmt.Sprintf("%d", c.Port)),
+		Path:     "/" + c.Database,
+		RawQuery: url.Values{"sslmode": []string{sslmode}}.Encode(),
+	}).String()
 }
 
 // SessionConfig contains session storage settings.

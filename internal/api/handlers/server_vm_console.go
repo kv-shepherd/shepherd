@@ -808,7 +808,7 @@ func (s *Server) upgradeConsoleWebSocket(c *gin.Context, consolePath string) (*w
 		CheckOrigin:      s.consoleOriginAllowed,
 	}
 	headers := http.Header{}
-	headers.Add("Set-Cookie", s.consoleBootstrapCookie("", -1, isSecureRequest(c), consolePath).String())
+	headers.Add("Set-Cookie", s.consoleBootstrapCookie("", -1, secureCookieByPolicy(c, true, s.publicBaseURL), consolePath).String())
 	return upgrader.Upgrade(c.Writer, c.Request, headers)
 }
 
@@ -944,7 +944,7 @@ func (s *Server) setConsoleBootstrapCookie(c *gin.Context, token, consolePath st
 	if c == nil {
 		return
 	}
-	http.SetCookie(c.Writer, s.consoleBootstrapCookie(token, vncBootstrapCookieMaxAgeSec, isSecureRequest(c), consolePath))
+	http.SetCookie(c.Writer, s.consoleBootstrapCookie(token, vncBootstrapCookieMaxAgeSec, secureCookieByPolicy(c, true, s.publicBaseURL), consolePath))
 }
 
 func isSecureRequest(c *gin.Context) bool {

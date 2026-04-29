@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"net/http"
+	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -27,7 +29,7 @@ func (s *Server) buildAuthSessionCookie(c *gin.Context, value string, expiresAt 
 		if s.sessionCfg.HTTPOnly || s.sessionCfg.Cookie != "" || s.sessionCfg.Secure {
 			httpOnly = s.sessionCfg.HTTPOnly
 		}
-		secure = s.sessionCfg.Secure && isSecureRequest(c)
+		secure = secureCookieByPolicy(c, s.sessionCfg.Secure, s.publicBaseURL)
 	}
 	return &http.Cookie{
 		Name:     s.authSessionCookieName(),
@@ -39,6 +41,33 @@ func (s *Server) buildAuthSessionCookie(c *gin.Context, value string, expiresAt 
 		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 	}
+}
+
+func secureCookieByPolicy(c *gin.Context, configuredSecure bool, publicBaseURL string) bool {
+	return secureCookieByPolicyWithReleaseMode(
+		c,
+		configuredSecure,
+		publicBaseURL,
+		strings.EqualFold(strings.TrimSpace(os.Getenv("GIN_MODE")), "release"),
+	)
+}
+
+func secureCookieByPolicyWithReleaseMode(c *gin.Context, configuredSecure bool, publicBaseURL string, releaseMode bool) bool {
+	if !configuredSecure {
+		return false
+	}
+	if isSecureRequest(c) {
+		return true
+	}
+	if publicBaseURLUsesHTTPS(publicBaseURL) {
+		return true
+	}
+	return releaseMode
+}
+
+func publicBaseURLUsesHTTPS(raw string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	return err == nil && strings.EqualFold(parsed.Scheme, "https")
 }
 
 func (s *Server) setAuthSessionCookie(c *gin.Context, token string, expiresAt time.Time) {

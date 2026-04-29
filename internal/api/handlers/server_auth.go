@@ -67,7 +67,13 @@ func (s *Server) Login(c *gin.Context) {
 	}
 
 	if s.audit != nil {
-		if err := s.audit.LogAction(c.Request.Context(), "user.login", "user", user.ID, user.ID, nil); err != nil {
+		clientIP, requestID := loginAuditContext(c)
+		if err := s.audit.LogAction(c.Request.Context(), "user.login", "user", user.ID, user.ID, map[string]interface{}{
+			"username":   strings.TrimSpace(user.Username),
+			"provider":   "local",
+			"client_ip":  clientIP,
+			"request_id": requestID,
+		}); err != nil {
 			logger.Warn("audit log write failed",
 				zap.Error(err),
 				zap.String("action", "user.login"),
@@ -259,12 +265,16 @@ func GenerateUserID() string {
 	return id.String()
 }
 
-func (s *Server) recordCredentialLoginFailure(c *gin.Context, username, reason string) {
-	clientIP := loginAttemptClientIdentity(c)
-	requestID := ""
+func loginAuditContext(c *gin.Context) (clientIP, requestID string) {
+	clientIP = loginAttemptClientIdentity(c)
 	if c != nil && c.Request != nil {
-		requestID = middleware.GetRequestID(c.Request.Context())
+		requestID = strings.TrimSpace(middleware.GetRequestID(c.Request.Context()))
 	}
+	return clientIP, requestID
+}
+
+func (s *Server) recordCredentialLoginFailure(c *gin.Context, username, reason string) {
+	clientIP, requestID := loginAuditContext(c)
 	logger.Warn(
 		"login failed",
 		zap.String("reason", strings.TrimSpace(reason)),

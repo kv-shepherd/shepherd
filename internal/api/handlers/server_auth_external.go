@@ -141,7 +141,7 @@ func (s *Server) SubmitLoginAuthProvider(c *gin.Context, providerID generated.Pr
 		return
 	}
 
-	loginResp, err := s.completeExternalAuthResultLogin(ctx, providerRow.ID, authResult)
+	loginResp, err := s.completeExternalAuthResultLogin(ctx, c, providerRow.ID, authResult)
 	if err != nil {
 		switch {
 		case errors.Is(err, errExternalAuthUserDisabled):
@@ -383,10 +383,14 @@ func (s *Server) completeExternalAuthLogin(c *gin.Context, providerID string, ca
 	}
 
 	if s.audit != nil {
+		clientIP, requestID := loginAuditContext(c)
 		_ = s.audit.LogAction(ctx, "user.external_login", "user", upsertResult.User.ID, upsertResult.User.ID, map[string]interface{}{
 			"auth_provider_id": providerID,
 			"created":          upsertResult.Created,
 			"updated":          upsertResult.Updated,
+			"provider":         "external",
+			"client_ip":        clientIP,
+			"request_id":       requestID,
 		})
 	}
 
@@ -849,6 +853,7 @@ func (s *Server) finalizeExternalAuthLogin(
 
 func (s *Server) completeExternalAuthResultLogin(
 	ctx context.Context,
+	c *gin.Context,
 	providerID string,
 	authResult *runtimecontract.AuthResult,
 ) (generated.LoginResponse, error) {
@@ -857,10 +862,14 @@ func (s *Server) completeExternalAuthResultLogin(
 		return generated.LoginResponse{}, err
 	}
 	if s.audit != nil && upsertResult != nil && upsertResult.User != nil {
+		clientIP, requestID := loginAuditContext(c)
 		_ = s.audit.LogAction(ctx, "user.external_login", "user", upsertResult.User.ID, upsertResult.User.ID, map[string]interface{}{
 			"auth_provider_id": providerID,
 			"created":          upsertResult.Created,
 			"updated":          upsertResult.Updated,
+			"provider":         "external",
+			"client_ip":        clientIP,
+			"request_id":       requestID,
 		})
 	}
 	return loginResp, nil
