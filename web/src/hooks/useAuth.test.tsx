@@ -80,6 +80,13 @@ describe("useAuth", () => {
       await result.current.login({ username: "alice", password: "secret" });
     });
 
+    expect(postMock).toHaveBeenCalledWith(
+      "/auth/login",
+      expect.objectContaining({
+        body: { username: "alice", password: "secret" },
+        headers: { "X-Shepherd-Session-Mode": "cookie_only" },
+      }),
+    );
     expect(pushMock).toHaveBeenCalledWith("/dashboard");
     expect(useAuthStore.getState().user).toEqual({
       id: "u-1",
@@ -231,7 +238,7 @@ describe("useAuth", () => {
   it("submits credential-based provider login and stores the returned session user", async () => {
     postMock.mockResolvedValue({
       data: {
-        token: "token-ldap",
+        token: "",
         force_password_change: false,
       },
     });
@@ -261,6 +268,7 @@ describe("useAuth", () => {
           credentials: { username: "alice", password: "secret" },
           return_to: "/dashboard",
         }),
+        headers: { "X-Shepherd-Session-Mode": "cookie_only" },
       }),
     );
     expect(useAuthStore.getState().user).toEqual({

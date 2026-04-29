@@ -110,6 +110,9 @@ func (a *ldapAuthProviderAdapter) ValidateConfig(config map[string]interface{}) 
 	default:
 		return fmt.Errorf("server_url must use ldap:// or ldaps://")
 	}
+	if strings.EqualFold(parsedURL.Scheme, "ldap") && !ldapTLSEnabled(config) {
+		return fmt.Errorf("server_url using ldap:// requires tls_enabled=true (STARTTLS)")
+	}
 	if strings.TrimSpace(configStringValue(config, "bind_dn")) == "" {
 		return fmt.Errorf("bind_dn is required")
 	}
@@ -804,6 +807,9 @@ func dialLDAPConnection(serverURL string, tlsEnabled, _ bool, timeout time.Durat
 	parsedURL, err := url.Parse(serverURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse ldap server_url: %w", err)
+	}
+	if strings.EqualFold(parsedURL.Scheme, "ldap") && !tlsEnabled {
+		return nil, fmt.Errorf("ldap:// connections without STARTTLS are not allowed")
 	}
 	tlsConfig := &tls.Config{
 		MinVersion: tls.VersionTLS12,

@@ -154,7 +154,7 @@ func TestListLoginAuthProviders_ListsEnabledRuntimeProviders(t *testing.T) {
 	}
 }
 
-func TestStartLoginAuthProvider_PassesStateAndCallbackURLToRuntimeProvider(t *testing.T) {
+func TestStartLoginAuthProvider_RequiresConfiguredPublicBaseURL(t *testing.T) {
 	t.Parallel()
 
 	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
@@ -182,20 +182,17 @@ func TestStartLoginAuthProvider_PassesStateAndCallbackURLToRuntimeProvider(t *te
 	ctx.Request.Host = "api.example.com"
 	ctx.Request.Header.Set("X-Forwarded-Proto", "https")
 	srv.StartLoginAuthProvider(ctx, "runtime-start")
-	if w.Code != http.StatusOK {
-		t.Fatalf("start status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	if w.Code != http.StatusServiceUnavailable {
+		t.Fatalf("start status = %d, want %d, body=%s", w.Code, http.StatusServiceUnavailable, w.Body.String())
 	}
 
-	var resp generated.AuthProviderLoginStartResponse
+	var resp generated.Error
 	mustDecodeJSON(t, w.Body.Bytes(), &resp)
-	if resp.RedirectUrl != "https://login.example.com/start" {
-		t.Fatalf("redirect_url = %q, want %q", resp.RedirectUrl, "https://login.example.com/start")
+	if resp.Code != "EXTERNAL_AUTH_PUBLIC_BASE_URL_REQUIRED" {
+		t.Fatalf("code = %q", resp.Code)
 	}
-	if adapter.startReq.State == "" {
-		t.Fatal("provider start request state is empty")
-	}
-	if adapter.startReq.CallbackURL != "https://api.example.com/api/v1/auth/providers/runtime-start/callback" {
-		t.Fatalf("callback_url = %q", adapter.startReq.CallbackURL)
+	if adapter.startReq.CallbackURL != "" {
+		t.Fatalf("callback_url = %q, want empty", adapter.startReq.CallbackURL)
 	}
 }
 
@@ -307,7 +304,7 @@ func TestStartLoginAuthProvider_AllowsRelativeReturnToFromAllowedOrigin(t *testi
 	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
 		startResp: &provider.AuthStartResponse{RedirectURL: "https://login.example.com/start"},
 	})
-	srv, client := newExternalAuthTestServer(t, []string{"https://console.example.com"})
+	srv, client := newExternalAuthTestServerWithPublicBaseURL(t, []string{"https://console.example.com"}, "https://auth.example.com")
 
 	if _, err := client.AuthProvider.Create().
 		SetID("runtime-relative-return-to").
@@ -344,7 +341,7 @@ func TestStartLoginAuthProvider_AllowsLoopbackOriginAliases(t *testing.T) {
 	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
 		startResp: &provider.AuthStartResponse{RedirectURL: "https://login.example.com/start"},
 	})
-	srv, client := newExternalAuthTestServer(t, []string{"http://localhost:3000"})
+	srv, client := newExternalAuthTestServerWithPublicBaseURL(t, []string{"http://localhost:3000"}, "https://auth.example.com")
 
 	if _, err := client.AuthProvider.Create().
 		SetID("runtime-loopback-alias").
@@ -380,7 +377,7 @@ func TestStartLoginAuthProvider_MapsStructuredStartErrors(t *testing.T) {
 	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
 		startErr: provider.NewAuthStartError("AUTH_LOGIN_MODE_UNAVAILABLE", "embedded login requires the dedicated client browser"),
 	})
-	srv, client := newExternalAuthTestServer(t, []string{"https://console.example.com"})
+	srv, client := newExternalAuthTestServerWithPublicBaseURL(t, []string{"https://console.example.com"}, "https://auth.example.com")
 
 	if _, err := client.AuthProvider.Create().
 		SetID("runtime-start-error").

@@ -134,6 +134,46 @@ func TestNewRouterAppliesMaxRequestBodyBytesBeforeHandlers(t *testing.T) {
 	require.Contains(t, rr.Body.String(), "REQUEST_TOO_LARGE")
 }
 
+func TestConfigureTrustedProxies_DisablesForwardedClientIPByDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	configureTrustedProxies(router, nil)
+	router.GET("/client-ip", func(c *gin.Context) {
+		c.String(http.StatusOK, c.ClientIP())
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/client-ip", http.NoBody)
+	req.RemoteAddr = "198.51.100.10:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "198.51.100.10", rr.Body.String())
+}
+
+func TestConfigureTrustedProxies_AllowsConfiguredForwardedClientIP(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	configureTrustedProxies(router, []string{"198.51.100.0/24"})
+	router.GET("/client-ip", func(c *gin.Context) {
+		c.String(http.StatusOK, c.ClientIP())
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/client-ip", http.NoBody)
+	req.RemoteAddr = "198.51.100.10:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "203.0.113.10", rr.Body.String())
+}
+
 func TestMapClusterHealthStatus(t *testing.T) {
 	require.Equal(t, entcluster.StatusHEALTHY, mapClusterHealthStatus(provider.ClusterStatusHealthy))
 	require.Equal(t, entcluster.StatusUNHEALTHY, mapClusterHealthStatus(provider.ClusterStatusUnhealthy))

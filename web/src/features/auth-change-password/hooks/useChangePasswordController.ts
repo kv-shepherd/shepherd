@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { api } from '@/lib/api/client';
+import { getStandardLoginPath, setNextLoginEntryOverride } from '@/lib/auth/loginEntry';
 import { useAuthStore } from '@/stores/auth';
 
 export interface ChangePasswordFormValues {
@@ -36,8 +37,9 @@ export function useChangePasswordController() {
                 return;
             }
 
-            useAuthStore.getState().clearForcePasswordChange();
-            router.push('/dashboard');
+            setNextLoginEntryOverride(getStandardLoginPath());
+            useAuthStore.getState().logout();
+            router.push(getStandardLoginPath());
         } catch {
             setError(tErrors('INTERNAL_ERROR'));
         } finally {

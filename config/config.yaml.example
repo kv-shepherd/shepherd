@@ -11,6 +11,9 @@ server:
   allowed_origins:
     - "http://localhost:3000"
     - "http://127.0.0.1:3000"
+  # Reverse proxies whose X-Forwarded-* headers should be trusted by Gin.
+  # Leave empty to ignore all forwarded client IP headers by default.
+  trusted_proxies: []
   # Keep true only if browser cookies/credentialed CORS are required
   allow_credentials: true
   # Unsafe dev-only switch; do not enable in shared/prod environments

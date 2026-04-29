@@ -252,6 +252,18 @@ func TestLoad_ServerPublicBaseURLFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoad_ServerTrustedProxiesFromEnv(t *testing.T) {
+	t.Setenv("SERVER_TRUSTED_PROXIES", "10.0.0.0/8,192.168.1.10")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if got := cfg.Server.TrustedProxies; len(got) != 2 || got[0] != "10.0.0.0/8" || got[1] != "192.168.1.10" {
+		t.Fatalf("Server.TrustedProxies = %v, want [10.0.0.0/8 192.168.1.10]", got)
+	}
+}
+
 func TestLoad_ServerMaxRequestBodyBytesFromEnv(t *testing.T) {
 	t.Setenv("SERVER_MAX_REQUEST_BODY_BYTES", "1048576")
 
@@ -272,6 +284,18 @@ func TestLoad_ServerMaxRequestBodyBytesRejectsNegative(t *testing.T) {
 		t.Fatal("Load() expected error for negative request body limit")
 	}
 	if got := err.Error(); got != "validate config: server.max_request_body_bytes must be >= 0" {
+		t.Fatalf("Load() error = %q", got)
+	}
+}
+
+func TestLoad_ServerTrustedProxiesRejectsInvalidValue(t *testing.T) {
+	t.Setenv("SERVER_TRUSTED_PROXIES", "not-a-cidr")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for invalid trusted proxy value")
+	}
+	if got := err.Error(); got != `validate config: server.trusted_proxies contains invalid IP or CIDR "not-a-cidr"` {
 		t.Fatalf("Load() error = %q", got)
 	}
 }

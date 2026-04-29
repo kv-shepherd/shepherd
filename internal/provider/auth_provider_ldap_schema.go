@@ -10,7 +10,7 @@ func ldapAuthProviderSchema() map[string]interface{} {
 				"type":        "string",
 				"format":      "uri",
 				"title":       "Server URL",
-				"description": "LDAP server URL (e.g. ldaps://ldap.example.com:636)",
+				"description": "LDAP server URL (prefer ldaps://; ldap:// requires StartTLS with tls_enabled=true)",
 			},
 			"bind_dn": map[string]interface{}{
 				"type":        "string",
@@ -94,7 +94,7 @@ func ldapAuthProviderSchema() map[string]interface{} {
 			"tls_enabled": map[string]interface{}{
 				"type":        "boolean",
 				"title":       "Enable TLS",
-				"description": "Use TLS/STARTTLS for LDAP connection",
+				"description": "Use TLS/STARTTLS for LDAP connection; ldap:// without StartTLS is rejected",
 				"default":     true,
 			},
 			"test_endpoint": map[string]interface{}{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -211,5 +212,34 @@ func TestNewServerDeps_RefreshClusterHealth_DisabledClusterDoesNotStayHealthy(t 
 	}
 	if probeCalls != 0 {
 		t.Fatalf("probeCalls = %d, want 0", probeCalls)
+	}
+}
+
+func TestNewServerDeps_WiresAuthSessionValidation(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "modules_auth_sessions_client")
+	pool := testutil.OpenPGXPool(t, "modules_auth_sessions_pool")
+
+	deps := NewServerDeps(&config.Config{
+		Session: config.SessionConfig{Lifetime: time.Hour, Cookie: "shepherd_session"},
+		Security: config.SecurityConfig{
+			SessionSecret:       "session-secret-1234567890123456789012",
+			EncryptionKey:       "3031323334353637383961626364656630313233343536373839616263646566",
+			JWTVerificationKeys: []string{"verify-a"},
+		},
+	}, &Infrastructure{
+		EntClient: client,
+		Pool:      pool,
+	}, nil)
+
+	if deps.AuthSessions == nil {
+		t.Fatal("AuthSessions dependency was not wired")
+	}
+	if deps.JWTCfg.RevocationChecker == nil {
+		t.Fatal("JWTCfg.RevocationChecker was not wired")
+	}
+	if deps.JWTCfg.ClaimsValidator == nil {
+		t.Fatal("JWTCfg.ClaimsValidator was not wired")
 	}
 }

@@ -41,6 +41,7 @@ func isJWTOptionalPath(path string) bool {
 
 func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg middleware.JWTConfig) *gin.Engine {
 	router := gin.New()
+	configureTrustedProxies(router, cfg.Server.TrustedProxies)
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ErrorHandler())
 	router.Use(middleware.MaxRequestBodyBytes(cfg.Server.MaxRequestBodyBytes))
 
@@ -66,7 +67,7 @@ func buildCORSConfig(cfg *config.Config, checker corsOriginChecker) cors.Config 
 
 	corsCfg := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Request-ID"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Request-ID", "X-Shepherd-Session-Mode"},
 		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: cfg.Server.AllowCredentials,
 		MaxAge:           12 * time.Hour,
@@ -123,6 +124,23 @@ func isExternalAuthCallbackRequest(c *gin.Context) bool {
 
 func isExternalAuthCallbackPath(path string) bool {
 	return strings.HasPrefix(path, "/api/v1/auth/providers/") && strings.HasSuffix(path, "/callback")
+}
+
+func configureTrustedProxies(router *gin.Engine, trustedProxies []string) {
+	if router == nil {
+		return
+	}
+
+	proxies := sanitizeAllowedOrigins(trustedProxies)
+	var err error
+	if len(proxies) == 0 {
+		err = router.SetTrustedProxies(nil)
+	} else {
+		err = router.SetTrustedProxies(proxies)
+	}
+	if err != nil {
+		panic("configure trusted proxies: " + err.Error())
+	}
 }
 
 // jwtSkipPublic returns middleware that applies JWT auth only on non-public routes.

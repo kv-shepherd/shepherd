@@ -250,6 +250,21 @@ func TestLDAPAuthProviderAuthenticateCredentials_SearchesThenBindsUser(t *testin
 	}
 }
 
+func TestLDAPAuthProviderValidateConfig_RejectsPlainLDAPWithoutTLS(t *testing.T) {
+	adapter := &ldapAuthProviderAdapter{}
+
+	err := adapter.ValidateConfig(map[string]interface{}{
+		"server_url":    "ldap://ldap.example.com:389",
+		"bind_dn":       "cn=admin,dc=example,dc=com",
+		"base_dn":       "ou=users,dc=example,dc=com",
+		"tls_enabled":   false,
+		"bind_password": "secret",
+	})
+	if err == nil {
+		t.Fatal("ValidateConfig() error = nil, want rejection for plain LDAP without TLS")
+	}
+}
+
 func TestLDAPAuthProviderAuthenticateCredentials_InvalidPassword(t *testing.T) {
 	conn := &fakeLDAPConnection{
 		bindErrs: []error{nil, errors.New("invalid credentials")},

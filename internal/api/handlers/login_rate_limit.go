@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"math"
-	"net"
 	"strconv"
 	"strings"
 	"sync"
@@ -212,44 +211,10 @@ func credentialLoginIdentity(providerID string, credentials map[string]interface
 }
 
 func loginAttemptClientIdentity(c *gin.Context) string {
-	if c == nil || c.Request == nil {
+	if c == nil {
 		return ""
 	}
-
-	for _, raw := range []string{
-		firstForwardedIP(c.GetHeader("X-Forwarded-For")),
-		normalizeLoginAttemptIP(c.GetHeader("X-Real-IP")),
-	} {
-		if raw != "" {
-			return raw
-		}
-	}
-
-	host := strings.TrimSpace(c.Request.RemoteAddr)
-	if parsedHost, _, err := net.SplitHostPort(host); err == nil {
-		host = parsedHost
-	}
-	return normalizeLoginAttemptIP(host)
-}
-
-func firstForwardedIP(raw string) string {
-	for _, part := range strings.Split(raw, ",") {
-		if ip := normalizeLoginAttemptIP(part); ip != "" {
-			return ip
-		}
-	}
-	return ""
-}
-
-func normalizeLoginAttemptIP(raw string) string {
-	raw = strings.Trim(strings.TrimSpace(raw), "[]")
-	if raw == "" {
-		return ""
-	}
-	if ip := net.ParseIP(raw); ip != nil {
-		return ip.String()
-	}
-	return strings.ToLower(raw)
+	return normalizeLoginAttemptIdentity(c.ClientIP())
 }
 
 func (s *Server) enforceLoginRateLimit(c *gin.Context, username string) bool {

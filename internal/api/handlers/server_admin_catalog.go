@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -1122,35 +1123,70 @@ func (s *Server) UpdateRole(c *gin.Context, roleID generated.RoleID) {
 		return
 	}
 
-	update := existing.Update()
+	invalidateRoleSessions := false
+	displayNameValue := strings.TrimSpace(valueOrEmpty(req.DisplayName))
+	descriptionValue := strings.TrimSpace(valueOrEmpty(req.Description))
+	var permissions []string
+	hasPermissionsUpdate := false
 	if req.DisplayName != nil {
-		if v := strings.TrimSpace(*req.DisplayName); v == "" {
-			update = update.ClearDisplayName()
-		} else {
-			update = update.SetDisplayName(v)
-		}
+		displayNameValue = strings.TrimSpace(*req.DisplayName)
 	}
 	if req.Description != nil {
-		if v := strings.TrimSpace(*req.Description); v == "" {
-			update = update.ClearDescription()
-		} else {
-			update = update.SetDescription(v)
-		}
+		descriptionValue = strings.TrimSpace(*req.Description)
 	}
 	if req.Permissions != nil {
-		permissions, normalizeErr := normalizePermissionKeys(*req.Permissions)
+		var normalizeErr error
+		permissions, normalizeErr = normalizePermissionKeys(*req.Permissions)
 		if normalizeErr != nil {
 			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: normalizeErr.Error()})
 			return
 		}
-		update = update.SetPermissions(permissions)
+		hasPermissionsUpdate = true
+		invalidateRoleSessions = invalidateRoleSessions || !slices.Equal(existing.Permissions, permissions)
 	}
 	if req.Enabled != nil {
-		update = update.SetEnabled(*req.Enabled)
+		invalidateRoleSessions = invalidateRoleSessions || existing.Enabled != *req.Enabled
 	}
 
-	r, err := update.Save(ctx)
-	if err != nil {
+	var r *ent.Role
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		update := tx.Client().Role.UpdateOneID(roleID)
+		if req.DisplayName != nil {
+			if displayNameValue == "" {
+				update = update.ClearDisplayName()
+			} else {
+				update = update.SetDisplayName(displayNameValue)
+			}
+		}
+		if req.Description != nil {
+			if descriptionValue == "" {
+				update = update.ClearDescription()
+			} else {
+				update = update.SetDescription(descriptionValue)
+			}
+		}
+		if hasPermissionsUpdate {
+			update = update.SetPermissions(permissions)
+		}
+		if req.Enabled != nil {
+			update = update.SetEnabled(*req.Enabled)
+		}
+
+		var saveErr error
+		r, saveErr = update.Save(ctx)
+		if saveErr != nil {
+			return saveErr
+		}
+		if !invalidateRoleSessions {
+			return nil
+		}
+
+		userIDs, err := userIDsForRoleWithClient(ctx, tx.Client(), roleID)
+		if err != nil {
+			return err
+		}
+		return s.revokeUsersSessions(ctx, userIDs, "role_updated")
+	}); err != nil {
 		logger.Error("failed to update role", zap.Error(err), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return

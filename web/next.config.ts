@@ -17,22 +17,30 @@ const isProduction = process.env.NODE_ENV === "production";
 
 function buildContentSecurityPolicy(): string {
   const scriptSources = ["'self'", "'unsafe-inline'"];
+  const connectSources = ["'self'"];
   if (!isProduction) {
     scriptSources.push("'unsafe-eval'");
+    connectSources.push("ws:", "wss:");
   }
 
-  return [
+  const directives = [
     "default-src 'self'",
     `script-src ${scriptSources.join(" ")}`,
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
-    "connect-src 'self' ws: wss:",
+    `connect-src ${connectSources.join(" ")}`,
     "object-src 'none'",
     "base-uri 'self'",
     "form-action 'self'",
     "frame-ancestors 'none'",
-  ].join("; ");
+  ];
+
+  if (isProduction) {
+    directives.push("upgrade-insecure-requests");
+  }
+
+  return directives.join("; ");
 }
 
 const contentSecurityPolicy = buildContentSecurityPolicy();

@@ -1,8 +1,12 @@
 package handlers
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"testing"
 	"time"
+
+	"github.com/gin-gonic/gin"
 
 	"kv-shepherd.io/shepherd/internal/config"
 )
@@ -67,5 +71,28 @@ func TestCredentialLoginIdentityUsesProviderAndKnownPrincipalField(t *testing.T)
 
 	if want := "ldap-main:alice"; got != want {
 		t.Fatalf("credentialLoginIdentity() = %q, want %q", got, want)
+	}
+}
+
+func TestLoginAttemptClientIdentityUsesGinClientIP(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	if err := router.SetTrustedProxies(nil); err != nil {
+		t.Fatalf("SetTrustedProxies(nil): %v", err)
+	}
+	router.POST("/auth/login", func(c *gin.Context) {
+		c.String(http.StatusOK, loginAttemptClientIdentity(c))
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", http.NoBody)
+	req.RemoteAddr = "198.51.100.10:1234"
+	req.Header.Set("X-Forwarded-For", "203.0.113.10")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if got := w.Body.String(); got != "198.51.100.10" {
+		t.Fatalf("loginAttemptClientIdentity() = %q, want %q", got, "198.51.100.10")
 	}
 }

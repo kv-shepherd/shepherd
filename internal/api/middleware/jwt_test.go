@@ -23,6 +23,19 @@ func (f fakeRevocationChecker) IsRevoked(_ context.Context, tokenID string) (boo
 	return f.revoked[tokenID], nil
 }
 
+type fakeClaimsValidator struct {
+	called bool
+	err    error
+}
+
+func (f *fakeClaimsValidator) ValidateClaims(_ context.Context, claims *JWTClaims) error {
+	f.called = true
+	if claims == nil {
+		return errors.New("claims are required")
+	}
+	return f.err
+}
+
 func TestJWTConfigValidateToken_Success(t *testing.T) {
 	cfg := JWTConfig{
 		SigningKey: []byte("test-signing-key-1234567890123456"),
@@ -185,4 +198,39 @@ func TestJWTConfigValidateToken_RevocationCheckerError(t *testing.T) {
 	}.ValidateToken(context.Background(), token)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "check token revocation")
+}
+
+func TestGenerateTokenWithSessionVersion_EmbedsSessionVersion(t *testing.T) {
+	cfg := JWTConfig{
+		SigningKey: []byte("session-version-key-12345678901234567890"),
+		Issuer:     "shepherd",
+		ExpiresIn:  time.Hour,
+	}
+
+	token, _, err := GenerateTokenWithSessionVersion(cfg, "u-1", "alice", nil, nil, 7)
+	require.NoError(t, err)
+
+	claims, err := cfg.ValidateToken(context.Background(), token)
+	require.NoError(t, err)
+	assert.Equal(t, int64(7), claims.SessionVersion)
+}
+
+func TestJWTConfigValidateToken_InvokesClaimsValidator(t *testing.T) {
+	cfg := JWTConfig{
+		SigningKey: []byte("claims-validator-key-1234567890123456789"),
+		Issuer:     "shepherd",
+		ExpiresIn:  time.Hour,
+	}
+	token, _, err := GenerateTokenWithSessionVersion(cfg, "u-1", "alice", nil, nil, 3)
+	require.NoError(t, err)
+
+	validator := &fakeClaimsValidator{}
+	claims, err := JWTConfig{
+		SigningKey:      cfg.SigningKey,
+		Issuer:          cfg.Issuer,
+		ClaimsValidator: validator,
+	}.ValidateToken(context.Background(), token)
+	require.NoError(t, err)
+	require.True(t, validator.called)
+	assert.Equal(t, int64(3), claims.SessionVersion)
 }

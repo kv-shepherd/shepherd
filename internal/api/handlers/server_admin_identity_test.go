@@ -1103,6 +1103,47 @@ func TestListAuthProviderTypesAndRejectUnknownType(t *testing.T) {
 	}
 }
 
+func TestUpdateUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	client := testutil.OpenEntPostgres(t, "admin_identity_update_user_revoke_fail")
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		AuthSessions: &service.AuthSessionManager{},
+	})
+
+	userRow, err := client.User.Create().
+		SetID("user-update-revoke-fail").
+		SetUsername("alice").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/users/"+userRow.ID,
+		`{"enabled":false}`,
+		"admin-1",
+		[]string{"user:manage"},
+	)
+	srv.UpdateUser(updateCtx, userRow.ID)
+	if updateW.Code != http.StatusInternalServerError {
+		t.Fatalf("update status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
+	}
+
+	reloaded, err := client.User.Get(t.Context(), userRow.ID)
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if !reloaded.Enabled {
+		t.Fatal("expected user to remain enabled after failed session revocation")
+	}
+}
+
 func newAdminIdentityTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)

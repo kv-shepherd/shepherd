@@ -157,9 +157,10 @@ func (s *Server) SubmitLoginAuthProvider(c *gin.Context, providerID generated.Pr
 
 	s.recordLoginSuccess(c, loginIdentity)
 	s.setAuthSessionCookie(c, loginResp.Token, loginResp.ExpiresAt)
+	clientResp := loginResponseForClient(c, loginResp)
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
-	c.JSON(http.StatusOK, loginResp)
+	c.JSON(http.StatusOK, clientResp)
 }
 
 func (s *Server) StartLoginAuthProvider(c *gin.Context, providerID generated.ProviderID) {
@@ -202,10 +203,13 @@ func (s *Server) StartLoginAuthProvider(c *gin.Context, providerID generated.Pro
 		return
 	}
 
-	callbackURL := s.externalAuthCallbackURL(c, providerRow.ID)
+	callbackURL := s.externalAuthCallbackURL(providerRow.ID)
 	if strings.TrimSpace(callbackURL) == "" {
-		logger.Error("failed to resolve external auth callback url", zap.String("provider_id", providerRow.ID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		logger.Error("external auth runtime login requires configured public base url", zap.String("provider_id", providerRow.ID))
+		c.JSON(http.StatusServiceUnavailable, generated.Error{
+			Code:    "EXTERNAL_AUTH_PUBLIC_BASE_URL_REQUIRED",
+			Message: "external auth runtime login requires a configured public base URL",
+		})
 		return
 	}
 	runtimeConfig, cfgErr := s.authProviderConfig.DecryptForUse(providerRow.AuthType, providerRow.Config)
@@ -705,7 +709,7 @@ func isExternalAuthLocalDevHost(host string) bool {
 	return ip != nil && ip.IsLoopback()
 }
 
-func (s *Server) externalAuthCallbackURL(c *gin.Context, providerID string) string {
+func (s *Server) externalAuthCallbackURL(providerID string) string {
 	if baseURL, _ := s.effectiveExternalAuthPublicBaseURL(); baseURL != "" {
 		parsed, parseErr := url.Parse(baseURL)
 		if parseErr != nil || parsed.Scheme == "" || parsed.Host == "" {
@@ -716,15 +720,7 @@ func (s *Server) externalAuthCallbackURL(c *gin.Context, providerID string) stri
 		})
 		return target.String()
 	}
-	proto := externalAuthSchemeHTTP
-	if isSecureRequest(c) {
-		proto = externalAuthSchemeHTTPS
-	}
-	host := strings.TrimSpace(c.GetHeader("X-Forwarded-Host"))
-	if host == "" {
-		host = strings.TrimSpace(c.Request.Host)
-	}
-	return fmt.Sprintf("%s://%s/api/v1/auth/providers/%s/callback", proto, host, url.PathEscape(providerID))
+	return ""
 }
 
 func (s *Server) renderExternalAuthBridge(
@@ -820,8 +816,9 @@ func (s *Server) finalizeExternalAuthLogin(
 	var loginResp generated.LoginResponse
 	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
 		txServer := &Server{
-			client: tx.Client(),
-			jwtCfg: s.jwtCfg,
+			client:       tx.Client(),
+			jwtCfg:       s.jwtCfg,
+			authSessions: s.authSessions,
 		}
 		txExternalAuth := s.externalAuth.WithClient(tx.Client())
 

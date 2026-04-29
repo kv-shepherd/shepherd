@@ -29,14 +29,17 @@ import {
 } from 'antd';
 import { LockOutlined, UserOutlined } from '@ant-design/icons';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
 
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { useApiMutation } from '@/hooks/useApiQuery';
+import { getStandardLoginPath, setNextLoginEntryOverride } from '@/lib/auth/loginEntry';
 import { useApiGet } from '@/lib/api/useApiGet';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
+import { useAuthStore } from '@/stores/auth';
 
 const { Text, Title } = Typography;
 
@@ -57,10 +60,11 @@ interface ChangePasswordForm {
 
 export default function ProfilePage() {
     const { t } = useTranslation('common');
+    const router = useRouter();
     const [changePasswordOpen, setChangePasswordOpen] = useState(false);
     const [form] = Form.useForm<ChangePasswordForm>();
     const [error, setError] = useState<string | null>(null);
-    const { messageApi, messageContextHolder } = useMessage();
+    const { messageContextHolder } = useMessage();
 
     const { data: profile } = useApiGet<UserProfile>(
         ['user-me'],
@@ -77,10 +81,12 @@ export default function ProfilePage() {
             }),
         {
             onSuccess: () => {
-                void messageApi.success(t('auth.password_changed', { defaultValue: 'Password changed successfully.' }));
+                setNextLoginEntryOverride(getStandardLoginPath());
+                useAuthStore.getState().logout();
                 setChangePasswordOpen(false);
                 form.resetFields();
                 setError(null);
+                router.push(getStandardLoginPath());
             },
             onError: (err) => {
                 setError(translateApiError(t, err, 'auth.change_password_error'));

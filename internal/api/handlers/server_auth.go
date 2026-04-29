@@ -58,6 +58,7 @@ func (s *Server) Login(c *gin.Context) {
 	}
 	s.recordLoginSuccess(c, req.Username)
 	s.setAuthSessionCookie(c, loginResp.Token, loginResp.ExpiresAt)
+	clientResp := loginResponseForClient(c, loginResp)
 
 	now := time.Now()
 	if err := s.client.User.UpdateOneID(user.ID).SetLastLoginAt(now).Exec(c.Request.Context()); err != nil {
@@ -76,7 +77,7 @@ func (s *Server) Login(c *gin.Context) {
 
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
-	c.JSON(http.StatusOK, loginResp)
+	c.JSON(http.StatusOK, clientResp)
 }
 
 // GetCurrentUser handles GET /auth/me.
@@ -110,13 +111,14 @@ func (s *Server) ChangePassword(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
 		return
 	}
+	ctx := c.Request.Context()
 
 	var req generated.ChangePasswordRequest
 	if !bindAndValidateJSON(c, &req) {
 		return
 	}
 
-	user, err := s.client.User.Get(c.Request.Context(), userID)
+	user, err := s.client.User.Get(ctx, userID)
 	if err != nil {
 		c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
 		return
@@ -139,18 +141,23 @@ func (s *Server) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	err = s.client.User.UpdateOneID(userID).
-		SetPasswordHash(string(hash)).
-		SetForcePasswordChange(false).
-		Exec(c.Request.Context())
-	if err != nil {
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if err := tx.Client().User.UpdateOneID(userID).
+			SetPasswordHash(string(hash)).
+			SetForcePasswordChange(false).
+			Exec(ctx); err != nil {
+			return err
+		}
+		return s.revokeUserSessions(ctx, userID, "password_changed")
+	}); err != nil {
 		logger.Error("failed to update password", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	s.clearAuthSessionCookie(c)
 
 	if s.audit != nil {
-		if err := s.audit.LogAction(c.Request.Context(), "user.password_change", "user", userID, userID,
+		if err := s.audit.LogAction(ctx, "user.password_change", "user", userID, userID,
 			map[string]interface{}{"reason": "user_initiated"}); err != nil {
 			logger.Warn("audit log write failed",
 				zap.Error(err),
@@ -166,6 +173,11 @@ func (s *Server) ChangePassword(c *gin.Context) {
 
 // Logout handles POST /auth/logout.
 func (s *Server) Logout(c *gin.Context) {
+	if err := s.revokeCurrentAuthToken(c, "logout"); err != nil {
+		logger.Error("failed to revoke current auth token on logout", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 	s.clearAuthSessionCookie(c)
 	c.Status(http.StatusNoContent)
 	c.Writer.WriteHeaderNow()
@@ -186,12 +198,13 @@ func (s *Server) loadUserRolesAndPermissions(ctx context.Context, userID string)
 	var roles []*ent.Role
 	permSet := make(map[string]struct{})
 	for _, rb := range user.Edges.RoleBindings {
-		if rb.Edges.Role != nil {
-			role := rb.Edges.Role
-			roles = append(roles, role)
-			for _, p := range role.Permissions {
-				permSet[p] = struct{}{}
-			}
+		if rb.Edges.Role == nil || !rb.Edges.Role.Enabled {
+			continue
+		}
+		role := rb.Edges.Role
+		roles = append(roles, role)
+		for _, p := range role.Permissions {
+			permSet[p] = struct{}{}
 		}
 	}
 
@@ -264,7 +277,19 @@ func (s *Server) issueLoginResponse(ctx context.Context, user *ent.User) (genera
 		roleNames[i] = role.Name
 	}
 
-	token, expiresAt, err := middleware.GenerateToken(s.jwtCfg, user.ID, user.Username, roleNames, permissions)
+	sessionVersion, err := s.currentAuthSessionVersion(ctx, user.ID)
+	if err != nil {
+		return generated.LoginResponse{}, err
+	}
+
+	token, expiresAt, err := middleware.GenerateTokenWithSessionVersion(
+		s.jwtCfg,
+		user.ID,
+		user.Username,
+		roleNames,
+		permissions,
+		sessionVersion,
+	)
 	if err != nil {
 		return generated.LoginResponse{}, err
 	}

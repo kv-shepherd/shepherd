@@ -30,6 +30,7 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 			encryptionKey = decodedKey
 		}
 	}
+	authSessions := service.NewAuthSessionManager(infra.Pool, infra.EntClient)
 	deps := handlers.ServerDeps{
 		EntClient: infra.EntClient,
 		Pool:      infra.Pool,
@@ -50,6 +51,11 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		SessionConfig:        cfg.Session,
 		PasswordPolicy:       cfg.Security.PasswordPolicy,
 		LoginRateLimitConfig: cfg.Security.LoginRateLimit,
+		AuthSessions:         authSessions,
+	}
+	if authSessions != nil {
+		deps.JWTCfg.RevocationChecker = authSessions
+		deps.JWTCfg.ClaimsValidator = authSessions
 	}
 	for _, mod := range mods {
 		if mod == nil {

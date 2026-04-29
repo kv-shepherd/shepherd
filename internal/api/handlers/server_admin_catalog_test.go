@@ -13,6 +13,7 @@ import (
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -564,6 +565,48 @@ func TestAdminTemplateUpdate_RejectsPromotingContainerDiskToAllCatalog(t *testin
 	mustDecodeJSON(t, updateW.Body.Bytes(), &resp)
 	if got, want := resp.Code, "INVALID_TEMPLATE_SOURCE_SCOPE"; got != want {
 		t.Fatalf("error code = %q, want %q", got, want)
+	}
+}
+
+func TestUpdateRole_RollsBackWhenSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	client := testutil.OpenEntPostgres(t, "admin_catalog_update_role_revoke_fail")
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		AuthSessions: &service.AuthSessionManager{},
+	})
+
+	roleRow, err := client.Role.Create().
+		SetID("role-update-revoke-fail").
+		SetName("Operator").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/roles/"+roleRow.ID,
+		`{"enabled":false}`,
+		"admin-1",
+		[]string{"rbac:manage"},
+	)
+	srv.UpdateRole(updateCtx, roleRow.ID)
+	if updateW.Code != http.StatusInternalServerError {
+		t.Fatalf("update status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
+	}
+
+	reloaded, err := client.Role.Get(t.Context(), roleRow.ID)
+	if err != nil {
+		t.Fatalf("reload role: %v", err)
+	}
+	if !reloaded.Enabled {
+		t.Fatal("expected role to remain enabled after failed session revocation")
 	}
 }
 

@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"os"
 	"strings"
@@ -41,6 +42,7 @@ type ServerConfig struct {
 	PublicBaseURL       string        `mapstructure:"public_base_url"`
 	MaxRequestBodyBytes int64         `mapstructure:"max_request_body_bytes"`
 	AllowedOrigins      []string      `mapstructure:"allowed_origins"`
+	TrustedProxies      []string      `mapstructure:"trusted_proxies"`
 	AllowCredentials    bool          `mapstructure:"allow_credentials"`
 	// UnsafeAllowAllOrigins disables origin allowlist checks and must only be used in trusted local development.
 	UnsafeAllowAllOrigins    bool   `mapstructure:"unsafe_allow_all_origins"`
@@ -189,6 +191,7 @@ func Load() (*Config, error) {
 	}
 	applyExplicitEnvOverrides(v, &cfg)
 	cfg.Server.AllowedOrigins = mergeAllowedOrigins(cfg.Server.AllowedOrigins, cfg.Server.PublicBaseURL)
+	cfg.Server.TrustedProxies = sanitizeStringSlice(cfg.Server.TrustedProxies)
 
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
@@ -219,6 +222,15 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.MaxRequestBodyBytes < 0 {
 		return fmt.Errorf("server.max_request_body_bytes must be >= 0")
+	}
+	for _, proxy := range sanitizeStringSlice(c.Server.TrustedProxies) {
+		if _, _, err := net.ParseCIDR(proxy); err == nil {
+			continue
+		}
+		if ip := net.ParseIP(proxy); ip != nil {
+			continue
+		}
+		return fmt.Errorf("server.trusted_proxies contains invalid IP or CIDR %q", proxy)
 	}
 	if c.Server.UnsafeAllowAllOrigins {
 		if strings.TrimSpace(c.Server.UnsafeAllowAllOriginsAck) != unsafeAllowAllOriginsAckValue {
@@ -295,6 +307,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("server.public_base_url", "")
 	v.SetDefault("server.max_request_body_bytes", 0)
 	v.SetDefault("server.allowed_origins", []string{"http://localhost:3000", "http://127.0.0.1:3000"})
+	v.SetDefault("server.trusted_proxies", []string{})
 	v.SetDefault("server.allow_credentials", true)
 	v.SetDefault("server.unsafe_allow_all_origins", false)
 	v.SetDefault("server.unsafe_allow_all_origins_ack", "")
@@ -356,6 +369,7 @@ func bindEnvKeys(v *viper.Viper) {
 		"server.public_base_url",
 		"server.max_request_body_bytes",
 		"server.allowed_origins",
+		"server.trusted_proxies",
 		"server.allow_credentials",
 		"server.unsafe_allow_all_origins",
 		"server.unsafe_allow_all_origins_ack",
@@ -420,6 +434,9 @@ func applyExplicitEnvOverrides(v *viper.Viper, cfg *Config) {
 	if value := strings.TrimSpace(v.GetString("security.encryption_key")); value != "" {
 		cfg.Security.EncryptionKey = value
 	}
+	if v.IsSet("server.trusted_proxies") {
+		cfg.Server.TrustedProxies = sanitizeStringSlice(v.GetStringSlice("server.trusted_proxies"))
+	}
 	if v.IsSet("security.jwt_verification_keys") {
 		cfg.Security.JWTVerificationKeys = sanitizeStringSlice(v.GetStringSlice("security.jwt_verification_keys"))
 	}
@@ -453,11 +470,13 @@ func sanitizeStringSlice(values []string) []string {
 	}
 	items := make([]string, 0, len(values))
 	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
+		for _, part := range strings.Split(value, ",") {
+			part = strings.TrimSpace(part)
+			if part == "" {
+				continue
+			}
+			items = append(items, part)
 		}
-		items = append(items, value)
 	}
 	return items
 }

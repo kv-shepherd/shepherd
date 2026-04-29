@@ -15,10 +15,11 @@ import (
 
 // JWTClaims defines custom JWT claims for Shepherd.
 type JWTClaims struct {
-	UserID      string   `json:"user_id"`
-	Username    string   `json:"username"`
-	Roles       []string `json:"roles"`
-	Permissions []string `json:"permissions"`
+	UserID         string   `json:"user_id"`
+	Username       string   `json:"username"`
+	Roles          []string `json:"roles"`
+	Permissions    []string `json:"permissions"`
+	SessionVersion int64    `json:"session_version,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -33,11 +34,19 @@ var (
 	ErrJWTSigningKeyMissing = errors.New("jwt signing key is not configured")
 	ErrTokenRevoked         = errors.New("token revoked")
 	ErrTokenIDRequired      = errors.New("token id is required for revocation checks")
+	ErrJWTSubjectDisabled   = errors.New("jwt subject is disabled")
+	ErrJWTSubjectNotFound   = errors.New("jwt subject was not found")
+	ErrJWTSessionStale      = errors.New("jwt session is stale")
 )
 
 // TokenRevocationChecker checks whether a token JTI is revoked.
 type TokenRevocationChecker interface {
 	IsRevoked(ctx context.Context, tokenID string) (bool, error)
+}
+
+// JWTClaimsValidator validates resolved claims against live application state.
+type JWTClaimsValidator interface {
+	ValidateClaims(ctx context.Context, claims *JWTClaims) error
 }
 
 // JWTConfig holds JWT signing configuration.
@@ -49,12 +58,26 @@ type JWTConfig struct {
 	Leeway            time.Duration
 	CookieName        string
 	RevocationChecker TokenRevocationChecker
+	ClaimsValidator   JWTClaimsValidator
 }
 
 // GenerateToken creates a signed JWT for the given user.
 func GenerateToken(cfg JWTConfig, userID, username string, roles, permissions []string) (string, time.Time, error) {
+	return GenerateTokenWithSessionVersion(cfg, userID, username, roles, permissions, 1)
+}
+
+// GenerateTokenWithSessionVersion creates a signed JWT for the given user and session version.
+func GenerateTokenWithSessionVersion(
+	cfg JWTConfig,
+	userID, username string,
+	roles, permissions []string,
+	sessionVersion int64,
+) (string, time.Time, error) {
 	if len(cfg.SigningKey) == 0 {
 		return "", time.Time{}, ErrJWTSigningKeyMissing
+	}
+	if sessionVersion < 1 {
+		sessionVersion = 1
 	}
 
 	now := time.Now()
@@ -65,10 +88,11 @@ func GenerateToken(cfg JWTConfig, userID, username string, roles, permissions []
 	}
 
 	claims := JWTClaims{
-		UserID:      userID,
-		Username:    username,
-		Roles:       roles,
-		Permissions: permissions,
+		UserID:         userID,
+		Username:       username,
+		Roles:          roles,
+		Permissions:    permissions,
+		SessionVersion: sessionVersion,
 		RegisteredClaims: jwt.RegisteredClaims{
 			Issuer:    cfg.Issuer,
 			Subject:   userID,
@@ -173,6 +197,12 @@ func (cfg JWTConfig) ValidateToken(ctx context.Context, tokenString string) (*JW
 		}
 	}
 
+	if cfg.ClaimsValidator != nil {
+		if err := cfg.ClaimsValidator.ValidateClaims(ctx, claims); err != nil {
+			return nil, err
+		}
+	}
+
 	return claims, nil
 }
 
@@ -199,6 +229,8 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 				msg = "token not active"
 			case errors.Is(err, ErrTokenRevoked):
 				msg = "token revoked"
+			case errors.Is(err, ErrJWTSubjectDisabled), errors.Is(err, ErrJWTSubjectNotFound), errors.Is(err, ErrJWTSessionStale):
+				msg = "session no longer valid"
 			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    code,
@@ -213,6 +245,10 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 		c.Set("username", claims.Username)
 		c.Set("roles", claims.Roles)
 		c.Set("permissions", claims.Permissions)
+		c.Set("token_id", claims.ID)
+		if claims.ExpiresAt != nil {
+			c.Set("token_expires_at", claims.ExpiresAt.Time)
+		}
 		if source == tokenSourceCookie && strings.TrimSpace(c.Request.Header.Get("Authorization")) == "" {
 			c.Request.Header.Set("Authorization", "Bearer "+tokenString)
 		}

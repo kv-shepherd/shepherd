@@ -43,6 +43,7 @@ type Server struct {
 	approvalReqs         *service.ApprovalRequirementService
 	directorySync        *service.DirectorySyncService
 	vncTokens            *service.VNCTokenManager
+	authSessions         *service.AuthSessionManager
 	createVMUC           *usecase.CreateVMUseCase
 	deleteVMUC           *usecase.DeleteVMUseCase
 	externalAuth         *service.ExternalAuthService
@@ -75,6 +76,7 @@ type ServerDeps struct {
 	ApprovalReqs         *service.ApprovalRequirementService
 	DirectorySync        *service.DirectorySyncService
 	VNCTokens            *service.VNCTokenManager
+	AuthSessions         *service.AuthSessionManager
 	CreateVMUC           *usecase.CreateVMUseCase
 	DeleteVMUC           *usecase.DeleteVMUseCase
 	ExternalAuth         *service.ExternalAuthService
@@ -92,6 +94,18 @@ type ServerDeps struct {
 
 // NewServer creates a new Server with all dependencies.
 func NewServer(deps ServerDeps) *Server {
+	authSessions := deps.AuthSessions
+	if authSessions == nil {
+		authSessions = service.NewAuthSessionManager(deps.Pool, deps.EntClient)
+	}
+	if authSessions != nil {
+		if deps.JWTCfg.RevocationChecker == nil {
+			deps.JWTCfg.RevocationChecker = authSessions
+		}
+		if deps.JWTCfg.ClaimsValidator == nil {
+			deps.JWTCfg.ClaimsValidator = authSessions
+		}
+	}
 	vncTokens := deps.VNCTokens
 	if vncTokens == nil {
 		var replay service.VNCReplayStore
@@ -122,6 +136,7 @@ func NewServer(deps ServerDeps) *Server {
 		approvalReqs:         deps.ApprovalReqs,
 		directorySync:        deps.DirectorySync,
 		vncTokens:            vncTokens,
+		authSessions:         authSessions,
 		createVMUC:           deps.CreateVMUC,
 		deleteVMUC:           deps.DeleteVMUC,
 		externalAuth:         deps.ExternalAuth,

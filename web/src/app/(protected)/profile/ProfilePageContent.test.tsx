@@ -3,6 +3,13 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const mutationState = vi.hoisted(() => ({
     mutate: vi.fn(),
+    push: vi.fn(),
+}));
+
+vi.mock('next/navigation', () => ({
+    useRouter: () => ({
+        push: mutationState.push,
+    }),
 }));
 
 vi.mock('react-i18next', () => ({
@@ -66,11 +73,25 @@ vi.mock('@/lib/api/client', () => ({
     },
 }));
 
+vi.mock('@/lib/auth/loginEntry', () => ({
+    getStandardLoginPath: () => '/login',
+    setNextLoginEntryOverride: vi.fn(),
+}));
+
+vi.mock('@/stores/auth', () => ({
+    useAuthStore: {
+        getState: () => ({
+            logout: vi.fn(),
+        }),
+    },
+}));
+
 import ProfilePage from './ProfilePageContent';
 
 describe('ProfilePageContent', () => {
     beforeEach(() => {
         mutationState.mutate.mockReset();
+        mutationState.push.mockReset();
     });
 
     it('renders profile sections and opens the change password modal', () => {

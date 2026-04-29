@@ -26,6 +26,10 @@ interface LoginPayload {
 
 type UserInfo = components["schemas"]["UserInfo"];
 
+const authSessionModeHeader = {
+  "X-Shepherd-Session-Mode": "cookie_only",
+} as const;
+
 function normalizeExternalAuthNavigationTarget(raw?: string): string {
   if (typeof window === "undefined") {
     return "/dashboard";
@@ -81,6 +85,7 @@ export function useAuth() {
       // POST /auth/login (baseUrl already includes /api/v1)
       const { data, error } = await api.POST("/auth/login", {
         body: payload,
+        headers: authSessionModeHeader,
       });
 
       if (error) {
@@ -156,10 +161,11 @@ export function useAuth() {
             credentials,
             return_to: normalizedReturnTo,
           },
+          headers: authSessionModeHeader,
         },
       );
 
-      if (error || !data?.token) {
+      if (error || !data) {
         const apiError = error as unknown as ApiErrorResponse | undefined;
         const normalized = apiError ?? { code: "INVALID_CREDENTIALS" };
         message.error(t(normalized.code ?? "INTERNAL_ERROR"));

@@ -144,23 +144,19 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 		return
 	}
 
-	update := existing.Update()
+	invalidateSessions := false
+	emailValue := strings.TrimSpace(valueOrEmpty(req.Email))
+	displayNameValue := strings.TrimSpace(valueOrEmpty(req.DisplayName))
+	passwordHash := ""
+	hasPasswordUpdate := false
 	if req.Email != nil {
-		if v := strings.TrimSpace(*req.Email); v == "" {
-			update = update.ClearEmail()
-		} else {
-			update = update.SetEmail(v)
-		}
+		emailValue = strings.TrimSpace(*req.Email)
 	}
 	if req.DisplayName != nil {
-		if v := strings.TrimSpace(*req.DisplayName); v == "" {
-			update = update.ClearDisplayName()
-		} else {
-			update = update.SetDisplayName(v)
-		}
+		displayNameValue = strings.TrimSpace(*req.DisplayName)
 	}
 	if req.Enabled != nil {
-		update = update.SetEnabled(*req.Enabled)
+		invalidateSessions = invalidateSessions || existing.Enabled != *req.Enabled
 	}
 	if req.Password != nil {
 		password := *req.Password
@@ -186,22 +182,61 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
-		update = update.SetPasswordHash(hash)
-		if req.ForcePasswordChange == nil {
-			update = update.SetForcePasswordChange(true)
-		}
+		passwordHash = hash
+		hasPasswordUpdate = true
+		invalidateSessions = true
 	}
 	if req.ForcePasswordChange != nil {
-		update = update.SetForcePasswordChange(*req.ForcePasswordChange)
+		if !existing.ForcePasswordChange && *req.ForcePasswordChange {
+			invalidateSessions = true
+		}
 	}
 
-	updated, err := update.Save(ctx)
-	if err != nil {
-		if ent.IsConstraintError(err) {
+	var updated *ent.User
+	if txErr := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		update := tx.Client().User.UpdateOneID(userID)
+		if req.Email != nil {
+			if emailValue == "" {
+				update = update.ClearEmail()
+			} else {
+				update = update.SetEmail(emailValue)
+			}
+		}
+		if req.DisplayName != nil {
+			if displayNameValue == "" {
+				update = update.ClearDisplayName()
+			} else {
+				update = update.SetDisplayName(displayNameValue)
+			}
+		}
+		if req.Enabled != nil {
+			update = update.SetEnabled(*req.Enabled)
+		}
+		if hasPasswordUpdate {
+			update = update.SetPasswordHash(passwordHash)
+			if req.ForcePasswordChange == nil {
+				update = update.SetForcePasswordChange(true)
+			}
+		}
+		if req.ForcePasswordChange != nil {
+			update = update.SetForcePasswordChange(*req.ForcePasswordChange)
+		}
+
+		var saveErr error
+		updated, saveErr = update.Save(ctx)
+		if saveErr != nil {
+			return saveErr
+		}
+		if invalidateSessions {
+			return s.revokeUserSessions(ctx, userID, "user_updated")
+		}
+		return nil
+	}); txErr != nil {
+		if ent.IsConstraintError(txErr) {
 			c.JSON(http.StatusConflict, generated.Error{Code: "USER_NAME_OR_EMAIL_EXISTS"})
 			return
 		}
-		logger.Error("failed to update user", zap.Error(err), zap.String("user_id", userID))
+		logger.Error("failed to update user", zap.Error(txErr), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -405,21 +440,28 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userID generated.UserID) 
 	}
 
 	id, _ := uuid.NewV7()
-	create := s.client.RoleBinding.Create().
-		SetID(id.String()).
-		SetUserID(userID).
-		SetRoleID(roleID).
-		SetScopeType(scopeType).
-		SetCreatedBy(actor)
-	if scopeID != "" {
-		create = create.SetScopeID(scopeID)
-	}
-	if len(allowedEnvs) > 0 {
-		create = create.SetAllowedEnvironments(allowedEnvs)
-	}
+	var binding *ent.RoleBinding
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		create := tx.Client().RoleBinding.Create().
+			SetID(id.String()).
+			SetUserID(userID).
+			SetRoleID(roleID).
+			SetScopeType(scopeType).
+			SetCreatedBy(actor)
+		if scopeID != "" {
+			create = create.SetScopeID(scopeID)
+		}
+		if len(allowedEnvs) > 0 {
+			create = create.SetAllowedEnvironments(allowedEnvs)
+		}
 
-	binding, err := create.Save(ctx)
-	if err != nil {
+		var saveErr error
+		binding, saveErr = create.Save(ctx)
+		if saveErr != nil {
+			return saveErr
+		}
+		return s.revokeUserSessions(ctx, userID, "role_binding_created")
+	}); err != nil {
 		logger.Error("failed to create role binding", zap.Error(err), zap.String("user_id", userID), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -466,12 +508,15 @@ func (s *Server) DeleteUserRoleBinding(c *gin.Context, userID generated.UserID, 
 		return
 	}
 
-	if _, err := s.client.ExternalCohortGrant.Delete().Where(externalcohortgrant.RoleBindingIDEQ(binding.ID)).Exec(ctx); err != nil {
-		logger.Error("failed to delete external cohort grants for role binding", zap.Error(err), zap.String("binding_id", bindingID), zap.String("user_id", userID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if err := s.client.RoleBinding.DeleteOneID(binding.ID).Exec(ctx); err != nil {
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if _, err := tx.Client().ExternalCohortGrant.Delete().Where(externalcohortgrant.RoleBindingIDEQ(binding.ID)).Exec(ctx); err != nil {
+			return err
+		}
+		if err := tx.Client().RoleBinding.DeleteOneID(binding.ID).Exec(ctx); err != nil {
+			return err
+		}
+		return s.revokeUserSessions(ctx, userID, "role_binding_deleted")
+	}); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_BINDING_NOT_FOUND"})
 			return
@@ -486,7 +531,6 @@ func (s *Server) DeleteUserRoleBinding(c *gin.Context, userID generated.UserID, 
 			"binding_id": bindingID,
 		})
 	}
-
 	c.Status(http.StatusNoContent)
 }
 

@@ -13,6 +13,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 
 	"golang.org/x/crypto/bcrypt"
@@ -242,5 +243,110 @@ func TestLogin_ReturnsTooManyRequestsAfterRepeatedFailures(t *testing.T) {
 		t.Fatalf("third attempt status=%d code=%q", w.Code, apiErr.Code)
 	} else if got := w.Header().Get("Retry-After"); got == "" {
 		t.Fatal("expected Retry-After header on rate-limited login response")
+	}
+}
+
+func TestChangePassword_RollsBackWhenSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := testutil.OpenEntPostgres(t, "auth_handler_change_password_revoke_fail")
+	server := NewServer(ServerDeps{
+		EntClient:    client,
+		AuthSessions: &service.AuthSessionManager{},
+	})
+
+	oldPassword := "Passw0rd!Example"
+	hash, err := HashPassword(oldPassword)
+	if err != nil {
+		t.Fatalf("HashPassword() error = %v", err)
+	}
+	if _, createErr := client.User.Create().
+		SetID("user-change-password-revoke-fail").
+		SetUsername("alice").
+		SetPasswordHash(hash).
+		SetEnabled(true).
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("seed user: %v", createErr)
+	}
+
+	changeCtx, changeW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/auth/change-password",
+		`{"old_password":"Passw0rd!Example","new_password":"NewPassw0rd!Example"}`,
+		"user-change-password-revoke-fail",
+		nil,
+	)
+	server.ChangePassword(changeCtx)
+	if changeW.Code != http.StatusInternalServerError {
+		t.Fatalf("status=%d body=%s", changeW.Code, changeW.Body.String())
+	}
+
+	reloaded, err := client.User.Get(t.Context(), "user-change-password-revoke-fail")
+	if err != nil {
+		t.Fatalf("reload user: %v", err)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(reloaded.PasswordHash), []byte(oldPassword)); err != nil {
+		t.Fatalf("expected old password to remain valid after rollback: %v", err)
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(reloaded.PasswordHash), []byte("NewPassw0rd!Example")); err == nil {
+		t.Fatal("expected new password to remain unapplied after rollback")
+	}
+}
+
+func TestLogin_CookieOnlyModeSuppressesTokenInResponseBody(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := testutil.OpenEntPostgres(t, "auth_handler_login_cookie_only")
+	server := NewServer(ServerDeps{
+		EntClient: client,
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-signing-key-12345678901234567890"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  time.Hour,
+		},
+		SessionConfig: config.SessionConfig{
+			Cookie:   "shepherd_session",
+			HTTPOnly: true,
+			Secure:   true,
+		},
+	})
+
+	hash, err := HashPassword("Passw0rd!Example")
+	if err != nil {
+		t.Fatalf("HashPassword() error = %v", err)
+	}
+	if _, err := client.User.Create().
+		SetID("user-login-cookie-only").
+		SetUsername("alice").
+		SetPasswordHash(hash).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed login user: %v", err)
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodPost, "/auth/login", strings.NewReader(`{"username":"alice","password":"Passw0rd!Example"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set(authSessionModeHeader, authSessionModeCookieOnlyValue)
+	c.Request = req
+
+	server.Login(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp generated.LoginResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode login response: %v", err)
+	}
+	if resp.Token != "" {
+		t.Fatalf("token = %q, want empty in cookie-only mode", resp.Token)
+	}
+	if cookieHeader := w.Header().Get("Set-Cookie"); !strings.Contains(cookieHeader, "shepherd_session=") {
+		t.Fatalf("missing auth cookie header: %s", cookieHeader)
 	}
 }
