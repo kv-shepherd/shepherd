@@ -28,8 +28,10 @@ const antdLocaleMap: Record<string, typeof enUS> = {
 
 export default function Providers({
     children,
+    nonce,
 }: {
     children: React.ReactNode;
+    nonce?: string;
 }) {
     const { i18n } = useTranslation();
     const normalizedLanguage = React.useMemo(() => {
@@ -64,6 +66,7 @@ export default function Providers({
             <SessionBootstrap />
             {enableDevBrowserLogBridge && <DevBrowserLogBridge />}
             <ConfigProvider
+                csp={nonce ? { nonce } : undefined}
                 locale={antdLocaleMap[normalizedLanguage] ?? enUS}
                 theme={{
                     algorithm: theme.defaultAlgorithm,

@@ -1,8 +1,12 @@
 import React from 'react';
 import { describe, expect, it, vi } from 'vitest';
 
-vi.mock('@ant-design/nextjs-registry', () => ({
-  AntdRegistry: ({ children }: { children: React.ReactNode }) => children,
+vi.mock('next/headers', () => ({
+  headers: vi.fn(async () => new Headers()),
+}));
+
+vi.mock('../components/security/AntdNonceRegistry', () => ({
+  default: ({ children }: { children: React.ReactNode }) => children,
 }));
 
 vi.mock('nextjs-toploader', () => ({

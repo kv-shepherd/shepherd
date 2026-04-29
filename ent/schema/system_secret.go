@@ -28,7 +28,7 @@ func (SystemSecret) Fields() []ent.Field {
 		field.String("key_name").
 			NotEmpty(), // e.g. "ENCRYPTION_KEY", "SESSION_SECRET"
 		field.String("key_value").
-			Sensitive(), // Base64-encoded; encrypted at rest by DB
+			Sensitive(), // Plaintext bootstrap secret material; production must source these values externally.
 		field.Enum("source").
 			Values("db_generated", "env", "external").
 			Default("db_generated"),

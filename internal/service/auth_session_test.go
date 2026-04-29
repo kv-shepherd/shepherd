@@ -27,7 +27,7 @@ func newAuthSessionTestDependencies(t *testing.T, prefix string) (*ent.Client, *
 	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
 	t.Cleanup(func() { _ = client.Close() })
 
-	manager := NewAuthSessionManager(pool, client)
+	manager := NewAuthSessionManager(pool, client, 0)
 	if manager == nil {
 		t.Fatal("NewAuthSessionManager() returned nil")
 	}
@@ -99,5 +99,45 @@ func TestAuthSessionManagerRevokeTokenMarksTokenRevoked(t *testing.T) {
 	}
 	if !revoked {
 		t.Fatal("IsRevoked() = false, want true")
+	}
+}
+
+func TestAuthSessionManagerValidateClaimsRejectsIdleSession(t *testing.T) {
+	t.Parallel()
+
+	client, manager := newAuthSessionTestDependencies(t, "auth_session_idle")
+	manager.idleTimeout = 10 * time.Minute
+	now := time.Now().UTC()
+	manager.now = func() time.Time { return now }
+
+	userRow, err := client.User.Create().
+		SetID("user-idle-timeout").
+		SetUsername("carol").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	version, err := manager.CurrentSessionVersion(t.Context(), userRow.ID)
+	if err != nil {
+		t.Fatalf("CurrentSessionVersion() error = %v", err)
+	}
+
+	claims := &middleware.JWTClaims{
+		UserID:         userRow.ID,
+		Username:       userRow.Username,
+		SessionVersion: version,
+		RegisteredClaims: jwt.RegisteredClaims{
+			Subject: userRow.ID,
+		},
+	}
+	if validateErr := manager.ValidateClaims(t.Context(), claims); validateErr != nil {
+		t.Fatalf("ValidateClaims() initial error = %v", validateErr)
+	}
+
+	manager.now = func() time.Time { return now.Add(11 * time.Minute) }
+	if validateErr := manager.ValidateClaims(t.Context(), claims); !errors.Is(validateErr, middleware.ErrJWTSessionStale) {
+		t.Fatalf("ValidateClaims() error = %v, want %v", validateErr, middleware.ErrJWTSessionStale)
 	}
 }

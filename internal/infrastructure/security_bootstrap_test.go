@@ -3,6 +3,7 @@ package infrastructure
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -87,6 +88,18 @@ func TestResolveBootstrapSecuritySecrets_GeneratesAndPersistsMissingValues(t *te
 	}
 	if first.EncryptionKey != second.EncryptionKey {
 		t.Fatalf("encryption key changed across loads: %q != %q", first.EncryptionKey, second.EncryptionKey)
+	}
+}
+
+func TestResolveBootstrapSecuritySecrets_ReleaseModeRejectsDatabaseFallback(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+
+	_, err := ResolveBootstrapSecuritySecrets(context.Background(), nil, config.SecurityConfig{})
+	if err == nil {
+		t.Fatal("ResolveBootstrapSecuritySecrets() expected release-mode explicit secret error, got nil")
+	}
+	if !strings.Contains(err.Error(), "must be explicitly provided") {
+		t.Fatalf("ResolveBootstrapSecuritySecrets() error = %v, want explicit-secret message", err)
 	}
 }
 

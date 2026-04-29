@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -10,7 +11,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
-	"gopkg.in/yaml.v3"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/auditlog"
@@ -24,6 +24,7 @@ import (
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/provider/capabilityutil"
+	kubeconfigcodec "kv-shepherd.io/shepherd/internal/provider/kubeconfigcodec"
 	"kv-shepherd.io/shepherd/internal/service"
 )
 
@@ -140,17 +141,6 @@ var auditMessageActions = map[string]struct{}{
 	"auth_provider_mapping_delete":                 {},
 }
 
-// kubeConfig is a minimal struct for parsing kubeconfig YAML.
-// Only the fields we need (clusters[].cluster.server) are defined.
-type kubeConfig struct {
-	Clusters []struct {
-		Cluster struct {
-			Server string `yaml:"server"`
-		} `yaml:"cluster"`
-		Name string `yaml:"name"`
-	} `yaml:"clusters"`
-}
-
 type clusterUpdateRequest struct {
 	DisplayName *string `json:"display_name"`
 	Environment *string `json:"environment" validate:"omitempty,oneof=test prod"`
@@ -158,16 +148,11 @@ type clusterUpdateRequest struct {
 	Kubeconfig  *[]byte `json:"kubeconfig"`
 }
 
-// parseAPIServerURL extracts the first cluster's server URL from kubeconfig YAML bytes.
-func parseAPIServerURL(data []byte) (string, error) {
-	var kc kubeConfig
-	if err := yaml.Unmarshal(data, &kc); err != nil {
-		return "", fmt.Errorf("invalid kubeconfig YAML: %w", err)
+func (s *Server) prepareClusterKubeconfigForStorage(raw []byte) (storedKubeconfig []byte, apiServerURL, encryptionKeyID string, err error) {
+	if s == nil || s.kubeconfigCodec == nil {
+		return nil, "", "", fmt.Errorf("cluster kubeconfig codec is not configured")
 	}
-	if len(kc.Clusters) == 0 || kc.Clusters[0].Cluster.Server == "" {
-		return "", fmt.Errorf("kubeconfig contains no cluster server URL")
-	}
-	return kc.Clusters[0].Cluster.Server, nil
+	return s.kubeconfigCodec.PrepareForStorage(raw)
 }
 
 // ListClusters handles GET /admin/clusters.
@@ -336,14 +321,18 @@ func (s *Server) CreateCluster(c *gin.Context) {
 		return
 	}
 
-	// Parse api_server_url from kubeconfig (V1: full kubeconfig only).
-	apiServerURL, err := parseAPIServerURL(req.Kubeconfig)
+	storedKubeconfig, apiServerURL, encryptionKeyID, err := s.prepareClusterKubeconfigForStorage(req.Kubeconfig)
 	if err != nil {
-		logger.Warn("failed to parse kubeconfig", zap.Error(err), zap.String("actor", actor))
-		c.JSON(http.StatusBadRequest, generated.Error{
-			Code:    "INVALID_KUBECONFIG",
-			Message: err.Error(),
-		})
+		if errors.Is(err, kubeconfigcodec.ErrInvalidClusterKubeconfig) {
+			logger.Warn("failed to sanitize kubeconfig", zap.Error(err), zap.String("actor", actor))
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    "INVALID_KUBECONFIG",
+				Message: err.Error(),
+			})
+			return
+		}
+		logger.Error("failed to prepare kubeconfig for storage", zap.Error(err), zap.String("actor", actor))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
@@ -362,7 +351,8 @@ func (s *Server) CreateCluster(c *gin.Context) {
 		SetID(id.String()).
 		SetName(req.Name).
 		SetAPIServerURL(apiServerURL).
-		SetEncryptedKubeconfig(req.Kubeconfig). // Sensitive kubeconfig bytes; field name retained for historical compatibility
+		SetEncryptedKubeconfig(storedKubeconfig).
+		SetEncryptionKeyID(encryptionKeyID).
 		SetStatus(cluster.StatusUNKNOWN).
 		SetCreatedBy(actor)
 	if req.DisplayName != "" {
@@ -495,12 +485,17 @@ func (s *Server) UpdateCluster(c *gin.Context, clusterID string) {
 			return
 		}
 
-		apiServerURL, parseErr := parseAPIServerURL(*req.Kubeconfig)
-		if parseErr != nil {
-			c.JSON(http.StatusBadRequest, generated.Error{
-				Code:    "INVALID_KUBECONFIG",
-				Message: parseErr.Error(),
-			})
+		storedKubeconfig, apiServerURL, encryptionKeyID, prepareErr := s.prepareClusterKubeconfigForStorage(*req.Kubeconfig)
+		if prepareErr != nil {
+			if errors.Is(prepareErr, kubeconfigcodec.ErrInvalidClusterKubeconfig) {
+				c.JSON(http.StatusBadRequest, generated.Error{
+					Code:    "INVALID_KUBECONFIG",
+					Message: prepareErr.Error(),
+				})
+				return
+			}
+			logger.Error("failed to prepare cluster kubeconfig update", zap.Error(prepareErr), zap.String("cluster_id", clusterID))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
 
@@ -510,7 +505,8 @@ func (s *Server) UpdateCluster(c *gin.Context, clusterID string) {
 		}
 		update = update.
 			SetAPIServerURL(apiServerURL).
-			SetEncryptedKubeconfig(*req.Kubeconfig).
+			SetEncryptedKubeconfig(storedKubeconfig).
+			SetEncryptionKeyID(encryptionKeyID).
 			SetStatus(cluster.StatusUNKNOWN).
 			ClearKubevirtVersion().
 			SetEnabledFeatures([]string{}).

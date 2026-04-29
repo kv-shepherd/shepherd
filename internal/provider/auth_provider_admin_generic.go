@@ -81,11 +81,18 @@ func (a *genericAuthProviderAdminAdapter) TestConnection(ctx context.Context, co
 				if splitErr != nil {
 					return nil, splitErr
 				}
-				if resolveErr := validateGenericProviderDialTarget(ctx, host); resolveErr != nil {
+				addrs, resolveErr := resolveGenericProviderDialTarget(ctx, host)
+				if resolveErr != nil {
 					return nil, resolveErr
 				}
 				var dialer net.Dialer
-				return dialer.DialContext(ctx, network, net.JoinHostPort(host, port))
+				for _, ip := range addrs {
+					conn, dialErr := dialer.DialContext(ctx, network, net.JoinHostPort(ip.String(), port))
+					if dialErr == nil {
+						return conn, nil
+					}
+				}
+				return nil, fmt.Errorf("healthcheck endpoint host resolution failed")
 			},
 		},
 	}
@@ -146,16 +153,21 @@ func validateGenericProviderHealthcheckEndpoint(ctx context.Context, raw string)
 }
 
 func validateGenericProviderDialTarget(ctx context.Context, host string) error {
+	_, err := resolveGenericProviderDialTarget(ctx, host)
+	return err
+}
+
+func resolveGenericProviderDialTarget(ctx context.Context, host string) ([]netip.Addr, error) {
 	host = strings.Trim(strings.TrimSpace(host), "[]")
 	if host == "" {
-		return fmt.Errorf("healthcheck endpoint host is required")
+		return nil, fmt.Errorf("healthcheck endpoint host is required")
 	}
 
 	if ip, err := netip.ParseAddr(host); err == nil {
 		if genericProviderIPBlocked(ip) {
-			return fmt.Errorf("healthcheck endpoint must not target private or reserved addresses")
+			return nil, fmt.Errorf("healthcheck endpoint must not target private or reserved addresses")
 		}
-		return nil
+		return []netip.Addr{ip.Unmap()}, nil
 	}
 
 	lookupCtx := ctx
@@ -167,17 +179,17 @@ func validateGenericProviderDialTarget(ctx context.Context, host string) error {
 
 	addrs, err := net.DefaultResolver.LookupNetIP(lookupCtx, "ip", host)
 	if err != nil {
-		return fmt.Errorf("healthcheck endpoint host resolution failed")
+		return nil, fmt.Errorf("healthcheck endpoint host resolution failed")
 	}
 	if len(addrs) == 0 {
-		return fmt.Errorf("healthcheck endpoint host did not resolve")
+		return nil, fmt.Errorf("healthcheck endpoint host did not resolve")
 	}
 	for _, ip := range addrs {
 		if genericProviderIPBlocked(ip) {
-			return fmt.Errorf("healthcheck endpoint must not target private or reserved addresses")
+			return nil, fmt.Errorf("healthcheck endpoint must not target private or reserved addresses")
 		}
 	}
-	return nil
+	return addrs, nil
 }
 
 func genericProviderIPBlocked(ip netip.Addr) bool {

@@ -25,6 +25,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/governance/ticketing"
 	"kv-shepherd.io/shepherd/internal/notification"
 	configcodec "kv-shepherd.io/shepherd/internal/provider/configcodec"
+	kubeconfigcodec "kv-shepherd.io/shepherd/internal/provider/kubeconfigcodec"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
@@ -50,6 +51,7 @@ type Server struct {
 	ticketService        *ticketing.Service
 	approvalRouter       *approval.ApprovalProviderRouter // Stage 2.E: provider router
 	authProviderConfig   *configcodec.AuthProviderConfigCodec
+	kubeconfigCodec      *kubeconfigcodec.ClusterKubeconfigCodec
 	publicBaseURL        string
 	allowedOrigins       []string
 	sessionCfg           config.SessionConfig
@@ -96,7 +98,7 @@ type ServerDeps struct {
 func NewServer(deps ServerDeps) *Server {
 	authSessions := deps.AuthSessions
 	if authSessions == nil {
-		authSessions = service.NewAuthSessionManager(deps.Pool, deps.EntClient)
+		authSessions = service.NewAuthSessionManager(deps.Pool, deps.EntClient, deps.SessionConfig.IdleTimeout)
 	}
 	if authSessions != nil {
 		if deps.JWTCfg.RevocationChecker == nil {
@@ -143,6 +145,7 @@ func NewServer(deps ServerDeps) *Server {
 		ticketService:        deps.TicketService,
 		approvalRouter:       approvalRouter, // Stage 2.E: provider router
 		authProviderConfig:   configcodec.NewAuthProviderConfigCodec(deps.EncryptionKey),
+		kubeconfigCodec:      kubeconfigcodec.NewClusterKubeconfigCodec(deps.EncryptionKey),
 		publicBaseURL:        deps.PublicBaseURL,
 		allowedOrigins:       append([]string(nil), deps.AllowedOrigins...),
 		sessionCfg:           deps.SessionConfig,

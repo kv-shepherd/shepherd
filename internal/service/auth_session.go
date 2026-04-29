@@ -30,8 +30,22 @@ const (
 CREATE TABLE IF NOT EXISTS auth_session_subjects (
 	user_id TEXT PRIMARY KEY,
 	session_version BIGINT NOT NULL DEFAULT 1 CHECK (session_version >= 1),
+	last_activity_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
 	updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );`
+	ensureAuthSessionSubjectsLastActivityColumnSQL = `
+ALTER TABLE auth_session_subjects
+ADD COLUMN IF NOT EXISTS last_activity_at TIMESTAMPTZ;`
+	backfillAuthSessionSubjectsLastActivitySQL = `
+UPDATE auth_session_subjects
+SET last_activity_at = COALESCE(last_activity_at, updated_at, NOW())
+WHERE last_activity_at IS NULL;`
+	setAuthSessionSubjectsLastActivityDefaultSQL = `
+ALTER TABLE auth_session_subjects
+ALTER COLUMN last_activity_at SET DEFAULT NOW();`
+	setAuthSessionSubjectsLastActivityNotNullSQL = `
+ALTER TABLE auth_session_subjects
+ALTER COLUMN last_activity_at SET NOT NULL;`
 	createAuthRevokedTokensTableSQL = `
 CREATE TABLE IF NOT EXISTS auth_revoked_tokens (
 	token_id TEXT PRIMARY KEY,
@@ -49,10 +63,12 @@ ON auth_revoked_tokens (expires_at);`
 CREATE INDEX IF NOT EXISTS idx_auth_revoked_tokens_user_id
 ON auth_revoked_tokens (user_id);`
 	ensureAuthSessionSubjectSQL = `
-INSERT INTO auth_session_subjects (user_id, session_version, updated_at)
-VALUES ($1, 1, NOW())
+INSERT INTO auth_session_subjects (user_id, session_version, last_activity_at, updated_at)
+VALUES ($1, 1, NOW(), NOW())
 ON CONFLICT (user_id) DO UPDATE
-SET user_id = EXCLUDED.user_id
+SET user_id = EXCLUDED.user_id,
+	last_activity_at = NOW(),
+	updated_at = NOW()
 RETURNING session_version;`
 	//nolint:gosec // Static SQL DML string; no credentials or secrets embedded.
 	revokeAuthTokenSQL = `
@@ -72,37 +88,46 @@ SELECT EXISTS (
 	  AND expires_at > NOW()
 );`
 	incrementAuthSessionVersionsSQL = `
-INSERT INTO auth_session_subjects (user_id, session_version, updated_at)
-SELECT DISTINCT item.user_id, 2, NOW()
+INSERT INTO auth_session_subjects (user_id, session_version, last_activity_at, updated_at)
+SELECT DISTINCT item.user_id, 2, NOW(), NOW()
 FROM unnest($1::text[]) AS item(user_id)
 WHERE item.user_id <> ''
 ON CONFLICT (user_id) DO UPDATE
 SET session_version = auth_session_subjects.session_version + 1,
+	last_activity_at = NOW(),
 	updated_at = NOW();`
-	readAuthSessionVersionSQL = `
-SELECT session_version
+	readAuthSessionStateSQL = `
+SELECT session_version, last_activity_at
 FROM auth_session_subjects
 WHERE user_id = $1;`
+	touchAuthSessionActivitySQL = `
+UPDATE auth_session_subjects
+SET last_activity_at = $2,
+	updated_at = NOW()
+WHERE user_id = $1
+  AND (last_activity_at IS NULL OR last_activity_at < $3);`
 )
 
 // AuthSessionManager provides JWT revocation and live subject validation.
 type AuthSessionManager struct {
-	pool     *pgxpool.Pool
-	client   *ent.Client
-	now      func() time.Time
-	initOnce sync.Once
-	initErr  error
+	pool        *pgxpool.Pool
+	client      *ent.Client
+	idleTimeout time.Duration
+	now         func() time.Time
+	initOnce    sync.Once
+	initErr     error
 }
 
 // NewAuthSessionManager creates a PostgreSQL-backed auth session manager.
-func NewAuthSessionManager(pool *pgxpool.Pool, client *ent.Client) *AuthSessionManager {
+func NewAuthSessionManager(pool *pgxpool.Pool, client *ent.Client, idleTimeout time.Duration) *AuthSessionManager {
 	if pool == nil || client == nil {
 		return nil
 	}
 	return &AuthSessionManager{
-		pool:   pool,
-		client: client,
-		now:    func() time.Time { return time.Now().UTC() },
+		pool:        pool,
+		client:      client,
+		idleTimeout: idleTimeout,
+		now:         func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -257,6 +282,19 @@ func (m *AuthSessionManager) ValidateClaims(ctx context.Context, claims *middlew
 	if normalizeJWTSessionVersion(claims.SessionVersion) != version {
 		return middleware.ErrJWTSessionStale
 	}
+	if m.idleTimeout > 0 {
+		lastActivityAt, readErr := m.readLastActivityAt(ctx, userID)
+		if readErr != nil {
+			return readErr
+		}
+		now := m.now()
+		if !lastActivityAt.IsZero() && now.Sub(lastActivityAt) > m.idleTimeout {
+			return middleware.ErrJWTSessionStale
+		}
+		if touchErr := m.touchLastActivityAt(ctx, userID, lastActivityAt, now); touchErr != nil {
+			return touchErr
+		}
+	}
 	return nil
 }
 
@@ -275,8 +313,11 @@ func (m *AuthSessionManager) readSessionVersion(ctx context.Context, userID stri
 		return 0, err
 	}
 
-	var version int64
-	err := m.pool.QueryRow(ctx, readAuthSessionVersionSQL, userID).Scan(&version)
+	var (
+		version        int64
+		lastActivityAt time.Time
+	)
+	err := m.pool.QueryRow(ctx, readAuthSessionStateSQL, userID).Scan(&version, &lastActivityAt)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		return defaultJWTSessionVersion, nil
@@ -287,6 +328,62 @@ func (m *AuthSessionManager) readSessionVersion(ctx context.Context, userID stri
 	default:
 		return version, nil
 	}
+}
+
+func (m *AuthSessionManager) readLastActivityAt(ctx context.Context, userID string) (time.Time, error) {
+	if m == nil || m.pool == nil {
+		return time.Time{}, ErrAuthSessionStoreUnavailable
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return time.Time{}, ErrAuthSessionUserIDMissing
+	}
+	if err := m.ensureSchema(); err != nil {
+		return time.Time{}, err
+	}
+
+	var (
+		version        int64
+		lastActivityAt time.Time
+	)
+	err := m.pool.QueryRow(ctx, readAuthSessionStateSQL, userID).Scan(&version, &lastActivityAt)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return time.Time{}, nil
+	case err != nil:
+		return time.Time{}, fmt.Errorf("read auth session last activity: %w", err)
+	default:
+		return lastActivityAt.UTC(), nil
+	}
+}
+
+func (m *AuthSessionManager) touchLastActivityAt(ctx context.Context, userID string, previous, now time.Time) error {
+	if m == nil || m.pool == nil || m.idleTimeout <= 0 {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrAuthSessionUserIDMissing
+	}
+
+	writeInterval := m.idleTimeout / 4
+	if writeInterval <= 0 || writeInterval > time.Minute {
+		writeInterval = time.Minute
+	}
+	if !previous.IsZero() && now.Sub(previous) < writeInterval {
+		return nil
+	}
+	threshold := now.Add(-writeInterval).UTC()
+	if _, err := m.pool.Exec(ctx, touchAuthSessionActivitySQL, userID, now.UTC(), threshold); err != nil {
+		return fmt.Errorf("touch auth session activity: %w", err)
+	}
+	return nil
 }
 
 func (m *AuthSessionManager) ensureSchema() error {
@@ -301,6 +398,10 @@ func (m *AuthSessionManager) ensureSchema() error {
 
 		for _, statement := range []string{
 			createAuthSessionSubjectsTableSQL,
+			ensureAuthSessionSubjectsLastActivityColumnSQL,
+			backfillAuthSessionSubjectsLastActivitySQL,
+			setAuthSessionSubjectsLastActivityDefaultSQL,
+			setAuthSessionSubjectsLastActivityNotNullSQL,
 			createAuthRevokedTokensTableSQL,
 			createAuthRevokedTokensExpiryIndexSQL,
 			createAuthRevokedTokensUserIndexSQL,

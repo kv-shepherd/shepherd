@@ -15,36 +15,6 @@ const allowedDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || "")
   .filter(Boolean);
 const isProduction = process.env.NODE_ENV === "production";
 
-function buildContentSecurityPolicy(): string {
-  const scriptSources = ["'self'", "'unsafe-inline'"];
-  const connectSources = ["'self'"];
-  if (!isProduction) {
-    scriptSources.push("'unsafe-eval'");
-    connectSources.push("ws:", "wss:");
-  }
-
-  const directives = [
-    "default-src 'self'",
-    `script-src ${scriptSources.join(" ")}`,
-    "style-src 'self' 'unsafe-inline'",
-    "img-src 'self' data: blob:",
-    "font-src 'self' data:",
-    `connect-src ${connectSources.join(" ")}`,
-    "object-src 'none'",
-    "base-uri 'self'",
-    "form-action 'self'",
-    "frame-ancestors 'none'",
-  ];
-
-  if (isProduction) {
-    directives.push("upgrade-insecure-requests");
-  }
-
-  return directives.join("; ");
-}
-
-const contentSecurityPolicy = buildContentSecurityPolicy();
-
 const nextConfig: NextConfig = {
   allowedDevOrigins,
 
@@ -98,7 +68,6 @@ const nextConfig: NextConfig = {
 
   async headers() {
     const securityHeaders = [
-      { key: "Content-Security-Policy", value: contentSecurityPolicy },
       { key: "X-Frame-Options", value: "DENY" },
       { key: "X-Content-Type-Options", value: "nosniff" },
       { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },

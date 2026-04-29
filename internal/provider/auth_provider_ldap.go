@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"net/url"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -109,6 +110,9 @@ func (a *ldapAuthProviderAdapter) ValidateConfig(config map[string]interface{}) 
 	case "ldap", "ldaps":
 	default:
 		return fmt.Errorf("server_url must use ldap:// or ldaps://")
+	}
+	if strings.EqualFold(parsedURL.Scheme, "ldap") && ldapReleaseMode() {
+		return fmt.Errorf("server_url must use ldaps:// when GIN_MODE=release")
 	}
 	if strings.EqualFold(parsedURL.Scheme, "ldap") && !ldapTLSEnabled(config) {
 		return fmt.Errorf("server_url using ldap:// requires tls_enabled=true (STARTTLS)")
@@ -808,6 +812,9 @@ func dialLDAPConnection(serverURL string, tlsEnabled, _ bool, timeout time.Durat
 	if err != nil {
 		return nil, fmt.Errorf("parse ldap server_url: %w", err)
 	}
+	if strings.EqualFold(parsedURL.Scheme, "ldap") && ldapReleaseMode() {
+		return nil, fmt.Errorf("ldap:// connections are not allowed when GIN_MODE=release")
+	}
 	if strings.EqualFold(parsedURL.Scheme, "ldap") && !tlsEnabled {
 		return nil, fmt.Errorf("ldap:// connections without STARTTLS are not allowed")
 	}
@@ -830,4 +837,8 @@ func dialLDAPConnection(serverURL string, tlsEnabled, _ bool, timeout time.Durat
 		}
 	}
 	return conn, nil
+}
+
+func ldapReleaseMode() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("GIN_MODE")), "release")
 }

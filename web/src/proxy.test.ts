@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 import { proxy } from "./proxy";
@@ -24,6 +24,8 @@ afterEach(() => {
   } else {
     process.env.SESSION_COOKIE = originalSessionCookie;
   }
+
+  vi.unstubAllEnvs();
 });
 
 describe("proxy", () => {
@@ -67,5 +69,18 @@ describe("proxy", () => {
       makeRequest("https://shepherd.example.com/signin", "custom_session=session-token"),
     );
     expect(loginResponse.headers.get("location")).toBe("https://shepherd.example.com/dashboard");
+  });
+
+  it("emits nonce-based CSP in production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+
+    const response = proxy(makeRequest("https://shepherd.example.com/dashboard", "shepherd_session=session-token"));
+    const csp = response.headers.get("content-security-policy");
+
+    expect(csp).toContain("script-src 'self' 'nonce-");
+    expect(csp).toContain("'strict-dynamic'");
+    expect(csp).toContain("style-src 'self' 'nonce-");
+    expect(csp).not.toContain("'unsafe-inline'");
+    expect(csp).toContain("upgrade-insecure-requests");
   });
 });

@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -20,6 +22,29 @@ import (
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 )
+
+func mustEncodeTestClusterKubeconfig(t *testing.T, serverURL string) string {
+	t.Helper()
+	raw := strings.TrimSpace(`
+apiVersion: v1
+kind: Config
+clusters:
+- name: runtime
+  cluster:
+    server: `+serverURL+`
+users:
+- name: runtime-user
+  user:
+    token: cluster-token
+contexts:
+- name: runtime
+  context:
+    cluster: runtime
+    user: runtime-user
+current-context: runtime
+`) + "\n"
+	return base64.StdEncoding.EncodeToString([]byte(raw))
+}
 
 func TestListClusters_RequiresFilterPaginationUsesFilteredTotals(t *testing.T) {
 	t.Parallel()
@@ -141,12 +166,7 @@ func TestCreateCluster_CreatesDefaultPolicy(t *testing.T) {
 		t,
 		http.MethodPost,
 		"/admin/clusters",
-		`{
-			"name":"cluster-a",
-			"display_name":"Cluster A",
-			"environment":"prod",
-			"kubeconfig":"YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIG5hbWU6IGNsdXN0ZXItYQogIGNsdXN0ZXI6CiAgICBzZXJ2ZXI6IGh0dHBzOi8vY2x1c3Rlci5leGFtcGxlLmNvbQo="
-		}`,
+		`{"name":"cluster-a","display_name":"Cluster A","environment":"prod","kubeconfig":"`+mustEncodeTestClusterKubeconfig(t, "https://cluster.example.com")+`"}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
@@ -167,6 +187,12 @@ func TestCreateCluster_CreatesDefaultPolicy(t *testing.T) {
 	stored, err := client.Cluster.Query().Where(entcluster.NameEQ("cluster-a")).Only(ctx)
 	if err != nil {
 		t.Fatalf("load created cluster: %v", err)
+	}
+	if stored.EncryptionKeyID == "" {
+		t.Fatal("encryption_key_id = empty, want populated")
+	}
+	if strings.Contains(string(stored.EncryptedKubeconfig), "cluster-token") {
+		t.Fatalf("stored kubeconfig leaked plaintext token: %s", string(stored.EncryptedKubeconfig))
 	}
 	policy, err := client.ClusterPolicy.Query().
 		Where(entclusterpolicy.ClusterIDEQ(stored.ID)).
@@ -194,6 +220,49 @@ func TestCreateCluster_CreatesDefaultPolicy(t *testing.T) {
 	}
 	if policy.AllowHugepages {
 		t.Fatal("allow_hugepages = true, want false")
+	}
+}
+
+func TestCreateCluster_RejectsUnsafeKubeconfigExecPlugin(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminIdentityTestServer(t)
+	unsafeKubeconfig := base64.StdEncoding.EncodeToString([]byte(strings.TrimSpace(`
+apiVersion: v1
+kind: Config
+clusters:
+- name: runtime
+  cluster:
+    server: https://cluster.example.com
+users:
+- name: runtime-user
+  user:
+    exec:
+      command: /bin/sh
+      apiVersion: client.authentication.k8s.io/v1
+      interactiveMode: Never
+contexts:
+- name: runtime
+  context:
+    cluster: runtime
+    user: runtime-user
+current-context: runtime
+`) + "\n"))
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/clusters",
+		`{"name":"cluster-a","display_name":"Cluster A","environment":"prod","kubeconfig":"`+unsafeKubeconfig+`"}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateCluster(c)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("create cluster status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	if !strings.Contains(w.Body.String(), "exec credential plugins are not supported") {
+		t.Fatalf("response body = %s, want exec-plugin rejection", w.Body.String())
 	}
 }
 
@@ -1313,12 +1382,7 @@ func TestUpdateCluster_ReplacesKubeconfigAndRefreshesHealth(t *testing.T) {
 		t,
 		http.MethodPatch,
 		"/admin/clusters/cl-update",
-		`{
-			"display_name":"Cluster New",
-			"environment":"prod",
-			"enabled":true,
-			"kubeconfig":"YXBpVmVyc2lvbjogdjEKa2luZDogQ29uZmlnCmNsdXN0ZXJzOgotIG5hbWU6IG5ldwogIGNsdXN0ZXI6CiAgICBzZXJ2ZXI6IGh0dHBzOi8vbmV3LmV4YW1wbGUuY29tCg=="
-		}`,
+		`{"display_name":"Cluster New","environment":"prod","enabled":true,"kubeconfig":"`+mustEncodeTestClusterKubeconfig(t, "https://new.example.com")+`"}`,
 		"admin-1",
 		[]string{"platform:admin"},
 	)
@@ -1357,6 +1421,12 @@ func TestUpdateCluster_ReplacesKubeconfigAndRefreshesHealth(t *testing.T) {
 	}
 	if got := stored.DisplayName; got != "Cluster New" {
 		t.Fatalf("stored display_name = %q, want Cluster New", got)
+	}
+	if stored.EncryptionKeyID == "" {
+		t.Fatal("stored encryption_key_id = empty, want populated")
+	}
+	if strings.Contains(string(stored.EncryptedKubeconfig), "cluster-token") {
+		t.Fatalf("stored kubeconfig leaked plaintext token: %s", string(stored.EncryptedKubeconfig))
 	}
 }
 

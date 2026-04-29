@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,6 +201,26 @@ func TestLDAPAuthProviderBuildsScheduledDirectoryEnrichmentPlan(t *testing.T) {
 	}
 	if plan.ProviderRequest["directory_filter"] != "(objectClass=inetOrgPerson)" {
 		t.Fatalf("directory_filter = %#v", plan.ProviderRequest["directory_filter"])
+	}
+}
+
+func TestLDAPAuthProviderValidateConfig_RejectsLdapSchemeInReleaseMode(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+
+	adapter := &ldapAuthProviderAdapter{}
+	err := adapter.ValidateConfig(map[string]interface{}{
+		"server_url":       "ldap://ldap.example.com:389",
+		"tls_enabled":      true,
+		"bind_dn":          "cn=admin,dc=example,dc=com",
+		"bind_password":    "secret",
+		"base_dn":          "ou=users,dc=example,dc=com",
+		"directory_filter": "(objectClass=person)",
+	})
+	if err == nil {
+		t.Fatal("ValidateConfig() expected ldaps-only error in release mode, got nil")
+	}
+	if !strings.Contains(err.Error(), "ldaps://") {
+		t.Fatalf("ValidateConfig() error = %v, want ldaps guidance", err)
 	}
 }
 

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -37,14 +38,14 @@ func (s *Server) Login(c *gin.Context) {
 		Where(entuser.EnabledEQ(true)).
 		Only(c.Request.Context())
 	if err != nil {
-		logger.Warn("login failed: invalid credentials")
+		s.recordCredentialLoginFailure(c, req.Username, "invalid_credentials")
 		s.recordLoginFailure(c, req.Username)
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_CREDENTIALS"})
 		return
 	}
 
 	if compareErr := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); compareErr != nil {
-		logger.Warn("login failed: invalid credentials")
+		s.recordCredentialLoginFailure(c, req.Username, "invalid_credentials")
 		s.recordLoginFailure(c, req.Username)
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_CREDENTIALS"})
 		return
@@ -256,6 +257,32 @@ func HashPassword(password string) (string, error) {
 func GenerateUserID() string {
 	id, _ := uuid.NewV7()
 	return id.String()
+}
+
+func (s *Server) recordCredentialLoginFailure(c *gin.Context, username, reason string) {
+	clientIP := loginAttemptClientIdentity(c)
+	requestID := ""
+	if c != nil && c.Request != nil {
+		requestID = middleware.GetRequestID(c.Request.Context())
+	}
+	logger.Warn(
+		"login failed",
+		zap.String("reason", strings.TrimSpace(reason)),
+		zap.String("username", strings.TrimSpace(username)),
+		zap.String("client_ip", clientIP),
+		zap.String("provider", "local"),
+		zap.String("request_id", requestID),
+	)
+	if s == nil || s.audit == nil || c == nil || c.Request == nil {
+		return
+	}
+	_ = s.audit.LogAction(c.Request.Context(), "user.login_failed", "auth", strings.TrimSpace(username), "anonymous", map[string]interface{}{
+		"username":   strings.TrimSpace(username),
+		"client_ip":  clientIP,
+		"provider":   "local",
+		"reason":     strings.TrimSpace(reason),
+		"request_id": requestID,
+	})
 }
 
 func (s *Server) validatePassword(password string, identityHints ...string) error {

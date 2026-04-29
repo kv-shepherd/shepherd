@@ -3,7 +3,6 @@ package modules
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -11,13 +10,13 @@ import (
 	"github.com/riverqueue/river"
 
 	"kv-shepherd.io/shepherd/ent"
-	"kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/pkg/worker"
 	"kv-shepherd.io/shepherd/internal/provider"
 	infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
+	kubeconfigcodec "kv-shepherd.io/shepherd/internal/provider/kubeconfigcodec"
 )
 
 // Infrastructure holds shared cross-cutting dependencies for all modules.
@@ -77,8 +76,10 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 	}
 
 	entClient := db.EntClient
-	vmClusterFactory := provider.NewClusterClientFactoryFromKubeconfigLoader(newClusterKubeconfigLoader(entClient, true))
-	healthClusterFactory := provider.NewClusterClientFactoryFromKubeconfigLoader(newClusterKubeconfigLoader(entClient, false))
+	clusterKubeconfigCodec := kubeconfigcodec.NewClusterKubeconfigCodec(encryptionKey)
+	migrateLegacyClusterKubeconfigsOnStartup(entClient, clusterKubeconfigCodec)
+	vmClusterFactory := provider.NewClusterClientFactoryFromKubeconfigLoader(newClusterKubeconfigLoader(entClient, clusterKubeconfigCodec, true))
+	healthClusterFactory := provider.NewClusterClientFactoryFromKubeconfigLoader(newClusterKubeconfigLoader(entClient, clusterKubeconfigCodec, false))
 	vmProvider := provider.NewKubeVirtProvider(
 		vmClusterFactory,
 		cfg.K8s.OperationTimeout,
@@ -99,36 +100,9 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 	}, nil
 }
 
-func newClusterKubeconfigLoader(client *ent.Client, requireHealthy bool) provider.KubeconfigLoader {
+func newClusterKubeconfigLoader(client *ent.Client, codec *kubeconfigcodec.ClusterKubeconfigCodec, requireHealthy bool) provider.KubeconfigLoader {
 	return func(clusterID string) ([]byte, error) {
-		if client == nil {
-			return nil, fmt.Errorf("ent client is not initialized")
-		}
-		clusterID = strings.TrimSpace(clusterID)
-		if clusterID == "" {
-			return nil, fmt.Errorf("cluster id is required")
-		}
-
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
-
-		cl, err := client.Cluster.Get(ctx, clusterID)
-		if err != nil {
-			if ent.IsNotFound(err) {
-				return nil, fmt.Errorf("cluster %s not found", clusterID)
-			}
-			return nil, err
-		}
-		if !cl.Enabled {
-			return nil, fmt.Errorf("cluster %s is disabled", clusterID)
-		}
-		if requireHealthy && cl.Status != cluster.StatusHEALTHY {
-			return nil, fmt.Errorf("cluster %s is not healthy (status: %s)", clusterID, cl.Status)
-		}
-		if len(cl.EncryptedKubeconfig) == 0 {
-			return nil, fmt.Errorf("cluster %s kubeconfig is empty", clusterID)
-		}
-		return cl.EncryptedKubeconfig, nil
+		return loadClusterKubeconfigForRuntime(client, codec, clusterID, requireHealthy)
 	}
 }
 

@@ -34,9 +34,9 @@ func (Cluster) Fields() []ent.Field {
 		field.String("api_server_url").
 			NotEmpty(),
 		field.Bytes("encrypted_kubeconfig").
-			Sensitive().Comment("Sensitive kubeconfig bytes; field name retained for historical compatibility"),
+			Sensitive().Comment("AES-256-GCM protected cluster kubeconfig bytes"),
 		field.String("encryption_key_id").
-			Optional().Comment("Reserved for future key rotation support"),
+			Optional().Comment("Identifier of the key used to protect encrypted_kubeconfig"),
 		field.Enum("status").
 			Values("UNKNOWN", "HEALTHY", "UNHEALTHY", "UNREACHABLE").
 			Default("UNKNOWN"),

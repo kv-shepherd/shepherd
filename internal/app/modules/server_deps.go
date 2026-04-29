@@ -30,7 +30,7 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 			encryptionKey = decodedKey
 		}
 	}
-	authSessions := service.NewAuthSessionManager(infra.Pool, infra.EntClient)
+	authSessions := service.NewAuthSessionManager(infra.Pool, infra.EntClient, cfg.Session.IdleTimeout)
 	deps := handlers.ServerDeps{
 		EntClient: infra.EntClient,
 		Pool:      infra.Pool,

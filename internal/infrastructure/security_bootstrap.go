@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -37,6 +38,11 @@ func ResolveBootstrapSecuritySecrets(
 
 	if hasResolvedSecuritySecrets(resolved) {
 		return resolved, nil
+	}
+	if bootstrapSecretsMustBeExplicit() {
+		return config.SecurityConfig{}, fmt.Errorf(
+			"security.session_secret and security.encryption_key must be explicitly provided when GIN_MODE=release; database bootstrap secrets are disabled",
+		)
 	}
 	if pool == nil {
 		return config.SecurityConfig{}, fmt.Errorf("bootstrap security secret resolution requires a database pool")
@@ -77,6 +83,10 @@ func ResolveBootstrapSecuritySecrets(
 
 func hasResolvedSecuritySecrets(security config.SecurityConfig) bool {
 	return strings.TrimSpace(security.SessionSecret) != "" && strings.TrimSpace(security.EncryptionKey) != ""
+}
+
+func bootstrapSecretsMustBeExplicit() bool {
+	return strings.EqualFold(strings.TrimSpace(os.Getenv("GIN_MODE")), "release")
 }
 
 func validateExplicitSecurityOverrides(security config.SecurityConfig) error {

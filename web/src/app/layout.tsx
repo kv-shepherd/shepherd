@@ -1,7 +1,8 @@
 import type { Metadata } from 'next';
-import { AntdRegistry } from '@ant-design/nextjs-registry';
+import { headers } from 'next/headers';
 import NextTopLoader from 'nextjs-toploader';
 import './globals.css';
+import AntdNonceRegistry from '../components/security/AntdNonceRegistry';
 import Providers from './providers';
 
 export const metadata: Metadata = {
@@ -13,18 +14,20 @@ export const metadata: Metadata = {
   },
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const nonce = (await headers()).get('x-nonce') ?? undefined;
+
   return (
     <html lang="en" suppressHydrationWarning>
       <body>
-        <NextTopLoader showSpinner={false} color="#2563eb" />
-        <AntdRegistry>
-          <Providers>{children}</Providers>
-        </AntdRegistry>
+        <NextTopLoader showSpinner={false} color="#2563eb" nonce={nonce} />
+        <AntdNonceRegistry nonce={nonce}>
+          <Providers nonce={nonce}>{children}</Providers>
+        </AntdNonceRegistry>
       </body>
     </html>
   );
