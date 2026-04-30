@@ -3740,6 +3740,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description System name and description for the new self-service system. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SystemCreateRequest"];
@@ -3848,6 +3849,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Mutable system fields for the existing system. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SystemUpdateRequest"];
@@ -3903,6 +3905,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description User and role assignment for a new system member. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SystemMemberCreateRequest"];
@@ -3993,6 +3996,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Replacement role assignment for an existing system member. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["SystemMemberRoleUpdateRequest"];
@@ -4083,6 +4087,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Service name and description scoped to the target system. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ServiceCreateRequest"];
@@ -4168,6 +4173,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Mutable service fields for the existing service. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ServiceUpdateRequest"];
@@ -4314,6 +4320,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description VM create request submitted for approval and placement evaluation. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VMCreateRequest"];
@@ -4372,6 +4379,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Parent batch request containing child VM create operations. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VMBatchSubmitRequest"];
@@ -4417,6 +4425,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Parent batch request containing child VM power operations. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VMBatchPowerRequest"];
@@ -4480,6 +4489,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Optional reviewer inputs used when retrying failed batch children. */
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["ApprovalDecisionRequest"];
@@ -4691,6 +4701,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Requested live VM changes submitted for approval. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VMModifyRequest"];
@@ -4797,6 +4808,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Requested VM power action. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["VMPowerRequest"];
@@ -4829,6 +4841,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Optional console type requested for access approval. */
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["VMConsoleRequestInput"];
@@ -5033,6 +5046,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Approval decision payload and optional placement overrides. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ApprovalDecisionRequest"];
@@ -5061,6 +5075,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Rejection decision payload with reviewer note. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RejectDecisionRequest"];
@@ -5176,6 +5191,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Cluster connection metadata, credentials, and scheduling labels. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ClusterCreateRequest"];
@@ -5229,6 +5245,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Mutable cluster metadata, credentials, and scheduling labels. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ClusterUpdateRequest"];
@@ -5287,6 +5304,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Local user identity, password, enabled state, and platform role. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UserCreateRequest"];
@@ -5342,6 +5360,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Mutable local user profile, enabled state, and platform role fields. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["UserUpdateRequest"];
@@ -5399,6 +5418,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Global RBAC role binding to assign to the user. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["GlobalRoleBindingCreateRequest"];
@@ -5475,6 +5495,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Custom role name, description, and permission set. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RoleCreateRequest"];
@@ -5529,6 +5550,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Mutable custom role description and permission set. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["RoleUpdateRequest"];
@@ -6502,6 +6524,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Template metadata and boot-source configuration. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TemplateCreateRequest"];
@@ -6556,6 +6579,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Mutable template metadata and boot-source configuration. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["TemplateUpdateRequest"];
@@ -6633,6 +6657,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Instance size CPU, memory, storage, and presentation metadata. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["InstanceSizeCreateRequest"];
@@ -6687,6 +6712,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Mutable instance size capacity and presentation metadata. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["InstanceSizeUpdateRequest"];
@@ -7164,6 +7190,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Namespace registration metadata and optional quota hints. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["NamespaceCreateRequest"];
@@ -7219,6 +7246,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Mutable namespace metadata and quota hints. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["NamespaceUpdateRequest"];
@@ -7278,6 +7306,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Environment classification assigned to the cluster. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ClusterEnvironmentUpdate"];
@@ -7332,6 +7361,7 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Cluster policy constraints for scheduling and placement. */
         requestBody: {
             content: {
                 "application/json": components["schemas"]["ClusterPolicyUpsertRequest"];

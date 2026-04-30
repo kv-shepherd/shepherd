@@ -174,6 +174,7 @@ paths:
           anyOf:
             - 'system:write'
       requestBody:
+        description: System name and description for the new self-service system.
         required: true
         content:
           application/json:
@@ -274,6 +275,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SystemID'
       requestBody:
+        description: Mutable system fields for the existing system.
         required: true
         content:
           application/json:
@@ -383,6 +385,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SystemID'
       requestBody:
+        description: User and role assignment for a new system member.
         required: true
         content:
           application/json:
@@ -461,6 +464,7 @@ paths:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/UserID'
       requestBody:
+        description: Replacement role assignment for an existing system member.
         required: true
         content:
           application/json:
@@ -589,6 +593,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/SystemID'
       requestBody:
+        description: Service name and description scoped to the target system.
         required: true
         content:
           application/json:
@@ -664,6 +669,7 @@ paths:
         - $ref: '#/components/parameters/SystemID'
         - $ref: '#/components/parameters/ServiceID'
       requestBody:
+        description: Mutable service fields for the existing service.
         required: true
         content:
           application/json:
@@ -931,6 +937,7 @@ paths:
           - type: role_binding_allowed_environments
             bodyField: namespace
       requestBody:
+        description: VM create request submitted for approval and placement evaluation.
         required: true
         content:
           application/json:
@@ -1032,6 +1039,7 @@ paths:
             scopeFilters:
               - type: role_binding_allowed_environments
       requestBody:
+        description: Parent batch request containing child VM create operations.
         required: true
         content:
           application/json:
@@ -1085,6 +1093,7 @@ paths:
         scopeFilters:
           - type: role_binding_allowed_environments
       requestBody:
+        description: Parent batch request containing child VM power operations.
         required: true
         content:
           application/json:
@@ -1162,6 +1171,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/BatchID'
       requestBody:
+        description: Optional reviewer inputs used when retrying failed batch children.
         required: false
         content:
           application/json:
@@ -1454,6 +1464,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/VMID'
       requestBody:
+        description: Requested live VM changes submitted for approval.
         required: true
         content:
           application/json:
@@ -1605,6 +1616,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/VMID'
       requestBody:
+        description: Requested VM power action.
         required: true
         content:
           application/json:
@@ -1655,6 +1667,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/VMID'
       requestBody:
+        description: Optional console type requested for access approval.
         required: false
         content:
           application/json:
@@ -1945,6 +1958,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TicketID'
       requestBody:
+        description: Approval decision payload and optional placement overrides.
         required: true
         content:
           application/json:
@@ -1976,6 +1990,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TicketID'
       requestBody:
+        description: Rejection decision payload with reviewer note.
         required: true
         content:
           application/json:
@@ -2155,6 +2170,7 @@ paths:
           anyOf:
             - 'cluster:write'
       requestBody:
+        description: Cluster connection metadata, credentials, and scheduling labels.
         required: true
         content:
           application/json:
@@ -2192,6 +2208,7 @@ paths:
           schema:
             type: string
       requestBody:
+        description: Mutable cluster metadata, credentials, and scheduling labels.
         required: true
         content:
           application/json:
@@ -2281,6 +2298,7 @@ paths:
           anyOf:
             - 'user:manage'
       requestBody:
+        description: Local user identity, password, enabled state, and platform role.
         required: true
         content:
           application/json:
@@ -2316,6 +2334,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/UserID'
       requestBody:
+        description: Mutable local user profile, enabled state, and platform role fields.
         required: true
         content:
           application/json:
@@ -2398,6 +2417,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/UserID'
       requestBody:
+        description: Global RBAC role binding to assign to the user.
         required: true
         content:
           application/json:
@@ -2479,6 +2499,7 @@ paths:
           anyOf:
             - 'rbac:manage'
       requestBody:
+        description: Custom role name, description, and permission set.
         required: true
         content:
           application/json:
@@ -2514,6 +2535,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/RoleID'
       requestBody:
+        description: Mutable custom role description and permission set.
         required: true
         content:
           application/json:
@@ -3514,6 +3536,7 @@ paths:
           anyOf:
             - 'template:write'
       requestBody:
+        description: Template metadata and boot-source configuration.
         required: true
         content:
           application/json:
@@ -3549,6 +3572,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/TemplateID'
       requestBody:
+        description: Mutable template metadata and boot-source configuration.
         required: true
         content:
           application/json:
@@ -3659,6 +3683,7 @@ paths:
           anyOf:
             - 'instance_size:write'
       requestBody:
+        description: Instance size CPU, memory, storage, and presentation metadata.
         required: true
         content:
           application/json:
@@ -3694,6 +3719,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/InstanceSizeID'
       requestBody:
+        description: Mutable instance size capacity and presentation metadata.
         required: true
         content:
           application/json:
@@ -4189,6 +4215,7 @@ paths:
           anyOf:
             - 'namespace:write'
       requestBody:
+        description: Namespace registration metadata and optional quota hints.
         required: true
         content:
           application/json:
@@ -4252,6 +4279,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/NamespaceID'
       requestBody:
+        description: Mutable namespace metadata and quota hints.
         required: true
         content:
           application/json:
@@ -4324,6 +4352,7 @@ paths:
           schema:
             type: string
       requestBody:
+        description: Environment classification assigned to the cluster.
         required: true
         content:
           application/json:
@@ -4391,6 +4420,7 @@ paths:
           schema:
             type: string
       requestBody:
+        description: Cluster policy constraints for scheduling and placement.
         required: true
         content:
           application/json:
