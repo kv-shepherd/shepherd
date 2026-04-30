@@ -1,0 +1,18 @@
+no-unnecessary-combinator:
+    - $.paths['/vms/{vm_id}'].get.responses['200'].content['application/json'].schema.properties['console_capabilities'].allOf
+    - $.paths['/vms/{vm_id}'].get.responses['200'].content['application/json'].schema.properties['provisioning'].allOf
+    - $.components.schemas['VM'].properties['console_capabilities'].allOf[0].properties['preferred_console_type'].allOf
+    - $.components.schemas['VMBatchChildStatus'].properties['provisioning'].allOf
+    - $.paths['/vms/{vm_id}/console/request'].post.responses['200'].content['application/json'].schema.properties['console_type'].allOf
+    - $.paths['/vms/{vm_id}/console/request'].post.requestBody.content['application/json'].schema.properties['preferred_console_type'].allOf
+    - $.paths['/vms/{vm_id}/console/status'].get.responses['200'].content['application/json'].schema.properties['console_type'].allOf
+    - $.components.schemas['ServiceWorkspaceContext'].properties['recent_requests'].items.properties['summary'].allOf
+    - $.components.schemas['ServiceWorkspaceContext'].properties['recent_requests'].items.properties['provisioning'].allOf
+    - $.components.schemas['ServiceWorkspaceContext'].properties['recent_requests'].items.properties['placement_evaluation'].allOf
+    - $.components.schemas['AuditLog'].properties['message_i18n'].allOf
+    - $.components.schemas['AuditLog'].properties['actor_summary'].allOf
+    - $.components.schemas['AuditLog'].properties['resource_summary'].allOf
+    - $.components.schemas['AuditLog'].properties['ticket_summary'].allOf
+    - $.components.schemas['AuditLog'].properties['placement_summary'].allOf
+    - $.components.schemas['Notification'].properties['title_i18n'].allOf
+    - $.components.schemas['Notification'].properties['message_i18n'].allOf

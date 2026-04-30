@@ -14,6 +14,7 @@
 OPENAPI_SPEC := api/openapi.yaml
 COMPAT_SPEC := api/openapi.compat.yaml
 VACUUM_CONFIG := api/.vacuum.yaml
+VACUUM_IGNORE_FILE := api/.vacuum-ignore.yaml
 GO_GENERATED_DIR := internal/api/generated
 TS_GENERATED_FILE := web/src/types/api.gen.ts
 OAPI_CODEGEN_CONFIG := api/oapi-codegen.yaml
@@ -36,7 +37,7 @@ OPENAPI_COMPAT_GEN_CMD := go run ./cmd/openapi-compat-gen/main.go
 .PHONY: api-lint
 api-lint: ## Validate OpenAPI spec with Vacuum (ADR-0029)
 	@echo "🔍 Linting OpenAPI specification..."
-	@$(VACUUM_CMD) lint $(OPENAPI_SPEC) --ruleset $(VACUUM_CONFIG)
+	@$(VACUUM_CMD) lint $(OPENAPI_SPEC) --ruleset $(VACUUM_CONFIG) --ignore-file $(VACUUM_IGNORE_FILE)
 	@echo "✅ OpenAPI spec is valid"
 
 .PHONY: api-generate

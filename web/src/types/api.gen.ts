@@ -1744,32 +1744,172 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description UI projection metadata for one field in a dynamic entity schema.
+         * @example {
+         *       "path": "/example/path",
+         *       "display_name": "Example User",
+         *       "display_name_key": "example.key"
+         *     }
+         */
         MaskField: {
-            /** @description Dot-notation JSON path resolving within the provided unified schema. */
+            /**
+             * @description Dot-notation JSON path resolving within the provided unified schema.
+             * @example /example/path
+             */
             path: string;
-            /** @description Desired localized or standardized label for the UI form projection. */
+            /**
+             * @description Desired localized or standardized label for the UI form projection.
+             * @example Example User
+             */
             display_name: string;
-            /** @description Optional i18n key for localized field label lookup. */
+            /**
+             * @description Optional i18n key for localized field label lookup.
+             * @example example.key
+             */
             display_name_key?: string;
-            /** @description Optional plain help text shown via tooltip/help icon. */
+            /**
+             * @description Optional plain help text shown via tooltip/help icon.
+             * @example example
+             */
             help_text?: string;
-            /** @description Optional i18n key for localized help text lookup. */
+            /**
+             * @description Optional i18n key for localized help text lookup.
+             * @example example.key
+             */
             help_key?: string;
-            /** @description Optional plain placeholder shown in form control. */
+            /**
+             * @description Optional plain placeholder shown in form control.
+             * @example example
+             */
             placeholder?: string;
-            /** @description Optional i18n key for localized placeholder lookup. */
+            /**
+             * @description Optional i18n key for localized placeholder lookup.
+             * @example example.key
+             */
             placeholder_key?: string;
         };
+        /**
+         * @description Ordered UI field groups used to render a dynamic entity schema.
+         * @example {
+         *       "quick_fields": [
+         *         {
+         *           "path": "/example/path",
+         *           "display_name": "Example User",
+         *           "display_name_key": "example.key"
+         *         }
+         *       ],
+         *       "advanced_fields": [
+         *         {
+         *           "path": "/example/path",
+         *           "display_name": "Example User",
+         *           "display_name_key": "example.key"
+         *         }
+         *       ],
+         *       "professional_fields": [
+         *         {
+         *           "path": "/example/path",
+         *           "display_name": "Example User",
+         *           "display_name_key": "example.key"
+         *         }
+         *       ]
+         *     }
+         */
         SchemaMask: {
+            /**
+             * @example [
+             *       {
+             *         "path": "/example/path",
+             *         "display_name": "Example User",
+             *         "display_name_key": "example.key"
+             *       }
+             *     ]
+             */
             quick_fields: components["schemas"]["MaskField"][];
+            /**
+             * @example [
+             *       {
+             *         "path": "/example/path",
+             *         "display_name": "Example User",
+             *         "display_name_key": "example.key"
+             *       }
+             *     ]
+             */
             advanced_fields?: components["schemas"]["MaskField"][];
+            /**
+             * @example [
+             *       {
+             *         "path": "/example/path",
+             *         "display_name": "Example User",
+             *         "display_name_key": "example.key"
+             *       }
+             *     ]
+             */
             professional_fields?: components["schemas"]["MaskField"][];
         };
+        /**
+         * @description Dynamic JSON schema payload plus UI mask and cache provenance metadata.
+         * @example {
+         *       "schema": {},
+         *       "mask": {
+         *         "quick_fields": [
+         *           {
+         *             "path": "/example/path",
+         *             "display_name": "Example User",
+         *             "display_name_key": "example.key"
+         *           }
+         *         ],
+         *         "advanced_fields": [
+         *           {
+         *             "path": "/example/path",
+         *             "display_name": "Example User",
+         *             "display_name_key": "example.key"
+         *           }
+         *         ],
+         *         "professional_fields": [
+         *           {
+         *             "path": "/example/path",
+         *             "display_name": "Example User",
+         *             "display_name_key": "example.key"
+         *           }
+         *         ]
+         *       },
+         *       "schema_version": "1.2.0"
+         *     }
+         */
         DynamicSchemaResponse: {
-            /** @description Full structure representing the requested JSON Schema payload. */
+            /**
+             * @description Full structure representing the requested JSON Schema payload.
+             * @example {}
+             */
             schema: {
                 [key: string]: unknown;
             };
+            /**
+             * @example {
+             *       "quick_fields": [
+             *         {
+             *           "path": "/example/path",
+             *           "display_name": "Example User",
+             *           "display_name_key": "example.key"
+             *         }
+             *       ],
+             *       "advanced_fields": [
+             *         {
+             *           "path": "/example/path",
+             *           "display_name": "Example User",
+             *           "display_name_key": "example.key"
+             *         }
+             *       ],
+             *       "professional_fields": [
+             *         {
+             *           "path": "/example/path",
+             *           "display_name": "Example User",
+             *           "display_name_key": "example.key"
+             *         }
+             *       ]
+             *     }
+             */
             mask: components["schemas"]["SchemaMask"];
             /**
              * @description Semantic version of the schema (e.g. "1.2.0").
@@ -1782,6 +1922,7 @@ export interface components {
              *     - cache:    Served from server-side schema cache (nominal path).
              *     - embedded: Backend fell back to a bundled embedded schema (warn user).
              *     - remote:   Fetched live from KubeVirt API (slow path, no cache).
+             * @example cache
              * @enum {string}
              */
             source?: "cache" | "embedded" | "remote";
@@ -1789,642 +1930,2046 @@ export interface components {
              * @description When true, the response uses an older or embedded fallback schema.
              *     Frontend MUST display a warning banner per ADR-0023 UI Degradation States.
              * @default false
+             * @example true
              */
             degraded: boolean;
             /**
              * Format: date-time
              * @description ISO 8601 timestamp when the schema was fetched or last cached.
+             * @example 2026-01-01T00:00:00Z
              */
             fetched_at?: string;
         };
+        /**
+         * @description Service health probe response with optional dependency check details.
+         * @example {
+         *       "status": "ok",
+         *       "version": "example",
+         *       "checks": {
+         *         "database": "example"
+         *       }
+         *     }
+         */
         Health: {
-            /** @enum {string} */
+            /**
+             * @example ok
+             * @enum {string}
+             */
             status: "ok" | "degraded" | "error";
+            /** @example example */
             version?: string;
+            /**
+             * @example {
+             *       "database": "example"
+             *     }
+             */
             checks?: {
+                /** @example example */
                 database?: string;
             } & {
                 [key: string]: string;
             };
         };
+        /**
+         * @description Standard API error envelope returned by reusable error responses.
+         * @example {
+         *       "code": "example_code",
+         *       "message": "Example message",
+         *       "params": {}
+         *     }
+         */
         Error: {
-            /** @description Machine-readable error code (frontend handles i18n) */
+            /**
+             * @description Machine-readable error code (frontend handles i18n)
+             * @example example_code
+             */
             code: string;
-            /** @description English log message (not for UI display) */
+            /**
+             * @description English log message (not for UI display)
+             * @example Example message
+             */
             message?: string;
+            /** @example {} */
             params?: {
                 [key: string]: unknown;
             };
+            /**
+             * @example [
+             *       {
+             *         "field": "example",
+             *         "code": "example_code",
+             *         "message": "Example message"
+             *       }
+             *     ]
+             */
             field_errors?: components["schemas"]["FieldError"][];
         };
+        /**
+         * @description Translation key and interpolation parameters for localized UI text.
+         * @example {
+         *       "key": "example.key",
+         *       "params": {}
+         *     }
+         */
         I18nMessage: {
-            /** @description Stable frontend translation key. */
+            /**
+             * @description Stable frontend translation key.
+             * @example example.key
+             */
             key: string;
-            /** @description Structured interpolation parameters for the translation key. */
+            /**
+             * @description Structured interpolation parameters for the translation key.
+             * @example {}
+             */
             params?: {
                 [key: string]: unknown;
             };
         };
+        /**
+         * @description Field-level validation error attached to a failed request.
+         * @example {
+         *       "field": "example",
+         *       "code": "example_code",
+         *       "message": "Example message"
+         *     }
+         */
         FieldError: {
+            /** @example example */
             field: string;
+            /** @example example_code */
             code: string;
+            /** @example Example message */
             message?: string;
         };
+        /**
+         * @description Pagination metadata for list responses.
+         * @example {
+         *       "page": 1,
+         *       "per_page": 1,
+         *       "total": 1
+         *     }
+         */
         Pagination: {
+            /** @example 1 */
             page?: number;
+            /** @example 1 */
             per_page?: number;
+            /** @example 1 */
             total?: number;
+            /** @example 1 */
             total_pages?: number;
         };
+        /**
+         * @description System resource that groups services and related VM ownership.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resourc",
+         *       "created_by": "example",
+         *       "created_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         System: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resourc */
             name: string;
+            /** @example Example description */
             description?: string;
+            /** @example example */
             created_by: string;
+            /** @example Example User */
             created_by_display_name?: string;
+            /** @example example-user */
             created_by_username?: string;
+            /** @example tenant-001 */
             tenant_id?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at?: string;
         };
+        /**
+         * @description Request payload for creating a system.
+         * @example {
+         *       "name": "example-resourc",
+         *       "description": "Example description"
+         *     }
+         */
         SystemCreateRequest: {
-            /** @description RFC 1035 compliant name (ADR-0019) */
+            /**
+             * @description RFC 1035 compliant name (ADR-0019)
+             * @example example-resourc
+             */
             name: string;
-            /** @description Markdown supported */
+            /**
+             * @description Markdown supported
+             * @example Example description
+             */
             description?: string;
         };
+        /**
+         * @description Request payload for updating mutable system metadata.
+         * @example {
+         *       "description": "Example description"
+         *     }
+         */
         SystemUpdateRequest: {
-            /** @description Markdown supported */
+            /**
+             * @description Markdown supported
+             * @example Example description
+             */
             description: string;
         };
+        /**
+         * @description Paginated collection of systems.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resourc",
+         *           "created_by": "example",
+         *           "created_at": "2026-01-01T00:00:00Z"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         SystemList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resourc",
+             *         "created_by": "example",
+             *         "created_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["System"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description Filter option sets for system list controls.
+         * @example {
+         *       "creators": [
+         *         {
+         *           "value": "example",
+         *           "label": "example",
+         *           "group": "example"
+         *         }
+         *       ],
+         *       "services": [
+         *         {
+         *           "value": "example",
+         *           "label": "example",
+         *           "group": "example"
+         *         }
+         *       ],
+         *       "members": [
+         *         {
+         *           "value": "example",
+         *           "label": "example",
+         *           "group": "example"
+         *         }
+         *       ]
+         *     }
+         */
         SystemFilterOptionsResponse: {
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             creators?: components["schemas"]["FilterOption"][];
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             services?: components["schemas"]["FilterOption"][];
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             members?: components["schemas"]["FilterOption"][];
         };
+        /**
+         * @description Service resource owned by a system and used as a VM grouping boundary.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "system_id": "system-001",
+         *       "system_name": "example-system",
+         *       "created_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         Service: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resource */
             name: string;
+            /** @example Example description */
             description?: string;
+            /** @example system-001 */
             system_id: string;
-            /** @description Parent system display name for UI presentation */
+            /**
+             * @description Parent system display name for UI presentation
+             * @example example-system
+             */
             system_name: string;
-            /** @description Next allocatable per-service instance index */
+            /**
+             * @description Next allocatable per-service instance index
+             * @example 1
+             */
             next_instance_index?: number;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
         };
+        /**
+         * @description Request payload for creating a service under a system.
+         * @example {
+         *       "name": "example-resourc",
+         *       "description": "Example description"
+         *     }
+         */
         ServiceCreateRequest: {
+            /** @example example-resourc */
             name: string;
-            /** @description Markdown supported */
+            /**
+             * @description Markdown supported
+             * @example Example description
+             */
             description?: string;
         };
+        /**
+         * @description Request payload for updating mutable service metadata.
+         * @example {
+         *       "description": "Example description"
+         *     }
+         */
         ServiceUpdateRequest: {
-            /** @description Markdown supported */
+            /**
+             * @description Markdown supported
+             * @example Example description
+             */
             description: string;
         };
+        /**
+         * @description Paginated collection of services.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "system_id": "system-001",
+         *           "system_name": "example-system",
+         *           "created_at": "2026-01-01T00:00:00Z"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         ServiceList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "system_id": "system-001",
+             *         "system_name": "example-system",
+             *         "created_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["Service"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description Rollup counts shown in the service workspace view.
+         * @example {
+         *       "visible_vm_count": 1,
+         *       "recent_request_count": 1
+         *     }
+         */
         ServiceWorkspaceSummary: {
+            /** @example 1 */
             visible_vm_count: number;
+            /** @example 1 */
             recent_request_count: number;
         };
+        /**
+         * @description Service workspace payload combining the service, visible VMs, and recent tickets.
+         * @example {
+         *       "service": {
+         *         "id": "resource-001",
+         *         "name": "example-resource",
+         *         "system_id": "system-001",
+         *         "system_name": "example-system",
+         *         "created_at": "2026-01-01T00:00:00Z"
+         *       },
+         *       "summary": {
+         *         "visible_vm_count": 1,
+         *         "recent_request_count": 1
+         *       },
+         *       "visible_vms": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "namespace": "example-namespace",
+         *           "status": "CREATING"
+         *         }
+         *       ],
+         *       "recent_requests": [
+         *         {
+         *           "id": "resource-001",
+         *           "event_id": "event-001",
+         *           "status": "PENDING",
+         *           "requester": "example"
+         *         }
+         *       ]
+         *     }
+         */
         ServiceWorkspaceContext: {
+            /**
+             * @example {
+             *       "id": "resource-001",
+             *       "name": "example-resource",
+             *       "system_id": "system-001",
+             *       "system_name": "example-system",
+             *       "created_at": "2026-01-01T00:00:00Z"
+             *     }
+             */
             service: components["schemas"]["Service"];
+            /**
+             * @example {
+             *       "visible_vm_count": 1,
+             *       "recent_request_count": 1
+             *     }
+             */
             summary: components["schemas"]["ServiceWorkspaceSummary"];
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "namespace": "example-namespace",
+             *         "status": "CREATING"
+             *       }
+             *     ]
+             */
             visible_vms: components["schemas"]["VM"][];
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "event_id": "event-001",
+             *         "status": "PENDING",
+             *         "requester": "example"
+             *       }
+             *     ]
+             */
             recent_requests: components["schemas"]["Ticket"][];
         };
+        /**
+         * @description Virtual machine inventory record enriched with ownership, placement, and live status details.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "namespace": "example-namespace",
+         *       "status": "CREATING"
+         *     }
+         */
         VM: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resource */
             name: string;
+            /** @example example-namespace */
             namespace: string;
+            /** @example cluster-001 */
             cluster_id?: string;
-            /** @description Display name of the cluster (populated from cluster registry) */
+            /**
+             * @description Display name of the cluster (populated from cluster registry)
+             * @example example-cluster
+             */
             cluster_name?: string;
-            /** @enum {string} */
+            /**
+             * @example CREATING
+             * @enum {string}
+             */
             status: "CREATING" | "STARTING" | "RUNNING" | "STOPPING" | "STOPPED" | "DELETING" | "FAILED" | "PENDING" | "MIGRATING" | "PAUSED" | "UNKNOWN" | "NOT_FOUND";
+            /** @example example */
             hostname?: string;
-            /** @description Current KubeVirt VMI node name when the VM is scheduled */
+            /**
+             * @description Current KubeVirt VMI node name when the VM is scheduled
+             * @example example-node
+             */
             node_name?: string;
-            /** @description Primary observed node IP for the current VMI placement */
+            /**
+             * @description Primary observed node IP for the current VMI placement
+             * @example example
+             */
             host_ip?: string;
-            /** @description Primary observed guest IP address from the live VMI status */
+            /**
+             * @description Primary observed guest IP address from the live VMI status
+             * @example example
+             */
             ip_address?: string;
-            /** @description Best-effort guest operating system name from KubeVirt guest OS info, or creation snapshot fallback */
+            /**
+             * @description Best-effort guest operating system name from KubeVirt guest OS info, or creation snapshot fallback
+             * @example example-os
+             */
             os_name?: string;
-            /** @description Best-effort guest operating system version from KubeVirt guest OS info, or creation snapshot fallback */
+            /**
+             * @description Best-effort guest operating system version from KubeVirt guest OS info, or creation snapshot fallback
+             * @example example
+             */
             os_version?: string;
-            /** @description Best-effort guest operating system family (for example linux or windows) */
+            /**
+             * @description Best-effort guest operating system family (for example linux or windows)
+             * @example example
+             */
             os_family?: string;
+            /** @example service-001 */
             service_id?: string;
+            /** @example example-service */
             service_name?: string;
+            /** @example system-001 */
             system_id?: string;
+            /** @example example-system */
             system_name?: string;
+            /** @example example */
             instance?: string;
-            /** Format: float */
+            /**
+             * Format: float
+             * @example 1
+             */
             cpu_cores?: number;
-            /** Format: float */
+            /**
+             * Format: float
+             * @example 1
+             */
             memory_gi?: number;
+            /** @example 1 */
             disk_gb?: number;
+            /** @example ticket-001 */
             ticket_id?: string;
+            /** @example example */
             created_by?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
             /**
              * @description Inherited from cluster environment (ADR-0015 §15)
+             * @example test
              * @enum {string}
              */
             environment?: "test" | "prod";
+            /**
+             * @example {
+             *       "serial_available": true,
+             *       "vnc_available": true,
+             *       "preferred_console_type": "SERIAL"
+             *     }
+             */
             console_capabilities?: components["schemas"]["VMConsoleCapabilities"];
+            /**
+             * @example {
+             *       "root_data_volume_name": "example-root-data-volume",
+             *       "claim_name": "example-claim",
+             *       "phase": "example"
+             *     }
+             */
             provisioning?: components["schemas"]["ProvisioningStatus"];
         };
+        /**
+         * @description Available console methods for a virtual machine.
+         * @example {
+         *       "serial_available": true,
+         *       "vnc_available": true,
+         *       "preferred_console_type": "SERIAL"
+         *     }
+         */
         VMConsoleCapabilities: {
+            /** @example true */
             serial_available: boolean;
+            /** @example true */
             vnc_available: boolean;
+            /** @example SERIAL */
             preferred_console_type?: components["schemas"]["VMConsoleType"];
         };
+        /**
+         * @description Observed provisioning condition copied from KubeVirt or CDI status.
+         * @example {
+         *       "type": "example",
+         *       "status": "ACTIVE",
+         *       "reason": "Example reason"
+         *     }
+         */
         ProvisioningCondition: {
+            /** @example example */
             type?: string;
+            /** @example ACTIVE */
             status?: string;
+            /** @example Example reason */
             reason?: string;
+            /** @example Example message */
             message?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             last_transition_time?: string;
         };
+        /**
+         * @description Recent Kubernetes event associated with VM provisioning.
+         * @example {
+         *       "type": "example",
+         *       "reason": "Example reason",
+         *       "message": "Example message"
+         *     }
+         */
         ProvisioningEvent: {
+            /** @example example */
             type?: string;
+            /** @example Example reason */
             reason?: string;
+            /** @example Example message */
             message?: string;
+            /** @example 1 */
             count?: number;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             first_observed?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             last_observed?: string;
         };
+        /**
+         * @description Aggregated provisioning status for a VM or batch child ticket.
+         * @example {
+         *       "root_data_volume_name": "example-root-data-volume",
+         *       "claim_name": "example-claim",
+         *       "phase": "example"
+         *     }
+         */
         ProvisioningStatus: {
+            /** @example example-root-data-volume */
             root_data_volume_name?: string;
+            /** @example example-claim */
             claim_name?: string;
+            /** @example example */
             phase?: string;
+            /** @example example */
             progress?: string;
+            /** @example 1 */
             restart_count?: number;
+            /** @example example */
             pvc_phase?: string;
-            /** @description CDI clone execution type observed on the root PVC, for example `copy` when host-assisted fallback is used. */
+            /**
+             * @description CDI clone execution type observed on the root PVC, for example `copy` when host-assisted fallback is used.
+             * @example example
+             */
             clone_type?: string;
-            /** @description CDI clone phase annotation observed on the root PVC. */
+            /**
+             * @description CDI clone phase annotation observed on the root PVC.
+             * @example example
+             */
             clone_phase?: string;
-            /** @description CDI fallback reason observed on the root PVC when efficient clone prerequisites were not met. */
+            /**
+             * @description CDI fallback reason observed on the root PVC when efficient clone prerequisites were not met.
+             * @example example
+             */
             clone_fallback_reason?: string;
+            /** @example Example failure message */
             failure_message?: string;
+            /**
+             * @example [
+             *       {
+             *         "type": "example",
+             *         "status": "ACTIVE",
+             *         "reason": "Example reason"
+             *       }
+             *     ]
+             */
             conditions?: components["schemas"]["ProvisioningCondition"][];
+            /**
+             * @example [
+             *       {
+             *         "type": "example",
+             *         "reason": "Example reason",
+             *         "message": "Example message"
+             *       }
+             *     ]
+             */
             recent_events?: components["schemas"]["ProvisioningEvent"][];
         };
+        /**
+         * @description Request payload for creating a VM through the approval workflow.
+         * @example {
+         *       "service_id": "service-001",
+         *       "template_id": "template-001",
+         *       "instance_size_id": "instance-size-001",
+         *       "namespace": "example-namespace",
+         *       "reason": "Example reason"
+         *     }
+         */
         VMCreateRequest: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @example service-001
+             */
             service_id: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @example template-001
+             */
             template_id: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @example instance-size-001
+             */
             instance_size_id: string;
-            /** @description Target K8s namespace (immutable after submission, ADR-0017) */
+            /**
+             * @description Target K8s namespace (immutable after submission, ADR-0017)
+             * @example example-namespace
+             */
             namespace: string;
+            /** @example Example reason */
             reason: string;
             /**
              * Format: double
              * @description Optional desired total vCPU count for the requested VM.
+             * @example 1
              */
             target_cpu_cores?: number;
             /**
              * Format: double
              * @description Optional desired total guest memory in Gi for the requested VM.
+             * @example 1
              */
             target_memory_gi?: number;
-            /** @description Optional desired total root-volume size in Gi for the requested VM. */
+            /**
+             * @description Optional desired total root-volume size in Gi for the requested VM.
+             * @example 1
+             */
             target_disk_gb?: number;
         };
+        /**
+         * @description Live VM manifest response rendered as YAML for inspection.
+         * @example {
+         *       "vm_id": "vm-001",
+         *       "name": "example-resource",
+         *       "namespace": "example-namespace",
+         *       "cluster_id": "cluster-001",
+         *       "yaml": "example"
+         *     }
+         */
         VMManifestResponse: {
+            /** @example vm-001 */
             vm_id: string;
+            /** @example example-resource */
             name: string;
+            /** @example example-namespace */
             namespace: string;
+            /** @example cluster-001 */
             cluster_id: string;
-            /** @description Current live KubeVirt VirtualMachine manifest serialized as YAML */
+            /**
+             * @description Current live KubeVirt VirtualMachine manifest serialized as YAML
+             * @example example
+             */
             yaml: string;
         };
+        /**
+         * @description Prefilled create-request context derived from an existing VM or workspace selection.
+         * @example {
+         *       "system_id": "system-001",
+         *       "service_id": "service-001",
+         *       "template_id": "template-001",
+         *       "instance_size_id": "instance-size-001",
+         *       "namespace": "example-namespace",
+         *       "reason": "Example reason",
+         *       "batch_count": 1
+         *     }
+         */
         VMRequestPrefill: {
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @example system-001
+             */
             system_id: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @example service-001
+             */
             service_id: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @example template-001
+             */
             template_id: string;
-            /** Format: uuid */
+            /**
+             * Format: uuid
+             * @example instance-size-001
+             */
             instance_size_id: string;
+            /** @example example-namespace */
             namespace: string;
+            /** @example Example reason */
             reason: string;
+            /** @example 1 */
             batch_count: number;
         };
+        /**
+         * @description Request payload for modifying VM compute or storage targets.
+         * @example {
+         *       "reason": "Example reason",
+         *       "target_cpu_cores": 1,
+         *       "target_memory_gi": 1
+         *     }
+         */
         VMModifyRequest: {
+            /** @example Example reason */
             reason: string;
             /**
              * Format: double
              * @description Desired total vCPU count after the change. Online CPU changes are
              *     validated against the current socket topology and may only expand.
+             * @example 1
              */
             target_cpu_cores?: number;
             /**
              * Format: double
              * @description Desired total guest memory in Gi after the change.
+             * @example 1
              */
             target_memory_gi?: number;
-            /** @description Desired total root-volume size in Gi after the change. */
+            /**
+             * @description Desired total root-volume size in Gi after the change.
+             * @example 1
+             */
             target_disk_gb?: number;
         };
+        /**
+         * @description Current VM capacity and support matrix used before submitting a modify request.
+         * @example {
+         *       "vm_id": "vm-001",
+         *       "vm_name": "example-vm",
+         *       "namespace": "example-namespace",
+         *       "current_cpu_cores": 1,
+         *       "current_memory_gi": 1,
+         *       "current_disk_gb": 1,
+         *       "cpu_supported": true,
+         *       "memory_supported": true,
+         *       "disk_supported": true
+         *     }
+         */
         VMModifyContext: {
+            /** @example vm-001 */
             vm_id: string;
+            /** @example example-vm */
             vm_name: string;
+            /** @example example-namespace */
             namespace: string;
+            /** @example cluster-001 */
             cluster_id?: string;
+            /** @example example-cluster */
             cluster_name?: string;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             current_cpu_cores: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             current_memory_gi: number;
+            /** @example 1 */
             current_disk_gb: number;
+            /** @example true */
             cpu_supported: boolean;
+            /** @example example */
             cpu_reason?: string;
+            /** @example true */
             memory_supported: boolean;
+            /** @example example */
             memory_reason?: string;
+            /** @example true */
             disk_supported: boolean;
+            /** @example example */
             disk_reason?: string;
         };
+        /**
+         * @description Catalog and placement context required to create a VM request.
+         * @example {
+         *       "templates": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "display_name": "Example User"
+         *         }
+         *       ],
+         *       "instance_sizes": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "cpu_cores": 1,
+         *           "memory_gi": 1
+         *         }
+         *       ],
+         *       "namespaces": [
+         *         "example-namespace"
+         *       ]
+         *     }
+         */
         VMRequestContext: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "display_name": "Example User"
+             *       }
+             *     ]
+             */
             templates: components["schemas"]["Template"][];
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "cpu_cores": 1,
+             *         "memory_gi": 1
+             *       }
+             *     ]
+             */
             instance_sizes: components["schemas"]["InstanceSize"][];
+            /**
+             * @example [
+             *       "example-namespace"
+             *     ]
+             */
             namespaces: string[];
+            /**
+             * @example {
+             *       "status": "AVAILABLE",
+             *       "compatible_cluster_count": 1,
+             *       "evaluated_cluster_count": 1
+             *     }
+             */
             placement_hint?: components["schemas"]["VMPlacementHint"];
         };
+        /**
+         * @description Placement availability summary for a prospective VM request.
+         * @example {
+         *       "status": "AVAILABLE",
+         *       "compatible_cluster_count": 1,
+         *       "evaluated_cluster_count": 1
+         *     }
+         */
         VMPlacementHint: {
-            /** @enum {string} */
+            /**
+             * @example AVAILABLE
+             * @enum {string}
+             */
             status: "AVAILABLE" | "UNAVAILABLE";
+            /** @example 1 */
             compatible_cluster_count: number;
+            /** @example 1 */
             evaluated_cluster_count: number;
-            /** @enum {string} */
+            /**
+             * @example NoCandidateClusters
+             * @enum {string}
+             */
             primary_reason_code?: "NoCandidateClusters" | "ClusterUnavailable" | "CapabilityMismatch" | "PolicyNotConfigured" | "PolicyDenied" | "RequestInvalid" | "Other";
+            /**
+             * @example [
+             *       {
+             *         "code": "NoCandidateClusters",
+             *         "count": 1
+             *       }
+             *     ]
+             */
             reason_counts?: components["schemas"]["VMPlacementHintReasonCount"][];
-            /** @enum {string} */
+            /**
+             * @example HostAssistedCloneLikely
+             * @enum {string}
+             */
             primary_advisory_code?: "HostAssistedCloneLikely" | "Other";
+            /**
+             * @example [
+             *       {
+             *         "code": "HostAssistedCloneLikely",
+             *         "count": 1
+             *       }
+             *     ]
+             */
             advisory_counts?: components["schemas"]["VMPlacementHintAdvisoryCount"][];
         };
+        /**
+         * @description Count of clusters grouped by placement rejection reason.
+         * @example {
+         *       "code": "NoCandidateClusters",
+         *       "count": 1
+         *     }
+         */
         VMPlacementHintReasonCount: {
-            /** @enum {string} */
+            /**
+             * @example NoCandidateClusters
+             * @enum {string}
+             */
             code: "NoCandidateClusters" | "ClusterUnavailable" | "CapabilityMismatch" | "PolicyNotConfigured" | "PolicyDenied" | "RequestInvalid" | "Other";
+            /** @example 1 */
             count: number;
         };
+        /**
+         * @description Count of placement advisories grouped by advisory code.
+         * @example {
+         *       "code": "HostAssistedCloneLikely",
+         *       "count": 1
+         *     }
+         */
         VMPlacementHintAdvisoryCount: {
-            /** @enum {string} */
+            /**
+             * @example HostAssistedCloneLikely
+             * @enum {string}
+             */
             code: "HostAssistedCloneLikely" | "Other";
+            /** @example 1 */
             count: number;
         };
+        /**
+         * @description Paginated collection of virtual machines.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "namespace": "example-namespace",
+         *           "status": "CREATING"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         VMList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "namespace": "example-namespace",
+             *         "status": "CREATING"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["VM"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
-        /** @enum {string} */
+        /**
+         * @description Batch VM operation type.
+         * @example CREATE
+         * @enum {string}
+         */
         VMBatchOperation: "CREATE" | "MODIFY" | "DELETE" | "POWER";
-        /** @enum {string} */
+        /**
+         * @description Power action applied by a VM batch power request.
+         * @example START
+         * @enum {string}
+         */
         VMBatchPowerAction: "START" | "STOP" | "RESTART";
-        /** @enum {string} */
+        /**
+         * @description Parent batch job lifecycle status.
+         * @example PENDING_APPROVAL
+         * @enum {string}
+         */
         VMBatchParentStatus: "PENDING_APPROVAL" | "IN_PROGRESS" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED";
+        /**
+         * @description One target item in a VM create, modify, or delete batch request.
+         * @example {
+         *       "vm_id": "vm-001",
+         *       "service_id": "service-001",
+         *       "template_id": "template-001"
+         *     }
+         */
         VMBatchChildItem: {
-            /** @description Required for DELETE and MODIFY operations */
+            /**
+             * @description Required for DELETE and MODIFY operations
+             * @example vm-001
+             */
             vm_id?: string;
             /**
              * Format: uuid
              * @description Required for CREATE operation
+             * @example service-001
              */
             service_id?: string;
             /**
              * Format: uuid
              * @description Required for CREATE operation
+             * @example template-001
              */
             template_id?: string;
             /**
              * Format: uuid
              * @description Required for CREATE operation
+             * @example instance-size-001
              */
             instance_size_id?: string;
-            /** @description Required for CREATE operation */
+            /**
+             * @description Required for CREATE operation
+             * @example example-namespace
+             */
             namespace?: string;
             /**
              * Format: double
              * @description Optional desired total vCPU count for CREATE or MODIFY operations.
+             * @example 1
              */
             target_cpu_cores?: number;
             /**
              * Format: double
              * @description Optional desired total guest memory in Gi for CREATE or MODIFY operations.
+             * @example 1
              */
             target_memory_gi?: number;
-            /** @description Optional desired total root-volume size in Gi for CREATE or MODIFY operations. */
+            /**
+             * @description Optional desired total root-volume size in Gi for CREATE or MODIFY operations.
+             * @example 1
+             */
             target_disk_gb?: number;
+            /** @example Example reason */
             reason?: string;
         };
+        /**
+         * @description One VM target in a batch power request.
+         * @example {
+         *       "vm_id": "vm-001",
+         *       "reason": "Example reason"
+         *     }
+         */
         VMBatchPowerItem: {
+            /** @example vm-001 */
             vm_id: string;
+            /** @example Example reason */
             reason?: string;
         };
+        /**
+         * @description Request payload for submitting a VM create, modify, or delete batch.
+         * @example {
+         *       "operation": "CREATE",
+         *       "items": [
+         *         {
+         *           "vm_id": "vm-001",
+         *           "service_id": "service-001",
+         *           "template_id": "template-001"
+         *         }
+         *       ],
+         *       "request_id": "request-001"
+         *     }
+         */
         VMBatchSubmitRequest: {
+            /** @example CREATE */
             operation: components["schemas"]["VMBatchOperation"];
-            /** @description Client idempotency key */
+            /**
+             * @description Client idempotency key
+             * @example request-001
+             */
             request_id?: string;
+            /** @example Example reason */
             reason?: string;
+            /**
+             * @example [
+             *       {
+             *         "vm_id": "vm-001",
+             *         "service_id": "service-001",
+             *         "template_id": "template-001"
+             *       }
+             *     ]
+             */
             items: components["schemas"]["VMBatchChildItem"][];
         };
+        /**
+         * @description Request payload for submitting a VM power batch.
+         * @example {
+         *       "operation": "START",
+         *       "items": [
+         *         {
+         *           "vm_id": "vm-001",
+         *           "reason": "Example reason"
+         *         }
+         *       ],
+         *       "request_id": "request-001"
+         *     }
+         */
         VMBatchPowerRequest: {
+            /** @example START */
             operation: components["schemas"]["VMBatchPowerAction"];
-            /** @description Client idempotency key */
+            /**
+             * @description Client idempotency key
+             * @example request-001
+             */
             request_id?: string;
+            /** @example Example reason */
             reason?: string;
+            /**
+             * @example [
+             *       {
+             *         "vm_id": "vm-001",
+             *         "reason": "Example reason"
+             *       }
+             *     ]
+             */
             items: components["schemas"]["VMBatchPowerItem"][];
         };
+        /**
+         * @description Accepted batch submission response with polling details.
+         * @example {
+         *       "batch_id": "batch-001",
+         *       "status": "PENDING_APPROVAL",
+         *       "status_url": "https://example.com/callback",
+         *       "retry_after_seconds": 1
+         *     }
+         */
         VMBatchSubmitResponse: {
+            /** @example batch-001 */
             batch_id: string;
+            /** @example PENDING_APPROVAL */
             status: components["schemas"]["VMBatchParentStatus"];
+            /** @example https://example.com/callback */
             status_url: string;
+            /** @example 1 */
             retry_after_seconds: number;
         };
+        /**
+         * @description Status of one child ticket within a VM batch job.
+         * @example {
+         *       "ticket_id": "ticket-001",
+         *       "event_id": "event-001",
+         *       "status": "PENDING"
+         *     }
+         */
         VMBatchChildStatus: {
+            /** @example ticket-001 */
             ticket_id: string;
+            /** @example event-001 */
             event_id: string;
-            /** @enum {string} */
+            /**
+             * @example PENDING
+             * @enum {string}
+             */
             status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
+            /** @example resource-001 */
             resource_id?: string;
+            /** @example example-resource */
             resource_name?: string;
+            /** @example example */
             last_error?: string;
+            /** @example 1 */
             attempt_count?: number;
+            /**
+             * @example {
+             *       "root_data_volume_name": "example-root-data-volume",
+             *       "claim_name": "example-claim",
+             *       "phase": "example"
+             *     }
+             */
             provisioning?: components["schemas"]["ProvisioningStatus"];
         };
+        /**
+         * @description Full VM batch job status including child ticket outcomes.
+         * @example {
+         *       "batch_id": "batch-001",
+         *       "operation": "CREATE",
+         *       "status": "PENDING_APPROVAL",
+         *       "child_count": 1,
+         *       "success_count": 1,
+         *       "failed_count": 1,
+         *       "pending_count": 1,
+         *       "children": [
+         *         {
+         *           "ticket_id": "ticket-001",
+         *           "event_id": "event-001",
+         *           "status": "PENDING"
+         *         }
+         *       ],
+         *       "created_by": "example",
+         *       "created_at": "2026-01-01T00:00:00Z",
+         *       "updated_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         VMBatchStatusResponse: {
+            /** @example batch-001 */
             batch_id: string;
+            /** @example CREATE */
             operation: components["schemas"]["VMBatchOperation"];
+            /** @example PENDING_APPROVAL */
             status: components["schemas"]["VMBatchParentStatus"];
+            /** @example 1 */
             child_count: number;
+            /** @example 1 */
             success_count: number;
+            /** @example 1 */
             failed_count: number;
+            /** @example 1 */
             pending_count: number;
+            /**
+             * @example [
+             *       {
+             *         "ticket_id": "ticket-001",
+             *         "event_id": "event-001",
+             *         "status": "PENDING"
+             *       }
+             *     ]
+             */
             children: components["schemas"]["VMBatchChildStatus"][];
+            /** @example example */
             created_by: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at: string;
         };
+        /**
+         * @description Result of retrying or cancelling child tickets in a batch job.
+         * @example {
+         *       "batch_id": "batch-001",
+         *       "status": "PENDING_APPROVAL",
+         *       "affected_count": 1
+         *     }
+         */
         VMBatchActionResponse: {
+            /** @example batch-001 */
             batch_id: string;
+            /** @example PENDING_APPROVAL */
             status: components["schemas"]["VMBatchParentStatus"];
+            /** @example 1 */
             affected_count: number;
-            /** @description Child ticket IDs that were actually affected by retry/cancel action. */
+            /**
+             * @description Child ticket IDs that were actually affected by retry/cancel action.
+             * @example [
+             *       "affected-ticket-001"
+             *     ]
+             */
             affected_ticket_ids?: string[];
         };
-        /** @enum {string} */
+        /**
+         * @description Approval status for a VM console access request.
+         * @example PENDING_APPROVAL
+         * @enum {string}
+         */
         VMConsoleRequestStatus: "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
-        /** @enum {string} */
+        /**
+         * @description Effective console authorization state for a VM.
+         * @example NOT_REQUESTED
+         * @enum {string}
+         */
         VMConsoleStatus: "NOT_REQUESTED" | "PENDING_APPROVAL" | "APPROVED" | "REJECTED";
-        /** @enum {string} */
+        /**
+         * @description Console transport selected for VM access.
+         * @example SERIAL
+         * @enum {string}
+         */
         VMConsoleType: "SERIAL" | "VNC";
+        /**
+         * @description Console access request result and optional approved console details.
+         * @example {
+         *       "status": "PENDING_APPROVAL",
+         *       "ticket_id": "ticket-001",
+         *       "console_type": "SERIAL"
+         *     }
+         */
         VMConsoleRequestResponse: {
+            /** @example PENDING_APPROVAL */
             status: components["schemas"]["VMConsoleRequestStatus"];
+            /** @example ticket-001 */
             ticket_id?: string | null;
+            /** @example SERIAL */
             console_type?: ((string & components["schemas"]["VMConsoleType"]) | null) & components["schemas"]["VMConsoleType"];
+            /** @example https://example.com/callback */
             console_url?: string | null;
-            /** @deprecated */
+            /**
+             * @deprecated
+             * @example https://example.com/callback
+             */
             vnc_url?: string | null;
         };
+        /**
+         * @description Preferred console type submitted with a console access request.
+         * @example {
+         *       "preferred_console_type": "SERIAL"
+         *     }
+         */
         VMConsoleRequestInput: {
+            /** @example SERIAL */
             preferred_console_type?: components["schemas"]["VMConsoleType"];
         };
+        /**
+         * @description Current console access status for a VM.
+         * @example {
+         *       "status": "NOT_REQUESTED",
+         *       "ticket_id": "ticket-001",
+         *       "console_type": "SERIAL"
+         *     }
+         */
         VMConsoleStatusResponse: {
+            /** @example NOT_REQUESTED */
             status: components["schemas"]["VMConsoleStatus"];
+            /** @example ticket-001 */
             ticket_id?: string | null;
+            /** @example SERIAL */
             console_type?: ((string & components["schemas"]["VMConsoleType"]) | null) & components["schemas"]["VMConsoleType"];
+            /** @example https://example.com/callback */
             console_url?: string | null;
-            /** @deprecated */
+            /**
+             * @deprecated
+             * @example https://example.com/callback
+             */
             vnc_url?: string | null;
         };
+        /**
+         * @description Ready console session bootstrap response.
+         * @example {
+         *       "status": "SESSION_READY",
+         *       "vm_id": "vm-001",
+         *       "console_type": "SERIAL"
+         *     }
+         */
         VMConsoleSessionResponse: {
-            /** @enum {string} */
+            /**
+             * @example SESSION_READY
+             * @enum {string}
+             */
             status: "SESSION_READY";
+            /** @example vm-001 */
             vm_id: string;
+            /** @example SERIAL */
             console_type: components["schemas"]["VMConsoleType"];
-            /** @description Relative websocket/proxy path for console bootstrap. */
+            /**
+             * @description Relative websocket/proxy path for console bootstrap.
+             * @example /example/path
+             */
             websocket_path?: string;
         };
+        /**
+         * @description OpenAPI schema for VMVNCSession Response.
+         * @example {
+         *       "status": "SESSION_READY",
+         *       "vm_id": "vm-001",
+         *       "websocket_path": "/example/path"
+         *     }
+         */
         VMVNCSessionResponse: {
-            /** @enum {string} */
+            /**
+             * @example SESSION_READY
+             * @enum {string}
+             */
             status: "SESSION_READY";
+            /** @example vm-001 */
             vm_id: string;
-            /** @description Relative websocket/proxy path for noVNC bootstrap. */
+            /**
+             * @description Relative websocket/proxy path for noVNC bootstrap.
+             * @example /example/path
+             */
             websocket_path?: string;
+            /** @example SERIAL */
             console_type?: components["schemas"]["VMConsoleType"];
         };
+        /**
+         * @description OpenAPI schema for Ticket Response.
+         * @example {
+         *       "ticket_id": "ticket-001",
+         *       "status": "PENDING",
+         *       "operation_type": "CREATE"
+         *     }
+         */
         TicketResponse: {
+            /** @example ticket-001 */
             ticket_id: string;
-            /** @enum {string} */
+            /**
+             * @example PENDING
+             * @enum {string}
+             */
             status: "PENDING";
             /**
              * @description Type of operation this ticket represents (ADR-0015)
+             * @example CREATE
              * @enum {string}
              */
             operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
         };
+        /**
+         * @description OpenAPI schema for Ticket Item Summary.
+         * @example {
+         *       "system_id": "system-001",
+         *       "system_name": "example-system",
+         *       "service_id": "service-001"
+         *     }
+         */
         TicketItemSummary: {
+            /** @example system-001 */
             system_id?: string;
+            /** @example example-system */
             system_name?: string;
+            /** @example service-001 */
             service_id?: string;
+            /** @example example-service */
             service_name?: string;
+            /** @example example-namespace */
             namespace?: string;
+            /** @example cluster-001 */
             cluster_id?: string;
+            /** @example example-cluster */
             cluster_name?: string;
+            /** @example test */
             cluster_environment?: string;
+            /** @example Example User */
             requester_display_name?: string;
+            /** @example example-user */
             requester_username?: string;
+            /** @example Example User */
             approver_display_name?: string;
+            /** @example example-user */
             approver_username?: string;
-            /** @description Preferred human-readable owner label for the target VM or requested VM. */
+            /**
+             * @description Preferred human-readable owner label for the target VM or requested VM.
+             * @example Example User
+             */
             owner_display_name?: string;
-            /** @description Owner username when available. */
+            /**
+             * @description Owner username when available.
+             * @example example-user
+             */
             owner_username?: string;
+            /** @example vm-001 */
             vm_id?: string;
+            /** @example example-vm */
             vm_name?: string;
-            /** @description VM status captured when the approval request was created. */
+            /**
+             * @description VM status captured when the approval request was created.
+             * @example ACTIVE
+             */
             request_vm_status?: string;
-            /** @description Latest VM status resolved when the ticket was fetched. */
+            /**
+             * @description Latest VM status resolved when the ticket was fetched.
+             * @example ACTIVE
+             */
             latest_vm_status?: string;
-            /** @description Deprecated alias for latest_vm_status. */
+            /**
+             * @description Deprecated alias for latest_vm_status.
+             * @example ACTIVE
+             */
             vm_status?: string;
+            /** @example template-001 */
             template_id?: string;
+            /** @example example-template */
             template_name?: string;
+            /** @example instance-size-001 */
             instance_size_id?: string;
+            /** @example example-instance-size */
             instance_size_name?: string;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             current_cpu_cores?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             current_memory_gi?: number;
+            /** @example 1 */
             current_disk_gb?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             target_cpu_cores?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             target_memory_gi?: number;
+            /** @example 1 */
             target_disk_gb?: number;
+            /** @example START */
             power_action?: string;
         };
+        /**
+         * @description OpenAPI schema for Ticket Summary.
+         * @example {
+         *       "system_id": "system-001",
+         *       "system_name": "example-system",
+         *       "service_id": "service-001"
+         *     }
+         */
         TicketSummary: {
+            /** @example system-001 */
             system_id?: string;
+            /** @example example-system */
             system_name?: string;
+            /** @example service-001 */
             service_id?: string;
+            /** @example example-service */
             service_name?: string;
+            /** @example example-namespace */
             namespace?: string;
+            /** @example cluster-001 */
             cluster_id?: string;
+            /** @example example-cluster */
             cluster_name?: string;
+            /** @example test */
             cluster_environment?: string;
-            /** @description Preferred human-readable requester label, typically display name or username. */
+            /**
+             * @description Preferred human-readable requester label, typically display name or username.
+             * @example Example User
+             */
             requester_display_name?: string;
-            /** @description Requester username when available. */
+            /**
+             * @description Requester username when available.
+             * @example example-user
+             */
             requester_username?: string;
-            /** @description Preferred human-readable approver label, typically display name or username. */
+            /**
+             * @description Preferred human-readable approver label, typically display name or username.
+             * @example Example User
+             */
             approver_display_name?: string;
-            /** @description Approver username when available. */
+            /**
+             * @description Approver username when available.
+             * @example example-user
+             */
             approver_username?: string;
-            /** @description Preferred human-readable owner label for the target VM or requested VM. */
+            /**
+             * @description Preferred human-readable owner label for the target VM or requested VM.
+             * @example Example User
+             */
             owner_display_name?: string;
-            /** @description Owner username when available. */
+            /**
+             * @description Owner username when available.
+             * @example example-user
+             */
             owner_username?: string;
+            /** @example vm-001 */
             vm_id?: string;
+            /** @example example-vm */
             vm_name?: string;
-            /** @description VM status captured when the approval request was created. */
+            /**
+             * @description VM status captured when the approval request was created.
+             * @example ACTIVE
+             */
             request_vm_status?: string;
-            /** @description Latest VM status resolved when the ticket was fetched. */
+            /**
+             * @description Latest VM status resolved when the ticket was fetched.
+             * @example ACTIVE
+             */
             latest_vm_status?: string;
-            /** @description Deprecated alias for latest_vm_status. */
+            /**
+             * @description Deprecated alias for latest_vm_status.
+             * @example ACTIVE
+             */
             vm_status?: string;
+            /** @example template-001 */
             template_id?: string;
+            /** @example example-template */
             template_name?: string;
+            /** @example instance-size-001 */
             instance_size_id?: string;
+            /** @example example-instance-size */
             instance_size_name?: string;
+            /** @example 1 */
             batch_count?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             current_cpu_cores?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             current_memory_gi?: number;
+            /** @example 1 */
             current_disk_gb?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             target_cpu_cores?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             target_memory_gi?: number;
+            /** @example 1 */
             target_disk_gb?: number;
+            /** @example START */
             power_action?: string;
+            /** @example true */
             irreversible?: boolean;
+            /**
+             * @example [
+             *       {
+             *         "system_id": "system-001",
+             *         "system_name": "example-system",
+             *         "service_id": "service-001"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["TicketItemSummary"][];
         };
+        /**
+         * @description OpenAPI schema for Ticket.
+         * @example {
+         *       "id": "resource-001",
+         *       "event_id": "event-001",
+         *       "status": "PENDING",
+         *       "requester": "example"
+         *     }
+         */
         Ticket: {
+            /** @example resource-001 */
             id: string;
+            /** @example event-001 */
             event_id: string;
-            /** @enum {string} */
+            /**
+             * @example PENDING
+             * @enum {string}
+             */
             status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
             /**
              * @description Type of operation this ticket represents (ADR-0015)
+             * @example CREATE
              * @enum {string}
              */
             operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
+            /** @example example */
             requester: string;
-            /** @description Preferred human-readable requester label, typically display name or username. */
+            /**
+             * @description Preferred human-readable requester label, typically display name or username.
+             * @example Example User
+             */
             requester_display_name?: string;
-            /** @description Requester username when available. */
+            /**
+             * @description Requester username when available.
+             * @example example-user
+             */
             requester_username?: string;
+            /** @example example */
             approver?: string;
-            /** @description Preferred human-readable approver label, typically display name or username. */
+            /**
+             * @description Preferred human-readable approver label, typically display name or username.
+             * @example Example User
+             */
             approver_display_name?: string;
-            /** @description Approver username when available. */
+            /**
+             * @description Approver username when available.
+             * @example example-user
+             */
             approver_username?: string;
+            /** @example Example reason */
             reason?: string;
+            /** @example example */
             reject_reason?: string;
-            /** @description For DELETE tickets, the VM being deleted */
+            /**
+             * @description For DELETE tickets, the VM being deleted
+             * @example target-vm-001
+             */
             target_vm_id?: string;
-            /** @description For DELETE tickets, the VM name (for display) */
+            /**
+             * @description For DELETE tickets, the VM name (for display)
+             * @example example-target-vm
+             */
             target_vm_name?: string;
+            /**
+             * @example {
+             *       "system_id": "system-001",
+             *       "system_name": "example-system",
+             *       "service_id": "service-001"
+             *     }
+             */
             summary?: components["schemas"]["TicketSummary"];
+            /**
+             * @example {
+             *       "system_id": "system-001",
+             *       "service_id": "service-001",
+             *       "template_id": "template-001",
+             *       "instance_size_id": "instance-size-001",
+             *       "namespace": "example-namespace",
+             *       "reason": "Example reason",
+             *       "batch_count": 1
+             *     }
+             */
             request_prefill?: components["schemas"]["VMRequestPrefill"];
-            /** @description Contextual payload of the original request depending on operation_type */
+            /**
+             * @description Contextual payload of the original request depending on operation_type
+             * @example {}
+             */
             ticket_payload?: {
                 [key: string]: unknown;
             } | null;
+            /**
+             * @example {
+             *       "root_data_volume_name": "example-root-data-volume",
+             *       "claim_name": "example-claim",
+             *       "phase": "example"
+             *     }
+             */
             provisioning?: components["schemas"]["ProvisioningStatus"];
+            /**
+             * @example {
+             *       "selected_cluster_id": "selected-cluster-001",
+             *       "eligible": true,
+             *       "evaluated_at": "2026-01-01T00:00:00Z"
+             *     }
+             */
             placement_evaluation?: components["schemas"]["PlacementEvaluation"];
-            /** @description Persisted cluster selected during CREATE approval execution, exposed to support failed-batch re-review. */
+            /**
+             * @description Persisted cluster selected during CREATE approval execution, exposed to support failed-batch re-review.
+             * @example selected-cluster-001
+             */
             selected_cluster_id?: string;
-            /** @description Persisted storage class selected during CREATE approval execution, exposed to support failed-batch re-review. */
+            /**
+             * @description Persisted storage class selected during CREATE approval execution, exposed to support failed-batch re-review.
+             * @example example
+             */
             selected_storage_class?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for Ticket List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "event_id": "event-001",
+         *           "status": "PENDING",
+         *           "requester": "example"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         TicketList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "event_id": "event-001",
+             *         "status": "PENDING",
+             *         "requester": "example"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["Ticket"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Delete VMResponse.
+         * @example {
+         *       "ticket_id": "ticket-001",
+         *       "event_id": "event-001",
+         *       "status": "PENDING"
+         *     }
+         */
         DeleteVMResponse: {
+            /** @example ticket-001 */
             ticket_id: string;
+            /** @example event-001 */
             event_id: string;
-            /** @enum {string} */
+            /**
+             * @example PENDING
+             * @enum {string}
+             */
             status: "PENDING";
         };
+        /**
+         * @description OpenAPI schema for Approval Decision Request.
+         * @example {
+         *       "selected_cluster_id": "selected-cluster-001",
+         *       "selected_storage_class": "example",
+         *       "selected_dv_access_modes": [
+         *         "example"
+         *       ]
+         *     }
+         */
         ApprovalDecisionRequest: {
-            /** @description Admin selects target cluster (ADR-0017) */
+            /**
+             * @description Admin selects target cluster (ADR-0017)
+             * @example selected-cluster-001
+             */
             selected_cluster_id?: string;
+            /** @example example */
             selected_storage_class?: string;
-            /** @description Explicit accessModes selected during approval when root volume provisioning intent cannot be auto-resolved uniquely. */
+            /**
+             * @description Explicit accessModes selected during approval when root volume provisioning intent cannot be auto-resolved uniquely.
+             * @example [
+             *       "example"
+             *     ]
+             */
             selected_dv_access_modes?: string[];
             /**
              * @description Explicit volumeMode selected during approval when root volume provisioning intent cannot be auto-resolved uniquely.
+             * @example Block
              * @enum {string}
              */
             selected_dv_volume_mode?: "Block" | "Filesystem";
-            /** @description When true, admin overrides default resource requests/limits from InstanceSize (master-flow Stage 5.B). */
+            /**
+             * @description When true, admin overrides default resource requests/limits from InstanceSize (master-flow Stage 5.B).
+             * @example true
+             */
             enable_override?: boolean;
-            /** @description CPU request in cores (overcommit scenario, Stage 5.B) */
+            /**
+             * @description CPU request in cores (overcommit scenario, Stage 5.B)
+             * @example 1
+             */
             cpu_request?: number;
-            /** @description CPU limit in cores (Stage 5.B) */
+            /**
+             * @description CPU limit in cores (Stage 5.B)
+             * @example 1
+             */
             cpu_limit?: number;
-            /** @description Memory request in Gi (Stage 5.B) */
+            /**
+             * @description Memory request in Gi (Stage 5.B)
+             * @example 1
+             */
             memory_request_gi?: number;
-            /** @description Memory limit in Gi (Stage 5.B) */
+            /**
+             * @description Memory limit in Gi (Stage 5.B)
+             * @example 1
+             */
             memory_limit_gi?: number;
-            /** @description Disk size in GB, admin can adjust (Stage 5.B) */
+            /**
+             * @description Disk size in GB, admin can adjust (Stage 5.B)
+             * @example 1
+             */
             disk_gb?: number;
+            /** @example example */
             comment?: string;
         };
+        /**
+         * @description OpenAPI schema for Reject Decision Request.
+         * @example {
+         *       "reason": "Example reason"
+         *     }
+         */
         RejectDecisionRequest: {
+            /** @example Example reason */
             reason: string;
         };
+        /**
+         * @description OpenAPI schema for Cluster.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "api_server_url": "https://example.com/callback",
+         *       "status": "UNKNOWN"
+         *     }
+         */
         Cluster: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resource */
             name: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example https://example.com/callback */
             api_server_url: string;
-            /** @enum {string} */
+            /**
+             * @example UNKNOWN
+             * @enum {string}
+             */
             status: "UNKNOWN" | "HEALTHY" | "UNHEALTHY" | "UNREACHABLE";
             /**
              * @description Cluster environment type (ADR-0015 §1, §15)
+             * @example test
              * @enum {string}
              */
             environment?: "test" | "prod";
+            /** @example example */
             kubevirt_version?: string;
             /**
              * @description Auto-detected enabled KubeVirt feature gates (ADR-0014).
@@ -2437,379 +3982,1119 @@ export interface components {
              *     ]
              */
             enabled_features?: string[];
-            /** @description Auto-detected StorageClass list (ADR-0015 §8) */
+            /**
+             * @description Auto-detected StorageClass list (ADR-0015 §8)
+             * @example [
+             *       "example"
+             *     ]
+             */
             storage_classes?: string[];
+            /** @example example */
             default_storage_class?: string;
-            /** @description Whether an explicit ClusterPolicy row exists for this cluster */
+            /**
+             * @description Whether an explicit ClusterPolicy row exists for this cluster
+             * @example true
+             */
             policy_configured?: boolean;
+            /**
+             * @example {
+             *       "mode": "MISSING",
+             *       "denied_controls": [
+             *         "cpu_overcommit"
+             *       ],
+             *       "scoped_controls": [
+             *         "hugepages_sizes"
+             *       ]
+             *     }
+             */
             policy_summary?: components["schemas"]["ClusterPolicySummary"];
+            /**
+             * @example {
+             *       "eligible": true,
+             *       "reason_code": "example_code",
+             *       "reason_message": "Example reason message"
+             *     }
+             */
             compatibility?: components["schemas"]["ClusterCompatibility"];
+            /** @example true */
             enabled?: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for Cluster Policy Summary.
+         * @example {
+         *       "mode": "MISSING",
+         *       "denied_controls": [
+         *         "cpu_overcommit"
+         *       ],
+         *       "scoped_controls": [
+         *         "hugepages_sizes"
+         *       ]
+         *     }
+         */
         ClusterPolicySummary: {
             /**
              * @description Operator-facing summary of cluster governance posture.
              *     `MISSING` means no explicit ClusterPolicy exists.
              *     `OPEN` means a policy exists but adds no deny/scope guardrails.
              *     `GUARDED` means one or more deny/scope guardrails are configured.
+             * @example MISSING
              * @enum {string}
              */
             mode: "MISSING" | "OPEN" | "GUARDED";
-            /** @description Machine-readable controls that are explicitly denied by policy. */
+            /**
+             * @description Machine-readable controls that are explicitly denied by policy.
+             * @example [
+             *       "cpu_overcommit"
+             *     ]
+             */
             denied_controls?: ("cpu_overcommit" | "memory_overcommit" | "dedicated_cpu" | "gpu" | "sriov" | "hugepages" | "cdi_clone")[];
-            /** @description Machine-readable controls that are constrained by allowlists. */
+            /**
+             * @description Machine-readable controls that are constrained by allowlists.
+             * @example [
+             *       "hugepages_sizes"
+             *     ]
+             */
             scoped_controls?: ("hugepages_sizes" | "clone_source_namespaces" | "storage_classes")[];
+            /** @example 1 */
             allowed_storage_class_count?: number;
+            /** @example 1 */
             allowed_clone_source_namespace_count?: number;
+            /** @example 1 */
             allowed_hugepages_size_count?: number;
         };
+        /**
+         * @description OpenAPI schema for Cluster Compatibility.
+         * @example {
+         *       "eligible": true,
+         *       "reason_code": "example_code",
+         *       "reason_message": "Example reason message"
+         *     }
+         */
         ClusterCompatibility: {
-            /** @description Whether the cluster is compatible with the supplied CREATE placement context. */
+            /**
+             * @description Whether the cluster is compatible with the supplied CREATE placement context.
+             * @example true
+             */
             eligible: boolean;
-            /** @description Machine-readable incompatibility code. Omitted when the cluster is eligible. */
+            /**
+             * @description Machine-readable incompatibility code. Omitted when the cluster is eligible.
+             * @example example_code
+             */
             reason_code?: string;
-            /** @description Human-readable incompatibility reason. Omitted when the cluster is eligible. */
+            /**
+             * @description Human-readable incompatibility reason. Omitted when the cluster is eligible.
+             * @example Example reason message
+             */
             reason_message?: string;
-            /** @description Machine-readable advisory code for compatible placements that may use a slower fallback path. */
+            /**
+             * @description Machine-readable advisory code for compatible placements that may use a slower fallback path.
+             * @example example_code
+             */
             advisory_code?: string;
-            /** @description Human-readable advisory message for compatible placements that may use a slower fallback path. */
+            /**
+             * @description Human-readable advisory message for compatible placements that may use a slower fallback path.
+             * @example Example advisory message
+             */
             advisory_message?: string;
+            /**
+             * @example {
+             *       "intent_mode": "auto",
+             *       "state": "not_applicable",
+             *       "message": "Example message"
+             *     }
+             */
             root_volume_resolution?: components["schemas"]["RootVolumeResolution"];
         };
+        /**
+         * @description OpenAPI schema for Placement Resource Override.
+         * @example {
+         *       "enabled": true,
+         *       "cpu_request": 1,
+         *       "cpu_limit": 1
+         *     }
+         */
         PlacementResourceOverride: {
+            /** @example true */
             enabled?: boolean;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             cpu_request?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             cpu_limit?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             memory_request_gi?: number;
-            /** Format: double */
+            /**
+             * Format: double
+             * @example 1
+             */
             memory_limit_gi?: number;
+            /** @example 1 */
             disk_gb?: number;
         };
+        /**
+         * @description OpenAPI schema for Placement Evaluation.
+         * @example {
+         *       "selected_cluster_id": "selected-cluster-001",
+         *       "eligible": true,
+         *       "evaluated_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         PlacementEvaluation: {
+            /** @example selected-cluster-001 */
             selected_cluster_id: string;
+            /** @example example-selected-cluster */
             selected_cluster_name?: string;
-            /** @enum {string} */
+            /**
+             * @example test
+             * @enum {string}
+             */
             selected_cluster_environment?: "test" | "prod";
+            /** @example example */
             requested_storage_class?: string;
+            /** @example example */
             effective_storage_class?: string;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             requested_dv_access_modes?: string[];
-            /** @enum {string} */
+            /**
+             * @example Block
+             * @enum {string}
+             */
             requested_dv_volume_mode?: "Block" | "Filesystem";
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             effective_dv_access_modes?: string[];
-            /** @enum {string} */
+            /**
+             * @example Block
+             * @enum {string}
+             */
             effective_dv_volume_mode?: "Block" | "Filesystem";
-            /** @enum {string} */
+            /**
+             * @example not_applicable
+             * @enum {string}
+             */
             root_volume_resolution_state?: "not_applicable" | "resolved" | "storage_class_required" | "mode_required" | "profile_incomplete" | "unsupported";
+            /** @example Example root volume resolution message */
             root_volume_resolution_message?: string;
+            /** @example true */
             eligible: boolean;
+            /** @example example_code */
             reason_code?: string;
+            /** @example Example reason message */
             reason_message?: string;
+            /** @example example_code */
             advisory_code?: string;
+            /** @example Example advisory message */
             advisory_message?: string;
+            /**
+             * @example {
+             *       "enabled": true,
+             *       "cpu_request": 1,
+             *       "cpu_limit": 1
+             *     }
+             */
             override?: components["schemas"]["PlacementResourceOverride"];
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             evaluated_at: string;
         };
+        /**
+         * @description OpenAPI schema for Cluster Create Request.
+         * @example {
+         *       "name": "example-resource",
+         *       "kubeconfig": "example",
+         *       "display_name": "Example User"
+         *     }
+         */
         ClusterCreateRequest: {
+            /** @example example-resource */
             name: string;
+            /** @example Example User */
             display_name?: string;
             /**
              * @default test
+             * @example test
              * @enum {string}
              */
             environment: "test" | "prod";
             /**
              * Format: byte
              * @description Kubeconfig bytes encoded as base64 for API transport. Base64 is transport encoding only, not encryption.
+             * @example example
              */
             kubeconfig: string;
         };
+        /**
+         * @description OpenAPI schema for Cluster Update Request.
+         * @example {
+         *       "display_name": "Example User",
+         *       "environment": "test",
+         *       "enabled": true
+         *     }
+         */
         ClusterUpdateRequest: {
+            /** @example Example User */
             display_name?: string;
-            /** @enum {string} */
+            /**
+             * @example test
+             * @enum {string}
+             */
             environment?: "test" | "prod";
+            /** @example true */
             enabled?: boolean;
             /**
              * Format: byte
              * @description Optional replacement kubeconfig bytes encoded as base64 for API transport. Base64 is transport encoding only, not encryption.
+             * @example example
              */
             kubeconfig?: string;
         };
+        /**
+         * @description OpenAPI schema for Cluster Environment Update.
+         * @example {
+         *       "environment": "test"
+         *     }
+         */
         ClusterEnvironmentUpdate: {
-            /** @enum {string} */
+            /**
+             * @example test
+             * @enum {string}
+             */
             environment: "test" | "prod";
         };
+        /**
+         * @description OpenAPI schema for Cluster Policy.
+         * @example {
+         *       "id": "resource-001",
+         *       "cluster_id": "cluster-001",
+         *       "allow_cpu_overcommit": true,
+         *       "allow_memory_overcommit": true,
+         *       "allow_dedicated_cpu": true,
+         *       "allow_gpu": true,
+         *       "allow_sriov": true,
+         *       "allow_hugepages": true,
+         *       "allow_cdi_clone": true,
+         *       "created_by": "example",
+         *       "created_at": "2026-01-01T00:00:00Z",
+         *       "updated_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         ClusterPolicy: {
+            /** @example resource-001 */
             id: string;
+            /** @example cluster-001 */
             cluster_id: string;
+            /** @example true */
             allow_cpu_overcommit: boolean;
+            /** @example true */
             allow_memory_overcommit: boolean;
+            /** @example true */
             allow_dedicated_cpu: boolean;
+            /** @example true */
             allow_gpu: boolean;
+            /** @example true */
             allow_sriov: boolean;
+            /** @example true */
             allow_hugepages: boolean;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             allowed_hugepages_sizes?: string[];
+            /** @example true */
             allow_cdi_clone: boolean;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             allowed_clone_source_namespaces?: string[];
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             allowed_storage_classes?: string[];
+            /** @example example */
             created_by: string;
+            /** @example example */
             updated_by?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at: string;
         };
+        /**
+         * @description OpenAPI schema for Cluster Policy Upsert Request.
+         * @example {
+         *       "allow_cpu_overcommit": true,
+         *       "allow_memory_overcommit": true,
+         *       "allow_dedicated_cpu": true,
+         *       "allow_gpu": true,
+         *       "allow_sriov": true,
+         *       "allow_hugepages": true,
+         *       "allow_cdi_clone": true
+         *     }
+         */
         ClusterPolicyUpsertRequest: {
+            /** @example true */
             allow_cpu_overcommit: boolean;
+            /** @example true */
             allow_memory_overcommit: boolean;
+            /** @example true */
             allow_dedicated_cpu: boolean;
+            /** @example true */
             allow_gpu: boolean;
+            /** @example true */
             allow_sriov: boolean;
+            /** @example true */
             allow_hugepages: boolean;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             allowed_hugepages_sizes?: string[];
+            /** @example true */
             allow_cdi_clone: boolean;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             allowed_clone_source_namespaces?: string[];
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             allowed_storage_classes?: string[];
         };
+        /**
+         * @description OpenAPI schema for Cluster List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "api_server_url": "https://example.com/callback",
+         *           "status": "UNKNOWN"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         ClusterList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "api_server_url": "https://example.com/callback",
+             *         "status": "UNKNOWN"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["Cluster"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Template.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "display_name": "Example User"
+         *     }
+         */
         Template: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resource */
             name: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
             /**
              * @description Catalog visibility scope only. Not scheduling environment.
+             * @example unclassified
              * @enum {string}
              */
             catalog_scope?: "unclassified" | "test" | "prod" | "all";
             /**
              * @description Canonical boot source type. `containerdisk` boots directly from a KubeVirt containerDisk image, `cdi_image_import` creates a VM-owned DataVolume from an image import source, and `cdi_pvc_clone` clones a source PVC via CDI. Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
+             * @example containerdisk
              * @enum {string}
              */
             source_type?: "containerdisk" | "cdi_image_import" | "cdi_pvc_clone";
-            /** @description Image / import source URL. Used by `containerdisk` and `cdi_image_import`. For CDI image import, plain registry references are canonicalized to `docker://...` by the server. */
+            /**
+             * @description Image / import source URL. Used by `containerdisk` and `cdi_image_import`. For CDI image import, plain registry references are canonicalized to `docker://...` by the server.
+             * @example https://example.com/callback
+             */
             image_url?: string;
-            /** @description Source PVC name for CDI PVC clone mode */
+            /**
+             * @description Source PVC name for CDI PVC clone mode
+             * @example example-pvc
+             */
             pvc_name?: string;
-            /** @description Kubernetes namespace where the source PVC is located (required when source_type is 'cdi_pvc_clone') */
+            /**
+             * @description Kubernetes namespace where the source PVC is located (required when source_type is 'cdi_pvc_clone')
+             * @example example
+             */
             pvc_namespace?: string;
-            /** @description Cloud-init userdata YAML (applied at VM boot) */
+            /**
+             * @description Cloud-init userdata YAML (applied at VM boot)
+             * @example example
+             */
             cloud_init?: string;
+            /** @example example */
             os_family?: string;
+            /** @example example */
             os_version?: string;
+            /** @example true */
             enabled?: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for Template Create Request.
+         * @example {
+         *       "name": "example-resource",
+         *       "display_name": "Example User",
+         *       "description": "Example description"
+         *     }
+         */
         TemplateCreateRequest: {
+            /** @example example-resource */
             name: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
             /**
              * @description Catalog visibility scope only. Not scheduling environment.
+             * @example unclassified
              * @enum {string}
              */
             catalog_scope?: "unclassified" | "test" | "prod" | "all";
             /**
              * @description Canonical boot source type. Legacy aliases `image` and `pvc` are accepted temporarily for backward compatibility.
+             * @example containerdisk
              * @enum {string}
              */
             source_type?: "containerdisk" | "cdi_image_import" | "cdi_pvc_clone";
-            /** @description Required when source_type is 'containerdisk' or 'cdi_image_import' */
+            /**
+             * @description Required when source_type is 'containerdisk' or 'cdi_image_import'
+             * @example https://example.com/callback
+             */
             image_url?: string;
-            /** @description Source PVC name. Required when source_type is 'cdi_pvc_clone' */
+            /**
+             * @description Source PVC name. Required when source_type is 'cdi_pvc_clone'
+             * @example example-pvc
+             */
             pvc_name?: string;
-            /** @description Kubernetes namespace where the source PVC is located. Required when source_type is 'cdi_pvc_clone'. */
+            /**
+             * @description Kubernetes namespace where the source PVC is located. Required when source_type is 'cdi_pvc_clone'.
+             * @example example
+             */
             pvc_namespace?: string;
-            /** @description Cloud-init userdata YAML */
+            /**
+             * @description Cloud-init userdata YAML
+             * @example example
+             */
             cloud_init?: string;
+            /** @example example */
             os_family?: string;
+            /** @example example */
             os_version?: string;
+            /** @example true */
             enabled?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Template Update Request.
+         * @example {
+         *       "display_name": "Example User",
+         *       "description": "Example description",
+         *       "catalog_scope": "unclassified"
+         *     }
+         */
         TemplateUpdateRequest: {
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
-            /** @enum {string} */
+            /**
+             * @example unclassified
+             * @enum {string}
+             */
             catalog_scope?: "unclassified" | "test" | "prod" | "all";
-            /** @enum {string} */
+            /**
+             * @example containerdisk
+             * @enum {string}
+             */
             source_type?: "containerdisk" | "cdi_image_import" | "cdi_pvc_clone";
+            /** @example https://example.com/callback */
             image_url?: string;
+            /** @example example-pvc */
             pvc_name?: string;
-            /** @description Kubernetes namespace where the source PVC is located */
+            /**
+             * @description Kubernetes namespace where the source PVC is located
+             * @example example
+             */
             pvc_namespace?: string;
+            /** @example example */
             cloud_init?: string;
+            /** @example example */
             os_family?: string;
+            /** @example example */
             os_version?: string;
+            /** @example true */
             enabled?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Template List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "display_name": "Example User"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         TemplateList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "display_name": "Example User"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["Template"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Instance Size.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "cpu_cores": 1,
+         *       "memory_gi": 1
+         *     }
+         */
         InstanceSize: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resource */
             name: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
             /**
              * @description Catalog visibility scope only. Not scheduling environment.
+             * @example unclassified
              * @enum {string}
              */
             catalog_scope?: "unclassified" | "test" | "prod" | "all";
+            /** @example 1 */
             cpu_cores: number;
-            /** @description CPU request override in cores. Omitted when no explicit override is stored. */
+            /**
+             * @description CPU request override in cores. Omitted when no explicit override is stored.
+             * @example 1
+             */
             cpu_request?: number;
+            /** @example 1 */
             memory_gi: number;
-            /** @description Memory request override in Gi. Omitted when no explicit override is stored. */
+            /**
+             * @description Memory request override in Gi. Omitted when no explicit override is stored.
+             * @example 1
+             */
             memory_request_gi?: number;
+            /** @example 1 */
             disk_gb?: number;
+            /** @example true */
             dedicated_cpu?: boolean;
+            /** @example true */
             requires_gpu?: boolean;
+            /** @example true */
             requires_sriov?: boolean;
+            /** @example true */
             requires_hugepages?: boolean;
+            /** @example example */
             hugepages_size?: string;
-            /** @description Explicit CDI DataVolume PVC accessModes for the root volume. When empty together with `dv_volume_mode`, the platform treats the storage mode as approval-time auto resolution. */
+            /**
+             * @description Explicit CDI DataVolume PVC accessModes for the root volume. When empty together with `dv_volume_mode`, the platform treats the storage mode as approval-time auto resolution.
+             * @example [
+             *       "example"
+             *     ]
+             */
             dv_access_modes?: string[];
             /**
              * @description Explicit CDI DataVolume PVC volumeMode for the root volume. When empty together with `dv_access_modes`, the platform treats the storage mode as approval-time auto resolution.
+             * @example Block
              * @enum {string}
              */
             dv_volume_mode?: "Block" | "Filesystem";
-            /** @description KubeVirt spec path overrides (admin-only). Only populated in admin catalog endpoints; omitted from user-facing responses. */
+            /**
+             * @description KubeVirt spec path overrides (admin-only). Only populated in admin catalog endpoints; omitted from user-facing responses.
+             * @example {}
+             */
             spec_overrides?: {
                 [key: string]: unknown;
             };
+            /** @example 1 */
             sort_order?: number;
+            /** @example true */
             enabled?: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for Instance Size Create Request.
+         * @example {
+         *       "name": "example-resource",
+         *       "cpu_cores": 1,
+         *       "memory_gi": 1
+         *     }
+         */
         InstanceSizeCreateRequest: {
+            /** @example example-resource */
             name: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
             /**
              * @description Catalog visibility scope only. Not scheduling environment.
+             * @example unclassified
              * @enum {string}
              */
             catalog_scope?: "unclassified" | "test" | "prod" | "all";
+            /** @example 1 */
             cpu_cores: number;
+            /** @example 1 */
             memory_gi: number;
+            /** @example 1 */
             disk_gb?: number;
+            /** @example 1 */
             cpu_request?: number;
+            /** @example 1 */
             memory_request_gi?: number;
+            /** @example true */
             dedicated_cpu?: boolean;
+            /** @example true */
             requires_gpu?: boolean;
+            /** @example true */
             requires_sriov?: boolean;
+            /** @example true */
             requires_hugepages?: boolean;
+            /** @example example */
             hugepages_size?: string;
-            /** @description Explicit CDI DataVolume PVC accessModes for the root volume. On update, send an empty array to clear an existing explicit root volume mode and return the size to approval-time auto resolution. */
+            /**
+             * @description Explicit CDI DataVolume PVC accessModes for the root volume. On update, send an empty array to clear an existing explicit root volume mode and return the size to approval-time auto resolution.
+             * @example [
+             *       "example"
+             *     ]
+             */
             dv_access_modes?: string[];
-            /** @enum {string} */
+            /**
+             * @example Block
+             * @enum {string}
+             */
             dv_volume_mode?: "Block" | "Filesystem";
+            /** @example {} */
             spec_overrides?: {
                 [key: string]: unknown;
             };
+            /** @example 1 */
             sort_order?: number;
+            /** @example true */
             enabled?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Instance Size Update Request.
+         * @example {
+         *       "name": "example-resource",
+         *       "display_name": "Example User",
+         *       "description": "Example description"
+         *     }
+         */
         InstanceSizeUpdateRequest: {
+            /** @example example-resource */
             name?: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
-            /** @enum {string} */
+            /**
+             * @example unclassified
+             * @enum {string}
+             */
             catalog_scope?: "unclassified" | "test" | "prod" | "all";
+            /** @example 1 */
             cpu_cores?: number;
+            /** @example 1 */
             memory_gi?: number;
+            /** @example 1 */
             disk_gb?: number;
-            /** @description CPU request in cores. Set `0` to clear override and fall back to cpu_cores. */
+            /**
+             * @description CPU request in cores. Set `0` to clear override and fall back to cpu_cores.
+             * @example 1
+             */
             cpu_request?: number;
-            /** @description Memory request in Gi. Set `0` to clear override and fall back to memory_gi. */
+            /**
+             * @description Memory request in Gi. Set `0` to clear override and fall back to memory_gi.
+             * @example 1
+             */
             memory_request_gi?: number;
+            /** @example true */
             dedicated_cpu?: boolean;
+            /** @example true */
             requires_gpu?: boolean;
+            /** @example true */
             requires_sriov?: boolean;
+            /** @example true */
             requires_hugepages?: boolean;
+            /** @example example */
             hugepages_size?: string;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             dv_access_modes?: string[];
-            /** @enum {string} */
+            /**
+             * @example Block
+             * @enum {string}
+             */
             dv_volume_mode?: "Block" | "Filesystem";
+            /** @example {} */
             spec_overrides?: {
                 [key: string]: unknown;
             };
+            /** @example 1 */
             sort_order?: number;
+            /** @example true */
             enabled?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Instance Size List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "cpu_cores": 1,
+         *           "memory_gi": 1
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         InstanceSizeList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "cpu_cores": 1,
+             *         "memory_gi": 1
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["InstanceSize"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Storage Claim Property Set.
+         * @example {
+         *       "access_modes": [
+         *         "example"
+         *       ],
+         *       "volume_mode": "Block"
+         *     }
+         */
         StorageClaimPropertySet: {
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             access_modes?: string[];
-            /** @enum {string} */
+            /**
+             * @example Block
+             * @enum {string}
+             */
             volume_mode?: "Block" | "Filesystem";
         };
+        /**
+         * @description OpenAPI schema for Root Volume Resolution.
+         * @example {
+         *       "intent_mode": "auto",
+         *       "state": "not_applicable",
+         *       "message": "Example message"
+         *     }
+         */
         RootVolumeResolution: {
-            /** @enum {string} */
+            /**
+             * @example auto
+             * @enum {string}
+             */
             intent_mode?: "auto" | "explicit";
-            /** @enum {string} */
+            /**
+             * @example not_applicable
+             * @enum {string}
+             */
             state?: "not_applicable" | "resolved" | "storage_class_required" | "mode_required" | "profile_incomplete" | "unsupported";
+            /** @example Example message */
             message?: string;
+            /** @example example */
             requested_storage_class?: string;
+            /** @example example */
             effective_storage_class?: string;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             requested_access_modes?: string[];
-            /** @enum {string} */
+            /**
+             * @example Block
+             * @enum {string}
+             */
             requested_volume_mode?: "Block" | "Filesystem";
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             effective_access_modes?: string[];
-            /** @enum {string} */
+            /**
+             * @example Block
+             * @enum {string}
+             */
             effective_volume_mode?: "Block" | "Filesystem";
+            /**
+             * @example [
+             *       {
+             *         "access_modes": [
+             *           "example"
+             *         ],
+             *         "volume_mode": "Block"
+             *       }
+             *     ]
+             */
             mode_options?: components["schemas"]["StorageClaimPropertySet"][];
         };
+        /**
+         * @description OpenAPI schema for Login Request.
+         * @example {
+         *       "username": "example-user",
+         *       "password": "redacted"
+         *     }
+         */
         LoginRequest: {
+            /** @example example-user */
             username: string;
-            /** Format: password */
+            /**
+             * Format: password
+             * @example redacted
+             */
             password: string;
         };
+        /**
+         * @description OpenAPI schema for Auth Login Mode.
+         * @example {
+         *       "key": "example.key",
+         *       "display_name": "Example User",
+         *       "description": "Example description"
+         *     }
+         */
         AuthLoginMode: {
+            /** @example example.key */
             key: string;
+            /** @example Example User */
             display_name: string;
+            /** @example Example description */
             description?: string;
-            /** @enum {string} */
+            /**
+             * @example redirect
+             * @enum {string}
+             */
             interaction?: "redirect" | "credentials";
+            /** @example {} */
             request_schema?: {
                 [key: string]: unknown;
             };
+            /** @example true */
             default?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Runtime Descriptor.
+         * @example {
+         *       "supported": true,
+         *       "supports_redirect": true,
+         *       "supports_credentials": true,
+         *       "requires_public_base_url": true
+         *     }
+         */
         AuthProviderRuntimeDescriptor: {
+            /** @example true */
             supported: boolean;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
+            /** @example true */
             supports_redirect: boolean;
+            /** @example true */
             supports_credentials: boolean;
+            /** @example true */
             requires_public_base_url: boolean;
+            /**
+             * @example [
+             *       {
+             *         "key": "example.key",
+             *         "display_name": "Example User",
+             *         "description": "Example description"
+             *       }
+             *     ]
+             */
             login_modes?: components["schemas"]["AuthLoginMode"][];
         };
+        /**
+         * @description OpenAPI schema for Login Auth Provider.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "auth_type": "example"
+         *     }
+         */
         LoginAuthProvider: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resource */
             name: string;
+            /** @example example */
             auth_type: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
+            /**
+             * @example [
+             *       {
+             *         "key": "example.key",
+             *         "display_name": "Example User",
+             *         "description": "Example description"
+             *       }
+             *     ]
+             */
             login_modes?: components["schemas"]["AuthLoginMode"][];
         };
+        /**
+         * @description OpenAPI schema for Login Auth Provider List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "auth_type": "example"
+         *         }
+         *       ]
+         *     }
+         */
         LoginAuthProviderList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "auth_type": "example"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["LoginAuthProvider"][];
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Login Start Request.
+         * @example {
+         *       "return_to": "https://shepherd.example.com/dashboard",
+         *       "login_mode": "web"
+         *     }
+         */
         AuthProviderLoginStartRequest: {
             /**
              * @description Optional provider-specific login mode key.
@@ -2823,17 +5108,37 @@ export interface components {
              */
             return_to: string;
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Login Start Response.
+         * @example {
+         *       "redirect_url": "https://example.com/callback"
+         *     }
+         */
         AuthProviderLoginStartResponse: {
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @example https://example.com/callback
+             */
             redirect_url: string;
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Credential Login Request.
+         * @example {
+         *       "credentials": {},
+         *       "login_mode": "password",
+         *       "return_to": "https://shepherd.example.com/dashboard"
+         *     }
+         */
         AuthProviderCredentialLoginRequest: {
             /**
              * @description Optional provider-specific credential login mode key.
              * @example password
              */
             login_mode?: string;
-            /** @description Provider-specific credential fields. */
+            /**
+             * @description Provider-specific credential fields.
+             * @example {}
+             */
             credentials: {
                 [key: string]: unknown;
             };
@@ -2844,642 +5149,2640 @@ export interface components {
              */
             return_to?: string;
         };
+        /**
+         * @description OpenAPI schema for Login Response.
+         * @example {
+         *       "token": "redacted",
+         *       "expires_at": "2026-01-01T00:00:00Z",
+         *       "force_password_change": true
+         *     }
+         */
         LoginResponse: {
+            /** @example redacted */
             token: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             expires_at?: string | null;
+            /** @example true */
             force_password_change?: boolean;
         };
+        /**
+         * @description OpenAPI schema for User Info.
+         * @example {
+         *       "id": "resource-001",
+         *       "username": "example-user",
+         *       "email": "user@example.com"
+         *     }
+         */
         UserInfo: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-user */
             username: string;
+            /** @example user@example.com */
             email?: string;
+            /** @example Example User */
             display_name?: string;
+            /**
+             * @example [
+             *       "viewer"
+             *     ]
+             */
             roles?: string[];
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             permissions?: string[];
+            /** @example true */
             force_password_change?: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for User.
+         * @example {
+         *       "id": "resource-001",
+         *       "username": "example-user",
+         *       "enabled": true,
+         *       "created_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         User: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-user */
             username: string;
+            /** @example user@example.com */
             email?: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example true */
             enabled: boolean;
+            /**
+             * @example [
+             *       "viewer"
+             *     ]
+             */
             roles?: string[];
+            /** @example {} */
             profile_attributes?: {
                 [key: string]: unknown;
             };
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
         };
+        /**
+         * @description OpenAPI schema for User Profile Field.
+         * @example {
+         *       "key": "example.key",
+         *       "label": "example",
+         *       "searchable": true
+         *     }
+         */
         UserProfileField: {
+            /** @example example.key */
             key: string;
+            /** @example example */
             label: string;
+            /** @example true */
             searchable?: boolean;
         };
+        /**
+         * @description OpenAPI schema for User Preference.
+         * @example {
+         *       "key": "example.key",
+         *       "value": {},
+         *       "updated_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         UserPreference: {
+            /** @example example.key */
             key: string;
+            /** @example {} */
             value: {
                 [key: string]: unknown;
             };
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at: string;
         };
+        /**
+         * @description OpenAPI schema for User Preference Update Request.
+         * @example {
+         *       "value": {}
+         *     }
+         */
         UserPreferenceUpdateRequest: {
+            /** @example {} */
             value: {
                 [key: string]: unknown;
             };
         };
+        /**
+         * @description OpenAPI schema for User List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "username": "example-user",
+         *           "enabled": true,
+         *           "created_at": "2026-01-01T00:00:00Z"
+         *         }
+         *       ],
+         *       "profile_fields": [
+         *         {
+         *           "key": "example.key",
+         *           "label": "example",
+         *           "searchable": true
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         UserList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "username": "example-user",
+             *         "enabled": true,
+             *         "created_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["User"][];
+            /**
+             * @example [
+             *       {
+             *         "key": "example.key",
+             *         "label": "example",
+             *         "searchable": true
+             *       }
+             *     ]
+             */
             profile_fields?: components["schemas"]["UserProfileField"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Filter Option.
+         * @example {
+         *       "value": "example",
+         *       "label": "example",
+         *       "group": "example"
+         *     }
+         */
         FilterOption: {
+            /** @example example */
             value: string;
+            /** @example example */
             label: string;
+            /** @example example */
             group?: string;
         };
+        /**
+         * @description OpenAPI schema for VMFilter Options Response.
+         * @example {
+         *       "statuses": [
+         *         {
+         *           "value": "example",
+         *           "label": "example",
+         *           "group": "example"
+         *         }
+         *       ],
+         *       "namespaces": [
+         *         {
+         *           "value": "example",
+         *           "label": "example",
+         *           "group": "example"
+         *         }
+         *       ],
+         *       "clusters": [
+         *         {
+         *           "value": "example",
+         *           "label": "example",
+         *           "group": "example"
+         *         }
+         *       ]
+         *     }
+         */
         VMFilterOptionsResponse: {
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             statuses?: components["schemas"]["FilterOption"][];
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             namespaces?: components["schemas"]["FilterOption"][];
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             clusters?: components["schemas"]["FilterOption"][];
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             systems?: components["schemas"]["FilterOption"][];
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             services?: components["schemas"]["FilterOption"][];
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             operating_systems?: components["schemas"]["FilterOption"][];
+            /**
+             * @example [
+             *       {
+             *         "value": "example",
+             *         "label": "example",
+             *         "group": "example"
+             *       }
+             *     ]
+             */
             ip_addresses?: components["schemas"]["FilterOption"][];
         };
+        /**
+         * @description OpenAPI schema for User Create Request.
+         * @example {
+         *       "username": "example-user",
+         *       "password": "redacted",
+         *       "email": "user@example.com"
+         *     }
+         */
         UserCreateRequest: {
+            /** @example example-user */
             username: string;
-            /** Format: password */
+            /**
+             * Format: password
+             * @example redacted
+             */
             password: string;
+            /** @example user@example.com */
             email?: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example true */
             enabled?: boolean;
+            /** @example true */
             force_password_change?: boolean;
         };
+        /**
+         * @description OpenAPI schema for User Update Request.
+         * @example {
+         *       "email": "user@example.com",
+         *       "display_name": "Example User",
+         *       "enabled": true
+         *     }
+         */
         UserUpdateRequest: {
+            /** @example user@example.com */
             email?: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example true */
             enabled?: boolean;
-            /** Format: password */
+            /**
+             * Format: password
+             * @example redacted
+             */
             password?: string;
+            /** @example true */
             force_password_change?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Role.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "permissions": [
+         *         "example"
+         *       ],
+         *       "built_in": true,
+         *       "enabled": true
+         *     }
+         */
         Role: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resource */
             name: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             permissions: string[];
+            /** @example true */
             built_in: boolean;
+            /** @example true */
             enabled: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for Role List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "permissions": [
+         *             "example"
+         *           ],
+         *           "built_in": true,
+         *           "enabled": true
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         RoleList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "permissions": [
+             *           "example"
+             *         ],
+             *         "built_in": true,
+             *         "enabled": true
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["Role"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Role Create Request.
+         * @example {
+         *       "name": "example-resource",
+         *       "permissions": [
+         *         "example"
+         *       ],
+         *       "display_name": "Example User"
+         *     }
+         */
         RoleCreateRequest: {
+            /** @example example-resource */
             name: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             permissions: string[];
+            /** @example true */
             enabled?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Role Update Request.
+         * @example {
+         *       "display_name": "Example User",
+         *       "description": "Example description",
+         *       "permissions": [
+         *         "example"
+         *       ]
+         *     }
+         */
         RoleUpdateRequest: {
+            /** @example Example User */
             display_name?: string;
+            /** @example Example description */
             description?: string;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             permissions?: string[];
+            /** @example true */
             enabled?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Permission.
+         * @example {
+         *       "key": "example.key",
+         *       "description": "Example description"
+         *     }
+         */
         Permission: {
+            /** @example example.key */
             key: string;
+            /** @example Example description */
             description?: string;
         };
+        /**
+         * @description OpenAPI schema for Permission List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "key": "example.key",
+         *           "description": "Example description"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         PermissionList: {
+            /**
+             * @example [
+             *       {
+             *         "key": "example.key",
+             *         "description": "Example description"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["Permission"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Global Role Binding.
+         * @example {
+         *       "id": "resource-001",
+         *       "user_id": "user-001",
+         *       "role_id": "role-001",
+         *       "role_name": "example-role",
+         *       "scope_type": "example"
+         *     }
+         */
         GlobalRoleBinding: {
+            /** @example resource-001 */
             id: string;
+            /** @example user-001 */
             user_id: string;
+            /** @example role-001 */
             role_id: string;
+            /** @example example-role */
             role_name: string;
+            /** @example Example User */
             role_display_name?: string;
+            /** @example example */
             scope_type: string;
+            /** @example scope-001 */
             scope_id?: string;
+            /** @example Example User */
             scope_display_name?: string;
+            /**
+             * @example [
+             *       "test"
+             *     ]
+             */
             allowed_environments?: ("test" | "prod")[];
+            /** @example true */
             managed?: boolean;
+            /** @example example */
             managed_source?: string;
+            /** @example example */
             created_by?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for Global Role Binding List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "user_id": "user-001",
+         *           "role_id": "role-001",
+         *           "role_name": "example-role",
+         *           "scope_type": "example"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         GlobalRoleBindingList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "user_id": "user-001",
+             *         "role_id": "role-001",
+             *         "role_name": "example-role",
+             *         "scope_type": "example"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["GlobalRoleBinding"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Global Role Binding Create Request.
+         * @example {
+         *       "role_id": "role-001",
+         *       "scope_type": "example",
+         *       "scope_id": "scope-001"
+         *     }
+         */
         GlobalRoleBindingCreateRequest: {
+            /** @example role-001 */
             role_id: string;
-            /** @default global */
+            /**
+             * @default global
+             * @example example
+             */
             scope_type: string;
+            /** @example scope-001 */
             scope_id?: string;
+            /**
+             * @example [
+             *       "test"
+             *     ]
+             */
             allowed_environments?: ("test" | "prod")[];
         };
+        /**
+         * @description OpenAPI schema for Auth Provider.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "auth_type": "example",
+         *       "enabled": true
+         *     }
+         */
         AuthProvider: {
+            /** @example resource-001 */
             id: string;
+            /** @example example-resource */
             name: string;
-            /** @description Registered authentication provider plugin key used for adapter resolution */
+            /**
+             * @description Registered authentication provider plugin key used for adapter resolution
+             * @example example
+             */
             auth_type: string;
+            /** @example {} */
             config?: {
                 [key: string]: unknown;
             };
+            /** @example true */
             enabled: boolean;
+            /** @example 1 */
             sort_order?: number;
+            /** @example example */
             created_by?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at?: string;
         };
+        /**
+         * @description OpenAPI schema for Auth Provider List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "auth_type": "example",
+         *           "enabled": true
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         AuthProviderList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "auth_type": "example",
+             *         "enabled": true
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["AuthProvider"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Create Request.
+         * @example {
+         *       "name": "example-resource",
+         *       "auth_type": "example",
+         *       "config": {}
+         *     }
+         */
         AuthProviderCreateRequest: {
+            /** @example example-resource */
             name: string;
-            /** @description Registered auth provider plugin type key */
+            /**
+             * @description Registered auth provider plugin type key
+             * @example example
+             */
             auth_type: string;
+            /** @example {} */
             config?: {
                 [key: string]: unknown;
             };
+            /** @example true */
             enabled?: boolean;
+            /** @example 1 */
             sort_order?: number;
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Update Request.
+         * @example {
+         *       "name": "example-resource",
+         *       "config": {},
+         *       "enabled": true
+         *     }
+         */
         AuthProviderUpdateRequest: {
+            /** @example example-resource */
             name?: string;
+            /** @example {} */
             config?: {
                 [key: string]: unknown;
             };
+            /** @example true */
             enabled?: boolean;
+            /** @example 1 */
             sort_order?: number;
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Type.
+         * @example {
+         *       "type": "example",
+         *       "display_name": "Example User",
+         *       "built_in": true
+         *     }
+         */
         AuthProviderType: {
+            /** @example example */
             type: string;
+            /** @example Example User */
             display_name: string;
+            /** @example Example description */
             description?: string;
+            /** @example true */
             built_in: boolean;
+            /** @example {} */
             config_schema?: {
                 [key: string]: unknown;
             };
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Type List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "type": "example",
+         *           "display_name": "Example User",
+         *           "built_in": true
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         AuthProviderTypeList: {
+            /**
+             * @example [
+             *       {
+             *         "type": "example",
+             *         "display_name": "Example User",
+             *         "built_in": true
+             *       }
+             *     ]
+             */
             items: components["schemas"]["AuthProviderType"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Connection Test Result.
+         * @example {
+         *       "success": true,
+         *       "message": "Example message"
+         *     }
+         */
         AuthProviderConnectionTestResult: {
+            /** @example true */
             success: boolean;
+            /** @example Example message */
             message?: string;
         };
+        /**
+         * @description OpenAPI schema for External Auth Platform Settings.
+         * @example {
+         *       "runtime_login_ready": true,
+         *       "source": "platform_setting",
+         *       "public_base_url": "https://example.com/callback"
+         *     }
+         */
         ExternalAuthPlatformSettings: {
+            /** @example https://example.com/callback */
             public_base_url?: string;
+            /** @example https://example.com/callback */
             effective_public_base_url?: string;
-            /** @enum {string} */
+            /**
+             * @example platform_setting
+             * @enum {string}
+             */
             source: "platform_setting" | "server_config" | "unset";
+            /** @example true */
             runtime_login_ready: boolean;
         };
+        /**
+         * @description OpenAPI schema for External Auth Platform Settings Update Request.
+         * @example {
+         *       "public_base_url": "https://example.com/callback"
+         *     }
+         */
         ExternalAuthPlatformSettingsUpdateRequest: {
-            /** @description Empty string clears the persisted override and falls back to deployment config. */
+            /**
+             * @description Empty string clears the persisted override and falls back to deployment config.
+             * @example https://example.com/callback
+             */
             public_base_url?: string;
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Sample Field.
+         * @example {
+         *       "field": "example",
+         *       "value_type": "string",
+         *       "unique_count": 1
+         *     }
+         */
         AuthProviderSampleField: {
+            /** @example example */
             field: string;
-            /** @enum {string} */
+            /**
+             * @example string
+             * @enum {string}
+             */
             value_type: "string" | "array" | "object" | "number" | "boolean" | "unknown";
+            /** @example 1 */
             unique_count: number;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             sample?: string[];
         };
+        /**
+         * @description OpenAPI schema for Auth Provider Sample Response.
+         * @example {
+         *       "provider_id": "provider-001",
+         *       "fields": [
+         *         {
+         *           "field": "example",
+         *           "value_type": "string",
+         *           "unique_count": 1
+         *         }
+         *       ]
+         *     }
+         */
         AuthProviderSampleResponse: {
+            /** @example provider-001 */
             provider_id: string;
+            /**
+             * @example [
+             *       {
+             *         "field": "example",
+             *         "value_type": "string",
+             *         "unique_count": 1
+             *       }
+             *     ]
+             */
             fields: components["schemas"]["AuthProviderSampleField"][];
         };
+        /**
+         * @description OpenAPI schema for External Cohort Sync Request.
+         * @example {
+         *       "cohort_kind": "example",
+         *       "source_field": "example",
+         *       "cohorts": [
+         *         "example"
+         *       ]
+         *     }
+         */
         ExternalCohortSyncRequest: {
+            /** @example example */
             cohort_kind: string;
+            /** @example example */
             source_field: string;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             cohorts: string[];
         };
+        /**
+         * @description OpenAPI schema for External Cohort.
+         * @example {
+         *       "id": "resource-001",
+         *       "provider_id": "provider-001",
+         *       "cohort_kind": "example",
+         *       "cohort_key": "example.key",
+         *       "display_name": "Example User"
+         *     }
+         */
         ExternalCohort: {
+            /** @example resource-001 */
             id: string;
+            /** @example provider-001 */
             provider_id: string;
+            /** @example example */
             cohort_kind: string;
+            /** @example example.key */
             cohort_key: string;
+            /** @example Example User */
             display_name: string;
+            /** @example example */
             source_field?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             last_synced_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for External Cohort List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "provider_id": "provider-001",
+         *           "cohort_kind": "example",
+         *           "cohort_key": "example.key",
+         *           "display_name": "Example User"
+         *         }
+         *       ]
+         *     }
+         */
         ExternalCohortList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "provider_id": "provider-001",
+             *         "cohort_kind": "example",
+             *         "cohort_key": "example.key",
+             *         "display_name": "Example User"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["ExternalCohort"][];
         };
+        /**
+         * @description OpenAPI schema for External Cohort Sync Response.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "provider_id": "provider-001",
+         *           "cohort_kind": "example",
+         *           "cohort_key": "example.key",
+         *           "display_name": "Example User"
+         *         }
+         *       ]
+         *     }
+         */
         ExternalCohortSyncResponse: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "provider_id": "provider-001",
+             *         "cohort_kind": "example",
+             *         "cohort_key": "example.key",
+             *         "display_name": "Example User"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["ExternalCohort"][];
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Descriptor.
+         * @example {
+         *       "display_name": "Example User",
+         *       "supports_preview": true,
+         *       "description": "Example description"
+         *     }
+         */
         DirectorySyncDescriptor: {
+            /** @example Example User */
             display_name: string;
+            /** @example Example description */
             description?: string;
+            /** @example true */
             supports_preview: boolean;
+            /** @example {} */
             request_schema?: {
                 [key: string]: unknown;
             };
         };
+        /**
+         * @description OpenAPI schema for Directory Enrichment Schedule Status.
+         * @example {
+         *       "supported": true,
+         *       "enabled": true,
+         *       "mode": "enrich_existing_only"
+         *     }
+         */
         DirectoryEnrichmentScheduleStatus: {
+            /** @example true */
             supported: boolean;
+            /** @example true */
             enabled: boolean;
-            /** @enum {string} */
+            /**
+             * @example enrich_existing_only
+             * @enum {string}
+             */
             mode?: "enrich_existing_only";
-            /** @enum {string} */
+            /**
+             * @example username
+             * @enum {string}
+             */
             join_key_type?: "username";
+            /** @example example */
             schedule_cron?: string;
+            /** @example example */
             schedule_timezone?: string;
+            /** @example {} */
             provider_request?: {
                 [key: string]: unknown;
             };
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             next_run_at?: string;
+            /** @example last-job-001 */
             last_job_id?: string;
-            /** @enum {string} */
+            /**
+             * @example pending
+             * @enum {string}
+             */
             last_job_status?: "pending" | "running" | "completed" | "failed";
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             last_job_created_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             last_job_completed_at?: string;
+            /** @example pending-job-001 */
             pending_job_id?: string;
-            /** @enum {string} */
+            /**
+             * @example pending
+             * @enum {string}
+             */
             pending_job_status?: "pending" | "running";
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Conflict.
+         * @example {
+         *       "code": "same_external_identity",
+         *       "field": "example",
+         *       "existing_user_id": "existing-user-001"
+         *     }
+         */
         DirectorySyncConflict: {
-            /** @enum {string} */
+            /**
+             * @example same_external_identity
+             * @enum {string}
+             */
             code: "same_external_identity" | "same_canonical_identity" | "username_conflict" | "email_conflict" | "ambiguous_existing_user";
+            /** @example example */
             field?: string;
+            /** @example existing-user-001 */
             existing_user_id?: string;
+            /** @example Example message */
             message?: string;
         };
+        /**
+         * @description OpenAPI schema for Directory User Record.
+         * @example {
+         *       "external_id": "external-001",
+         *       "username": "example-user",
+         *       "display_name": "Example User"
+         *     }
+         */
         DirectoryUserRecord: {
+            /** @example external-001 */
             external_id: string;
+            /** @example example-user */
             username: string;
+            /** @example Example User */
             display_name: string;
+            /** @example user@example.com */
             email?: string;
+            /**
+             * @example [
+             *       {
+             *         "kind": "example",
+             *         "key": "example.key",
+             *         "display_name": "Example User"
+             *       }
+             *     ]
+             */
             cohorts?: components["schemas"]["DirectoryExternalCohort"][];
+            /** @example {} */
             attributes?: {
                 [key: string]: unknown;
             };
         };
+        /**
+         * @description OpenAPI schema for Directory External Cohort.
+         * @example {
+         *       "kind": "example",
+         *       "key": "example.key",
+         *       "display_name": "Example User"
+         *     }
+         */
         DirectoryExternalCohort: {
+            /** @example example */
             kind: string;
+            /** @example example.key */
             key: string;
+            /** @example Example User */
             display_name?: string;
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Preview Item.
+         * @example {
+         *       "record": {
+         *         "external_id": "external-001",
+         *         "username": "example-user",
+         *         "display_name": "Example User"
+         *       },
+         *       "match": {
+         *         "action": "create",
+         *         "existing_user_id": "existing-user-001",
+         *         "matched_by": "external_id"
+         *       },
+         *       "conflicts": [
+         *         {
+         *           "code": "same_external_identity",
+         *           "field": "example",
+         *           "existing_user_id": "existing-user-001"
+         *         }
+         *       ]
+         *     }
+         */
         DirectorySyncPreviewItem: {
+            /**
+             * @example {
+             *       "external_id": "external-001",
+             *       "username": "example-user",
+             *       "display_name": "Example User"
+             *     }
+             */
             record: components["schemas"]["DirectoryUserRecord"];
+            /**
+             * @example {
+             *       "action": "create",
+             *       "existing_user_id": "existing-user-001",
+             *       "matched_by": "external_id"
+             *     }
+             */
             match: components["schemas"]["DirectorySyncPreviewMatch"];
+            /**
+             * @example [
+             *       {
+             *         "code": "same_external_identity",
+             *         "field": "example",
+             *         "existing_user_id": "existing-user-001"
+             *       }
+             *     ]
+             */
             conflicts?: components["schemas"]["DirectorySyncConflict"][];
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             warnings?: string[];
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Preview Match.
+         * @example {
+         *       "action": "create",
+         *       "existing_user_id": "existing-user-001",
+         *       "matched_by": "external_id"
+         *     }
+         */
         DirectorySyncPreviewMatch: {
-            /** @enum {string} */
+            /**
+             * @example create
+             * @enum {string}
+             */
             action: "create" | "update" | "blocked";
+            /** @example existing-user-001 */
             existing_user_id?: string;
-            /** @enum {string} */
+            /**
+             * @example external_id
+             * @enum {string}
+             */
             matched_by?: "external_id" | "canonical_identity";
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Preview.
+         * @example {
+         *       "total_count": 1,
+         *       "items": [
+         *         {
+         *           "record": {
+         *             "external_id": "external-001",
+         *             "username": "example-user",
+         *             "display_name": "Example User"
+         *           },
+         *           "match": {
+         *             "action": "create",
+         *             "existing_user_id": "existing-user-001",
+         *             "matched_by": "external_id"
+         *           },
+         *           "conflicts": [
+         *             {
+         *               "code": "same_external_identity",
+         *               "field": "example",
+         *               "existing_user_id": "existing-user-001"
+         *             }
+         *           ]
+         *         }
+         *       ]
+         *     }
+         */
         DirectorySyncPreview: {
+            /** @example 1 */
             total_count: number;
+            /**
+             * @example [
+             *       {
+             *         "record": {
+             *           "external_id": "external-001",
+             *           "username": "example-user",
+             *           "display_name": "Example User"
+             *         },
+             *         "match": {
+             *           "action": "create",
+             *           "existing_user_id": "existing-user-001",
+             *           "matched_by": "external_id"
+             *         },
+             *         "conflicts": [
+             *           {
+             *             "code": "same_external_identity",
+             *             "field": "example",
+             *             "existing_user_id": "existing-user-001"
+             *           }
+             *         ]
+             *       }
+             *     ]
+             */
             items: components["schemas"]["DirectorySyncPreviewItem"][];
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Preview Request.
+         * @example {
+         *       "provider_request": {},
+         *       "conflict_resolution": "skip"
+         *     }
+         */
         DirectorySyncPreviewRequest: {
+            /** @example {} */
             provider_request: {
                 [key: string]: unknown;
             };
             /**
              * @default skip
+             * @example skip
              * @enum {string}
              */
             conflict_resolution: "skip";
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Request.
+         * @example {
+         *       "provider_request": {},
+         *       "conflict_resolution": "skip"
+         *     }
+         */
         DirectorySyncRequest: {
+            /** @example {} */
             provider_request: {
                 [key: string]: unknown;
             };
             /**
              * @default skip
+             * @example skip
              * @enum {string}
              */
             conflict_resolution: "skip";
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Start Response.
+         * @example {
+         *       "job_id": "job-001",
+         *       "status": "pending"
+         *     }
+         */
         DirectorySyncStartResponse: {
+            /** @example job-001 */
             job_id: string;
-            /** @enum {string} */
+            /**
+             * @example pending
+             * @enum {string}
+             */
             status: "pending" | "running" | "completed" | "failed";
         };
+        /**
+         * @description OpenAPI schema for Directory Action Summary.
+         * @example {
+         *       "create_count": 1,
+         *       "update_count": 1,
+         *       "blocked_count": 1
+         *     }
+         */
         DirectoryActionSummary: {
+            /** @example 1 */
             create_count: number;
+            /** @example 1 */
             update_count: number;
+            /** @example 1 */
             blocked_count: number;
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Job.
+         * @example {
+         *       "id": "resource-001",
+         *       "provider_id": "provider-001",
+         *       "status": "pending",
+         *       "conflict_resolution": "skip",
+         *       "total_entries": 1,
+         *       "result_summary": {
+         *         "create_count": 1,
+         *         "update_count": 1,
+         *         "blocked_count": 1
+         *       },
+         *       "error_count": 1,
+         *       "errors": [
+         *         "example"
+         *       ],
+         *       "triggered_by": "example",
+         *       "created_at": "2026-01-01T00:00:00Z",
+         *       "updated_at": "2026-01-01T00:00:00Z",
+         *       "request_snapshot": {}
+         *     }
+         */
         DirectorySyncJob: {
+            /** @example resource-001 */
             id: string;
+            /** @example provider-001 */
             provider_id: string;
-            /** @enum {string} */
+            /**
+             * @example pending
+             * @enum {string}
+             */
             status: "pending" | "running" | "completed" | "failed";
-            /** @enum {string} */
+            /**
+             * @example skip
+             * @enum {string}
+             */
             conflict_resolution: "skip";
-            /** @enum {string} */
+            /**
+             * @example manual_import
+             * @enum {string}
+             */
             sync_mode?: "manual_import" | "scheduled_enrichment";
+            /** @example example */
             join_key_type?: string;
+            /** @example 1 */
             total_entries: number;
+            /**
+             * @example {
+             *       "create_count": 1,
+             *       "update_count": 1,
+             *       "blocked_count": 1
+             *     }
+             */
             result_summary: components["schemas"]["DirectoryActionSummary"];
+            /** @example 1 */
             error_count: number;
+            /**
+             * @example [
+             *       "example"
+             *     ]
+             */
             errors: string[];
+            /** @example example */
             triggered_by: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             started_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             completed_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at: string;
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Job Detail.
+         * @example {
+         *       "id": "resource-001",
+         *       "provider_id": "provider-001",
+         *       "status": "pending",
+         *       "conflict_resolution": "skip",
+         *       "total_entries": 1,
+         *       "result_summary": {
+         *         "create_count": 1,
+         *         "update_count": 1,
+         *         "blocked_count": 1
+         *       },
+         *       "error_count": 1,
+         *       "errors": [
+         *         "example"
+         *       ],
+         *       "triggered_by": "example",
+         *       "created_at": "2026-01-01T00:00:00Z",
+         *       "updated_at": "2026-01-01T00:00:00Z",
+         *       "request_snapshot": {}
+         *     }
+         */
         DirectorySyncJobDetail: components["schemas"]["DirectorySyncJob"] & {
+            /** @example {} */
             request_snapshot: {
                 [key: string]: unknown;
             };
         };
+        /**
+         * @description OpenAPI schema for Directory Sync Job List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "provider_id": "provider-001",
+         *           "status": "pending",
+         *           "conflict_resolution": "skip",
+         *           "total_entries": 1,
+         *           "result_summary": {
+         *             "create_count": 1,
+         *             "update_count": 1,
+         *             "blocked_count": 1
+         *           },
+         *           "error_count": 1,
+         *           "errors": [
+         *             "example"
+         *           ],
+         *           "triggered_by": "example",
+         *           "created_at": "2026-01-01T00:00:00Z",
+         *           "updated_at": "2026-01-01T00:00:00Z"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         DirectorySyncJobList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "provider_id": "provider-001",
+             *         "status": "pending",
+             *         "conflict_resolution": "skip",
+             *         "total_entries": 1,
+             *         "result_summary": {
+             *           "create_count": 1,
+             *           "update_count": 1,
+             *           "blocked_count": 1
+             *         },
+             *         "error_count": 1,
+             *         "errors": [
+             *           "example"
+             *         ],
+             *         "triggered_by": "example",
+             *         "created_at": "2026-01-01T00:00:00Z",
+             *         "updated_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
             items: components["schemas"]["DirectorySyncJob"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for External Cohort Mapping.
+         * @example {
+         *       "id": "resource-001",
+         *       "provider_id": "provider-001",
+         *       "cohort_kind": "example",
+         *       "cohort_key": "example.key",
+         *       "role_id": "role-001"
+         *     }
+         */
         ExternalCohortMapping: {
+            /** @example resource-001 */
             id: string;
+            /** @example provider-001 */
             provider_id: string;
+            /** @example example */
             cohort_kind: string;
+            /** @example example.key */
             cohort_key: string;
+            /** @example Example User */
             cohort_display_name?: string;
+            /** @example role-001 */
             role_id: string;
+            /** @example example-role */
             role_name?: string;
+            /** @example example */
             scope_type?: string;
+            /** @example scope-001 */
             scope_id?: string;
+            /**
+             * @example [
+             *       "test"
+             *     ]
+             */
             allowed_environments?: ("test" | "prod")[];
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at?: string;
         };
+        /**
+         * @description OpenAPI schema for External Cohort Mapping List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "provider_id": "provider-001",
+         *           "cohort_kind": "example",
+         *           "cohort_key": "example.key",
+         *           "role_id": "role-001"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         ExternalCohortMappingList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "provider_id": "provider-001",
+             *         "cohort_kind": "example",
+             *         "cohort_key": "example.key",
+             *         "role_id": "role-001"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["ExternalCohortMapping"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for External Cohort Mapping Create Request.
+         * @example {
+         *       "cohort_kind": "example",
+         *       "cohort_key": "example.key",
+         *       "role_id": "role-001"
+         *     }
+         */
         ExternalCohortMappingCreateRequest: {
+            /** @example example */
             cohort_kind: string;
+            /** @example example.key */
             cohort_key: string;
+            /** @example Example User */
             cohort_display_name?: string;
+            /** @example role-001 */
             role_id: string;
+            /** @example example */
             scope_type?: string;
+            /** @example scope-001 */
             scope_id?: string;
+            /**
+             * @example [
+             *       "test"
+             *     ]
+             */
             allowed_environments?: ("test" | "prod")[];
         };
+        /**
+         * @description OpenAPI schema for External Cohort Mapping Update Request.
+         * @example {
+         *       "role_id": "role-001",
+         *       "scope_type": "example",
+         *       "scope_id": "scope-001"
+         *     }
+         */
         ExternalCohortMappingUpdateRequest: {
+            /** @example role-001 */
             role_id?: string;
+            /** @example example */
             scope_type?: string;
+            /** @example scope-001 */
             scope_id?: string;
+            /**
+             * @example [
+             *       "test"
+             *     ]
+             */
             allowed_environments?: ("test" | "prod")[];
         };
+        /**
+         * @description OpenAPI schema for Rate Limit Exemption Create Request.
+         * @example {
+         *       "user_id": "user-001",
+         *       "reason": "Example reason",
+         *       "expires_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         RateLimitExemptionCreateRequest: {
+            /** @example user-001 */
             user_id: string;
+            /** @example Example reason */
             reason?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             expires_at?: string | null;
         };
+        /**
+         * @description OpenAPI schema for Rate Limit Exemption.
+         * @example {
+         *       "user_id": "user-001",
+         *       "exempted_by": "example",
+         *       "created_at": "2026-01-01T00:00:00Z",
+         *       "updated_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         RateLimitExemption: {
+            /** @example user-001 */
             user_id: string;
+            /** @example example-user */
             username?: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example user@example.com */
             email?: string;
+            /** @example example */
             exempted_by: string;
+            /** @example Example reason */
             reason?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             expires_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at: string;
         };
+        /**
+         * @description OpenAPI schema for Rate Limit User Override Request.
+         * @example {
+         *       "max_pending_parents": 1,
+         *       "max_pending_children": 1,
+         *       "cooldown_seconds": 1
+         *     }
+         */
         RateLimitUserOverrideRequest: {
+            /** @example 1 */
             max_pending_parents?: number | null;
+            /** @example 1 */
             max_pending_children?: number | null;
+            /** @example 1 */
             cooldown_seconds?: number | null;
+            /** @example Example reason */
             reason?: string;
         };
+        /**
+         * @description OpenAPI schema for Rate Limit User Override.
+         * @example {
+         *       "user_id": "user-001",
+         *       "updated_by": "example",
+         *       "created_at": "2026-01-01T00:00:00Z",
+         *       "updated_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         RateLimitUserOverride: {
+            /** @example user-001 */
             user_id: string;
+            /** @example 1 */
             max_pending_parents?: number | null;
+            /** @example 1 */
             max_pending_children?: number | null;
+            /** @example 1 */
             cooldown_seconds?: number | null;
+            /** @example Example reason */
             reason?: string;
+            /** @example example */
             updated_by: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at: string;
         };
+        /**
+         * @description OpenAPI schema for Rate Limit User Status.
+         * @example {
+         *       "user_id": "user-001",
+         *       "exempted": true,
+         *       "effective_max_pending_parents": 1,
+         *       "effective_max_pending_children": 1,
+         *       "effective_cooldown_seconds": 1,
+         *       "current_pending_parents": 1,
+         *       "current_pending_children": 1,
+         *       "cooldown_remaining_seconds": 1
+         *     }
+         */
         RateLimitUserStatus: {
+            /** @example user-001 */
             user_id: string;
+            /** @example example-user */
             username?: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example user@example.com */
             email?: string;
+            /** @example true */
             exempted: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             exemption_expires_at?: string | null;
+            /** @example 1 */
             effective_max_pending_parents: number;
+            /** @example 1 */
             effective_max_pending_children: number;
+            /** @example 1 */
             effective_cooldown_seconds: number;
+            /** @example 1 */
             current_pending_parents: number;
+            /** @example 1 */
             current_pending_children: number;
+            /** @example 1 */
             cooldown_remaining_seconds: number;
         };
+        /**
+         * @description OpenAPI schema for Rate Limit Status List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "user_id": "user-001",
+         *           "exempted": true,
+         *           "effective_max_pending_parents": 1,
+         *           "effective_max_pending_children": 1,
+         *           "effective_cooldown_seconds": 1,
+         *           "current_pending_parents": 1,
+         *           "current_pending_children": 1,
+         *           "cooldown_remaining_seconds": 1
+         *         }
+         *       ],
+         *       "generated_at": "2026-01-01T00:00:00Z",
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         RateLimitStatusList: {
+            /**
+             * @example [
+             *       {
+             *         "user_id": "user-001",
+             *         "exempted": true,
+             *         "effective_max_pending_parents": 1,
+             *         "effective_max_pending_children": 1,
+             *         "effective_cooldown_seconds": 1,
+             *         "current_pending_parents": 1,
+             *         "current_pending_children": 1,
+             *         "cooldown_remaining_seconds": 1
+             *       }
+             *     ]
+             */
             items: components["schemas"]["RateLimitUserStatus"][];
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             generated_at: string;
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for System Member.
+         * @example {
+         *       "user_id": "user-001",
+         *       "username": "example-user",
+         *       "role": "owner"
+         *     }
+         */
         SystemMember: {
+            /** @example user-001 */
             user_id: string;
+            /** @example example-user */
             username: string;
+            /** @example user@example.com */
             email?: string;
+            /** @example Example User */
             display_name?: string;
+            /** @example {} */
             profile_attributes?: {
                 [key: string]: unknown;
             };
-            /** @enum {string} */
+            /**
+             * @example owner
+             * @enum {string}
+             */
             role: "owner" | "admin" | "member" | "viewer";
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
         };
+        /**
+         * @description OpenAPI schema for System Member List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "user_id": "user-001",
+         *           "username": "example-user",
+         *           "role": "owner"
+         *         }
+         *       ],
+         *       "profile_fields": [
+         *         {
+         *           "key": "example.key",
+         *           "label": "example",
+         *           "searchable": true
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         SystemMemberList: {
+            /**
+             * @example [
+             *       {
+             *         "user_id": "user-001",
+             *         "username": "example-user",
+             *         "role": "owner"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["SystemMember"][];
+            /**
+             * @example [
+             *       {
+             *         "key": "example.key",
+             *         "label": "example",
+             *         "searchable": true
+             *       }
+             *     ]
+             */
             profile_fields?: components["schemas"]["UserProfileField"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for System Member Create Request.
+         * @example {
+         *       "user_id": "user-001",
+         *       "role": "owner"
+         *     }
+         */
         SystemMemberCreateRequest: {
+            /** @example user-001 */
             user_id: string;
-            /** @enum {string} */
+            /**
+             * @example owner
+             * @enum {string}
+             */
             role: "owner" | "admin" | "member" | "viewer";
         };
+        /**
+         * @description OpenAPI schema for System Member Role Update Request.
+         * @example {
+         *       "role": "owner"
+         *     }
+         */
         SystemMemberRoleUpdateRequest: {
-            /** @enum {string} */
+            /**
+             * @example owner
+             * @enum {string}
+             */
             role: "owner" | "admin" | "member" | "viewer";
         };
+        /**
+         * @description OpenAPI schema for Change Password Request.
+         * @example {
+         *       "old_password": "redacted",
+         *       "new_password": "redacted"
+         *     }
+         */
         ChangePasswordRequest: {
-            /** Format: password */
+            /**
+             * Format: password
+             * @example redacted
+             */
             old_password: string;
-            /** Format: password */
+            /**
+             * Format: password
+             * @example redacted
+             */
             new_password: string;
         };
+        /**
+         * @description OpenAPI schema for Audit Log.
+         * @example {
+         *       "id": "resource-001",
+         *       "action": "START",
+         *       "resource_type": "example",
+         *       "resource_id": "resource-001",
+         *       "actor": "example",
+         *       "message_i18n": {
+         *         "key": "example.key",
+         *         "params": {}
+         *       },
+         *       "created_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         AuditLog: {
+            /** @example resource-001 */
             id: string;
+            /** @example START */
             action: string;
+            /** @example example */
             resource_type: string;
+            /** @example resource-001 */
             resource_id: string;
+            /** @example example */
             actor: string;
-            /** @description Machine-readable message key and interpolation parameters for localized audit display. */
+            /**
+             * @description Machine-readable message key and interpolation parameters for localized audit display.
+             * @example {
+             *       "key": "example.key",
+             *       "params": {}
+             *     }
+             */
             message_i18n: components["schemas"]["I18nMessage"];
+            /**
+             * @example {
+             *       "display_name": "Example User",
+             *       "secondary": "example"
+             *     }
+             */
             actor_summary?: components["schemas"]["AuditActorSummary"];
+            /** @example example */
             approval_decision?: string;
+            /**
+             * @example {
+             *       "display_name": "Example User",
+             *       "secondary": "example",
+             *       "tertiary": "example"
+             *     }
+             */
             resource_summary?: components["schemas"]["AuditResourceSummary"];
+            /**
+             * @example {
+             *       "system_id": "system-001",
+             *       "system_name": "example-system",
+             *       "service_id": "service-001"
+             *     }
+             */
             ticket_summary?: components["schemas"]["TicketSummary"];
+            /**
+             * @example {
+             *       "selected_cluster_name": "example-selected-cluster",
+             *       "selected_cluster_id": "selected-cluster-001",
+             *       "eligible": true
+             *     }
+             */
             placement_summary?: components["schemas"]["AuditPlacementSummary"];
+            /** @example {} */
             details?: {
                 [key: string]: unknown;
             };
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
         };
+        /**
+         * @description OpenAPI schema for Audit Actor Summary.
+         * @example {
+         *       "display_name": "Example User",
+         *       "secondary": "example"
+         *     }
+         */
         AuditActorSummary: {
+            /** @example Example User */
             display_name: string;
+            /** @example example */
             secondary?: string;
         };
+        /**
+         * @description OpenAPI schema for Audit Resource Summary.
+         * @example {
+         *       "display_name": "Example User",
+         *       "secondary": "example",
+         *       "tertiary": "example"
+         *     }
+         */
         AuditResourceSummary: {
+            /** @example Example User */
             display_name: string;
+            /** @example example */
             secondary?: string;
+            /** @example example */
             tertiary?: string;
         };
+        /**
+         * @description OpenAPI schema for Audit Placement Summary.
+         * @example {
+         *       "selected_cluster_name": "example-selected-cluster",
+         *       "selected_cluster_id": "selected-cluster-001",
+         *       "eligible": true
+         *     }
+         */
         AuditPlacementSummary: {
+            /** @example example-selected-cluster */
             selected_cluster_name?: string;
+            /** @example selected-cluster-001 */
             selected_cluster_id?: string;
+            /** @example true */
             eligible?: boolean | null;
+            /** @example example_code */
             reason_code?: string;
+            /** @example example_code */
             advisory_code?: string;
         };
+        /**
+         * @description OpenAPI schema for Audit Log List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "action": "START",
+         *           "resource_type": "example",
+         *           "resource_id": "resource-001",
+         *           "actor": "example",
+         *           "message_i18n": {
+         *             "key": "example.key",
+         *             "params": {}
+         *           },
+         *           "created_at": "2026-01-01T00:00:00Z"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         AuditLogList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "action": "START",
+             *         "resource_type": "example",
+             *         "resource_id": "resource-001",
+             *         "actor": "example",
+             *         "message_i18n": {
+             *           "key": "example.key",
+             *           "params": {}
+             *         },
+             *         "created_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["AuditLog"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Namespace Registry.
+         * @example {
+         *       "id": "resource-001",
+         *       "name": "example-resource",
+         *       "environment": "test"
+         *     }
+         */
         NamespaceRegistry: {
+            /** @example resource-001 */
             id: string;
-            /** @description Globally unique namespace name (RFC 1035) */
+            /**
+             * @description Globally unique namespace name (RFC 1035)
+             * @example example-resource
+             */
             name: string;
-            /** @enum {string} */
+            /**
+             * @example test
+             * @enum {string}
+             */
             environment: "test" | "prod";
+            /** @example Example description */
             description?: string;
+            /** @example true */
             enabled?: boolean;
+            /** @example example */
             created_by?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             updated_at?: string;
         };
+        /**
+         * @description OpenAPI schema for Namespace Create Request.
+         * @example {
+         *       "name": "example-resource",
+         *       "environment": "test",
+         *       "description": "Example description"
+         *     }
+         */
         NamespaceCreateRequest: {
-            /** @description Must follow RFC 1035 naming (ADR-0019) */
+            /**
+             * @description Must follow RFC 1035 naming (ADR-0019)
+             * @example example-resource
+             */
             name: string;
-            /** @enum {string} */
+            /**
+             * @example test
+             * @enum {string}
+             */
             environment: "test" | "prod";
+            /** @example Example description */
             description?: string;
         };
+        /**
+         * @description OpenAPI schema for Namespace Update Request.
+         * @example {
+         *       "description": "Example description",
+         *       "enabled": true
+         *     }
+         */
         NamespaceUpdateRequest: {
+            /** @example Example description */
             description?: string;
+            /** @example true */
             enabled?: boolean;
         };
+        /**
+         * @description OpenAPI schema for Namespace Registry List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "name": "example-resource",
+         *           "environment": "test"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         NamespaceRegistryList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "name": "example-resource",
+             *         "environment": "test"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["NamespaceRegistry"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Notification.
+         * @example {
+         *       "id": "resource-001",
+         *       "type": "APPROVAL_PENDING",
+         *       "title": "Example title",
+         *       "title_i18n": {
+         *         "key": "example.key",
+         *         "params": {}
+         *       },
+         *       "message": "Example message",
+         *       "message_i18n": {
+         *         "key": "example.key",
+         *         "params": {}
+         *       },
+         *       "read": true,
+         *       "created_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         Notification: {
+            /** @example resource-001 */
             id: string;
-            /** @enum {string} */
+            /**
+             * @example APPROVAL_PENDING
+             * @enum {string}
+             */
             type: "APPROVAL_PENDING" | "APPROVAL_COMPLETED" | "APPROVAL_REJECTED" | "VM_STATUS_CHANGE";
-            /** @description English fallback/log text; not used for localized UI when title_i18n is present. */
+            /**
+             * @description English fallback/log text; not used for localized UI when title_i18n is present.
+             * @example Example title
+             */
             title: string;
-            /** @description Machine-readable title key and interpolation parameters for localized notification display. */
+            /**
+             * @description Machine-readable title key and interpolation parameters for localized notification display.
+             * @example {
+             *       "key": "example.key",
+             *       "params": {}
+             *     }
+             */
             title_i18n: components["schemas"]["I18nMessage"];
-            /** @description English fallback/log text; not used for localized UI when message_i18n is present. */
+            /**
+             * @description English fallback/log text; not used for localized UI when message_i18n is present.
+             * @example Example message
+             */
             message: string;
-            /** @description Machine-readable message key and interpolation parameters for localized notification display. */
+            /**
+             * @description Machine-readable message key and interpolation parameters for localized notification display.
+             * @example {
+             *       "key": "example.key",
+             *       "params": {}
+             *     }
+             */
             message_i18n: components["schemas"]["I18nMessage"];
+            /** @example example */
             resource_type?: string;
+            /** @example resource-001 */
             resource_id?: string;
+            /** @example true */
             read: boolean;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             read_at?: string;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
         };
+        /**
+         * @description OpenAPI schema for Notification List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "type": "APPROVAL_PENDING",
+         *           "title": "Example title",
+         *           "title_i18n": {
+         *             "key": "example.key",
+         *             "params": {}
+         *           },
+         *           "message": "Example message",
+         *           "message_i18n": {
+         *             "key": "example.key",
+         *             "params": {}
+         *           },
+         *           "read": true,
+         *           "created_at": "2026-01-01T00:00:00Z"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         NotificationList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "type": "APPROVAL_PENDING",
+             *         "title": "Example title",
+             *         "title_i18n": {
+             *           "key": "example.key",
+             *           "params": {}
+             *         },
+             *         "message": "Example message",
+             *         "message_i18n": {
+             *           "key": "example.key",
+             *           "params": {}
+             *         },
+             *         "read": true,
+             *         "created_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["Notification"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for Unread Count.
+         * @example {
+         *       "count": 1
+         *     }
+         */
         UnreadCount: {
+            /** @example 1 */
             count: number;
         };
+        /**
+         * @description OpenAPI schema for VMBatch Job Summary.
+         * @example {
+         *       "id": "resource-001",
+         *       "operation": "CREATE",
+         *       "status": "PENDING_APPROVAL",
+         *       "child_count": 1,
+         *       "success_count": 1,
+         *       "failed_count": 1,
+         *       "pending_count": 1,
+         *       "created_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
         VMBatchJobSummary: {
+            /** @example resource-001 */
             id: string;
-            /** @description Batch operation type (e.g. CREATE, POWER, DELETE) */
+            /**
+             * @description Batch operation type (e.g. CREATE, POWER, DELETE)
+             * @example CREATE
+             */
             operation: string;
-            /** @enum {string} */
+            /**
+             * @example PENDING_APPROVAL
+             * @enum {string}
+             */
             status: "PENDING_APPROVAL" | "IN_PROGRESS" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED";
+            /** @example 1 */
             child_count: number;
+            /** @example 1 */
             success_count: number;
+            /** @example 1 */
             failed_count: number;
+            /** @example 1 */
             pending_count: number;
-            /** Format: date-time */
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
             created_at: string;
         };
+        /**
+         * @description OpenAPI schema for VMBatch List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "resource-001",
+         *           "operation": "CREATE",
+         *           "status": "PENDING_APPROVAL",
+         *           "child_count": 1,
+         *           "success_count": 1,
+         *           "failed_count": 1,
+         *           "pending_count": 1,
+         *           "created_at": "2026-01-01T00:00:00Z"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         VMBatchList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "resource-001",
+             *         "operation": "CREATE",
+             *         "status": "PENDING_APPROVAL",
+             *         "child_count": 1,
+             *         "success_count": 1,
+             *         "failed_count": 1,
+             *         "pending_count": 1,
+             *         "created_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["VMBatchJobSummary"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
+        /**
+         * @description OpenAPI schema for VMPower Request.
+         * @example {
+         *       "action": "start"
+         *     }
+         */
         VMPowerRequest: {
             /**
              * @description Power action to execute on the VM
+             * @example start
              * @enum {string}
              */
             action: "start" | "stop" | "restart";
         };
+        /**
+         * @description OpenAPI schema for VMPower Accepted Response.
+         * @example {
+         *       "event_id": "event-001",
+         *       "status": "ACCEPTED",
+         *       "ticket_id": "ticket-001"
+         *     }
+         */
         VMPowerAcceptedResponse: {
+            /** @example event-001 */
             event_id: string;
+            /** @example ticket-001 */
             ticket_id?: string | null;
-            /** @enum {string} */
+            /**
+             * @example ACCEPTED
+             * @enum {string}
+             */
             status: "ACCEPTED" | "PENDING_APPROVAL";
         };
+        /**
+         * @description OpenAPI schema for Rate Limit Exemption List.
+         * @example {
+         *       "items": [
+         *         {
+         *           "user_id": "user-001",
+         *           "exempted_by": "example",
+         *           "created_at": "2026-01-01T00:00:00Z",
+         *           "updated_at": "2026-01-01T00:00:00Z"
+         *         }
+         *       ],
+         *       "pagination": {
+         *         "page": 1,
+         *         "per_page": 1,
+         *         "total": 1
+         *       }
+         *     }
+         */
         RateLimitExemptionList: {
+            /**
+             * @example [
+             *       {
+             *         "user_id": "user-001",
+             *         "exempted_by": "example",
+             *         "created_at": "2026-01-01T00:00:00Z",
+             *         "updated_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
             items?: components["schemas"]["RateLimitExemption"][];
+            /**
+             * @example {
+             *       "page": 1,
+             *       "per_page": 1,
+             *       "total": 1
+             *     }
+             */
             pagination?: components["schemas"]["Pagination"];
         };
     };
@@ -3490,6 +7793,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "example_code",
+                 *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3499,6 +7809,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "example_code",
+                 *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3508,6 +7825,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "example_code",
+                 *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3517,6 +7841,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "example_code",
+                 *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3526,6 +7857,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "example_code",
+                 *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3535,6 +7873,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "example_code",
+                 *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3544,6 +7889,13 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "example_code",
+                 *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
@@ -3553,71 +7905,163 @@ export interface components {
                 [name: string]: unknown;
             };
             content: {
+                /**
+                 * @example {
+                 *       "code": "example_code",
+                 *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
                 "application/json": components["schemas"]["Error"];
             };
         };
     };
     parameters: {
-        /** @description Page number (1-indexed) */
+        /**
+         * @description Page number (1-indexed)
+         * @example 1
+         */
         Page: number;
-        /** @description Items per page */
+        /**
+         * @description Items per page
+         * @example 1
+         */
         PerPage: number;
-        /** @description Case-insensitive search text */
+        /**
+         * @description Case-insensitive search text
+         * @example example
+         */
         Search: string;
-        /** @description Case-insensitive creator filter for systems */
+        /**
+         * @description Case-insensitive creator filter for systems
+         * @example example
+         */
         SystemCreatedBySearch: string;
-        /** @description Exact creator filter for systems */
+        /**
+         * @description Exact creator filter for systems
+         * @example example
+         */
         SystemCreatedByExact: string;
-        /** @description Case-insensitive filter across related service names and descriptions */
+        /**
+         * @description Case-insensitive filter across related service names and descriptions
+         * @example example
+         */
         SystemServiceSearch: string;
-        /** @description Exact related service filter for systems */
+        /**
+         * @description Exact related service filter for systems
+         * @example service-001
+         */
         SystemServiceIDFilter: string;
-        /** @description Case-insensitive filter across related system member username, email, or display name */
+        /**
+         * @description Case-insensitive filter across related system member username, email, or display name
+         * @example example
+         */
         SystemMemberSearch: string;
-        /** @description Exact related system member filter */
+        /**
+         * @description Exact related system member filter
+         * @example member-001
+         */
         SystemMemberIDFilter: string;
-        /** @description Field to sort by */
+        /**
+         * @description Field to sort by
+         * @example example
+         */
         SortBy: string;
-        /** @description Sort direction */
+        /**
+         * @description Sort direction
+         * @example asc
+         */
         SortOrder: "asc" | "desc";
-        /** @description Stable system identifier. */
+        /**
+         * @description Stable system identifier.
+         * @example system-001
+         */
         SystemID: string;
-        /** @description Filter services by parent system id */
+        /**
+         * @description Filter services by parent system id
+         * @example system-001
+         */
         SystemIDFilter: string;
-        /** @description Stable virtual machine identifier. */
+        /**
+         * @description Stable virtual machine identifier.
+         * @example vm-001
+         */
         VMID: string;
-        /** @description Stable work-order ticket identifier. */
+        /**
+         * @description Stable work-order ticket identifier.
+         * @example ticket-001
+         */
         TicketID: string;
-        /** @description Stable VM batch job identifier. */
+        /**
+         * @description Stable VM batch job identifier.
+         * @example batch-001
+         */
         BatchID: string;
-        /** @description Stable service identifier within a system. */
+        /**
+         * @description Stable service identifier within a system.
+         * @example service-001
+         */
         ServiceID: string;
-        /** @description Stable Shepherd user identifier. */
+        /**
+         * @description Stable Shepherd user identifier.
+         * @example user-001
+         */
         UserID: string;
-        /** @description Stable VM template identifier. */
+        /**
+         * @description Stable VM template identifier.
+         * @example template-001
+         */
         TemplateID: string;
-        /** @description Stable instance size identifier. */
+        /**
+         * @description Stable instance size identifier.
+         * @example instance-size-001
+         */
         InstanceSizeID: string;
-        /** @description Stable RBAC role identifier. */
+        /**
+         * @description Stable RBAC role identifier.
+         * @example role-001
+         */
         RoleID: string;
-        /** @description Stable user role binding identifier. */
+        /**
+         * @description Stable user role binding identifier.
+         * @example binding-001
+         */
         RoleBindingID: string;
-        /** @description Stable authentication provider identifier. */
+        /**
+         * @description Stable authentication provider identifier.
+         * @example provider-001
+         */
         ProviderID: string;
-        /** @description Stable external cohort mapping identifier. */
+        /**
+         * @description Stable external cohort mapping identifier.
+         * @example mapping-001
+         */
         MappingID: string;
-        /** @description Stable directory sync job identifier. */
+        /**
+         * @description Stable directory sync job identifier.
+         * @example job-001
+         */
         DirectorySyncJobID: string;
-        /** @description Simple deletion confirmation flag (ADR-0015 §13) */
+        /**
+         * @description Simple deletion confirmation flag (ADR-0015 §13)
+         * @example true
+         */
         Confirm: boolean;
         /**
          * @description Type resource name to confirm deletion (ADR-0015 §13 addendum).
          *     Must match the resource name exactly.
+         * @example example-confirm
          */
         ConfirmName: string;
-        /** @description Stable namespace registry identifier. */
+        /**
+         * @description Stable namespace registry identifier.
+         * @example namespace-001
+         */
         NamespaceID: string;
-        /** @description Stable notification identifier. */
+        /**
+         * @description Stable notification identifier.
+         * @example notification-001
+         */
         NotificationID: string;
     };
     requestBodies: never;
@@ -3641,6 +8085,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "ok",
+                     *       "version": "example",
+                     *       "checks": {
+                     *         "database": "example"
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["Health"];
                 };
             };
@@ -3661,6 +8114,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "ok",
+                     *       "version": "example",
+                     *       "checks": {
+                     *         "database": "example"
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["Health"];
                 };
             };
@@ -3670,6 +8132,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "ok",
+                     *       "version": "example",
+                     *       "checks": {
+                     *         "database": "example"
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["Health"];
                 };
             };
@@ -3680,7 +8151,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Dynamic schema entity type to retrieve. */
+                /**
+                 * @description Dynamic schema entity type to retrieve.
+                 * @example instancesize
+                 */
                 entity_type: "instancesize";
             };
             cookie?: never;
@@ -3693,6 +8167,35 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "schema": {},
+                     *       "mask": {
+                     *         "quick_fields": [
+                     *           {
+                     *             "path": "/example/path",
+                     *             "display_name": "Example User",
+                     *             "display_name_key": "example.key"
+                     *           }
+                     *         ],
+                     *         "advanced_fields": [
+                     *           {
+                     *             "path": "/example/path",
+                     *             "display_name": "Example User",
+                     *             "display_name_key": "example.key"
+                     *           }
+                     *         ],
+                     *         "professional_fields": [
+                     *           {
+                     *             "path": "/example/path",
+                     *             "display_name": "Example User",
+                     *             "display_name_key": "example.key"
+                     *           }
+                     *         ]
+                     *       },
+                     *       "schema_version": "1.2.0"
+                     *     }
+                     */
                     "application/json": components["schemas"]["DynamicSchemaResponse"];
                 };
             };
@@ -3703,27 +8206,60 @@ export interface operations {
     listSystems: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
-                /** @description Case-insensitive creator filter for systems */
+                /**
+                 * @description Case-insensitive creator filter for systems
+                 * @example example
+                 */
                 created_by?: components["parameters"]["SystemCreatedBySearch"];
-                /** @description Exact creator filter for systems */
+                /**
+                 * @description Exact creator filter for systems
+                 * @example example
+                 */
                 created_by_exact?: components["parameters"]["SystemCreatedByExact"];
-                /** @description Case-insensitive filter across related service names and descriptions */
+                /**
+                 * @description Case-insensitive filter across related service names and descriptions
+                 * @example example
+                 */
                 service_search?: components["parameters"]["SystemServiceSearch"];
-                /** @description Exact related service filter for systems */
+                /**
+                 * @description Exact related service filter for systems
+                 * @example service-001
+                 */
                 service_id?: components["parameters"]["SystemServiceIDFilter"];
-                /** @description Case-insensitive filter across related system member username, email, or display name */
+                /**
+                 * @description Case-insensitive filter across related system member username, email, or display name
+                 * @example example
+                 */
                 member_search?: components["parameters"]["SystemMemberSearch"];
-                /** @description Exact related system member filter */
+                /**
+                 * @description Exact related system member filter
+                 * @example member-001
+                 */
                 member_id?: components["parameters"]["SystemMemberIDFilter"];
-                /** @description Field to sort by */
+                /**
+                 * @description Field to sort by
+                 * @example example
+                 */
                 sort_by?: components["parameters"]["SortBy"];
-                /** @description Sort direction */
+                /**
+                 * @description Sort direction
+                 * @example asc
+                 */
                 sort_order?: components["parameters"]["SortOrder"];
             };
             header?: never;
@@ -3738,6 +8274,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resourc",
+                     *           "created_by": "example",
+                     *           "created_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["SystemList"];
                 };
             };
@@ -3755,6 +8308,12 @@ export interface operations {
         /** @description System name and description for the new self-service system. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "example-resourc",
+                 *       "description": "Example description"
+                 *     }
+                 */
                 "application/json": components["schemas"]["SystemCreateRequest"];
             };
         };
@@ -3765,6 +8324,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resourc",
+                     *       "created_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["System"];
                 };
             };
@@ -3789,6 +8356,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "creators": [
+                     *         {
+                     *           "value": "example",
+                     *           "label": "example",
+                     *           "group": "example"
+                     *         }
+                     *       ],
+                     *       "services": [
+                     *         {
+                     *           "value": "example",
+                     *           "label": "example",
+                     *           "group": "example"
+                     *         }
+                     *       ],
+                     *       "members": [
+                     *         {
+                     *           "value": "example",
+                     *           "label": "example",
+                     *           "group": "example"
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["SystemFilterOptionsResponse"];
                 };
             };
@@ -3801,7 +8393,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3814,6 +8409,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resourc",
+                     *       "created_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["System"];
                 };
             };
@@ -3829,12 +8432,16 @@ export interface operations {
                 /**
                  * @description Type system name to confirm deletion (ADR-0015 §13 addendum).
                  *     Must match the system name exactly.
+                 * @example example-confirm
                  */
                 confirm_name: string;
             };
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3859,7 +8466,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3867,6 +8477,11 @@ export interface operations {
         /** @description Mutable system fields for the existing system. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "description": "Example description"
+                 *     }
+                 */
                 "application/json": components["schemas"]["SystemUpdateRequest"];
             };
         };
@@ -3877,6 +8492,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resourc",
+                     *       "created_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["System"];
                 };
             };
@@ -3891,7 +8514,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3904,6 +8530,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "user_id": "user-001",
+                     *           "username": "example-user",
+                     *           "role": "owner"
+                     *         }
+                     *       ],
+                     *       "profile_fields": [
+                     *         {
+                     *           "key": "example.key",
+                     *           "label": "example",
+                     *           "searchable": true
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["SystemMemberList"];
                 };
             };
@@ -3917,7 +8566,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3925,6 +8577,12 @@ export interface operations {
         /** @description User and role assignment for a new system member. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "user_id": "user-001",
+                 *       "role": "owner"
+                 *     }
+                 */
                 "application/json": components["schemas"]["SystemMemberCreateRequest"];
             };
         };
@@ -3935,6 +8593,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "user_id": "user-001",
+                     *       "username": "example-user",
+                     *       "role": "owner"
+                     *     }
+                     */
                     "application/json": components["schemas"]["SystemMember"];
                 };
             };
@@ -3948,16 +8613,28 @@ export interface operations {
     listSystemMemberCandidates: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
             };
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3970,6 +8647,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "username": "example-user",
+                     *           "enabled": true,
+                     *           "created_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "profile_fields": [
+                     *         {
+                     *           "key": "example.key",
+                     *           "label": "example",
+                     *           "searchable": true
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["UserList"];
                 };
             };
@@ -3983,9 +8684,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -4009,9 +8716,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -4019,6 +8732,11 @@ export interface operations {
         /** @description Replacement role assignment for an existing system member. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "role": "owner"
+                 *     }
+                 */
                 "application/json": components["schemas"]["SystemMemberRoleUpdateRequest"];
             };
         };
@@ -4029,6 +8747,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "user_id": "user-001",
+                     *       "username": "example-user",
+                     *       "role": "owner"
+                     *     }
+                     */
                     "application/json": components["schemas"]["SystemMember"];
                 };
             };
@@ -4041,13 +8766,25 @@ export interface operations {
     listServicesOverview: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
-                /** @description Filter services by parent system id */
+                /**
+                 * @description Filter services by parent system id
+                 * @example system-001
+                 */
                 system_id?: components["parameters"]["SystemIDFilter"];
             };
             header?: never;
@@ -4062,6 +8799,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "system_id": "system-001",
+                     *           "system_name": "example-system",
+                     *           "created_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["ServiceList"];
                 };
             };
@@ -4072,14 +8827,23 @@ export interface operations {
     listServices: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
             };
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -4092,6 +8856,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "system_id": "system-001",
+                     *           "system_name": "example-system",
+                     *           "created_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["ServiceList"];
                 };
             };
@@ -4104,7 +8886,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -4112,6 +8897,12 @@ export interface operations {
         /** @description Service name and description scoped to the target system. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "example-resourc",
+                 *       "description": "Example description"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ServiceCreateRequest"];
             };
         };
@@ -4122,6 +8913,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "system_id": "system-001",
+                     *       "system_name": "example-system",
+                     *       "created_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Service"];
                 };
             };
@@ -4136,9 +8936,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
-                /** @description Stable service identifier within a system. */
+                /**
+                 * @description Stable service identifier within a system.
+                 * @example service-001
+                 */
                 service_id: components["parameters"]["ServiceID"];
             };
             cookie?: never;
@@ -4151,6 +8957,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "system_id": "system-001",
+                     *       "system_name": "example-system",
+                     *       "created_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Service"];
                 };
             };
@@ -4162,14 +8977,23 @@ export interface operations {
     deleteService: {
         parameters: {
             query?: {
-                /** @description Simple deletion confirmation flag (ADR-0015 §13) */
+                /**
+                 * @description Simple deletion confirmation flag (ADR-0015 §13)
+                 * @example true
+                 */
                 confirm?: components["parameters"]["Confirm"];
             };
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
-                /** @description Stable service identifier within a system. */
+                /**
+                 * @description Stable service identifier within a system.
+                 * @example service-001
+                 */
                 service_id: components["parameters"]["ServiceID"];
             };
             cookie?: never;
@@ -4194,9 +9018,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
-                /** @description Stable service identifier within a system. */
+                /**
+                 * @description Stable service identifier within a system.
+                 * @example service-001
+                 */
                 service_id: components["parameters"]["ServiceID"];
             };
             cookie?: never;
@@ -4204,6 +9034,11 @@ export interface operations {
         /** @description Mutable service fields for the existing service. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "description": "Example description"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ServiceUpdateRequest"];
             };
         };
@@ -4214,6 +9049,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "system_id": "system-001",
+                     *       "system_name": "example-system",
+                     *       "created_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Service"];
                 };
             };
@@ -4228,9 +9072,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable system identifier. */
+                /**
+                 * @description Stable system identifier.
+                 * @example system-001
+                 */
                 system_id: components["parameters"]["SystemID"];
-                /** @description Stable service identifier within a system. */
+                /**
+                 * @description Stable service identifier within a system.
+                 * @example service-001
+                 */
                 service_id: components["parameters"]["ServiceID"];
             };
             cookie?: never;
@@ -4243,6 +9093,37 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "service": {
+                     *         "id": "resource-001",
+                     *         "name": "example-resource",
+                     *         "system_id": "system-001",
+                     *         "system_name": "example-system",
+                     *         "created_at": "2026-01-01T00:00:00Z"
+                     *       },
+                     *       "summary": {
+                     *         "visible_vm_count": 1,
+                     *         "recent_request_count": 1
+                     *       },
+                     *       "visible_vms": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "namespace": "example-namespace",
+                     *           "status": "CREATING"
+                     *         }
+                     *       ],
+                     *       "recent_requests": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "event_id": "event-001",
+                     *           "status": "PENDING",
+                     *           "requester": "example"
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["ServiceWorkspaceContext"];
                 };
             };
@@ -4254,29 +9135,65 @@ export interface operations {
     listVMs: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Field to sort by */
+                /**
+                 * @description Field to sort by
+                 * @example example
+                 */
                 sort_by?: components["parameters"]["SortBy"];
-                /** @description Sort direction */
+                /**
+                 * @description Sort direction
+                 * @example asc
+                 */
                 sort_order?: components["parameters"]["SortOrder"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
-                /** @description Filter VMs by Kubernetes namespace. */
+                /**
+                 * @description Filter VMs by Kubernetes namespace.
+                 * @example example-namespace
+                 */
                 namespace?: string;
-                /** @description Filter VMs by lifecycle or provisioning status. */
+                /**
+                 * @description Filter VMs by lifecycle or provisioning status.
+                 * @example ACTIVE
+                 */
                 status?: string;
-                /** @description Filter VMs by hosting cluster identifier. */
+                /**
+                 * @description Filter VMs by hosting cluster identifier.
+                 * @example cluster-001
+                 */
                 cluster_id?: string;
-                /** @description Filter services by parent system id */
+                /**
+                 * @description Filter services by parent system id
+                 * @example system-001
+                 */
                 system_id?: components["parameters"]["SystemIDFilter"];
-                /** @description Filter VMs by owning service identifier. */
+                /**
+                 * @description Filter VMs by owning service identifier.
+                 * @example service-001
+                 */
                 service_id?: string;
-                /** @description Filter VMs by operating system name. */
+                /**
+                 * @description Filter VMs by operating system name.
+                 * @example example-os
+                 */
                 os_name?: string;
-                /** @description Filter VMs by assigned IP address. */
+                /**
+                 * @description Filter VMs by assigned IP address.
+                 * @example example
+                 */
                 ip_address?: string;
             };
             header?: never;
@@ -4291,6 +9208,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "namespace": "example-namespace",
+                     *           "status": "CREATING"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMList"];
                 };
             };
@@ -4313,6 +9247,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "statuses": [
+                     *         {
+                     *           "value": "example",
+                     *           "label": "example",
+                     *           "group": "example"
+                     *         }
+                     *       ],
+                     *       "namespaces": [
+                     *         {
+                     *           "value": "example",
+                     *           "label": "example",
+                     *           "group": "example"
+                     *         }
+                     *       ],
+                     *       "clusters": [
+                     *         {
+                     *           "value": "example",
+                     *           "label": "example",
+                     *           "group": "example"
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMFilterOptionsResponse"];
                 };
             };
@@ -4323,11 +9282,20 @@ export interface operations {
     getVMRequestContext: {
         parameters: {
             query?: {
-                /** @description Optional selected namespace for placement hint evaluation. */
+                /**
+                 * @description Optional selected namespace for placement hint evaluation.
+                 * @example example-namespace
+                 */
                 namespace?: string;
-                /** @description Optional selected template for placement hint evaluation. */
+                /**
+                 * @description Optional selected template for placement hint evaluation.
+                 * @example template-001
+                 */
                 template_id?: string;
-                /** @description Optional selected instance size for placement hint evaluation. */
+                /**
+                 * @description Optional selected instance size for placement hint evaluation.
+                 * @example instance-size-001
+                 */
                 instance_size_id?: string;
             };
             header?: never;
@@ -4342,6 +9310,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "templates": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "display_name": "Example User"
+                     *         }
+                     *       ],
+                     *       "instance_sizes": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "cpu_cores": 1,
+                     *           "memory_gi": 1
+                     *         }
+                     *       ],
+                     *       "namespaces": [
+                     *         "example-namespace"
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMRequestContext"];
                 };
             };
@@ -4359,6 +9349,15 @@ export interface operations {
         /** @description VM create request submitted for approval and placement evaluation. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "service_id": "service-001",
+                 *       "template_id": "template-001",
+                 *       "instance_size_id": "instance-size-001",
+                 *       "namespace": "example-namespace",
+                 *       "reason": "Example reason"
+                 *     }
+                 */
                 "application/json": components["schemas"]["VMCreateRequest"];
             };
         };
@@ -4369,6 +9368,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "ticket_id": "ticket-001",
+                     *       "status": "PENDING",
+                     *       "operation_type": "CREATE"
+                     *     }
+                     */
                     "application/json": components["schemas"]["TicketResponse"];
                 };
             };
@@ -4380,13 +9386,25 @@ export interface operations {
     listVMBatches: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Field to sort by */
+                /**
+                 * @description Field to sort by
+                 * @example example
+                 */
                 sort_by?: components["parameters"]["SortBy"];
-                /** @description Sort direction */
+                /**
+                 * @description Sort direction
+                 * @example asc
+                 */
                 sort_order?: components["parameters"]["SortOrder"];
             };
             header?: never;
@@ -4401,6 +9419,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "operation": "CREATE",
+                     *           "status": "PENDING_APPROVAL",
+                     *           "child_count": 1,
+                     *           "success_count": 1,
+                     *           "failed_count": 1,
+                     *           "pending_count": 1,
+                     *           "created_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMBatchList"];
                 };
             };
@@ -4418,6 +9457,19 @@ export interface operations {
         /** @description Parent batch request containing child VM create operations. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "operation": "CREATE",
+                 *       "items": [
+                 *         {
+                 *           "vm_id": "vm-001",
+                 *           "service_id": "service-001",
+                 *           "template_id": "template-001"
+                 *         }
+                 *       ],
+                 *       "request_id": "request-001"
+                 *     }
+                 */
                 "application/json": components["schemas"]["VMBatchSubmitRequest"];
             };
         };
@@ -4428,6 +9480,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "batch_id": "batch-001",
+                     *       "status": "PENDING_APPROVAL",
+                     *       "status_url": "https://example.com/callback",
+                     *       "retry_after_seconds": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMBatchSubmitResponse"];
                 };
             };
@@ -4440,6 +9500,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4449,6 +9516,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4464,6 +9538,18 @@ export interface operations {
         /** @description Parent batch request containing child VM power operations. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "operation": "START",
+                 *       "items": [
+                 *         {
+                 *           "vm_id": "vm-001",
+                 *           "reason": "Example reason"
+                 *         }
+                 *       ],
+                 *       "request_id": "request-001"
+                 *     }
+                 */
                 "application/json": components["schemas"]["VMBatchPowerRequest"];
             };
         };
@@ -4474,6 +9560,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "batch_id": "batch-001",
+                     *       "status": "PENDING_APPROVAL",
+                     *       "status_url": "https://example.com/callback",
+                     *       "retry_after_seconds": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMBatchSubmitResponse"];
                 };
             };
@@ -4486,6 +9580,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4496,7 +9597,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable VM batch job identifier. */
+                /**
+                 * @description Stable VM batch job identifier.
+                 * @example batch-001
+                 */
                 batch_id: components["parameters"]["BatchID"];
             };
             cookie?: never;
@@ -4509,6 +9613,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "batch_id": "batch-001",
+                     *       "operation": "CREATE",
+                     *       "status": "PENDING_APPROVAL",
+                     *       "child_count": 1,
+                     *       "success_count": 1,
+                     *       "failed_count": 1,
+                     *       "pending_count": 1,
+                     *       "children": [
+                     *         {
+                     *           "ticket_id": "ticket-001",
+                     *           "event_id": "event-001",
+                     *           "status": "PENDING"
+                     *         }
+                     *       ],
+                     *       "created_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z",
+                     *       "updated_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMBatchStatusResponse"];
                 };
             };
@@ -4522,7 +9647,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable VM batch job identifier. */
+                /**
+                 * @description Stable VM batch job identifier.
+                 * @example batch-001
+                 */
                 batch_id: components["parameters"]["BatchID"];
             };
             cookie?: never;
@@ -4540,6 +9668,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "batch_id": "batch-001",
+                     *       "status": "PENDING_APPROVAL",
+                     *       "affected_count": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMBatchActionResponse"];
                 };
             };
@@ -4553,6 +9688,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4563,7 +9705,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable VM batch job identifier. */
+                /**
+                 * @description Stable VM batch job identifier.
+                 * @example batch-001
+                 */
                 batch_id: components["parameters"]["BatchID"];
             };
             cookie?: never;
@@ -4576,6 +9721,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "batch_id": "batch-001",
+                     *       "status": "PENDING_APPROVAL",
+                     *       "affected_count": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMBatchActionResponse"];
                 };
             };
@@ -4588,6 +9740,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -4598,7 +9757,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4611,6 +9773,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "namespace": "example-namespace",
+                     *       "status": "CREATING"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VM"];
                 };
             };
@@ -4622,17 +9792,24 @@ export interface operations {
     deleteVM: {
         parameters: {
             query?: {
-                /** @description Simple deletion confirmation flag (ADR-0015 §13) */
+                /**
+                 * @description Simple deletion confirmation flag (ADR-0015 §13)
+                 * @example true
+                 */
                 confirm?: components["parameters"]["Confirm"];
                 /**
                  * @description Type resource name to confirm deletion (ADR-0015 §13 addendum).
                  *     Must match the resource name exactly.
+                 * @example example-confirm
                  */
                 confirm_name?: components["parameters"]["ConfirmName"];
             };
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4645,6 +9822,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "ticket_id": "ticket-001",
+                     *       "event_id": "event-001",
+                     *       "status": "PENDING"
+                     *     }
+                     */
                     "application/json": components["schemas"]["DeleteVMResponse"];
                 };
             };
@@ -4659,7 +9843,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4672,6 +9859,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "vm_id": "vm-001",
+                     *       "name": "example-resource",
+                     *       "namespace": "example-namespace",
+                     *       "cluster_id": "cluster-001",
+                     *       "yaml": "example"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMManifestResponse"];
                 };
             };
@@ -4687,7 +9883,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4700,6 +9899,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "system_id": "system-001",
+                     *       "service_id": "service-001",
+                     *       "template_id": "template-001",
+                     *       "instance_size_id": "instance-size-001",
+                     *       "namespace": "example-namespace",
+                     *       "reason": "Example reason",
+                     *       "batch_count": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMRequestPrefill"];
                 };
             };
@@ -4714,7 +9924,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4727,6 +9940,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "vm_id": "vm-001",
+                     *       "vm_name": "example-vm",
+                     *       "namespace": "example-namespace",
+                     *       "current_cpu_cores": 1,
+                     *       "current_memory_gi": 1,
+                     *       "current_disk_gb": 1,
+                     *       "cpu_supported": true,
+                     *       "memory_supported": true,
+                     *       "disk_supported": true
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMModifyContext"];
                 };
             };
@@ -4741,7 +9967,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4749,6 +9978,13 @@ export interface operations {
         /** @description Requested live VM changes submitted for approval. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "reason": "Example reason",
+                 *       "target_cpu_cores": 1,
+                 *       "target_memory_gi": 1
+                 *     }
+                 */
                 "application/json": components["schemas"]["VMModifyRequest"];
             };
         };
@@ -4759,6 +9995,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "ticket_id": "ticket-001",
+                     *       "status": "PENDING",
+                     *       "operation_type": "CREATE"
+                     *     }
+                     */
                     "application/json": components["schemas"]["TicketResponse"];
                 };
             };
@@ -4774,7 +10017,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4787,6 +10033,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "event_id": "event-001",
+                     *       "status": "ACCEPTED",
+                     *       "ticket_id": "ticket-001"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMPowerAcceptedResponse"];
                 };
             };
@@ -4800,7 +10053,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4813,6 +10069,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "event_id": "event-001",
+                     *       "status": "ACCEPTED",
+                     *       "ticket_id": "ticket-001"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMPowerAcceptedResponse"];
                 };
             };
@@ -4826,7 +10089,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4839,6 +10105,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "event_id": "event-001",
+                     *       "status": "ACCEPTED",
+                     *       "ticket_id": "ticket-001"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMPowerAcceptedResponse"];
                 };
             };
@@ -4852,7 +10125,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4860,6 +10136,11 @@ export interface operations {
         /** @description Requested VM power action. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "action": "start"
+                 *     }
+                 */
                 "application/json": components["schemas"]["VMPowerRequest"];
             };
         };
@@ -4870,6 +10151,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "event_id": "event-001",
+                     *       "status": "ACCEPTED",
+                     *       "ticket_id": "ticket-001"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMPowerAcceptedResponse"];
                 };
             };
@@ -4886,7 +10174,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4894,6 +10185,11 @@ export interface operations {
         /** @description Optional console type requested for access approval. */
         requestBody?: {
             content: {
+                /**
+                 * @example {
+                 *       "preferred_console_type": "SERIAL"
+                 *     }
+                 */
                 "application/json": components["schemas"]["VMConsoleRequestInput"];
             };
         };
@@ -4904,6 +10200,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "PENDING_APPROVAL",
+                     *       "ticket_id": "ticket-001",
+                     *       "console_type": "SERIAL"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMConsoleRequestResponse"];
                 };
             };
@@ -4913,6 +10216,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "PENDING_APPROVAL",
+                     *       "ticket_id": "ticket-001",
+                     *       "console_type": "SERIAL"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMConsoleRequestResponse"];
                 };
             };
@@ -4927,7 +10237,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4940,6 +10253,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "NOT_REQUESTED",
+                     *       "ticket_id": "ticket-001",
+                     *       "console_type": "SERIAL"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMConsoleStatusResponse"];
                 };
             };
@@ -4954,7 +10274,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4967,6 +10290,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "SESSION_READY",
+                     *       "vm_id": "vm-001",
+                     *       "websocket_path": "/example/path"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMVNCSessionResponse"];
                 };
             };
@@ -4982,7 +10312,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable virtual machine identifier. */
+                /**
+                 * @description Stable virtual machine identifier.
+                 * @example vm-001
+                 */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4995,6 +10328,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "status": "SESSION_READY",
+                     *       "vm_id": "vm-001",
+                     *       "console_type": "SERIAL"
+                     *     }
+                     */
                     "application/json": components["schemas"]["VMConsoleSessionResponse"];
                 };
             };
@@ -5008,28 +10348,56 @@ export interface operations {
     listTickets: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
-                /** @description Filter tickets by exact workflow status. */
+                /**
+                 * @description Filter tickets by exact workflow status.
+                 * @example PENDING
+                 */
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
-                /** @description Filter by a built-in status group. */
+                /**
+                 * @description Filter by a built-in status group.
+                 * @example ACTIVE
+                 */
                 status_group?: "ACTIVE" | "TERMINAL" | "ATTENTION";
                 /**
                  * @description When true, return only tickets requested by the current
                  *     authenticated user. This does not require ticket:view.
+                 * @example true
                  */
                 mine?: boolean;
-                /** @description Filter by ticket operation type. */
+                /**
+                 * @description Filter by ticket operation type.
+                 * @example CREATE
+                 */
                 operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
-                /** @description Filter by the cluster selected during CREATE execution planning. */
+                /**
+                 * @description Filter by the cluster selected during CREATE execution planning.
+                 * @example selected-cluster-001
+                 */
                 selected_cluster_id?: string;
-                /** @description Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets. */
+                /**
+                 * @description Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
+                 * @example example_code
+                 */
                 placement_advisory_code?: string;
-                /** @description Filter by whether a placement evaluation snapshot exists on the ticket. */
+                /**
+                 * @description Filter by whether a placement evaluation snapshot exists on the ticket.
+                 * @example present
+                 */
                 placement_snapshot?: "present" | "missing";
             };
             header?: never;
@@ -5044,6 +10412,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "event_id": "event-001",
+                     *           "status": "PENDING",
+                     *           "requester": "example"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["TicketList"];
                 };
             };
@@ -5054,23 +10439,50 @@ export interface operations {
     listBuiltinApprovalTasks: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
-                /** @description Filter approval tasks by exact workflow status. */
+                /**
+                 * @description Filter approval tasks by exact workflow status.
+                 * @example PENDING
+                 */
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
-                /** @description Filter by a built-in status group. */
+                /**
+                 * @description Filter by a built-in status group.
+                 * @example ACTIVE
+                 */
                 status_group?: "ACTIVE" | "TERMINAL" | "ATTENTION";
-                /** @description Filter by task operation type. */
+                /**
+                 * @description Filter by task operation type.
+                 * @example CREATE
+                 */
                 operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
-                /** @description Filter by the cluster selected during CREATE execution planning. */
+                /**
+                 * @description Filter by the cluster selected during CREATE execution planning.
+                 * @example selected-cluster-001
+                 */
                 selected_cluster_id?: string;
-                /** @description Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets. */
+                /**
+                 * @description Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
+                 * @example example_code
+                 */
                 placement_advisory_code?: string;
-                /** @description Filter by whether a placement evaluation snapshot exists on the task. */
+                /**
+                 * @description Filter by whether a placement evaluation snapshot exists on the task.
+                 * @example present
+                 */
                 placement_snapshot?: "present" | "missing";
             };
             header?: never;
@@ -5085,6 +10497,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "event_id": "event-001",
+                     *           "status": "PENDING",
+                     *           "requester": "example"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["TicketList"];
                 };
             };
@@ -5097,7 +10526,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable work-order ticket identifier. */
+                /**
+                 * @description Stable work-order ticket identifier.
+                 * @example ticket-001
+                 */
                 ticket_id: components["parameters"]["TicketID"];
             };
             cookie?: never;
@@ -5105,6 +10537,15 @@ export interface operations {
         /** @description Approval decision payload and optional placement overrides. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "selected_cluster_id": "selected-cluster-001",
+                 *       "selected_storage_class": "example",
+                 *       "selected_dv_access_modes": [
+                 *         "example"
+                 *       ]
+                 *     }
+                 */
                 "application/json": components["schemas"]["ApprovalDecisionRequest"];
             };
         };
@@ -5127,7 +10568,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable work-order ticket identifier. */
+                /**
+                 * @description Stable work-order ticket identifier.
+                 * @example ticket-001
+                 */
                 ticket_id: components["parameters"]["TicketID"];
             };
             cookie?: never;
@@ -5135,6 +10579,11 @@ export interface operations {
         /** @description Rejection decision payload with reviewer note. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "reason": "Example reason"
+                 *     }
+                 */
                 "application/json": components["schemas"]["RejectDecisionRequest"];
             };
         };
@@ -5157,7 +10606,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable work-order ticket identifier. */
+                /**
+                 * @description Stable work-order ticket identifier.
+                 * @example ticket-001
+                 */
                 ticket_id: components["parameters"]["TicketID"];
             };
             cookie?: never;
@@ -5180,38 +10632,80 @@ export interface operations {
     listClusters: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
                 /**
                  * @description Comma-separated list of required KubeVirt feature gates.
                  *     Only clusters whose `enabled_features` is a superset of all listed
                  *     features are returned. Case-insensitive.
                  *     Example: `?requires=LiveMigration,Snapshot`
+                 * @example LiveMigration,Snapshot
                  */
                 requires?: string;
-                /** @description Filter clusters compatible with a CREATE request targeting this namespace. */
+                /**
+                 * @description Filter clusters compatible with a CREATE request targeting this namespace.
+                 * @example example-namespace
+                 */
                 namespace?: string;
-                /** @description Filter clusters compatible with a CREATE request using this template. */
+                /**
+                 * @description Filter clusters compatible with a CREATE request using this template.
+                 * @example template-001
+                 */
                 template_id?: string;
-                /** @description Filter clusters compatible with a CREATE request using this instance size. */
+                /**
+                 * @description Filter clusters compatible with a CREATE request using this instance size.
+                 * @example instance-size-001
+                 */
                 instance_size_id?: string;
-                /** @description Optional storage class selected by approver when evaluating cluster policy compatibility. */
+                /**
+                 * @description Optional storage class selected by approver when evaluating cluster policy compatibility.
+                 * @example example
+                 */
                 selected_storage_class?: string;
-                /** @description Optional explicit CDI DataVolume PVC accessModes selected during approval when root volume auto resolution is ambiguous. */
+                /**
+                 * @description Optional explicit CDI DataVolume PVC accessModes selected during approval when root volume auto resolution is ambiguous.
+                 * @example [
+                 *       "example"
+                 *     ]
+                 */
                 selected_dv_access_modes?: string[];
-                /** @description Optional explicit CDI DataVolume PVC volumeMode selected during approval when root volume auto resolution is ambiguous. */
+                /**
+                 * @description Optional explicit CDI DataVolume PVC volumeMode selected during approval when root volume auto resolution is ambiguous.
+                 * @example Block
+                 */
                 selected_dv_volume_mode?: "Block" | "Filesystem";
-                /** @description Optional override CPU request in cores for compatibility evaluation. */
+                /**
+                 * @description Optional override CPU request in cores for compatibility evaluation.
+                 * @example 1
+                 */
                 cpu_request?: number;
-                /** @description Optional override CPU limit in cores for compatibility evaluation. */
+                /**
+                 * @description Optional override CPU limit in cores for compatibility evaluation.
+                 * @example 1
+                 */
                 cpu_limit?: number;
-                /** @description Optional override memory request in Gi for compatibility evaluation. */
+                /**
+                 * @description Optional override memory request in Gi for compatibility evaluation.
+                 * @example 1
+                 */
                 memory_request_gi?: number;
-                /** @description Optional override memory limit in Gi for compatibility evaluation. */
+                /**
+                 * @description Optional override memory limit in Gi for compatibility evaluation.
+                 * @example 1
+                 */
                 memory_limit_gi?: number;
-                /** @description When true, keep incompatible clusters in the result and annotate them with compatibility reasons instead of filtering them out. */
+                /**
+                 * @description When true, keep incompatible clusters in the result and annotate them with compatibility reasons instead of filtering them out.
+                 * @example true
+                 */
                 include_incompatible?: boolean;
             };
             header?: never;
@@ -5226,6 +10720,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "api_server_url": "https://example.com/callback",
+                     *           "status": "UNKNOWN"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["ClusterList"];
                 };
             };
@@ -5235,6 +10746,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -5252,6 +10770,13 @@ export interface operations {
         /** @description Cluster connection metadata, credentials, and scheduling labels. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "example-resource",
+                 *       "kubeconfig": "example",
+                 *       "display_name": "Example User"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ClusterCreateRequest"];
             };
         };
@@ -5262,6 +10787,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "api_server_url": "https://example.com/callback",
+                     *       "status": "UNKNOWN"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Cluster"];
                 };
             };
@@ -5275,7 +10808,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Cluster identifier for the unused cluster to delete. */
+                /**
+                 * @description Cluster identifier for the unused cluster to delete.
+                 * @example cluster-001
+                 */
                 cluster_id: string;
             };
             cookie?: never;
@@ -5300,7 +10836,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Cluster identifier for the metadata or credentials update. */
+                /**
+                 * @description Cluster identifier for the metadata or credentials update.
+                 * @example cluster-001
+                 */
                 cluster_id: string;
             };
             cookie?: never;
@@ -5308,6 +10847,13 @@ export interface operations {
         /** @description Mutable cluster metadata, credentials, and scheduling labels. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "display_name": "Example User",
+                 *       "environment": "test",
+                 *       "enabled": true
+                 *     }
+                 */
                 "application/json": components["schemas"]["ClusterUpdateRequest"];
             };
         };
@@ -5318,6 +10864,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "api_server_url": "https://example.com/callback",
+                     *       "status": "UNKNOWN"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Cluster"];
                 };
             };
@@ -5331,11 +10885,20 @@ export interface operations {
     listUsers: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
             };
             header?: never;
@@ -5350,6 +10913,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "username": "example-user",
+                     *           "enabled": true,
+                     *           "created_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "profile_fields": [
+                     *         {
+                     *           "key": "example.key",
+                     *           "label": "example",
+                     *           "searchable": true
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["UserList"];
                 };
             };
@@ -5367,6 +10954,13 @@ export interface operations {
         /** @description Local user identity, password, enabled state, and platform role. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "username": "example-user",
+                 *       "password": "redacted",
+                 *       "email": "user@example.com"
+                 *     }
+                 */
                 "application/json": components["schemas"]["UserCreateRequest"];
             };
         };
@@ -5377,6 +10971,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "username": "example-user",
+                     *       "enabled": true,
+                     *       "created_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["User"];
                 };
             };
@@ -5391,7 +10993,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5415,7 +11020,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5423,6 +11031,13 @@ export interface operations {
         /** @description Mutable local user profile, enabled state, and platform role fields. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "email": "user@example.com",
+                 *       "display_name": "Example User",
+                 *       "enabled": true
+                 *     }
+                 */
                 "application/json": components["schemas"]["UserUpdateRequest"];
             };
         };
@@ -5433,6 +11048,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "username": "example-user",
+                     *       "enabled": true,
+                     *       "created_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["User"];
                 };
             };
@@ -5447,7 +11070,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5460,6 +11086,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "user_id": "user-001",
+                     *           "role_id": "role-001",
+                     *           "role_name": "example-role",
+                     *           "scope_type": "example"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["GlobalRoleBindingList"];
                 };
             };
@@ -5473,7 +11117,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5481,6 +11128,13 @@ export interface operations {
         /** @description Global RBAC role binding to assign to the user. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "role_id": "role-001",
+                 *       "scope_type": "example",
+                 *       "scope_id": "scope-001"
+                 *     }
+                 */
                 "application/json": components["schemas"]["GlobalRoleBindingCreateRequest"];
             };
         };
@@ -5491,6 +11145,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "user_id": "user-001",
+                     *       "role_id": "role-001",
+                     *       "role_name": "example-role",
+                     *       "scope_type": "example"
+                     *     }
+                     */
                     "application/json": components["schemas"]["GlobalRoleBinding"];
                 };
             };
@@ -5506,9 +11169,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
-                /** @description Stable user role binding identifier. */
+                /**
+                 * @description Stable user role binding identifier.
+                 * @example binding-001
+                 */
                 binding_id: components["parameters"]["RoleBindingID"];
             };
             cookie?: never;
@@ -5542,6 +11211,26 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "permissions": [
+                     *             "example"
+                     *           ],
+                     *           "built_in": true,
+                     *           "enabled": true
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["RoleList"];
                 };
             };
@@ -5559,6 +11248,15 @@ export interface operations {
         /** @description Custom role name, description, and permission set. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "example-resource",
+                 *       "permissions": [
+                 *         "example"
+                 *       ],
+                 *       "display_name": "Example User"
+                 *     }
+                 */
                 "application/json": components["schemas"]["RoleCreateRequest"];
             };
         };
@@ -5569,6 +11267,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "permissions": [
+                     *         "example"
+                     *       ],
+                     *       "built_in": true,
+                     *       "enabled": true
+                     *     }
+                     */
                     "application/json": components["schemas"]["Role"];
                 };
             };
@@ -5583,7 +11292,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable RBAC role identifier. */
+                /**
+                 * @description Stable RBAC role identifier.
+                 * @example role-001
+                 */
                 role_id: components["parameters"]["RoleID"];
             };
             cookie?: never;
@@ -5608,7 +11320,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable RBAC role identifier. */
+                /**
+                 * @description Stable RBAC role identifier.
+                 * @example role-001
+                 */
                 role_id: components["parameters"]["RoleID"];
             };
             cookie?: never;
@@ -5616,6 +11331,15 @@ export interface operations {
         /** @description Mutable custom role description and permission set. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "display_name": "Example User",
+                 *       "description": "Example description",
+                 *       "permissions": [
+                 *         "example"
+                 *       ]
+                 *     }
+                 */
                 "application/json": components["schemas"]["RoleUpdateRequest"];
             };
         };
@@ -5626,6 +11350,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "permissions": [
+                     *         "example"
+                     *       ],
+                     *       "built_in": true,
+                     *       "enabled": true
+                     *     }
+                     */
                     "application/json": components["schemas"]["Role"];
                 };
             };
@@ -5650,6 +11385,21 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "key": "example.key",
+                     *           "description": "Example description"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["PermissionList"];
                 };
             };
@@ -5672,6 +11422,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "type": "example",
+                     *           "display_name": "Example User",
+                     *           "built_in": true
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthProviderTypeList"];
                 };
             };
@@ -5694,6 +11460,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "runtime_login_ready": true,
+                     *       "source": "platform_setting",
+                     *       "public_base_url": "https://example.com/callback"
+                     *     }
+                     */
                     "application/json": components["schemas"]["ExternalAuthPlatformSettings"];
                 };
             };
@@ -5726,6 +11499,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "runtime_login_ready": true,
+                     *       "source": "platform_setting",
+                     *       "public_base_url": "https://example.com/callback"
+                     *     }
+                     */
                     "application/json": components["schemas"]["ExternalAuthPlatformSettings"];
                 };
             };
@@ -5749,6 +11529,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "auth_type": "example",
+                     *           "enabled": true
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthProviderList"];
                 };
             };
@@ -5788,6 +11585,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "auth_type": "example",
+                     *       "enabled": true
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthProvider"];
                 };
             };
@@ -5802,7 +11607,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5827,7 +11635,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5852,6 +11663,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "auth_type": "example",
+                     *       "enabled": true
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthProvider"];
                 };
             };
@@ -5867,7 +11686,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5880,6 +11702,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "success": true,
+                     *       "message": "Example message"
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthProviderConnectionTestResult"];
                 };
             };
@@ -5893,7 +11721,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5906,6 +11737,18 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "provider_id": "provider-001",
+                     *       "fields": [
+                     *         {
+                     *           "field": "example",
+                     *           "value_type": "string",
+                     *           "unique_count": 1
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthProviderSampleResponse"];
                 };
             };
@@ -5919,7 +11762,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5932,6 +11778,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "provider_id": "provider-001",
+                     *           "cohort_kind": "example",
+                     *           "cohort_key": "example.key",
+                     *           "display_name": "Example User"
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["ExternalCohortList"];
                 };
             };
@@ -5945,7 +11804,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5972,6 +11834,19 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "provider_id": "provider-001",
+                     *           "cohort_kind": "example",
+                     *           "cohort_key": "example.key",
+                     *           "display_name": "Example User"
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["ExternalCohortSyncResponse"];
                 };
             };
@@ -5986,7 +11861,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5999,6 +11877,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "display_name": "Example User",
+                     *       "supports_preview": true,
+                     *       "description": "Example description"
+                     *     }
+                     */
                     "application/json": components["schemas"]["DirectorySyncDescriptor"];
                 };
             };
@@ -6011,6 +11896,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -6021,7 +11913,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6034,6 +11929,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "supported": true,
+                     *       "supports_redirect": true,
+                     *       "supports_credentials": true,
+                     *       "requires_public_base_url": true
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthProviderRuntimeDescriptor"];
                 };
             };
@@ -6047,7 +11950,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6060,6 +11966,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "supported": true,
+                     *       "enabled": true,
+                     *       "mode": "enrich_existing_only"
+                     *     }
+                     */
                     "application/json": components["schemas"]["DirectoryEnrichmentScheduleStatus"];
                 };
             };
@@ -6072,6 +11985,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -6082,7 +12002,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6108,6 +12031,32 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "total_count": 1,
+                     *       "items": [
+                     *         {
+                     *           "record": {
+                     *             "external_id": "external-001",
+                     *             "username": "example-user",
+                     *             "display_name": "Example User"
+                     *           },
+                     *           "match": {
+                     *             "action": "create",
+                     *             "existing_user_id": "existing-user-001",
+                     *             "matched_by": "external_id"
+                     *           },
+                     *           "conflicts": [
+                     *             {
+                     *               "code": "same_external_identity",
+                     *               "field": "example",
+                     *               "existing_user_id": "existing-user-001"
+                     *             }
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["DirectorySyncPreview"];
                 };
             };
@@ -6121,6 +12070,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -6131,7 +12087,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6157,6 +12116,12 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "job_id": "job-001",
+                     *       "status": "pending"
+                     *     }
+                     */
                     "application/json": components["schemas"]["DirectorySyncStartResponse"];
                 };
             };
@@ -6170,6 +12135,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -6178,14 +12150,23 @@ export interface operations {
     listAuthProviderDirectorySyncJobs: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
             };
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6198,6 +12179,36 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "provider_id": "provider-001",
+                     *           "status": "pending",
+                     *           "conflict_resolution": "skip",
+                     *           "total_entries": 1,
+                     *           "result_summary": {
+                     *             "create_count": 1,
+                     *             "update_count": 1,
+                     *             "blocked_count": 1
+                     *           },
+                     *           "error_count": 1,
+                     *           "errors": [
+                     *             "example"
+                     *           ],
+                     *           "triggered_by": "example",
+                     *           "created_at": "2026-01-01T00:00:00Z",
+                     *           "updated_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["DirectorySyncJobList"];
                 };
             };
@@ -6210,6 +12221,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -6220,9 +12238,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
-                /** @description Stable directory sync job identifier. */
+                /**
+                 * @description Stable directory sync job identifier.
+                 * @example job-001
+                 */
                 job_id: components["parameters"]["DirectorySyncJobID"];
             };
             cookie?: never;
@@ -6235,6 +12259,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "provider_id": "provider-001",
+                     *       "status": "pending",
+                     *       "conflict_resolution": "skip",
+                     *       "total_entries": 1,
+                     *       "result_summary": {
+                     *         "create_count": 1,
+                     *         "update_count": 1,
+                     *         "blocked_count": 1
+                     *       },
+                     *       "error_count": 1,
+                     *       "errors": [
+                     *         "example"
+                     *       ],
+                     *       "triggered_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z",
+                     *       "updated_at": "2026-01-01T00:00:00Z",
+                     *       "request_snapshot": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["DirectorySyncJobDetail"];
                 };
             };
@@ -6247,6 +12293,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -6257,7 +12310,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6270,6 +12326,24 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "provider_id": "provider-001",
+                     *           "cohort_kind": "example",
+                     *           "cohort_key": "example.key",
+                     *           "role_id": "role-001"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["ExternalCohortMappingList"];
                 };
             };
@@ -6283,7 +12357,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6313,6 +12390,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "provider_id": "provider-001",
+                     *       "cohort_kind": "example",
+                     *       "cohort_key": "example.key",
+                     *       "role_id": "role-001"
+                     *     }
+                     */
                     "application/json": components["schemas"]["ExternalCohortMapping"];
                 };
             };
@@ -6328,9 +12414,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
-                /** @description Stable external cohort mapping identifier. */
+                /**
+                 * @description Stable external cohort mapping identifier.
+                 * @example mapping-001
+                 */
                 mapping_id: components["parameters"]["MappingID"];
             };
             cookie?: never;
@@ -6354,9 +12446,15 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
-                /** @description Stable external cohort mapping identifier. */
+                /**
+                 * @description Stable external cohort mapping identifier.
+                 * @example mapping-001
+                 */
                 mapping_id: components["parameters"]["MappingID"];
             };
             cookie?: never;
@@ -6384,6 +12482,15 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "provider_id": "provider-001",
+                     *       "cohort_kind": "example",
+                     *       "cohort_key": "example.key",
+                     *       "role_id": "role-001"
+                     *     }
+                     */
                     "application/json": components["schemas"]["ExternalCohortMapping"];
                 };
             };
@@ -6397,9 +12504,15 @@ export interface operations {
     listRateLimitExemptions: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
             };
             header?: never;
@@ -6414,6 +12527,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "user_id": "user-001",
+                     *           "exempted_by": "example",
+                     *           "created_at": "2026-01-01T00:00:00Z",
+                     *           "updated_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["RateLimitExemptionList"];
                 };
             };
@@ -6448,6 +12578,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "user_id": "user-001",
+                     *       "exempted_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z",
+                     *       "updated_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["RateLimitExemption"];
                 };
             };
@@ -6462,7 +12600,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -6486,7 +12627,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable Shepherd user identifier. */
+                /**
+                 * @description Stable Shepherd user identifier.
+                 * @example user-001
+                 */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -6512,6 +12656,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "user_id": "user-001",
+                     *       "updated_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z",
+                     *       "updated_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["RateLimitUserOverride"];
                 };
             };
@@ -6536,6 +12688,28 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "user_id": "user-001",
+                     *           "exempted": true,
+                     *           "effective_max_pending_parents": 1,
+                     *           "effective_max_pending_children": 1,
+                     *           "effective_cooldown_seconds": 1,
+                     *           "current_pending_parents": 1,
+                     *           "current_pending_children": 1,
+                     *           "cooldown_remaining_seconds": 1
+                     *         }
+                     *       ],
+                     *       "generated_at": "2026-01-01T00:00:00Z",
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["RateLimitStatusList"];
                 };
             };
@@ -6546,19 +12720,40 @@ export interface operations {
     listAdminTemplates: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
-                /** @description Exact operating system family filter */
+                /**
+                 * @description Exact operating system family filter
+                 * @example example
+                 */
                 os_family?: string;
-                /** @description Exact template source type filter */
+                /**
+                 * @description Exact template source type filter
+                 * @example example
+                 */
                 source_type?: string;
-                /** @description Exact catalog scope filter */
+                /**
+                 * @description Exact catalog scope filter
+                 * @example example
+                 */
                 catalog_scope?: string;
-                /** @description Filter by enabled state */
+                /**
+                 * @description Filter by enabled state
+                 * @example true
+                 */
                 enabled?: boolean;
             };
             header?: never;
@@ -6573,6 +12768,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "display_name": "Example User"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["TemplateList"];
                 };
             };
@@ -6590,6 +12801,13 @@ export interface operations {
         /** @description Template metadata and boot-source configuration. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "example-resource",
+                 *       "display_name": "Example User",
+                 *       "description": "Example description"
+                 *     }
+                 */
                 "application/json": components["schemas"]["TemplateCreateRequest"];
             };
         };
@@ -6600,6 +12818,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "display_name": "Example User"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Template"];
                 };
             };
@@ -6614,7 +12839,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable VM template identifier. */
+                /**
+                 * @description Stable VM template identifier.
+                 * @example template-001
+                 */
                 template_id: components["parameters"]["TemplateID"];
             };
             cookie?: never;
@@ -6639,7 +12867,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable VM template identifier. */
+                /**
+                 * @description Stable VM template identifier.
+                 * @example template-001
+                 */
                 template_id: components["parameters"]["TemplateID"];
             };
             cookie?: never;
@@ -6647,6 +12878,13 @@ export interface operations {
         /** @description Mutable template metadata and boot-source configuration. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "display_name": "Example User",
+                 *       "description": "Example description",
+                 *       "catalog_scope": "unclassified"
+                 *     }
+                 */
                 "application/json": components["schemas"]["TemplateUpdateRequest"];
             };
         };
@@ -6657,6 +12895,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "display_name": "Example User"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Template"];
                 };
             };
@@ -6669,9 +12914,15 @@ export interface operations {
     listTemplates: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
             };
             header?: never;
@@ -6686,6 +12937,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "display_name": "Example User"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["TemplateList"];
                 };
             };
@@ -6708,6 +12975,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "cpu_cores": 1,
+                     *           "memory_gi": 1
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["InstanceSizeList"];
                 };
             };
@@ -6725,6 +13009,13 @@ export interface operations {
         /** @description Instance size CPU, memory, storage, and presentation metadata. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "example-resource",
+                 *       "cpu_cores": 1,
+                 *       "memory_gi": 1
+                 *     }
+                 */
                 "application/json": components["schemas"]["InstanceSizeCreateRequest"];
             };
         };
@@ -6735,6 +13026,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "cpu_cores": 1,
+                     *       "memory_gi": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["InstanceSize"];
                 };
             };
@@ -6749,7 +13048,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable instance size identifier. */
+                /**
+                 * @description Stable instance size identifier.
+                 * @example instance-size-001
+                 */
                 instance_size_id: components["parameters"]["InstanceSizeID"];
             };
             cookie?: never;
@@ -6774,7 +13076,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable instance size identifier. */
+                /**
+                 * @description Stable instance size identifier.
+                 * @example instance-size-001
+                 */
                 instance_size_id: components["parameters"]["InstanceSizeID"];
             };
             cookie?: never;
@@ -6782,6 +13087,13 @@ export interface operations {
         /** @description Mutable instance size capacity and presentation metadata. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "example-resource",
+                 *       "display_name": "Example User",
+                 *       "description": "Example description"
+                 *     }
+                 */
                 "application/json": components["schemas"]["InstanceSizeUpdateRequest"];
             };
         };
@@ -6792,6 +13104,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "cpu_cores": 1,
+                     *       "memory_gi": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["InstanceSize"];
                 };
             };
@@ -6816,6 +13136,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "cpu_cores": 1,
+                     *           "memory_gi": 1
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["InstanceSizeList"];
                 };
             };
@@ -6838,6 +13175,17 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "auth_type": "example"
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["LoginAuthProviderList"];
                 };
             };
@@ -6848,7 +13196,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6872,6 +13223,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "redirect_url": "https://example.com/callback"
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuthProviderLoginStartResponse"];
                 };
             };
@@ -6884,7 +13240,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6897,7 +13256,7 @@ export interface operations {
                  *       "login_mode": "password",
                  *       "credentials": {
                  *         "username": "alice",
-                 *         "password": "correct-horse-battery-staple"
+                 *         "password": "redacted"
                  *       },
                  *       "return_to": "https://shepherd.example.com/dashboard"
                  *     }
@@ -6912,6 +13271,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "token": "redacted",
+                     *       "expires_at": "2026-01-01T00:00:00Z",
+                     *       "force_password_change": true
+                     *     }
+                     */
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
@@ -6924,6 +13290,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -6932,14 +13305,23 @@ export interface operations {
     completeLoginAuthProviderGet: {
         parameters: {
             query?: {
-                /** @description Provider authorization code returned by redirect-based login flows. */
+                /**
+                 * @description Provider authorization code returned by redirect-based login flows.
+                 * @example example_code
+                 */
                 code?: string;
-                /** @description Signed login state token issued by the Shepherd start-login endpoint. */
+                /**
+                 * @description Signed login state token issued by the Shepherd start-login endpoint.
+                 * @example redacted
+                 */
                 state?: string;
             };
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6971,7 +13353,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable authentication provider identifier. */
+                /**
+                 * @description Stable authentication provider identifier.
+                 * @example provider-001
+                 */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6982,11 +13367,13 @@ export interface operations {
                 /**
                  * @example {
                  *       "code": "provider-code",
-                 *       "state": "signed-state-token"
+                 *       "state": "redacted"
                  *     }
                  */
                 "application/x-www-form-urlencoded": {
+                    /** @example example_code */
                     code?: string;
+                    /** @example redacted */
                     state?: string;
                 } & {
                     [key: string]: string;
@@ -7027,7 +13414,7 @@ export interface operations {
                 /**
                  * @example {
                  *       "username": "alice",
-                 *       "password": "correct-horse-battery-staple"
+                 *       "password": "redacted"
                  *     }
                  */
                 "application/json": components["schemas"]["LoginRequest"];
@@ -7040,6 +13427,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "token": "redacted",
+                     *       "expires_at": "2026-01-01T00:00:00Z",
+                     *       "force_password_change": true
+                     *     }
+                     */
                     "application/json": components["schemas"]["LoginResponse"];
                 };
             };
@@ -7050,6 +13444,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "code": "example_code",
+                     *       "message": "Example message",
+                     *       "params": {}
+                     *     }
+                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -7070,6 +13471,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "username": "example-user",
+                     *       "email": "user@example.com"
+                     *     }
+                     */
                     "application/json": components["schemas"]["UserInfo"];
                 };
             };
@@ -7107,8 +13515,8 @@ export interface operations {
             content: {
                 /**
                  * @example {
-                 *       "old_password": "current-password",
-                 *       "new_password": "new-correct-horse-battery-staple"
+                 *       "old_password": "redacted",
+                 *       "new_password": "new-redacted"
                  *     }
                  */
                 "application/json": components["schemas"]["ChangePasswordRequest"];
@@ -7144,6 +13552,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "key": "example.key",
+                     *       "value": {},
+                     *       "updated_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["UserPreference"];
                 };
             };
@@ -7185,6 +13600,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "key": "example.key",
+                     *       "value": {},
+                     *       "updated_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["UserPreference"];
                 };
             };
@@ -7220,15 +13642,30 @@ export interface operations {
     listNamespaces: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Case-insensitive search text */
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
                 search?: components["parameters"]["Search"];
-                /** @description Filter by environment type */
+                /**
+                 * @description Filter by environment type
+                 * @example test
+                 */
                 environment?: "test" | "prod";
-                /** @description Filter by enabled state */
+                /**
+                 * @description Filter by enabled state
+                 * @example true
+                 */
                 enabled?: boolean;
             };
             header?: never;
@@ -7243,6 +13680,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "name": "example-resource",
+                     *           "environment": "test"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["NamespaceRegistryList"];
                 };
             };
@@ -7260,6 +13713,13 @@ export interface operations {
         /** @description Namespace registration metadata and optional quota hints. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "example-resource",
+                 *       "environment": "test",
+                 *       "description": "Example description"
+                 *     }
+                 */
                 "application/json": components["schemas"]["NamespaceCreateRequest"];
             };
         };
@@ -7270,6 +13730,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "environment": "test"
+                     *     }
+                     */
                     "application/json": components["schemas"]["NamespaceRegistry"];
                 };
             };
@@ -7284,7 +13751,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable namespace registry identifier. */
+                /**
+                 * @description Stable namespace registry identifier.
+                 * @example namespace-001
+                 */
                 namespace_id: components["parameters"]["NamespaceID"];
             };
             cookie?: never;
@@ -7297,6 +13767,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "environment": "test"
+                     *     }
+                     */
                     "application/json": components["schemas"]["NamespaceRegistry"];
                 };
             };
@@ -7310,7 +13787,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable namespace registry identifier. */
+                /**
+                 * @description Stable namespace registry identifier.
+                 * @example namespace-001
+                 */
                 namespace_id: components["parameters"]["NamespaceID"];
             };
             cookie?: never;
@@ -7318,6 +13798,12 @@ export interface operations {
         /** @description Mutable namespace metadata and quota hints. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "description": "Example description",
+                 *       "enabled": true
+                 *     }
+                 */
                 "application/json": components["schemas"]["NamespaceUpdateRequest"];
             };
         };
@@ -7328,6 +13814,13 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "environment": "test"
+                     *     }
+                     */
                     "application/json": components["schemas"]["NamespaceRegistry"];
                 };
             };
@@ -7342,12 +13835,16 @@ export interface operations {
                 /**
                  * @description Type namespace name to confirm deletion (ADR-0015 §13 addendum).
                  *     Must match the namespace name exactly.
+                 * @example example-confirm
                  */
                 confirm_name: string;
             };
             header?: never;
             path: {
-                /** @description Stable namespace registry identifier. */
+                /**
+                 * @description Stable namespace registry identifier.
+                 * @example namespace-001
+                 */
                 namespace_id: components["parameters"]["NamespaceID"];
             };
             cookie?: never;
@@ -7372,7 +13869,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Cluster identifier for the environment classification update. */
+                /**
+                 * @description Cluster identifier for the environment classification update.
+                 * @example cluster-001
+                 */
                 cluster_id: string;
             };
             cookie?: never;
@@ -7380,6 +13880,11 @@ export interface operations {
         /** @description Environment classification assigned to the cluster. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "environment": "test"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ClusterEnvironmentUpdate"];
             };
         };
@@ -7390,6 +13895,14 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "name": "example-resource",
+                     *       "api_server_url": "https://example.com/callback",
+                     *       "status": "UNKNOWN"
+                     *     }
+                     */
                     "application/json": components["schemas"]["Cluster"];
                 };
             };
@@ -7403,7 +13916,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Cluster identifier for the policy lookup. */
+                /**
+                 * @description Cluster identifier for the policy lookup.
+                 * @example cluster-001
+                 */
                 cluster_id: string;
             };
             cookie?: never;
@@ -7416,6 +13932,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "cluster_id": "cluster-001",
+                     *       "allow_cpu_overcommit": true,
+                     *       "allow_memory_overcommit": true,
+                     *       "allow_dedicated_cpu": true,
+                     *       "allow_gpu": true,
+                     *       "allow_sriov": true,
+                     *       "allow_hugepages": true,
+                     *       "allow_cdi_clone": true,
+                     *       "created_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z",
+                     *       "updated_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["ClusterPolicy"];
                 };
             };
@@ -7429,7 +13961,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Cluster identifier for the policy replacement. */
+                /**
+                 * @description Cluster identifier for the policy replacement.
+                 * @example cluster-001
+                 */
                 cluster_id: string;
             };
             cookie?: never;
@@ -7437,6 +13972,17 @@ export interface operations {
         /** @description Cluster policy constraints for scheduling and placement. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "allow_cpu_overcommit": true,
+                 *       "allow_memory_overcommit": true,
+                 *       "allow_dedicated_cpu": true,
+                 *       "allow_gpu": true,
+                 *       "allow_sriov": true,
+                 *       "allow_hugepages": true,
+                 *       "allow_cdi_clone": true
+                 *     }
+                 */
                 "application/json": components["schemas"]["ClusterPolicyUpsertRequest"];
             };
         };
@@ -7447,6 +13993,22 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "id": "resource-001",
+                     *       "cluster_id": "cluster-001",
+                     *       "allow_cpu_overcommit": true,
+                     *       "allow_memory_overcommit": true,
+                     *       "allow_dedicated_cpu": true,
+                     *       "allow_gpu": true,
+                     *       "allow_sriov": true,
+                     *       "allow_hugepages": true,
+                     *       "allow_cdi_clone": true,
+                     *       "created_by": "example",
+                     *       "created_at": "2026-01-01T00:00:00Z",
+                     *       "updated_at": "2026-01-01T00:00:00Z"
+                     *     }
+                     */
                     "application/json": components["schemas"]["ClusterPolicy"];
                 };
             };
@@ -7458,11 +14020,20 @@ export interface operations {
     listNotifications: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Filter to unread notifications only */
+                /**
+                 * @description Filter to unread notifications only
+                 * @example true
+                 */
                 unread_only?: boolean;
             };
             header?: never;
@@ -7477,6 +14048,33 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "type": "APPROVAL_PENDING",
+                     *           "title": "Example title",
+                     *           "title_i18n": {
+                     *             "key": "example.key",
+                     *             "params": {}
+                     *           },
+                     *           "message": "Example message",
+                     *           "message_i18n": {
+                     *             "key": "example.key",
+                     *             "params": {}
+                     *           },
+                     *           "read": true,
+                     *           "created_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["NotificationList"];
                 };
             };
@@ -7498,6 +14096,11 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "count": 1
+                     *     }
+                     */
                     "application/json": components["schemas"]["UnreadCount"];
                 };
             };
@@ -7509,7 +14112,10 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
-                /** @description Stable notification identifier. */
+                /**
+                 * @description Stable notification identifier.
+                 * @example notification-001
+                 */
                 notification_id: components["parameters"]["NotificationID"];
             };
             cookie?: never;
@@ -7549,27 +14155,60 @@ export interface operations {
     listAuditLogs: {
         parameters: {
             query?: {
-                /** @description Page number (1-indexed) */
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
                 page?: components["parameters"]["Page"];
-                /** @description Items per page */
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
                 per_page?: components["parameters"]["PerPage"];
-                /** @description Fuzzy search across action, actor, resource type, and resource ID */
+                /**
+                 * @description Fuzzy search across action, actor, resource type, and resource ID
+                 * @example example
+                 */
                 search?: string;
-                /** @description Filter audit log entries by action identifier. */
+                /**
+                 * @description Filter audit log entries by action identifier.
+                 * @example START
+                 */
                 action?: string;
-                /** @description Curated activity category preset for common audit views */
+                /**
+                 * @description Curated activity category preset for common audit views
+                 * @example requests
+                 */
                 category?: "requests" | "approvals" | "resource_changes" | "system_tasks";
-                /** @description Filter audit log entries by actor identifier or display name. */
+                /**
+                 * @description Filter audit log entries by actor identifier or display name.
+                 * @example example
+                 */
                 actor?: string;
-                /** @description Filter audit log entries by affected resource type. */
+                /**
+                 * @description Filter audit log entries by affected resource type.
+                 * @example example
+                 */
                 resource_type?: string;
-                /** @description Filter audit log entries by affected resource identifier. */
+                /**
+                 * @description Filter audit log entries by affected resource identifier.
+                 * @example resource-001
+                 */
                 resource_id?: string;
-                /** @description Filter approval audit entries by details.decision (for example approved, rejected, validation_failed) */
+                /**
+                 * @description Filter approval audit entries by details.decision (for example approved, rejected, validation_failed)
+                 * @example example
+                 */
                 approval_decision?: string;
-                /** @description Filter approval audit entries by details.placement_evaluation.reason_code */
+                /**
+                 * @description Filter approval audit entries by details.placement_evaluation.reason_code
+                 * @example example_code
+                 */
                 placement_reason_code?: string;
-                /** @description Filter approval audit entries by details.placement_evaluation.advisory_code */
+                /**
+                 * @description Filter approval audit entries by details.placement_evaluation.advisory_code
+                 * @example example_code
+                 */
                 placement_advisory_code?: string;
             };
             header?: never;
@@ -7584,6 +14223,29 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "resource-001",
+                     *           "action": "START",
+                     *           "resource_type": "example",
+                     *           "resource_id": "resource-001",
+                     *           "actor": "example",
+                     *           "message_i18n": {
+                     *             "key": "example.key",
+                     *             "params": {}
+                     *           },
+                     *           "created_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 1,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
                     "application/json": components["schemas"]["AuditLogList"];
                 };
             };
