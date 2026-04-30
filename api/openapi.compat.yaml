@@ -25,6 +25,10 @@ tags:
     description: Virtual machine management
   - name: approval
     description: Approval workflow (ADR-0005)
+  - name: builtin-approval
+    description: Built-in approval provider task operations
+  - name: tickets
+    description: Work-order ticket query and lifecycle operations
   - name: clusters
     description: Cluster management
   - name: templates
@@ -102,6 +106,7 @@ paths:
       parameters:
         - name: entity_type
           in: path
+          description: Dynamic schema entity type to retrieve.
           required: true
           schema:
             type: string
@@ -782,27 +787,33 @@ paths:
         - $ref: '#/components/parameters/Search'
         - name: namespace
           in: query
+          description: Filter VMs by Kubernetes namespace.
           schema:
             type: string
         - name: status
           in: query
+          description: Filter VMs by lifecycle or provisioning status.
           schema:
             type: string
         - name: cluster_id
           in: query
+          description: Filter VMs by hosting cluster identifier.
           schema:
             type: string
         - $ref: '#/components/parameters/SystemIDFilter'
         - name: service_id
           in: query
+          description: Filter VMs by owning service identifier.
           schema:
             type: string
         - name: os_name
           in: query
+          description: Filter VMs by operating system name.
           schema:
             type: string
         - name: ip_address
           in: query
+          description: Filter VMs by assigned IP address.
           schema:
             type: string
       responses:
@@ -1795,6 +1806,7 @@ paths:
         - $ref: '#/components/parameters/Search'
         - name: status
           in: query
+          description: Filter tickets by exact workflow status.
           schema:
             type: string
             enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
@@ -1862,6 +1874,7 @@ paths:
         - $ref: '#/components/parameters/Search'
         - name: status
           in: query
+          description: Filter approval tasks by exact workflow status.
           schema:
             type: string
             enum: [PENDING, APPROVED, REJECTED, CANCELLED, EXECUTING, SUCCESS, FAILED]
@@ -2160,6 +2173,7 @@ paths:
       parameters:
         - name: cluster_id
           in: path
+          description: Cluster identifier for the metadata or credentials update.
           required: true
           schema:
             type: string
@@ -2200,6 +2214,7 @@ paths:
       parameters:
         - name: cluster_id
           in: path
+          description: Cluster identifier for the unused cluster to delete.
           required: true
           schema:
             type: string
@@ -4258,6 +4273,7 @@ paths:
       parameters:
         - name: cluster_id
           in: path
+          description: Cluster identifier for the environment classification update.
           required: true
           schema:
             type: string
@@ -4296,6 +4312,7 @@ paths:
       parameters:
         - name: cluster_id
           in: path
+          description: Cluster identifier for the policy lookup.
           required: true
           schema:
             type: string
@@ -4325,6 +4342,7 @@ paths:
       parameters:
         - name: cluster_id
           in: path
+          description: Cluster identifier for the policy replacement.
           required: true
           schema:
             type: string
@@ -4454,6 +4472,7 @@ paths:
             type: string
         - name: action
           in: query
+          description: Filter audit log entries by action identifier.
           schema:
             type: string
         - name: category
@@ -4464,14 +4483,17 @@ paths:
             enum: [requests, approvals, resource_changes, system_tasks]
         - name: actor
           in: query
+          description: Filter audit log entries by actor identifier or display name.
           schema:
             type: string
         - name: resource_type
           in: query
+          description: Filter audit log entries by affected resource type.
           schema:
             type: string
         - name: resource_id
           in: query
+          description: Filter audit log entries by affected resource identifier.
           schema:
             type: string
         - name: approval_decision
@@ -4589,6 +4611,7 @@ components:
     SystemID:
       name: system_id
       in: path
+      description: Stable system identifier.
       required: true
       schema:
         type: string
@@ -4601,24 +4624,28 @@ components:
     VMID:
       name: vm_id
       in: path
+      description: Stable virtual machine identifier.
       required: true
       schema:
         type: string
     TicketID:
       name: ticket_id
       in: path
+      description: Stable work-order ticket identifier.
       required: true
       schema:
         type: string
     BatchID:
       name: batch_id
       in: path
+      description: Stable VM batch job identifier.
       required: true
       schema:
         type: string
     ServiceID:
       name: service_id
       in: path
+      description: Stable service identifier within a system.
       required: true
       schema:
         type: string
@@ -4632,24 +4659,28 @@ components:
     TemplateID:
       name: template_id
       in: path
+      description: Stable VM template identifier.
       required: true
       schema:
         type: string
     InstanceSizeID:
       name: instance_size_id
       in: path
+      description: Stable instance size identifier.
       required: true
       schema:
         type: string
     RoleID:
       name: role_id
       in: path
+      description: Stable RBAC role identifier.
       required: true
       schema:
         type: string
     RoleBindingID:
       name: binding_id
       in: path
+      description: Stable user role binding identifier.
       required: true
       schema:
         type: string
@@ -4691,12 +4722,14 @@ components:
     NamespaceID:
       name: namespace_id
       in: path
+      description: Stable namespace registry identifier.
       required: true
       schema:
         type: string
     NotificationID:
       name: notification_id
       in: path
+      description: Stable notification identifier.
       required: true
       schema:
         type: string

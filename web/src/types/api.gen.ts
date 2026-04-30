@@ -3580,18 +3580,27 @@ export interface components {
         SortBy: string;
         /** @description Sort direction */
         SortOrder: "asc" | "desc";
+        /** @description Stable system identifier. */
         SystemID: string;
         /** @description Filter services by parent system id */
         SystemIDFilter: string;
+        /** @description Stable virtual machine identifier. */
         VMID: string;
+        /** @description Stable work-order ticket identifier. */
         TicketID: string;
+        /** @description Stable VM batch job identifier. */
         BatchID: string;
+        /** @description Stable service identifier within a system. */
         ServiceID: string;
         /** @description Stable Shepherd user identifier. */
         UserID: string;
+        /** @description Stable VM template identifier. */
         TemplateID: string;
+        /** @description Stable instance size identifier. */
         InstanceSizeID: string;
+        /** @description Stable RBAC role identifier. */
         RoleID: string;
+        /** @description Stable user role binding identifier. */
         RoleBindingID: string;
         /** @description Stable authentication provider identifier. */
         ProviderID: string;
@@ -3606,7 +3615,9 @@ export interface components {
          *     Must match the resource name exactly.
          */
         ConfirmName: string;
+        /** @description Stable namespace registry identifier. */
         NamespaceID: string;
+        /** @description Stable notification identifier. */
         NotificationID: string;
     };
     requestBodies: never;
@@ -3669,6 +3680,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Dynamic schema entity type to retrieve. */
                 entity_type: "instancesize";
             };
             cookie?: never;
@@ -3789,6 +3801,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3821,6 +3834,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3845,6 +3859,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3876,6 +3891,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3901,6 +3917,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3940,6 +3957,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -3965,6 +3983,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
                 /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
@@ -3990,6 +4009,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
                 /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
@@ -4059,6 +4079,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -4083,6 +4104,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
             };
             cookie?: never;
@@ -4114,7 +4136,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
+                /** @description Stable service identifier within a system. */
                 service_id: components["parameters"]["ServiceID"];
             };
             cookie?: never;
@@ -4143,7 +4167,9 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
+                /** @description Stable service identifier within a system. */
                 service_id: components["parameters"]["ServiceID"];
             };
             cookie?: never;
@@ -4168,7 +4194,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
+                /** @description Stable service identifier within a system. */
                 service_id: components["parameters"]["ServiceID"];
             };
             cookie?: never;
@@ -4200,7 +4228,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable system identifier. */
                 system_id: components["parameters"]["SystemID"];
+                /** @description Stable service identifier within a system. */
                 service_id: components["parameters"]["ServiceID"];
             };
             cookie?: never;
@@ -4234,13 +4264,19 @@ export interface operations {
                 sort_order?: components["parameters"]["SortOrder"];
                 /** @description Case-insensitive search text */
                 search?: components["parameters"]["Search"];
+                /** @description Filter VMs by Kubernetes namespace. */
                 namespace?: string;
+                /** @description Filter VMs by lifecycle or provisioning status. */
                 status?: string;
+                /** @description Filter VMs by hosting cluster identifier. */
                 cluster_id?: string;
                 /** @description Filter services by parent system id */
                 system_id?: components["parameters"]["SystemIDFilter"];
+                /** @description Filter VMs by owning service identifier. */
                 service_id?: string;
+                /** @description Filter VMs by operating system name. */
                 os_name?: string;
+                /** @description Filter VMs by assigned IP address. */
                 ip_address?: string;
             };
             header?: never;
@@ -4460,6 +4496,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable VM batch job identifier. */
                 batch_id: components["parameters"]["BatchID"];
             };
             cookie?: never;
@@ -4485,6 +4522,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable VM batch job identifier. */
                 batch_id: components["parameters"]["BatchID"];
             };
             cookie?: never;
@@ -4525,6 +4563,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable VM batch job identifier. */
                 batch_id: components["parameters"]["BatchID"];
             };
             cookie?: never;
@@ -4559,6 +4598,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4592,6 +4632,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4618,6 +4659,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4645,6 +4687,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4671,6 +4714,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4697,6 +4741,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4729,6 +4774,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4754,6 +4800,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4779,6 +4826,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4804,6 +4852,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4837,6 +4886,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4877,6 +4927,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4903,6 +4954,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4930,6 +4982,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable virtual machine identifier. */
                 vm_id: components["parameters"]["VMID"];
             };
             cookie?: never;
@@ -4961,6 +5014,7 @@ export interface operations {
                 per_page?: components["parameters"]["PerPage"];
                 /** @description Case-insensitive search text */
                 search?: components["parameters"]["Search"];
+                /** @description Filter tickets by exact workflow status. */
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
                 /** @description Filter by a built-in status group. */
                 status_group?: "ACTIVE" | "TERMINAL" | "ATTENTION";
@@ -5006,6 +5060,7 @@ export interface operations {
                 per_page?: components["parameters"]["PerPage"];
                 /** @description Case-insensitive search text */
                 search?: components["parameters"]["Search"];
+                /** @description Filter approval tasks by exact workflow status. */
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
                 /** @description Filter by a built-in status group. */
                 status_group?: "ACTIVE" | "TERMINAL" | "ATTENTION";
@@ -5042,6 +5097,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable work-order ticket identifier. */
                 ticket_id: components["parameters"]["TicketID"];
             };
             cookie?: never;
@@ -5071,6 +5127,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable work-order ticket identifier. */
                 ticket_id: components["parameters"]["TicketID"];
             };
             cookie?: never;
@@ -5100,6 +5157,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable work-order ticket identifier. */
                 ticket_id: components["parameters"]["TicketID"];
             };
             cookie?: never;
@@ -5217,6 +5275,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Cluster identifier for the unused cluster to delete. */
                 cluster_id: string;
             };
             cookie?: never;
@@ -5241,6 +5300,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Cluster identifier for the metadata or credentials update. */
                 cluster_id: string;
             };
             cookie?: never;
@@ -5448,6 +5508,7 @@ export interface operations {
             path: {
                 /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
+                /** @description Stable user role binding identifier. */
                 binding_id: components["parameters"]["RoleBindingID"];
             };
             cookie?: never;
@@ -5522,6 +5583,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable RBAC role identifier. */
                 role_id: components["parameters"]["RoleID"];
             };
             cookie?: never;
@@ -5546,6 +5608,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable RBAC role identifier. */
                 role_id: components["parameters"]["RoleID"];
             };
             cookie?: never;
@@ -6551,6 +6614,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable VM template identifier. */
                 template_id: components["parameters"]["TemplateID"];
             };
             cookie?: never;
@@ -6575,6 +6639,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable VM template identifier. */
                 template_id: components["parameters"]["TemplateID"];
             };
             cookie?: never;
@@ -6684,6 +6749,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable instance size identifier. */
                 instance_size_id: components["parameters"]["InstanceSizeID"];
             };
             cookie?: never;
@@ -6708,6 +6774,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable instance size identifier. */
                 instance_size_id: components["parameters"]["InstanceSizeID"];
             };
             cookie?: never;
@@ -7217,6 +7284,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable namespace registry identifier. */
                 namespace_id: components["parameters"]["NamespaceID"];
             };
             cookie?: never;
@@ -7242,6 +7310,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable namespace registry identifier. */
                 namespace_id: components["parameters"]["NamespaceID"];
             };
             cookie?: never;
@@ -7278,6 +7347,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Stable namespace registry identifier. */
                 namespace_id: components["parameters"]["NamespaceID"];
             };
             cookie?: never;
@@ -7302,6 +7372,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Cluster identifier for the environment classification update. */
                 cluster_id: string;
             };
             cookie?: never;
@@ -7332,6 +7403,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Cluster identifier for the policy lookup. */
                 cluster_id: string;
             };
             cookie?: never;
@@ -7357,6 +7429,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Cluster identifier for the policy replacement. */
                 cluster_id: string;
             };
             cookie?: never;
@@ -7436,6 +7509,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable notification identifier. */
                 notification_id: components["parameters"]["NotificationID"];
             };
             cookie?: never;
@@ -7481,11 +7555,15 @@ export interface operations {
                 per_page?: components["parameters"]["PerPage"];
                 /** @description Fuzzy search across action, actor, resource type, and resource ID */
                 search?: string;
+                /** @description Filter audit log entries by action identifier. */
                 action?: string;
                 /** @description Curated activity category preset for common audit views */
                 category?: "requests" | "approvals" | "resource_changes" | "system_tasks";
+                /** @description Filter audit log entries by actor identifier or display name. */
                 actor?: string;
+                /** @description Filter audit log entries by affected resource type. */
                 resource_type?: string;
+                /** @description Filter audit log entries by affected resource identifier. */
                 resource_id?: string;
                 /** @description Filter approval audit entries by details.decision (for example approved, rejected, validation_failed) */
                 approval_decision?: string;
