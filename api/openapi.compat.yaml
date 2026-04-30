@@ -2591,11 +2591,14 @@ paths:
           anyOf:
             - 'auth_provider:update'
       requestBody:
+        description: Platform-wide external-auth public URL override.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ExternalAuthPlatformSettingsUpdateRequest'
+            example:
+              public_base_url: https://shepherd.example.com
       responses:
         '200':
           description: Updated platform external authentication settings
@@ -2648,11 +2651,20 @@ paths:
           anyOf:
             - 'auth_provider:configure'
       requestBody:
+        description: Auth provider registration data and plugin-specific configuration.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AuthProviderCreateRequest'
+            example:
+              name: corp-sso
+              auth_type: oidc
+              config:
+                issuer_url: https://idp.example.com
+                client_id: shepherd
+              enabled: true
+              sort_order: 10
       responses:
         '201':
           description: Authentication provider created
@@ -2682,11 +2694,16 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
+        description: Partial auth provider update data and plugin-specific configuration changes.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AuthProviderUpdateRequest'
+            example:
+              name: corp-sso
+              enabled: true
+              sort_order: 20
       responses:
         '200':
           description: Authentication provider updated
@@ -2817,11 +2834,17 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
+        description: External cohort discovery request for the selected auth provider.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ExternalCohortSyncRequest'
+            example:
+              cohort_kind: department
+              source_field: department
+              cohorts:
+                - Engineering
       responses:
         '200':
           description: Synced cohort list
@@ -2863,7 +2886,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
-          description: Auth provider does not implement directory sync
+          description: Auth provider does not expose scheduled directory enrichment
           content:
             application/json:
               schema:
@@ -2919,7 +2942,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
-          description: Auth provider does not implement directory sync
+          description: Auth provider does not support starting directory sync jobs
           content:
             application/json:
               schema:
@@ -2938,11 +2961,16 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
+        description: Provider-owned directory preview request payload.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/DirectorySyncPreviewRequest'
+            example:
+              provider_request:
+                cursor: preview
+              conflict_resolution: skip
       responses:
         '200':
           description: Canonical preview result
@@ -2978,11 +3006,16 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
+        description: Provider-owned directory sync request payload.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/DirectorySyncRequest'
+            example:
+              provider_request:
+                cursor: full
+              conflict_resolution: skip
       responses:
         '202':
           description: Directory sync job enqueued
@@ -2999,7 +3032,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
-          description: Auth provider does not implement directory sync
+          description: Auth provider does not expose directory sync job history
           content:
             application/json:
               schema:
@@ -3032,7 +3065,7 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '501':
-          description: Auth provider does not implement directory sync
+          description: Auth provider does not expose this directory sync job
           content:
             application/json:
               schema:
@@ -3107,11 +3140,20 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
+        description: External cohort to platform role mapping.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ExternalCohortMappingCreateRequest'
+            example:
+              cohort_kind: department
+              cohort_key: Engineering
+              cohort_display_name: Engineering
+              role_id: role-user
+              scope_type: environment
+              allowed_environments:
+                - test
       responses:
         '201':
           description: Cohort mapping created
@@ -3144,11 +3186,18 @@ paths:
         - $ref: '#/components/parameters/ProviderID'
         - $ref: '#/components/parameters/MappingID'
       requestBody:
+        description: Partial external cohort mapping update.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ExternalCohortMappingUpdateRequest'
+            example:
+              role_id: role-user
+              scope_type: environment
+              allowed_environments:
+                - test
+                - prod
       responses:
         '200':
           description: Cohort mapping updated
@@ -3224,11 +3273,16 @@ paths:
           anyOf:
             - 'rate_limit:manage'
       requestBody:
+        description: User-level login rate-limit exemption details.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/RateLimitExemptionCreateRequest'
+            example:
+              user_id: user-123
+              reason: Break-glass support account
+              expires_at: "2026-05-01T00:00:00Z"
       responses:
         '200':
           description: Exemption saved
@@ -3280,11 +3334,17 @@ paths:
       parameters:
         - $ref: '#/components/parameters/UserID'
       requestBody:
+        description: Per-user pending-login and cooldown override values.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/RateLimitUserOverrideRequest'
+            example:
+              max_pending_parents: 3
+              max_pending_children: 5
+              cooldown_seconds: 60
+              reason: Temporary elevated login concurrency
       responses:
         '200':
           description: Override saved
@@ -3656,11 +3716,15 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
+        description: External login start request containing the requested return target.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AuthProviderLoginStartRequest'
+            example:
+              login_mode: web
+              return_to: https://shepherd.example.com/dashboard
       responses:
         '200':
           description: Provider login redirect initialized
@@ -3684,11 +3748,18 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
+        description: Credential-mode external login payload.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/AuthProviderCredentialLoginRequest'
+            example:
+              login_mode: password
+              credentials:
+                username: alice
+                password: correct-horse-battery-staple
+              return_to: https://shepherd.example.com/dashboard
       responses:
         '200':
           description: Login successful
@@ -3721,28 +3792,30 @@ paths:
         - $ref: '#/components/parameters/ProviderID'
         - name: code
           in: query
+          description: Provider authorization code returned by redirect-based login flows.
           schema:
             type: string
         - name: state
           in: query
+          description: Signed login state token issued by the Shepherd start-login endpoint.
           schema:
             type: string
       responses:
         '200':
-          description: Login callback HTML bridge
+          description: External provider callback completed and returned the HTML bridge
           content:
             text/html:
               schema:
                 type: string
         '400':
-          description: Login callback failed
+          description: External provider callback failed and returned the HTML bridge
           content:
             text/html:
               schema:
                 type: string
     post:
       tags: [auth, auth-providers]
-      summary: Complete external auth-provider login callback
+      summary: Complete form-post external auth-provider login callback
       operationId: completeLoginAuthProviderPost
       security: []
       x-rbac:
@@ -3751,6 +3824,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/ProviderID'
       requestBody:
+        description: External provider callback form fields.
         required: false
         content:
           application/x-www-form-urlencoded:
@@ -3763,6 +3837,9 @@ paths:
                   type: string
                 state:
                   type: string
+            example:
+              code: provider-code
+              state: signed-state-token
       responses:
         '200':
           description: Login callback HTML bridge
@@ -3786,14 +3863,18 @@ paths:
         authentication: public
         platformAdminOverride: false
       requestBody:
+        description: Local username and password credentials.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/LoginRequest'
+            example:
+              username: alice
+              password: correct-horse-battery-staple
       responses:
         '200':
-          description: Login successful
+          description: Credential login succeeded
           content:
             application/json:
               schema:
@@ -3801,7 +3882,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '429':
-          description: Login rate limit exceeded
+          description: Credential login rate limit exceeded
           content:
             application/json:
               schema:
@@ -3851,11 +3932,15 @@ paths:
         authentication: bearer
         platformAdminOverride: false
       requestBody:
+        description: Current password and replacement password.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/ChangePasswordRequest'
+            example:
+              old_password: current-password
+              new_password: new-correct-horse-battery-staple
       responses:
         '204':
           description: Password changed successfully
@@ -3914,11 +3999,17 @@ paths:
                 - 'user:manage'
                 - 'rbac:manage'
       requestBody:
+        description: Preference value to store for the current user.
         required: true
         content:
           application/json:
             schema:
               $ref: '#/components/schemas/UserPreferenceUpdateRequest'
+            example:
+              value:
+                visible_columns:
+                  - username
+                  - email
       responses:
         '200':
           description: Updated current user preference
@@ -4504,6 +4595,7 @@ components:
     UserID:
       name: user_id
       in: path
+      description: Stable Shepherd user identifier.
       required: true
       schema:
         type: string
@@ -4534,18 +4626,21 @@ components:
     ProviderID:
       name: provider_id
       in: path
+      description: Stable authentication provider identifier.
       required: true
       schema:
         type: string
     MappingID:
       name: mapping_id
       in: path
+      description: Stable external cohort mapping identifier.
       required: true
       schema:
         type: string
     DirectorySyncJobID:
       name: job_id
       in: path
+      description: Stable directory sync job identifier.
       required: true
       schema:
         type: string
@@ -6694,9 +6789,13 @@ components:
       properties:
         login_mode:
           type: string
+          description: Optional provider-specific login mode key.
+          example: web
         return_to:
           type: string
           format: uri
+          description: Absolute Shepherd URL to return to after provider login.
+          example: https://shepherd.example.com/dashboard
     AuthProviderLoginStartResponse:
       type: object
       required: [redirect_url]
@@ -6710,12 +6809,17 @@ components:
       properties:
         login_mode:
           type: string
+          description: Optional provider-specific credential login mode key.
+          example: password
         credentials:
           type: object
           additionalProperties: true
+          description: Provider-specific credential fields.
         return_to:
           type: string
           format: uri
+          description: Optional absolute Shepherd URL to return to after login.
+          example: https://shepherd.example.com/dashboard
     LoginResponse:
       type: object
       required: [token]
@@ -7048,7 +7152,7 @@ components:
           type: string
         auth_type:
           type: string
-          description: Registered auth provider plugin type key
+          description: Registered authentication provider plugin key used for adapter resolution
         config:
           type: object
           additionalProperties: true

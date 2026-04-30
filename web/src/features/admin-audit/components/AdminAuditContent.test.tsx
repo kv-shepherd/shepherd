@@ -140,19 +140,19 @@ vi.mock('@/hooks/useApiQuery', () => ({
                     action: 'user.external_login',
                     actor: 'user-1',
                     actor_summary: {
-                        display_name: 'example-user',
-                        secondary: 'example-user@example.com',
+                        display_name: 'Example User',
+                        secondary: 'user@example.com',
                     },
                     resource_type: 'user',
                     resource_id: 'user-1',
                     resource_summary: {
-                        display_name: 'example-user',
-                        secondary: 'example-user@example.com',
+                        display_name: 'Example User',
+                        secondary: 'user@example.com',
                     },
                     message_i18n: {
                         key: 'audit.message.user_external_login',
                         params: {
-                            authProviderDisplay: 'example OIDC',
+                            authProviderDisplay: 'Example OIDC',
                         },
                     },
                     created_at: '2026-04-28T02:59:00Z',
@@ -195,7 +195,7 @@ describe('AdminAuditContent', () => {
         expect(screen.getAllByText('shop · redis').length).toBeGreaterThan(0);
         expect(screen.getByText('Cluster A')).toBeVisible();
         expect(screen.getAllByText('Signed in with external provider').length).toBeGreaterThan(0);
-        expect(screen.getByText('example OIDC')).toBeVisible();
+        expect(screen.getByText('Example OIDC')).toBeVisible();
         expect(screen.queryByText(/user\.external_login/i)).not.toBeInTheDocument();
     });
 
@@ -231,7 +231,7 @@ describe('AdminAuditContent', () => {
         await user.click(screen.getAllByRole('button', { name: /details/i })[2]);
 
         expect(screen.getAllByText('Signed in with external provider').length).toBeGreaterThan(0);
-        expect(screen.getAllByText('example OIDC').length).toBeGreaterThan(0);
+        expect(screen.getAllByText('Example OIDC').length).toBeGreaterThan(0);
         expect(screen.getAllByText('Created local account').length).toBeGreaterThan(0);
         expect(screen.queryByText(/user\.external_login/i)).not.toBeInTheDocument();
         expect(screen.queryByText('provider-oidc')).not.toBeInTheDocument();

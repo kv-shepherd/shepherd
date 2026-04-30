@@ -29,17 +29,18 @@ import (
 )
 
 type testRuntimeAuthAdapter struct {
-	typeKey        string
-	startReq       provider.AuthStartRequest
-	startResp      *provider.AuthStartResponse
-	startErr       error
-	credentialReq  provider.AuthCredentialRequest
-	credentialResp *provider.AuthResult
-	credentialErr  error
-	callbackReq    provider.AuthCallbackRequest
-	callbackResp   *provider.AuthResult
-	callbackErr    error
-	loginModes     []provider.AuthLoginMode
+	typeKey         string
+	startReq        provider.AuthStartRequest
+	startResp       *provider.AuthStartResponse
+	startErr        error
+	credentialReq   provider.AuthCredentialRequest
+	credentialResp  *provider.AuthResult
+	credentialErr   error
+	callbackReq     provider.AuthCallbackRequest
+	callbackResp    *provider.AuthResult
+	callbackErr     error
+	loginModes      []provider.AuthLoginMode
+	callbackOrigins []string
 }
 
 func (a *testRuntimeAuthAdapter) Type() string { return a.typeKey }
@@ -101,6 +102,10 @@ func (a *testRuntimeAuthAdapter) CompleteLogin(_ context.Context, _ map[string]i
 	return a.callbackResp, nil
 }
 
+func (a *testRuntimeAuthAdapter) AllowedCallbackOrigins(map[string]interface{}) []string {
+	return append([]string(nil), a.callbackOrigins...)
+}
+
 func TestListLoginAuthProviders_ListsEnabledRuntimeProviders(t *testing.T) {
 	t.Parallel()
 
@@ -151,6 +156,40 @@ func TestListLoginAuthProviders_ListsEnabledRuntimeProviders(t *testing.T) {
 	}
 	if resp.Items[0].Id != "runtime-enabled" {
 		t.Fatalf("login provider id = %q, want %q", resp.Items[0].Id, "runtime-enabled")
+	}
+}
+
+func TestIsAllowedRequestOrigin_AllowsConfiguredProviderCallbackOrigin(t *testing.T) {
+	t.Parallel()
+
+	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
+		callbackOrigins: []string{"https://login.example.com"},
+	})
+	srv, client := newExternalAuthTestServer(t, []string{"https://console.example.com"})
+
+	if _, err := client.AuthProvider.Create().
+		SetID("runtime-callback-origin").
+		SetName("Runtime Callback Origin").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create runtime provider: %v", err)
+	}
+
+	callbackPath := "/api/v1/auth/providers/runtime-callback-origin/callback"
+	if !srv.IsAllowedRequestOrigin(t.Context(), callbackPath, "https://login.example.com") {
+		t.Fatal("callback origin was rejected")
+	}
+	if srv.IsAllowedRequestOrigin(t.Context(), callbackPath, "https://denied.example.com") {
+		t.Fatal("unexpectedly allowed denied callback origin")
+	}
+	if srv.IsAllowedRequestOrigin(t.Context(), "/api/v1/auth/me", "https://login.example.com") {
+		t.Fatal("callback origin should not be allowed for unrelated API paths")
+	}
+	if !srv.IsAllowedRequestOrigin(t.Context(), "/api/v1/auth/me", "https://console.example.com") {
+		t.Fatal("configured global origin was rejected")
 	}
 }
 
@@ -295,6 +334,38 @@ func TestServerIsAllowedOrigin_AllowsPlatformSettingOrigin(t *testing.T) {
 	}
 	if srv.IsAllowedOrigin(t.Context(), "https://denied.example.com") {
 		t.Fatal("expected denied origin to be rejected")
+	}
+}
+
+func TestSanitizedAuthCallbackHeadersStripsCredentials(t *testing.T) {
+	t.Parallel()
+
+	header := http.Header{}
+	header.Set("Authorization", "Bearer secret-token")
+	header.Set("Cookie", "shepherd_session=secret-session")
+	header.Set("User-Agent", "callback-agent")
+	header.Set("Content-Type", "application/x-www-form-urlencoded")
+	header.Set("X-Request-ID", "req-1")
+	header.Set("X-Forwarded-For", "203.0.113.10")
+
+	got := sanitizedAuthCallbackHeaders(header)
+	if _, ok := got["Authorization"]; ok {
+		t.Fatalf("Authorization header leaked: %#v", got)
+	}
+	if _, ok := got["Cookie"]; ok {
+		t.Fatalf("Cookie header leaked: %#v", got)
+	}
+	if got["User-Agent"][0] != "callback-agent" {
+		t.Fatalf("User-Agent = %#v", got["User-Agent"])
+	}
+	if got["Content-Type"][0] != "application/x-www-form-urlencoded" {
+		t.Fatalf("Content-Type = %#v", got["Content-Type"])
+	}
+	if got["X-Request-Id"][0] != "req-1" {
+		t.Fatalf("X-Request-Id = %#v", got["X-Request-Id"])
+	}
+	if _, ok := got["X-Forwarded-For"]; ok {
+		t.Fatalf("X-Forwarded-For header should not be forwarded to auth provider plugins: %#v", got)
 	}
 }
 
@@ -488,6 +559,13 @@ func TestCompleteLoginAuthProviderGet_JITProvisionsUserAndReturnsBridge(t *testi
 	}
 	if !strings.Contains(w.Body.String(), `window.location.replace(successTarget)`) {
 		t.Fatalf("callback body missing success redirect: %s", w.Body.String())
+	}
+	csp := w.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "default-src 'none'") || !strings.Contains(csp, "script-src 'nonce-") {
+		t.Fatalf("callback CSP is not restrictive enough: %s", csp)
+	}
+	if !strings.Contains(w.Body.String(), `<script nonce="`) {
+		t.Fatalf("callback bridge script missing nonce: %s", w.Body.String())
 	}
 	cookieHeader := w.Header().Get("Set-Cookie")
 	if !strings.Contains(cookieHeader, "shepherd_session=") {

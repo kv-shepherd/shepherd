@@ -2,8 +2,6 @@ package app
 
 import (
 	"context"
-	"net/http"
-	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +15,10 @@ import (
 
 type corsOriginChecker interface {
 	IsAllowedOrigin(ctx context.Context, origin string) bool
+}
+
+type corsRequestOriginChecker interface {
+	IsAllowedRequestOrigin(ctx context.Context, path, origin string) bool
 }
 
 // Public routes that do NOT require JWT authentication.
@@ -50,12 +52,17 @@ func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg midd
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ErrorHandler())
 	router.Use(middleware.MaxRequestBodyBytes(cfg.Server.MaxRequestBodyBytes))
 
+	var requestOriginChecker corsRequestOriginChecker
+	if checker, ok := server.(corsRequestOriginChecker); ok && checker != nil {
+		requestOriginChecker = checker
+	}
+
 	var originChecker corsOriginChecker
 	if checker, ok := server.(corsOriginChecker); ok && checker != nil {
 		originChecker = checker
 	}
 
-	router.Use(cors.New(buildCORSConfig(cfg, originChecker)))
+	router.Use(cors.New(buildCORSConfig(cfg, requestOriginChecker, originChecker)))
 
 	router.Use(jwtSkipPublic(jwtCfg))
 	router.Use(middleware.MustOpenAPIValidator("/api/v1"))
@@ -66,7 +73,7 @@ func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg midd
 	return router
 }
 
-func buildCORSConfig(cfg *config.Config, checker corsOriginChecker) cors.Config {
+func buildCORSConfig(cfg *config.Config, requestChecker corsRequestOriginChecker, checker corsOriginChecker) cors.Config {
 	allowAllOrigins := cfg.Server.UnsafeAllowAllOrigins
 	allowedOrigins := sanitizeAllowedOrigins(cfg.Server.AllowedOrigins)
 
@@ -89,11 +96,22 @@ func buildCORSConfig(cfg *config.Config, checker corsOriginChecker) cors.Config 
 		allowedOrigins = []string{"http://localhost:3000", "http://127.0.0.1:3000"}
 	}
 
+	if requestChecker != nil {
+		corsCfg.AllowOriginWithContextFunc = func(c *gin.Context, origin string) bool {
+			if c == nil || c.Request == nil {
+				return false
+			}
+			path := ""
+			if c.Request.URL != nil {
+				path = c.Request.URL.Path
+			}
+			return requestChecker.IsAllowedRequestOrigin(c.Request.Context(), path, origin)
+		}
+		return corsCfg
+	}
+
 	if checker != nil {
 		corsCfg.AllowOriginWithContextFunc = func(c *gin.Context, origin string) bool {
-			if isExternalAuthCallbackRequest(c) {
-				return true
-			}
 			return checker.IsAllowedOrigin(c.Request.Context(), origin)
 		}
 		return corsCfg
@@ -105,30 +123,19 @@ func buildCORSConfig(cfg *config.Config, checker corsOriginChecker) cors.Config 
 
 func sanitizeAllowedOrigins(origins []string) []string {
 	cleaned := make([]string, 0, len(origins))
+	seen := make(map[string]struct{}, len(origins))
 	for _, origin := range origins {
 		origin = strings.TrimSpace(origin)
 		if origin == "" || origin == "*" {
 			continue
 		}
+		if _, ok := seen[origin]; ok {
+			continue
+		}
+		seen[origin] = struct{}{}
 		cleaned = append(cleaned, origin)
 	}
-	return slices.Compact(cleaned)
-}
-
-func isExternalAuthCallbackRequest(c *gin.Context) bool {
-	if c == nil || c.Request == nil || c.Request.URL == nil {
-		return false
-	}
-	switch c.Request.Method {
-	case http.MethodGet, http.MethodPost:
-	default:
-		return false
-	}
-	return isExternalAuthCallbackPath(c.Request.URL.Path)
-}
-
-func isExternalAuthCallbackPath(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/auth/providers/") && strings.HasSuffix(path, "/callback")
+	return cleaned
 }
 
 func configureTrustedProxies(router *gin.Engine, trustedProxies []string) {

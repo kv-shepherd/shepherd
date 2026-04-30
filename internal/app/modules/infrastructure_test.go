@@ -3,6 +3,7 @@ package modules
 import (
 	"context"
 	"testing"
+	"time"
 
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -17,6 +18,10 @@ func TestNewInfrastructure_ResolvesBootstrapSecuritySecrets(t *testing.T) {
 	pool := testutil.OpenPGXPool(t, "modules_bootstrap")
 
 	cfg := &config.Config{
+		Server: config.ServerConfig{
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       2 * time.Minute,
+		},
 		Database: config.DatabaseConfig{
 			URL:         pool.Config().ConnString(),
 			MaxConns:    4,

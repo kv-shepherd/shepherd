@@ -50,3 +50,25 @@ func TestAuthResultDirectoryAuthorityJSONRoundTrip(t *testing.T) {
 		t.Fatalf("decoded.DirectoryAuthority = %q, want %q", decoded.DirectoryAuthority, AuthDirectoryAuthorityLoginOnly)
 	}
 }
+
+type testCallbackOriginDescriber struct{}
+
+func (testCallbackOriginDescriber) AllowedCallbackOrigins(config map[string]interface{}) []string {
+	origin, _ := config["origin"].(string)
+	if origin == "" {
+		return nil
+	}
+	return []string{origin}
+}
+
+func TestAuthCallbackOriginDescriber(t *testing.T) {
+	t.Parallel()
+
+	var describer AuthCallbackOriginDescriber = testCallbackOriginDescriber{}
+	got := describer.AllowedCallbackOrigins(map[string]interface{}{
+		"origin": "https://login.example.com",
+	})
+	if len(got) != 1 || got[0] != "https://login.example.com" {
+		t.Fatalf("AllowedCallbackOrigins() = %#v, want login origin", got)
+	}
+}

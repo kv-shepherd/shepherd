@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
-import { proxy } from "./proxy";
+import { buildForwardedRequestHeaders, proxy } from "./proxy";
 
 const originalLoginEntry = process.env.NEXT_PUBLIC_LOGIN_ENTRY_PATH;
 const originalSessionCookie = process.env.SESSION_COOKIE;
@@ -82,5 +82,30 @@ describe("proxy", () => {
     expect(csp).toContain("style-src 'self' 'nonce-");
     expect(csp).not.toContain("'unsafe-inline'");
     expect(csp).toContain("upgrade-insecure-requests");
+  });
+
+  it("forwards only allow-listed request headers plus CSP nonce", () => {
+    const forwarded = buildForwardedRequestHeaders(
+      new Headers({
+        accept: "text/x-component",
+        authorization: "Bearer secret",
+        cookie: "shepherd_session=secret",
+        "next-unreviewed-header": "unexpected",
+        "next-router-state-tree": "tree",
+        "x-custom-debug": "debug",
+        "x-nextjs-cache": "spoofed",
+      }),
+      "nonce-value",
+    );
+
+    expect(forwarded.get("accept")).toBe("text/x-component");
+    expect(forwarded.get("next-router-state-tree")).toBe("tree");
+    expect(forwarded.get("authorization")).toBeNull();
+    expect(forwarded.get("cookie")).toBeNull();
+    expect(forwarded.get("next-unreviewed-header")).toBeNull();
+    expect(forwarded.get("x-custom-debug")).toBeNull();
+    expect(forwarded.get("x-nextjs-cache")).toBeNull();
+    expect(forwarded.get("x-nonce")).toBe("nonce-value");
+    expect(forwarded.get("content-security-policy")).toContain("'nonce-nonce-value'");
   });
 });

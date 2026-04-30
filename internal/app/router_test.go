@@ -21,6 +21,7 @@ func TestSanitizeAllowedOrigins(t *testing.T) {
 		"  http://localhost:3000  ",
 		"",
 		"*",
+		"https://example.com",
 		"http://localhost:3000",
 		"https://example.com",
 	})
@@ -39,7 +40,7 @@ func TestBuildCORSConfig_AllowAllForcesCredentialsOff(t *testing.T) {
 		},
 	}
 
-	corsCfg := buildCORSConfig(cfg, nil)
+	corsCfg := buildCORSConfig(cfg, nil, nil)
 	require.True(t, corsCfg.AllowAllOrigins)
 	require.False(t, corsCfg.AllowCredentials)
 }
@@ -53,7 +54,7 @@ func TestBuildCORSConfig_UsesDefaultOriginsWhenEmpty(t *testing.T) {
 		},
 	}
 
-	corsCfg := buildCORSConfig(cfg, nil)
+	corsCfg := buildCORSConfig(cfg, nil, nil)
 	require.False(t, corsCfg.AllowAllOrigins)
 	require.Equal(t, []string{
 		"http://localhost:3000",
@@ -70,6 +71,14 @@ func (s stubCORSOriginChecker) IsAllowedOrigin(_ context.Context, origin string)
 	return s.allowed[origin]
 }
 
+type stubCORSRequestOriginChecker struct {
+	allowed map[string]map[string]bool
+}
+
+func (s stubCORSRequestOriginChecker) IsAllowedRequestOrigin(_ context.Context, path, origin string) bool {
+	return s.allowed[path][origin]
+}
+
 func TestBuildCORSConfig_UsesDynamicOriginCheckerWhenAvailable(t *testing.T) {
 	cfg := &config.Config{
 		Server: config.ServerConfig{
@@ -77,7 +86,7 @@ func TestBuildCORSConfig_UsesDynamicOriginCheckerWhenAvailable(t *testing.T) {
 		},
 	}
 
-	corsCfg := buildCORSConfig(cfg, stubCORSOriginChecker{
+	corsCfg := buildCORSConfig(cfg, nil, stubCORSOriginChecker{
 		allowed: map[string]bool{
 			"https://console.example.com": true,
 		},
@@ -91,21 +100,48 @@ func TestBuildCORSConfig_UsesDynamicOriginCheckerWhenAvailable(t *testing.T) {
 	require.False(t, corsCfg.AllowOriginWithContextFunc(ctx, "https://denied.example.com"))
 }
 
-func TestBuildCORSConfig_AllowsExternalAuthCallbackAcrossOrigins(t *testing.T) {
+func TestBuildCORSConfig_UsesPathAwareDynamicOriginCheckerWhenAvailable(t *testing.T) {
 	cfg := &config.Config{
 		Server: config.ServerConfig{
 			AllowCredentials: true,
 		},
 	}
 
-	corsCfg := buildCORSConfig(cfg, stubCORSOriginChecker{
+	corsCfg := buildCORSConfig(cfg, stubCORSRequestOriginChecker{
+		allowed: map[string]map[string]bool{
+			"/api/v1/auth/providers/provider-1/callback": {
+				"https://login.example.com": true,
+			},
+		},
+	}, stubCORSOriginChecker{
+		allowed: map[string]bool{
+			"https://login.example.com": false,
+		},
+	})
+
+	require.NotNil(t, corsCfg.AllowOriginWithContextFunc)
+	require.Empty(t, corsCfg.AllowOrigins)
+	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/providers/provider-1/callback", http.NoBody)
+	require.True(t, corsCfg.AllowOriginWithContextFunc(ctx, "https://login.example.com"))
+	require.False(t, corsCfg.AllowOriginWithContextFunc(ctx, "https://denied.example.com"))
+}
+
+func TestBuildCORSConfig_RejectsExternalAuthCallbackFromDeniedOrigin(t *testing.T) {
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			AllowCredentials: true,
+		},
+	}
+
+	corsCfg := buildCORSConfig(cfg, nil, stubCORSOriginChecker{
 		allowed: map[string]bool{},
 	})
 
 	require.NotNil(t, corsCfg.AllowOriginWithContextFunc)
 	ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
 	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/v1/auth/providers/provider-1/callback", http.NoBody)
-	require.True(t, corsCfg.AllowOriginWithContextFunc(ctx, "https://test-kubevirt.example.com"))
+	require.False(t, corsCfg.AllowOriginWithContextFunc(ctx, "https://external-login.example.com"))
 }
 
 func TestIsJWTOptionalPath_AllowsVMVNCBootstrap(t *testing.T) {

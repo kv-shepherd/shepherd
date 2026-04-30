@@ -55,6 +55,9 @@ type AuthRuntimeDescriptor = runtimecontract.AuthRuntimeDescriptor
 // RuntimeCapability is the auth-provider runtime login contract.
 type RuntimeCapability = runtimecontract.AuthRuntimeCapability
 
+// CallbackOriginDescriber exposes exact callback-submitting origins.
+type CallbackOriginDescriber = runtimecontract.AuthCallbackOriginDescriber
+
 // CredentialRuntimeCapability is the auth-provider direct credential login contract.
 type CredentialRuntimeCapability = runtimecontract.AuthCredentialCapability
 

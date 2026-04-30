@@ -47,6 +47,9 @@ type AuthRuntimeDescriptor = runtimecontract.AuthRuntimeDescriptor
 // AuthRuntimeCapability is an optional auth-provider runtime extension.
 type AuthRuntimeCapability = runtimecontract.AuthRuntimeCapability
 
+// AuthCallbackOriginDescriber exposes exact callback-submitting origins.
+type AuthCallbackOriginDescriber = runtimecontract.AuthCallbackOriginDescriber
+
 // AuthCredentialCapability is an optional auth-provider runtime extension for
 // direct credential submission flows.
 type AuthCredentialCapability = runtimecontract.AuthCredentialCapability

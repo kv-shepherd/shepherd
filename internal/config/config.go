@@ -37,7 +37,9 @@ type Config struct {
 type ServerConfig struct {
 	Port                int           `mapstructure:"port"`
 	ReadTimeout         time.Duration `mapstructure:"read_timeout"`
+	ReadHeaderTimeout   time.Duration `mapstructure:"read_header_timeout"`
 	WriteTimeout        time.Duration `mapstructure:"write_timeout"`
+	IdleTimeout         time.Duration `mapstructure:"idle_timeout"`
 	ShutdownTimeout     time.Duration `mapstructure:"shutdown_timeout"`
 	PublicBaseURL       string        `mapstructure:"public_base_url"`
 	MaxRequestBodyBytes int64         `mapstructure:"max_request_body_bytes"`
@@ -158,7 +160,10 @@ type WorkerConfig struct {
 	K8sPoolSize     int `mapstructure:"k8s_pool_size"`
 }
 
-const unsafeAllowAllOriginsAckValue = "I_UNDERSTAND_THIS_IS_UNSAFE"
+const (
+	defaultMaxRequestBodyBytes    int64 = 10 << 20 // 10 MiB
+	unsafeAllowAllOriginsAckValue       = "I_UNDERSTAND_THIS_IS_UNSAFE"
+)
 
 // Load reads configuration from file and environment variables.
 // ADR-0018: Standard environment variables without prefix (DATABASE_URL, SERVER_PORT, etc.).
@@ -225,6 +230,23 @@ func (c *Config) Validate() error {
 	}
 	if c.Server.MaxRequestBodyBytes < 0 {
 		return fmt.Errorf("server.max_request_body_bytes must be >= 0")
+	}
+	if c.Server.ReadHeaderTimeout <= 0 {
+		return fmt.Errorf("server.read_header_timeout must be > 0")
+	}
+	if c.Server.IdleTimeout <= 0 {
+		return fmt.Errorf("server.idle_timeout must be > 0")
+	}
+	if isReleaseMode() {
+		if c.Server.MaxRequestBodyBytes == 0 {
+			return fmt.Errorf("server.max_request_body_bytes must be > 0 when GIN_MODE=release")
+		}
+		if !c.Session.HTTPOnly {
+			return fmt.Errorf("session.http_only must be true when GIN_MODE=release")
+		}
+		if !c.Session.Secure {
+			return fmt.Errorf("session.secure must be true when GIN_MODE=release")
+		}
 	}
 	for _, proxy := range sanitizeStringSlice(c.Server.TrustedProxies) {
 		if _, _, err := net.ParseCIDR(proxy); err == nil {
@@ -305,10 +327,12 @@ func setDefaults(v *viper.Viper) {
 	// Server
 	v.SetDefault("server.port", 8080)
 	v.SetDefault("server.read_timeout", "30s")
+	v.SetDefault("server.read_header_timeout", "10s")
 	v.SetDefault("server.write_timeout", "30s")
+	v.SetDefault("server.idle_timeout", "2m")
 	v.SetDefault("server.shutdown_timeout", "30s")
 	v.SetDefault("server.public_base_url", "")
-	v.SetDefault("server.max_request_body_bytes", 0)
+	v.SetDefault("server.max_request_body_bytes", defaultMaxRequestBodyBytes)
 	v.SetDefault("server.allowed_origins", []string{"http://localhost:3000", "http://127.0.0.1:3000"})
 	v.SetDefault("server.trusted_proxies", []string{})
 	v.SetDefault("server.allow_credentials", true)
@@ -367,7 +391,9 @@ func bindEnvKeys(v *viper.Viper) {
 	for _, key := range []string{
 		"server.port",
 		"server.read_timeout",
+		"server.read_header_timeout",
 		"server.write_timeout",
+		"server.idle_timeout",
 		"server.shutdown_timeout",
 		"server.public_base_url",
 		"server.max_request_body_bytes",

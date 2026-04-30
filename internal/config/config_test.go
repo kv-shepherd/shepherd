@@ -35,8 +35,14 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Server.PublicBaseURL != "" {
 		t.Errorf("Server.PublicBaseURL = %q, want empty", cfg.Server.PublicBaseURL)
 	}
-	if cfg.Server.MaxRequestBodyBytes != 0 {
-		t.Errorf("Server.MaxRequestBodyBytes = %d, want 0", cfg.Server.MaxRequestBodyBytes)
+	if cfg.Server.ReadHeaderTimeout != 10*time.Second {
+		t.Errorf("Server.ReadHeaderTimeout = %s, want 10s", cfg.Server.ReadHeaderTimeout)
+	}
+	if cfg.Server.IdleTimeout != 2*time.Minute {
+		t.Errorf("Server.IdleTimeout = %s, want 2m", cfg.Server.IdleTimeout)
+	}
+	if cfg.Server.MaxRequestBodyBytes != defaultMaxRequestBodyBytes {
+		t.Errorf("Server.MaxRequestBodyBytes = %d, want %d", cfg.Server.MaxRequestBodyBytes, defaultMaxRequestBodyBytes)
 	}
 
 	// Database defaults
@@ -296,6 +302,64 @@ func TestLoad_ServerMaxRequestBodyBytesRejectsNegative(t *testing.T) {
 		t.Fatal("Load() expected error for negative request body limit")
 	}
 	if got := err.Error(); got != "validate config: server.max_request_body_bytes must be >= 0" {
+		t.Fatalf("Load() error = %q", got)
+	}
+}
+
+func TestLoad_ServerTimeoutsRejectNonPositiveValues(t *testing.T) {
+	t.Setenv("SERVER_READ_HEADER_TIMEOUT", "0s")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for zero read header timeout")
+	}
+	if got := err.Error(); got != "validate config: server.read_header_timeout must be > 0" {
+		t.Fatalf("Load() error = %q", got)
+	}
+
+	t.Setenv("SERVER_READ_HEADER_TIMEOUT", "10s")
+	t.Setenv("SERVER_IDLE_TIMEOUT", "0s")
+	_, err = Load()
+	if err == nil {
+		t.Fatal("Load() expected error for zero idle timeout")
+	}
+	if got := err.Error(); got != "validate config: server.idle_timeout must be > 0" {
+		t.Fatalf("Load() error = %q", got)
+	}
+}
+
+func TestLoad_ServerMaxRequestBodyBytesRequiredInReleaseMode(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+	t.Setenv("SERVER_MAX_REQUEST_BODY_BYTES", "0")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for unlimited request body in release mode")
+	}
+	if got := err.Error(); got != "validate config: server.max_request_body_bytes must be > 0 when GIN_MODE=release" {
+		t.Fatalf("Load() error = %q", got)
+	}
+}
+
+func TestLoad_SessionCookieFlagsRequiredInReleaseMode(t *testing.T) {
+	t.Setenv("GIN_MODE", "release")
+	t.Setenv("SESSION_HTTP_ONLY", "false")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() expected error for non-HttpOnly session cookie in release mode")
+	}
+	if got := err.Error(); got != "validate config: session.http_only must be true when GIN_MODE=release" {
+		t.Fatalf("Load() error = %q", got)
+	}
+
+	t.Setenv("SESSION_HTTP_ONLY", "true")
+	t.Setenv("SESSION_SECURE", "false")
+	_, err = Load()
+	if err == nil {
+		t.Fatal("Load() expected error for non-Secure session cookie in release mode")
+	}
+	if got := err.Error(); got != "validate config: session.secure must be true when GIN_MODE=release" {
 		t.Fatalf("Load() error = %q", got)
 	}
 }

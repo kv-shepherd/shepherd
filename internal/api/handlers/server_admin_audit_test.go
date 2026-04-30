@@ -297,7 +297,7 @@ func TestListAuditLogs_ExternalLoginUsesSpecificLocalizedMessage(t *testing.T) {
 
 	provider, err := client.AuthProvider.Create().
 		SetID("provider-oidc").
-		SetName("example OIDC").
+		SetName("Example OIDC").
 		SetAuthType("oidc").
 		SetCreatedBy("admin-1").
 		SetConfig(map[string]interface{}{}).
@@ -344,8 +344,8 @@ func TestListAuditLogs_ExternalLoginUsesSpecificLocalizedMessage(t *testing.T) {
 	if resp.Items[0].MessageI18n.Key != "audit.message.user_external_login" {
 		t.Fatalf("message_i18n.key = %q, want audit.message.user_external_login", resp.Items[0].MessageI18n.Key)
 	}
-	if resp.Items[0].MessageI18n.Params["authProviderDisplay"] != "example OIDC" {
-		t.Fatalf("authProviderDisplay = %#v, want example OIDC", resp.Items[0].MessageI18n.Params["authProviderDisplay"])
+	if resp.Items[0].MessageI18n.Params["authProviderDisplay"] != "Example OIDC" {
+		t.Fatalf("authProviderDisplay = %#v, want Example OIDC", resp.Items[0].MessageI18n.Params["authProviderDisplay"])
 	}
 }
 

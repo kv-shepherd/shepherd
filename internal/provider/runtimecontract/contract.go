@@ -112,6 +112,12 @@ type AuthRuntimeCapability interface {
 	CompleteLogin(ctx context.Context, config map[string]interface{}, req AuthCallbackRequest) (*AuthResult, error)
 }
 
+// AuthCallbackOriginDescriber lets a runtime provider expose the exact browser
+// origins that may submit its external login callback.
+type AuthCallbackOriginDescriber interface {
+	AllowedCallbackOrigins(config map[string]interface{}) []string
+}
+
 // AuthCredentialCapability is an optional auth-provider runtime extension for
 // direct credential submission flows.
 type AuthCredentialCapability interface {

@@ -1481,7 +1481,7 @@ export interface paths {
         /** Complete external auth-provider login callback */
         get: operations["completeLoginAuthProviderGet"];
         put?: never;
-        /** Complete external auth-provider login callback */
+        /** Complete form-post external auth-provider login callback */
         post: operations["completeLoginAuthProviderPost"];
         delete?: never;
         options?: never;
@@ -2811,8 +2811,16 @@ export interface components {
             items?: components["schemas"]["LoginAuthProvider"][];
         };
         AuthProviderLoginStartRequest: {
+            /**
+             * @description Optional provider-specific login mode key.
+             * @example web
+             */
             login_mode?: string;
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @description Absolute Shepherd URL to return to after provider login.
+             * @example https://shepherd.example.com/dashboard
+             */
             return_to: string;
         };
         AuthProviderLoginStartResponse: {
@@ -2820,11 +2828,20 @@ export interface components {
             redirect_url: string;
         };
         AuthProviderCredentialLoginRequest: {
+            /**
+             * @description Optional provider-specific credential login mode key.
+             * @example password
+             */
             login_mode?: string;
+            /** @description Provider-specific credential fields. */
             credentials: {
                 [key: string]: unknown;
             };
-            /** Format: uri */
+            /**
+             * Format: uri
+             * @description Optional absolute Shepherd URL to return to after login.
+             * @example https://shepherd.example.com/dashboard
+             */
             return_to?: string;
         };
         LoginResponse: {
@@ -2977,7 +2994,7 @@ export interface components {
         AuthProvider: {
             id: string;
             name: string;
-            /** @description Registered auth provider plugin type key */
+            /** @description Registered authentication provider plugin key used for adapter resolution */
             auth_type: string;
             config?: {
                 [key: string]: unknown;
@@ -3570,13 +3587,17 @@ export interface components {
         TicketID: string;
         BatchID: string;
         ServiceID: string;
+        /** @description Stable Shepherd user identifier. */
         UserID: string;
         TemplateID: string;
         InstanceSizeID: string;
         RoleID: string;
         RoleBindingID: string;
+        /** @description Stable authentication provider identifier. */
         ProviderID: string;
+        /** @description Stable external cohort mapping identifier. */
         MappingID: string;
+        /** @description Stable directory sync job identifier. */
         DirectorySyncJobID: string;
         /** @description Simple deletion confirmation flag (ADR-0015 §13) */
         Confirm: boolean;
@@ -3942,6 +3963,7 @@ export interface operations {
             header?: never;
             path: {
                 system_id: components["parameters"]["SystemID"];
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -3966,6 +3988,7 @@ export interface operations {
             header?: never;
             path: {
                 system_id: components["parameters"]["SystemID"];
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5290,6 +5313,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5313,6 +5337,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5343,6 +5368,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5368,6 +5394,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -5399,6 +5426,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
                 binding_id: components["parameters"]["RoleBindingID"];
             };
@@ -5595,8 +5623,14 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Platform-wide external-auth public URL override. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "public_base_url": "https://shepherd.example.com"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ExternalAuthPlatformSettingsUpdateRequest"];
             };
         };
@@ -5644,8 +5678,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Auth provider registration data and plugin-specific configuration. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "corp-sso",
+                 *       "auth_type": "oidc",
+                 *       "config": {
+                 *         "issuer_url": "https://idp.example.com",
+                 *         "client_id": "shepherd"
+                 *       },
+                 *       "enabled": true,
+                 *       "sort_order": 10
+                 *     }
+                 */
                 "application/json": components["schemas"]["AuthProviderCreateRequest"];
             };
         };
@@ -5670,6 +5717,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5694,12 +5742,21 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
+        /** @description Partial auth provider update data and plugin-specific configuration changes. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "name": "corp-sso",
+                 *       "enabled": true,
+                 *       "sort_order": 20
+                 *     }
+                 */
                 "application/json": components["schemas"]["AuthProviderUpdateRequest"];
             };
         };
@@ -5725,6 +5782,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5750,6 +5808,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5775,6 +5834,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5800,12 +5860,23 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
+        /** @description External cohort discovery request for the selected auth provider. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "cohort_kind": "department",
+                 *       "source_field": "department",
+                 *       "cohorts": [
+                 *         "Engineering"
+                 *       ]
+                 *     }
+                 */
                 "application/json": components["schemas"]["ExternalCohortSyncRequest"];
             };
         };
@@ -5830,6 +5901,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5848,7 +5920,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description Auth provider does not implement directory sync */
+            /** @description Auth provider does not expose scheduled directory enrichment */
             501: {
                 headers: {
                     [name: string]: unknown;
@@ -5864,6 +5936,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5889,6 +5962,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -5907,7 +5981,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description Auth provider does not implement directory sync */
+            /** @description Auth provider does not support starting directory sync jobs */
             501: {
                 headers: {
                     [name: string]: unknown;
@@ -5923,12 +5997,22 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
+        /** @description Provider-owned directory preview request payload. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "provider_request": {
+                 *         "cursor": "preview"
+                 *       },
+                 *       "conflict_resolution": "skip"
+                 *     }
+                 */
                 "application/json": components["schemas"]["DirectorySyncPreviewRequest"];
             };
         };
@@ -5962,12 +6046,22 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
+        /** @description Provider-owned directory sync request payload. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "provider_request": {
+                 *         "cursor": "full"
+                 *       },
+                 *       "conflict_resolution": "skip"
+                 *     }
+                 */
                 "application/json": components["schemas"]["DirectorySyncRequest"];
             };
         };
@@ -5985,7 +6079,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description Auth provider does not implement directory sync */
+            /** @description Auth provider does not expose directory sync job history */
             501: {
                 headers: {
                     [name: string]: unknown;
@@ -6006,6 +6100,7 @@ export interface operations {
             };
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6024,7 +6119,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description Auth provider does not implement directory sync */
+            /** @description Auth provider does not expose this directory sync job */
             501: {
                 headers: {
                     [name: string]: unknown;
@@ -6040,7 +6135,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
+                /** @description Stable directory sync job identifier. */
                 job_id: components["parameters"]["DirectorySyncJobID"];
             };
             cookie?: never;
@@ -6075,6 +6172,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
@@ -6100,12 +6198,26 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
+        /** @description External cohort to platform role mapping. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "cohort_kind": "department",
+                 *       "cohort_key": "Engineering",
+                 *       "cohort_display_name": "Engineering",
+                 *       "role_id": "role-user",
+                 *       "scope_type": "environment",
+                 *       "allowed_environments": [
+                 *         "test"
+                 *       ]
+                 *     }
+                 */
                 "application/json": components["schemas"]["ExternalCohortMappingCreateRequest"];
             };
         };
@@ -6131,7 +6243,9 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
+                /** @description Stable external cohort mapping identifier. */
                 mapping_id: components["parameters"]["MappingID"];
             };
             cookie?: never;
@@ -6155,13 +6269,26 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
+                /** @description Stable external cohort mapping identifier. */
                 mapping_id: components["parameters"]["MappingID"];
             };
             cookie?: never;
         };
+        /** @description Partial external cohort mapping update. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "role_id": "role-user",
+                 *       "scope_type": "environment",
+                 *       "allowed_environments": [
+                 *         "test",
+                 *         "prod"
+                 *       ]
+                 *     }
+                 */
                 "application/json": components["schemas"]["ExternalCohortMappingUpdateRequest"];
             };
         };
@@ -6216,8 +6343,16 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description User-level login rate-limit exemption details. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "user_id": "user-123",
+                 *       "reason": "Break-glass support account",
+                 *       "expires_at": "2026-05-01T00:00:00Z"
+                 *     }
+                 */
                 "application/json": components["schemas"]["RateLimitExemptionCreateRequest"];
             };
         };
@@ -6242,6 +6377,7 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
@@ -6265,12 +6401,22 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable Shepherd user identifier. */
                 user_id: components["parameters"]["UserID"];
             };
             cookie?: never;
         };
+        /** @description Per-user pending-login and cooldown override values. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "max_pending_parents": 3,
+                 *       "max_pending_children": 5,
+                 *       "cooldown_seconds": 60,
+                 *       "reason": "Temporary elevated login concurrency"
+                 *     }
+                 */
                 "application/json": components["schemas"]["RateLimitUserOverrideRequest"];
             };
         };
@@ -6609,12 +6755,20 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
+        /** @description External login start request containing the requested return target. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "login_mode": "web",
+                 *       "return_to": "https://shepherd.example.com/dashboard"
+                 *     }
+                 */
                 "application/json": components["schemas"]["AuthProviderLoginStartRequest"];
             };
         };
@@ -6637,12 +6791,24 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
+        /** @description Credential-mode external login payload. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "login_mode": "password",
+                 *       "credentials": {
+                 *         "username": "alice",
+                 *         "password": "correct-horse-battery-staple"
+                 *       },
+                 *       "return_to": "https://shepherd.example.com/dashboard"
+                 *     }
+                 */
                 "application/json": components["schemas"]["AuthProviderCredentialLoginRequest"];
             };
         };
@@ -6673,18 +6839,21 @@ export interface operations {
     completeLoginAuthProviderGet: {
         parameters: {
             query?: {
+                /** @description Provider authorization code returned by redirect-based login flows. */
                 code?: string;
+                /** @description Signed login state token issued by the Shepherd start-login endpoint. */
                 state?: string;
             };
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description Login callback HTML bridge */
+            /** @description External provider callback completed and returned the HTML bridge */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6693,7 +6862,7 @@ export interface operations {
                     "text/html": string;
                 };
             };
-            /** @description Login callback failed */
+            /** @description External provider callback failed and returned the HTML bridge */
             400: {
                 headers: {
                     [name: string]: unknown;
@@ -6709,12 +6878,20 @@ export interface operations {
             query?: never;
             header?: never;
             path: {
+                /** @description Stable authentication provider identifier. */
                 provider_id: components["parameters"]["ProviderID"];
             };
             cookie?: never;
         };
+        /** @description External provider callback form fields. */
         requestBody?: {
             content: {
+                /**
+                 * @example {
+                 *       "code": "provider-code",
+                 *       "state": "signed-state-token"
+                 *     }
+                 */
                 "application/x-www-form-urlencoded": {
                     code?: string;
                     state?: string;
@@ -6751,13 +6928,20 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Local username and password credentials. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "username": "alice",
+                 *       "password": "correct-horse-battery-staple"
+                 *     }
+                 */
                 "application/json": components["schemas"]["LoginRequest"];
             };
         };
         responses: {
-            /** @description Login successful */
+            /** @description Credential login succeeded */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -6767,7 +6951,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
-            /** @description Login rate limit exceeded */
+            /** @description Credential login rate limit exceeded */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -6825,8 +7009,15 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
+        /** @description Current password and replacement password. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "old_password": "current-password",
+                 *       "new_password": "new-correct-horse-battery-staple"
+                 *     }
+                 */
                 "application/json": components["schemas"]["ChangePasswordRequest"];
             };
         };
@@ -6878,8 +7069,19 @@ export interface operations {
             };
             cookie?: never;
         };
+        /** @description Preference value to store for the current user. */
         requestBody: {
             content: {
+                /**
+                 * @example {
+                 *       "value": {
+                 *         "visible_columns": [
+                 *           "username",
+                 *           "email"
+                 *         ]
+                 *       }
+                 *     }
+                 */
                 "application/json": components["schemas"]["UserPreferenceUpdateRequest"];
             };
         };

@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.9
@@ -184,6 +184,7 @@ ci-governance:
 	@go run docs/design/ci/scripts/check_repository_tests.go
 	@bash docs/design/ci/scripts/check_workflow_make_target_parity.sh
 	@$(MAKE) authproviderplugin-sdk-smoke
+	@$(MAKE) public-hygiene-scan
 	@$(MAKE) secrets-scan
 	@$(MAKE) kubevirt-schema-check
 
@@ -378,11 +379,16 @@ frontend-security-audit:
 secrets-scan:
 	@$(GOCMD) run github.com/zricethezav/gitleaks/v8@$(GITLEAKS_VERSION) detect --source . --no-git --config .gitleaks.toml --no-banner --redact
 
+## public-hygiene-scan: Block new public-source fixture leaks that gitleaks cannot classify.
+public-hygiene-scan:
+	@bash scripts/check_public_hygiene.sh
+
 ## supplemental-scans: Run dedicated scanner gates alongside the core CI bundle
 supplemental-scans:
 	@echo "Running supplemental scanners..."
 	@$(MAKE) govulncheck
 	@$(MAKE) secrets-scan
+	@$(MAKE) public-hygiene-scan
 	@$(MAKE) frontend-deadcode-scan
 	@$(MAKE) frontend-security-audit
 

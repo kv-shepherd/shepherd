@@ -15,6 +15,26 @@ const allowedDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || "")
   .filter(Boolean);
 const isProduction = process.env.NODE_ENV === "production";
 
+function resolveInternalAPIURL(): string {
+  const raw = process.env.INTERNAL_API_URL || "http://localhost:8080";
+  let parsed: URL;
+  try {
+    parsed = new URL(raw);
+  } catch (error) {
+    throw new Error(`INTERNAL_API_URL must be an absolute http(s) URL: ${(error as Error).message}`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error("INTERNAL_API_URL must use http or https");
+  }
+  if (parsed.username || parsed.password) {
+    throw new Error("INTERNAL_API_URL must not include credentials");
+  }
+  if (parsed.search || parsed.hash) {
+    throw new Error("INTERNAL_API_URL must not include query string or fragment");
+  }
+  return parsed.toString().replace(/\/$/, "");
+}
+
 const nextConfig: NextConfig = {
   allowedDevOrigins,
 
@@ -56,7 +76,7 @@ const nextConfig: NextConfig = {
   // When accessing from 10.x.x.x:3000, requests to /api/v1 go to localhost:8080
   async rewrites() {
     // In Docker, this should be "http://server:8080". Locally, "http://localhost:8080".
-    const apiUrl = process.env.INTERNAL_API_URL || "http://localhost:8080";
+    const apiUrl = resolveInternalAPIURL();
 
     return [
       {

@@ -87,6 +87,44 @@ func TestNormalizeValidationPath(t *testing.T) {
 	}
 }
 
+func TestOpenAPIValidatorDoesNotBufferResponsesInReleaseMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouterWithMode(t, gin.ReleaseMode)
+	router.GET("/api/v1/health/live", func(c *gin.Context) {
+		if _, ok := c.Writer.(*bufferedResponseWriter); ok {
+			c.JSON(http.StatusInternalServerError, gin.H{"buffered": true})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", http.NoBody)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 without response buffering in release mode, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorPreservesRequestTooLargeStatus(t *testing.T) {
+	router := gin.New()
+	router.Use(MaxRequestBodyBytes(4))
+	router.Use(cachedOpenAPIValidatorTestMiddleware(t, "/api/v1"))
+	router.POST("/api/v1/auth/login", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"token": "unused"})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"alice","password":"secret"}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.ContentLength = -1
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("expected 413 for capped body before OpenAPI validation, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
 func TestOpenAPIValidatorRejectsInvalidSystemUpdateRequest(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.PATCH("/api/v1/systems/:system_id", func(c *gin.Context) {

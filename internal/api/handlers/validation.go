@@ -15,6 +15,14 @@ import (
 
 func bindAndValidateJSON(c *gin.Context, req any) bool {
 	if err := c.ShouldBindJSON(req); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			c.JSON(http.StatusRequestEntityTooLarge, generated.Error{
+				Code:    "REQUEST_TOO_LARGE",
+				Message: "request body is too large",
+			})
+			return false
+		}
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
 		return false
 	}

@@ -72,6 +72,33 @@ func TestRunWithConfig_ShutdownSignal(t *testing.T) {
 	}
 }
 
+func TestRunWithConfig_ConfiguresHTTPServerTimeouts(t *testing.T) {
+	t.Parallel()
+
+	cfg := testConfig()
+	signalCh := make(chan os.Signal, 1)
+	signalCh <- syscall.SIGTERM
+	var gotReadHeaderTimeout time.Duration
+	var gotIdleTimeout time.Duration
+
+	err := runWithConfig(context.Background(), cfg, signalCh, func(context.Context, *config.Config) (*app.Application, error) {
+		return &app.Application{Config: cfg, Router: gin.New()}, nil
+	}, func(srv *http.Server, errCh chan<- error) {
+		gotReadHeaderTimeout = srv.ReadHeaderTimeout
+		gotIdleTimeout = srv.IdleTimeout
+	})
+
+	if err != nil {
+		t.Fatalf("expected clean shutdown, got %v", err)
+	}
+	if gotReadHeaderTimeout != cfg.Server.ReadHeaderTimeout {
+		t.Fatalf("ReadHeaderTimeout = %s, want %s", gotReadHeaderTimeout, cfg.Server.ReadHeaderTimeout)
+	}
+	if gotIdleTimeout != cfg.Server.IdleTimeout {
+		t.Fatalf("IdleTimeout = %s, want %s", gotIdleTimeout, cfg.Server.IdleTimeout)
+	}
+}
+
 func TestNormalizeStartupMigrationConfig_PrefersVersionedMigrations(t *testing.T) {
 	t.Parallel()
 
@@ -92,10 +119,12 @@ func TestNormalizeStartupMigrationConfig_PrefersVersionedMigrations(t *testing.T
 func testConfig() *config.Config {
 	return &config.Config{
 		Server: config.ServerConfig{
-			Port:            8080,
-			ReadTimeout:     50 * time.Millisecond,
-			WriteTimeout:    50 * time.Millisecond,
-			ShutdownTimeout: 50 * time.Millisecond,
+			Port:              8080,
+			ReadTimeout:       50 * time.Millisecond,
+			ReadHeaderTimeout: 25 * time.Millisecond,
+			WriteTimeout:      50 * time.Millisecond,
+			IdleTimeout:       75 * time.Millisecond,
+			ShutdownTimeout:   50 * time.Millisecond,
 		},
 		Log: config.LogConfig{
 			Level:  "error",

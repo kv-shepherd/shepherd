@@ -14,6 +14,24 @@ const protectedRoutePrefixes = [
   "/tickets",
   "/vms",
 ];
+const forwardedRequestHeaderAllowList = new Set([
+  "accept",
+  "accept-language",
+  "cache-control",
+  "next-action",
+  "next-router-prefetch",
+  "next-router-state-tree",
+  "next-url",
+  "pragma",
+  "purpose",
+  "referer",
+  "rsc",
+  "sec-fetch-dest",
+  "sec-fetch-mode",
+  "sec-fetch-site",
+  "sec-fetch-user",
+  "user-agent",
+]);
 
 function buildContentSecurityPolicy(nonce: string): string {
   const isProduction = process.env.NODE_ENV === "production";
@@ -48,6 +66,19 @@ function buildContentSecurityPolicy(nonce: string): string {
 function applyCspToResponse(response: NextResponse, nonce: string): NextResponse {
   response.headers.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
   return response;
+}
+
+export function buildForwardedRequestHeaders(headers: Headers, nonce: string): Headers {
+  const forwarded = new Headers();
+  for (const [name, value] of headers) {
+    const normalized = name.toLowerCase();
+    if (forwardedRequestHeaderAllowList.has(normalized)) {
+      forwarded.set(name, value);
+    }
+  }
+  forwarded.set("x-nonce", nonce);
+  forwarded.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
+  return forwarded;
 }
 
 function normalizePath(raw: string | undefined, fallback: string): string {
@@ -94,9 +125,7 @@ export function proxy(request: NextRequest) {
     return applyCspToResponse(NextResponse.redirect(new URL("/dashboard", request.url)), nonce);
   }
 
-  const requestHeaders = new Headers(request.headers);
-  requestHeaders.set("x-nonce", nonce);
-  requestHeaders.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
+  const requestHeaders = buildForwardedRequestHeaders(request.headers, nonce);
 
   const response = NextResponse.next({
     request: {

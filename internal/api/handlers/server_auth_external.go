@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -257,7 +259,7 @@ func (s *Server) CompleteLoginAuthProviderGet(c *gin.Context, providerID generat
 	callbackReq := runtimecontract.AuthCallbackRequest{
 		Method:     c.Request.Method,
 		Query:      map[string][]string(c.Request.URL.Query()),
-		Header:     map[string][]string(c.Request.Header),
+		Header:     sanitizedAuthCallbackHeaders(c.Request.Header),
 		RemoteAddr: strings.TrimSpace(c.Request.RemoteAddr),
 	}
 	if strings.TrimSpace(params.Code) != "" || strings.TrimSpace(params.State) != "" {
@@ -276,10 +278,43 @@ func (s *Server) CompleteLoginAuthProviderPost(c *gin.Context, providerID genera
 		Method:     c.Request.Method,
 		Query:      map[string][]string(c.Request.URL.Query()),
 		Form:       form,
-		Header:     map[string][]string(c.Request.Header),
+		Header:     sanitizedAuthCallbackHeaders(c.Request.Header),
 		RemoteAddr: strings.TrimSpace(c.Request.RemoteAddr),
 	}
 	s.completeExternalAuthLogin(c, providerID, callbackReq)
+}
+
+func sanitizedAuthCallbackHeaders(header http.Header) map[string][]string {
+	if len(header) == 0 {
+		return nil
+	}
+	allowed := map[string]struct{}{
+		"accept":          {},
+		"accept-language": {},
+		"content-type":    {},
+		"user-agent":      {},
+		"x-request-id":    {},
+	}
+	out := make(map[string][]string)
+	for name, values := range header {
+		normalized := strings.ToLower(strings.TrimSpace(name))
+		if _, ok := allowed[normalized]; !ok {
+			continue
+		}
+		copied := make([]string, 0, len(values))
+		for _, value := range values {
+			if value = strings.TrimSpace(value); value != "" {
+				copied = append(copied, value)
+			}
+		}
+		if len(copied) > 0 {
+			out[http.CanonicalHeaderKey(normalized)] = copied
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func (s *Server) completeExternalAuthLogin(c *gin.Context, providerID string, callbackReq runtimecontract.AuthCallbackRequest) {
@@ -535,6 +570,65 @@ func (s *Server) IsAllowedOrigin(ctx context.Context, origin string) bool {
 	return externalAuthOriginAllowed(parsed, allowedOrigins)
 }
 
+func (s *Server) IsAllowedRequestOrigin(ctx context.Context, path, origin string) bool {
+	if s.IsAllowedOrigin(ctx, origin) {
+		return true
+	}
+	providerID, ok := externalAuthCallbackProviderIDFromPath(path)
+	if !ok {
+		return false
+	}
+	return s.isAllowedExternalAuthCallbackOrigin(ctx, providerID, origin)
+}
+
+func externalAuthCallbackProviderIDFromPath(path string) (string, bool) {
+	const prefix = "/api/v1/auth/providers/"
+	const suffix = "/callback"
+	path = strings.TrimSpace(path)
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return "", false
+	}
+	rawProviderID := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	if rawProviderID == "" || strings.Contains(rawProviderID, "/") {
+		return "", false
+	}
+	providerID, err := url.PathUnescape(rawProviderID)
+	if err != nil || strings.TrimSpace(providerID) == "" || strings.Contains(providerID, "/") {
+		return "", false
+	}
+	return providerID, true
+}
+
+func (s *Server) isAllowedExternalAuthCallbackOrigin(ctx context.Context, providerID, origin string) bool {
+	parsed, err := url.Parse(strings.TrimSpace(origin))
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return false
+	}
+	if s == nil || s.client == nil || s.authProviderConfig == nil {
+		return false
+	}
+
+	providerRow, adapter, ok := s.resolveLoginAuthProviderAdapter(ctx, nil, providerID)
+	if !ok {
+		return false
+	}
+	callbackOrigins, ok := adapter.(runtimecontract.AuthCallbackOriginDescriber)
+	if !ok || callbackOrigins == nil {
+		return false
+	}
+	runtimeConfig, cfgErr := s.authProviderConfig.DecryptForUse(providerRow.AuthType, providerRow.Config)
+	if cfgErr != nil {
+		logger.Warn("failed to decrypt auth provider config for callback origin check", zap.Error(cfgErr), zap.String("provider_id", providerID))
+		return false
+	}
+	for _, allowedOrigin := range callbackOrigins.AllowedCallbackOrigins(runtimeConfig) {
+		if sameExternalAuthOrigin(origin, allowedOrigin) {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) validateExternalAuthReturnToForStart(c *gin.Context, raw string, allowedOrigins []string) (*url.URL, error) {
 	parsed, err := parseExternalAuthReturnTo(raw)
 	if err != nil {
@@ -739,13 +833,53 @@ func (s *Server) renderExternalAuthBridge(
 		targetOrigin = parsed.Scheme + "://" + parsed.Host
 	}
 	payloadJSON, _ := json.Marshal(payload)
-	body := buildExternalAuthBridgeHTML(string(payloadJSON), targetOrigin, targetURL)
+	nonce, nonceErr := generateExternalAuthBridgeNonce()
+	if nonceErr != nil {
+		logger.Error("failed to generate external auth bridge CSP nonce", zap.Error(nonceErr))
+		c.Header("Content-Security-Policy", externalAuthBridgeNoScriptCSP())
+		c.Header("Cache-Control", "no-store")
+		c.Header("Pragma", "no-cache")
+		c.Data(http.StatusInternalServerError, "text/html; charset=utf-8", []byte(buildExternalAuthBridgeFallbackHTML()))
+		return
+	}
+	c.Header("Content-Security-Policy", externalAuthBridgeCSP(nonce))
+	body := buildExternalAuthBridgeHTML(string(payloadJSON), targetOrigin, targetURL, nonce)
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Data(status, "text/html; charset=utf-8", []byte(body))
 }
 
-func buildExternalAuthBridgeHTML(payloadJSON, targetOrigin, targetURL string) string {
+func generateExternalAuthBridgeNonce() (string, error) {
+	var raw [18]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(raw[:]), nil
+}
+
+func externalAuthBridgeCSP(nonce string) string {
+	return "default-src 'none'; script-src 'nonce-" + nonce + "'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; connect-src 'none'; img-src 'none'; style-src 'none'"
+}
+
+func externalAuthBridgeNoScriptCSP() string {
+	return "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; connect-src 'none'; img-src 'none'; style-src 'none'"
+}
+
+func buildExternalAuthBridgeFallbackHTML() string {
+	return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Shepherd External Login</title>
+</head>
+<body>
+  <p>External login could not be completed. Return to Shepherd.</p>
+</body>
+</html>`
+}
+
+func buildExternalAuthBridgeHTML(payloadJSON, targetOrigin, targetURL, nonce string) string {
 	return `<!doctype html>
 <html lang="en">
 <head>
@@ -755,7 +889,7 @@ func buildExternalAuthBridgeHTML(payloadJSON, targetOrigin, targetURL string) st
 </head>
 <body>
   <p>External login completed. You can close this window.</p>
-  <script>
+  <script nonce="` + nonce + `">
     (function () {
       const payload = ` + payloadJSON + `;
       const targetOrigin = ` + jsonStringLiteral(targetOrigin) + `;

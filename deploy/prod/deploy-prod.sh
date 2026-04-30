@@ -656,7 +656,7 @@ echo "    docker compose -f ${COMPOSE_FILE} -p ${COMPOSE_PROJECT_NAME} down"
 echo ""
 if [[ "${ENTERPRISE_MODE}" == "1" ]]; then
     echo "  Enterprise Auth Setup:"
-    echo "    cd private/shepherd-enterprise"
+    echo "    cd <enterprise-extension-repo>"
     echo "    make auth-bootstrap-apply"
     echo "    make auth-plan"
     echo "    make auth-apply"
