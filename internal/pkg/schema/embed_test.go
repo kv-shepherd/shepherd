@@ -212,6 +212,7 @@ func TestCurrentVersionDiffSummary_Instancesize(t *testing.T) {
 	}
 	if diff == nil {
 		t.Fatal("CurrentVersionDiffSummary(instancesize) = nil, want summary")
+		return
 	}
 	if diff.FromVersion != "1.8.0" {
 		t.Fatalf("FromVersion = %q, want %q", diff.FromVersion, "1.8.0")

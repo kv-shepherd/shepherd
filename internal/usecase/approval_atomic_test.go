@@ -151,6 +151,7 @@ func TestVMStatusSyncInsertOpts(t *testing.T) {
 	opts := vmStatusSyncInsertOpts()
 	if opts == nil {
 		t.Fatal("vmStatusSyncInsertOpts() returned nil")
+		return
 	}
 	if opts.Queue != jobs.VMStatusSyncJobKind {
 		t.Fatalf("queue = %q, want %q", opts.Queue, jobs.VMStatusSyncJobKind)

@@ -591,6 +591,7 @@ func TestListAuditLogs_EnrichesReadableActorResourceAndTicketSummary(t *testing.
 
 	if serviceAudit == nil {
 		t.Fatal("service audit = nil, want non-nil")
+		return
 	}
 	if serviceAudit.ActorSummary == nil || serviceAudit.ActorSummary.DisplayName != "Alice Chen" {
 		t.Fatalf("service actor_summary = %#v, want display name Alice Chen", serviceAudit.ActorSummary)
@@ -604,9 +605,11 @@ func TestListAuditLogs_EnrichesReadableActorResourceAndTicketSummary(t *testing.
 
 	if ticketAudit == nil {
 		t.Fatal("ticket audit = nil, want non-nil")
+		return
 	}
 	if ticketAudit.TicketSummary == nil {
 		t.Fatal("ticket_summary = nil, want non-nil")
+		return
 	}
 	if ticketAudit.TicketSummary.SystemName != "Payments" {
 		t.Fatalf("ticket_summary.system_name = %q, want Payments", ticketAudit.TicketSummary.SystemName)

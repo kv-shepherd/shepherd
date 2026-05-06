@@ -121,6 +121,7 @@ func TestBuiltInRoles_EngineerRolesExcludePlatformAndApprovalAdmin(t *testing.T)
 		}
 		if roleRecord == nil {
 			t.Fatalf("missing role %s", roleID)
+			continue
 		}
 		if slices.Contains(roleRecord.Permissions, "platform:admin") {
 			t.Fatalf("role %s unexpectedly includes platform:admin", roleID)

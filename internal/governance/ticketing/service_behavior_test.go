@@ -528,7 +528,69 @@ func TestServiceApproveModify_DryRunsExactMutationAndStoresApprovedSnapshot(t *t
 	}
 }
 
-func TestServiceApproveModify_DryRunMutationUnavailableDegradesAndStoresApprovedSnapshot(t *testing.T) {
+func TestServiceApproveModify_RequiresRuntimePreflightService(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_modify_requires_preflight_service")
+	ctx := context.Background()
+
+	eventID := "event-modify-no-preflight-service"
+	ticketID := "ticket-modify-no-preflight-service"
+	payload, err := domain.VMModifyPayload{
+		VMID:                   "vm-1",
+		VMName:                 "vm-1",
+		ClusterID:              "cluster-1",
+		Namespace:              "team-a",
+		Actor:                  "user-1",
+		CurrentCPUCores:        2,
+		CurrentMemoryGi:        4,
+		CurrentCPURequest:      2,
+		CurrentMemoryRequestGi: 4,
+		TargetMemoryGi:         ptrFloat64(8),
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal modify payload: %v", err)
+	}
+	if _, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMModifyRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payload).
+		SetCreatedBy("user-1").
+		Save(ctx); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeMODIFY).
+		Save(ctx); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+
+	err = gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() error = nil, want missing preflight service error")
+	}
+	if writer.modifyCalled {
+		t.Fatal("atomic modify writer must not be called without runtime preflight service")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want AppError", err)
+	}
+	if appErr.Code != "VM_MODIFY_APPROVAL_PREFLIGHT_UNAVAILABLE" {
+		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, "VM_MODIFY_APPROVAL_PREFLIGHT_UNAVAILABLE")
+	}
+}
+
+func TestServiceApproveModify_DryRunMutationUnavailableBlocksAtomicWriter(t *testing.T) {
 	t.Parallel()
 
 	client := testutil.OpenEntPostgres(t, "gateway_modify_dryrun_unavailable")
@@ -594,17 +656,25 @@ func TestServiceApproveModify_DryRunMutationUnavailableDegradesAndStoresApproved
 	gw := NewService(client, nil, writer)
 	gw.SetVMService(service.NewVMService(stub))
 
-	if err := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{}); err != nil {
-		t.Fatalf("Approve() error = %v, want degraded success when mutation dry-run cannot reach cluster", err)
+	err = gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() error = nil, want preflight unavailable error")
 	}
-	if !writer.modifyCalled {
-		t.Fatal("atomic modify writer should be called when mutation dry-run degrades")
+	if writer.modifyCalled {
+		t.Fatal("atomic modify writer must not be called when mutation dry-run cannot reach cluster")
 	}
 	if stub.dryRunCalls != 1 {
 		t.Fatalf("DryRunVMMutation calls = %d, want 1", stub.dryRunCalls)
 	}
-	if _, ok := writer.modifiedSpec["vm_mutation"].(map[string]interface{}); !ok {
-		t.Fatalf("modifiedSpec[vm_mutation] = %T, want persisted mutation snapshot", writer.modifiedSpec["vm_mutation"])
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want AppError", err)
+	}
+	if appErr.Code != apperrors.CodeClusterUnhealthy {
+		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, apperrors.CodeClusterUnhealthy)
+	}
+	if reason, _ := appErr.Params["reason"].(string); !strings.Contains(reason, "connection refused") {
+		t.Fatalf("AppError.Params[reason] = %q, want native cluster error", reason)
 	}
 }
 
@@ -696,7 +766,7 @@ func TestServiceApproveModify_DryRunMutationErrorBlocksAtomicWriterAndPreservesN
 	}
 }
 
-func TestServiceApproveModify_GetVMLoadErrorDegradesAndStillEnqueues(t *testing.T) {
+func TestServiceApproveModify_GetVMLoadErrorBlocksAtomicWriter(t *testing.T) {
 	t.Parallel()
 
 	client := testutil.OpenEntPostgres(t, "gateway_modify_getvm_unavailable")
@@ -746,14 +816,25 @@ func TestServiceApproveModify_GetVMLoadErrorDegradesAndStillEnqueues(t *testing.
 	gw := NewService(client, nil, writer)
 	gw.SetVMService(service.NewVMService(stub))
 
-	if err := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{}); err != nil {
-		t.Fatalf("Approve() error = %v, want degraded success when live VM lookup cannot reach cluster", err)
+	err = gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() error = nil, want preflight unavailable error")
 	}
-	if !writer.modifyCalled {
-		t.Fatal("atomic modify writer should be called when live VM lookup degrades")
+	if writer.modifyCalled {
+		t.Fatal("atomic modify writer must not be called when live VM lookup cannot reach cluster")
 	}
 	if stub.dryRunCalls != 0 {
 		t.Fatalf("DryRunVMMutation calls = %d, want 0 when live VM lookup fails first", stub.dryRunCalls)
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("Approve() error = %T, want AppError", err)
+	}
+	if appErr.Code != apperrors.CodeClusterUnhealthy {
+		t.Fatalf("AppError.Code = %q, want %q", appErr.Code, apperrors.CodeClusterUnhealthy)
+	}
+	if reason, _ := appErr.Params["reason"].(string); !strings.Contains(reason, "no configuration has been provided") {
+		t.Fatalf("AppError.Params[reason] = %q, want native kubeconfig error", reason)
 	}
 }
 
@@ -984,22 +1065,22 @@ func TestServiceApproveBatchParent_ReturnsFirstChildValidationError(t *testing.T
 	if err != nil {
 		t.Fatalf("get child ticket: %v", err)
 	}
-	if childTicket.Status != entticket.StatusFAILED {
-		t.Fatalf("child status = %s, want FAILED", childTicket.Status)
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child status = %s, want PENDING", childTicket.Status)
 	}
-	if !strings.Contains(childTicket.RejectReason, `namespaces "team-a" not found`) {
-		t.Fatalf("child reject_reason = %q, want namespace rejection context", childTicket.RejectReason)
+	if childTicket.RejectReason != "" {
+		t.Fatalf("child reject_reason = %q, want empty because dry-run must not consume approval", childTicket.RejectReason)
 	}
 
 	parentTicket, err := client.Ticket.Get(ctx, parentTicketID)
 	if err != nil {
 		t.Fatalf("get parent ticket: %v", err)
 	}
-	if parentTicket.Status != entticket.StatusFAILED {
-		t.Fatalf("parent status = %s, want FAILED", parentTicket.Status)
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent status = %s, want PENDING", parentTicket.Status)
 	}
-	if !strings.Contains(parentTicket.RejectReason, `namespaces "team-a" not found`) {
-		t.Fatalf("parent reject_reason = %q, want first child validation error", parentTicket.RejectReason)
+	if parentTicket.RejectReason != "" {
+		t.Fatalf("parent reject_reason = %q, want empty because dry-run must not consume approval", parentTicket.RejectReason)
 	}
 	if writer.called {
 		t.Fatal("atomic writer should not be called when batch child dryrun fails")
@@ -2103,7 +2184,7 @@ func TestServiceApproveCreate_DryRunGate_InvalidSpecBlocksEnqueue(t *testing.T) 
 	}
 }
 
-func TestServiceApproveCreate_DryRunGate_ProviderErrorDegradesAndEnqueues(t *testing.T) {
+func TestServiceApproveCreate_DryRunGate_ProviderErrorBlocksAndKeepsPending(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_dryrun_gate_error")
 	ticketID := createOverrideTestData(t, client, "dryrun-error")
@@ -2116,18 +2197,25 @@ func TestServiceApproveCreate_DryRunGate_ProviderErrorDegradesAndEnqueues(t *tes
 
 	opts := ExecutionOptions{ClusterID: "cluster-1"}
 	err := gw.Approve(context.Background(), ticketID, "admin-1", opts)
-	if err != nil {
-		t.Fatalf("Approve() error = %v, want degraded success when DryRun gate provider is unavailable", err)
+	if err == nil {
+		t.Fatal("Approve() error = nil, want preflight unavailable error")
 	}
-	if !writer.called {
-		t.Fatal("atomic writer should be called when DryRun gate degrades on runtime unavailability")
+	if writer.called {
+		t.Fatal("atomic writer must not be called when DryRun gate provider is unavailable")
 	}
 	if stubProvider.calls != 1 {
 		t.Fatalf("ValidateSpec calls = %d, want 1", stubProvider.calls)
 	}
+	ticket, getErr := client.Ticket.Get(context.Background(), ticketID)
+	if getErr != nil {
+		t.Fatalf("get ticket: %v", getErr)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want PENDING", ticket.Status)
+	}
 }
 
-func TestServiceApproveCreate_DryRunGate_NamespaceProvisioningErrorDegradesAndEnqueues(t *testing.T) {
+func TestServiceApproveCreate_DryRunGate_NamespaceProvisioningErrorBlocksAndKeepsPending(t *testing.T) {
 	t.Parallel()
 
 	client := testutil.OpenEntPostgres(t, "gateway_dryrun_namespace_error")
@@ -2140,18 +2228,25 @@ func TestServiceApproveCreate_DryRunGate_NamespaceProvisioningErrorDegradesAndEn
 	stubProvider.ensureNamespaceErr = fmt.Errorf("get client for cluster cluster-1: parse kubeconfig: invalid configuration: no configuration has been provided")
 	gw.SetVMService(service.NewVMService(stubProvider))
 
-	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{ClusterID: "cluster-1"}); err != nil {
-		t.Fatalf("Approve() error = %v, want degraded success when namespace provisioning cannot reach cluster", err)
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{ClusterID: "cluster-1"}); err == nil {
+		t.Fatal("Approve() error = nil, want preflight unavailable error")
 	}
-	if !writer.called {
-		t.Fatal("atomic writer should be called when namespace provisioning degrades")
+	if writer.called {
+		t.Fatal("atomic writer must not be called when namespace provisioning cannot reach cluster")
 	}
 	if stubProvider.calls != 0 {
 		t.Fatalf("ValidateSpec calls = %d, want 0 when EnsureNamespace fails first", stubProvider.calls)
 	}
+	ticket, err := client.Ticket.Get(context.Background(), ticketID)
+	if err != nil {
+		t.Fatalf("get ticket: %v", err)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want PENDING", ticket.Status)
+	}
 }
 
-func TestServiceApproveCreate_CloneSourcePreflight_ProviderErrorDegradesAndEnqueues(t *testing.T) {
+func TestServiceApproveCreate_CloneSourcePreflight_ProviderErrorBlocksAndKeepsPending(t *testing.T) {
 	t.Parallel()
 
 	client := testutil.OpenEntPostgres(t, "gateway_clone_preflight_provider_error")
@@ -2164,15 +2259,22 @@ func TestServiceApproveCreate_CloneSourcePreflight_ProviderErrorDegradesAndEnque
 		fmt.Errorf("get source pvc golden-images/ubuntu-golden on cluster cluster-1: dial tcp 10.0.0.1:443: connect: connection refused"),
 	)))
 
-	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{ClusterID: "cluster-1", StorageClass: "fast-sc"}); err != nil {
-		t.Fatalf("Approve() error = %v, want degraded success when clone source preflight cannot reach cluster", err)
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{ClusterID: "cluster-1", StorageClass: "fast-sc"}); err == nil {
+		t.Fatal("Approve() error = nil, want preflight unavailable error")
 	}
-	if !writer.called {
-		t.Fatal("atomic writer should be called when clone source preflight degrades")
+	if writer.called {
+		t.Fatal("atomic writer must not be called when clone source preflight cannot reach cluster")
+	}
+	ticket, err := client.Ticket.Get(context.Background(), ticketID)
+	if err != nil {
+		t.Fatalf("get ticket: %v", err)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want PENDING", ticket.Status)
 	}
 }
 
-func TestServiceApproveCreate_AllowsApprovalWhenSelectedClusterIsUnreachable(t *testing.T) {
+func TestServiceApproveCreate_BlocksAndKeepsPendingWhenSelectedClusterIsUnreachable(t *testing.T) {
 	t.Parallel()
 
 	client := testutil.OpenEntPostgres(t, "gateway_create_unreachable_cluster")
@@ -2270,23 +2372,25 @@ func TestServiceApproveCreate_AllowsApprovalWhenSelectedClusterIsUnreachable(t *
 	writer := &fakeAtomicWriter{}
 	gw := NewService(client, nil, writer)
 
-	if err := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{
+	err = gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{
 		ClusterID:    "cluster-unreachable",
 		StorageClass: "gold-sc",
-	}); err != nil {
-		t.Fatalf("Approve() error = %v, want governance approval to survive unreachable cluster", err)
+	})
+	if err == nil {
+		t.Fatal("Approve() error = nil, want preflight unavailable error")
 	}
-	if !writer.called {
-		t.Fatal("atomic writer should be called when selected cluster is unreachable")
+	if writer.called {
+		t.Fatal("atomic writer must not be called when selected cluster is unreachable")
 	}
-	if writer.placement == nil {
-		t.Fatal("placement evaluation should still be recorded")
+	if !strings.Contains(err.Error(), "not healthy") {
+		t.Fatalf("Approve() error = %v, want cluster health context", err)
 	}
-	if eligible, _ := writer.placement["eligible"].(bool); eligible {
-		t.Fatalf("placement eligible = %v, want false for unreachable cluster snapshot", writer.placement["eligible"])
+	ticket, err := client.Ticket.Get(ctx, ticketID)
+	if err != nil {
+		t.Fatalf("get ticket: %v", err)
 	}
-	if reason, _ := writer.placement["reason_message"].(string); !strings.Contains(reason, "not healthy") {
-		t.Fatalf("placement reason_message = %q, want cluster health context", reason)
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want PENDING", ticket.Status)
 	}
 }
 

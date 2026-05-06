@@ -139,6 +139,7 @@ func TestHTTPHandler(t *testing.T) {
 	handler := HTTPHandler()
 	if handler == nil {
 		t.Fatal("HTTPHandler() returned nil")
+		return
 	}
 	if handler.Level() != zapcore.InfoLevel {
 		t.Errorf("HTTPHandler().Level() = %v, want InfoLevel", handler.Level())

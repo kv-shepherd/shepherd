@@ -37,6 +37,7 @@ func TestProvider_SubmitForApproval_ReturnsPendingTicket(t *testing.T) {
 	}
 	if resp == nil {
 		t.Fatal("SubmitForApproval() returned nil response")
+		return
 	}
 	if resp.TicketID != "evt-123" {
 		t.Fatalf("SubmitForApproval() ticket_id = %q, want evt-123", resp.TicketID)

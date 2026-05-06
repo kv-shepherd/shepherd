@@ -634,6 +634,7 @@ func registerDirectorySyncTestAdapter[T provider.AuthProviderAdminAdapter](t *te
 	case *testDirectorySyncAdapter:
 		if typed == nil {
 			t.Fatal("adapter is nil")
+			return adapter
 		}
 		if typed.typeKey == "" {
 			typed.typeKey = "test-directory-sync-" + uuid.NewString()
@@ -641,6 +642,7 @@ func registerDirectorySyncTestAdapter[T provider.AuthProviderAdminAdapter](t *te
 	case *testScheduledDirectorySyncAdapter:
 		if typed == nil || typed.testDirectorySyncAdapter == nil {
 			t.Fatal("adapter is nil")
+			return adapter
 		}
 		if typed.typeKey == "" {
 			typed.typeKey = "test-directory-sync-" + uuid.NewString()

@@ -13,6 +13,7 @@ import (
 	stderrors "errors"
 	"fmt"
 	"net"
+	"net/http"
 	"strings"
 	"time"
 
@@ -52,6 +53,7 @@ type ExecutionOptions struct {
 
 type approveCreateConfig struct {
 	skipClonePreflight bool
+	preflightOnly      bool
 }
 
 // AtomicDecisionWriter defines ADR-0012 atomic write operations for final
@@ -274,7 +276,7 @@ func (g *Service) approveCreateWithConfig(
 		placementEvaluation = buildPlacementEvaluationSnapshot(evaluation, opts, resolvedOpts)
 		if evaluation != nil && !evaluation.Eligible {
 			if isSelectedClusterRuntimeUnavailable(evaluation) {
-				logApprovalPreflightDegraded(ticketID, opts.ClusterID, "cluster_placement", stderrors.New(evaluation.ReasonMessage))
+				return approvalPreflightUnavailable(stderrors.New(evaluation.ReasonMessage))
 			} else {
 				if g.auditLogger != nil {
 					_ = g.auditLogger.LogApprovalWithDetails(ctx, ticketID, "validation_failed", approver, map[string]interface{}{
@@ -319,7 +321,7 @@ func (g *Service) approveCreateWithConfig(
 			targetStorageClass,
 		); preflightErr != nil {
 			if isClusterRuntimeUnavailable(preflightErr) {
-				logApprovalPreflightDegraded(ticketID, opts.ClusterID, "clone_source_preflight", preflightErr)
+				return approvalPreflightUnavailable(preflightErr)
 			} else {
 				return fmt.Errorf("source pvc preflight failed for ticket %s: %w", ticketID, preflightErr)
 			}
@@ -343,9 +345,12 @@ func (g *Service) approveCreateWithConfig(
 		result, validateErr := g.vmService.ValidateAndPrepare(ctx, opts.ClusterID, payload.Namespace, dryRunSpec)
 		switch {
 		case validateErr != nil && isClusterRuntimeUnavailable(validateErr):
-			logApprovalPreflightDegraded(ticketID, opts.ClusterID, "create_dryrun", validateErr)
+			return approvalPreflightUnavailable(validateErr)
 		case validateErr != nil:
-			return fmt.Errorf("pre-flight dryrun gate failed for ticket %s: %w", ticketID, validateErr)
+			return apperrors.BadRequest(
+				apperrors.CodeValidationFailed,
+				fmt.Sprintf("pre-flight dryrun gate failed for ticket %s: %v", ticketID, validateErr),
+			)
 		case !result.Valid:
 			return apperrors.BadRequest(apperrors.CodeValidationFailed,
 				fmt.Sprintf("vm spec rejected by cluster %s for ticket %s: %s",
@@ -375,6 +380,10 @@ func (g *Service) approveCreateWithConfig(
 		if overcommitErr := service.ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi, instanceSizeEntity.DedicatedCPU); overcommitErr != nil {
 			return fmt.Errorf("resource override validation for ticket %s: %w", ticketID, overcommitErr)
 		}
+	}
+
+	if config.preflightOnly {
+		return nil
 	}
 
 	templateSnapshot := buildTemplateSnapshot(templateEntity)
@@ -563,8 +572,7 @@ func (g *Service) preflightCreateCloneSource(ctx context.Context, ticket *ent.Ti
 		targetStorageClass,
 	); err != nil {
 		if isClusterRuntimeUnavailable(err) {
-			logApprovalPreflightDegraded(ticket.ID, opts.ClusterID, "batch_clone_source_preflight", err)
-			return nil
+			return approvalPreflightUnavailable(err)
 		}
 		return fmt.Errorf("source pvc preflight failed for ticket %s: %w", ticket.ID, err)
 	}
@@ -622,15 +630,6 @@ func isClusterRuntimeUnavailable(err error) bool {
 		}
 	}
 	return false
-}
-
-func logApprovalPreflightDegraded(ticketID, clusterID, stage string, err error) {
-	logger.Warn("approval preflight degraded due to cluster runtime unavailability",
-		zap.String("ticket_id", ticketID),
-		zap.String("cluster_id", strings.TrimSpace(clusterID)),
-		zap.String("stage", stage),
-		zap.Error(err),
-	)
 }
 
 func buildPlacementEvaluationSnapshot(
@@ -721,64 +720,15 @@ func (g *Service) approveModify(
 	ticketID, approver string,
 	opts ExecutionOptions,
 ) error {
-	if event == nil {
-		return fmt.Errorf("modify approval requires domain event")
+	prepared, err := g.prepareModifyApproval(ctx, event, ticketID, opts)
+	if err != nil {
+		return err
 	}
 
-	var payload domain.VMModifyPayload
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		return fmt.Errorf("parse modify event payload: %w", err)
-	}
-	overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts)
-	if validationErr != nil {
-		return validationErr
-	}
-
-	canRunRuntimeChecks := g.vmService != nil
-	if canRunRuntimeChecks {
-		liveVM, err := g.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
-		if err != nil {
-			if isClusterRuntimeUnavailable(err) {
-				logApprovalPreflightDegraded(ticketID, payload.ClusterID, "modify_live_vm_lookup", err)
-				canRunRuntimeChecks = false
-			} else {
-				return fmt.Errorf("load live vm for modify approval %s: %w", ticketID, err)
-			}
-		}
-		if canRunRuntimeChecks && liveVM == nil {
-			return fmt.Errorf("live vm is unavailable for modify approval %s", ticketID)
-		}
-		if canRunRuntimeChecks {
-			plan, err := vmmutationplan.PlanVMResourceUpdatePatch(payload.Namespace, liveVM, vmmutationplan.VMLiveUpdateTargets{
-				CPUCores:        payload.TargetCPUCores,
-				MemoryGi:        payload.TargetMemoryGi,
-				DiskGB:          payload.TargetDiskGB,
-				CPURequest:      overrideCPURequest,
-				MemoryRequestGi: overrideMemoryRequest,
-			})
-			if err != nil {
-				return apperrors.BadRequest(
-					"VM_MODIFY_APPROVAL_INVALID",
-					fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
-				)
-			}
-			if err := g.vmService.DryRunVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation); err != nil {
-				if isClusterRuntimeUnavailable(err) {
-					logApprovalPreflightDegraded(ticketID, payload.ClusterID, "modify_dryrun", err)
-				} else {
-					return apperrors.BadRequest(
-						"VM_MODIFY_APPROVAL_INVALID",
-						fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
-					)
-				}
-			}
-			modifySpec = withApprovedVMMutation(modifySpec, plan)
-		}
-	}
 	if g.atomicWriter == nil {
 		return fmt.Errorf("atomic approval writer is not configured")
 	}
-	if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, modifySpec); err != nil {
+	if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, prepared.modifiedSpec); err != nil {
 		return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, err)
 	}
 
@@ -786,18 +736,114 @@ func (g *Service) approveModify(
 		_ = g.auditLogger.LogApproval(ctx, ticketID, "modify_approved", approver)
 	}
 	if g.notifier != nil {
-		g.notifier.OnTicketApproved(ctx, ticketID, payload.Actor, approver)
+		g.notifier.OnTicketApproved(ctx, ticketID, prepared.payload.Actor, approver)
 	}
 
 	logger.Info("MODIFY ticket approved and job enqueued",
 		zap.String("ticket_id", ticketID),
 		zap.String("approver", approver),
-		zap.String("vm_id", payload.VMID),
-		zap.String("vm_name", payload.VMName),
+		zap.String("vm_id", prepared.payload.VMID),
+		zap.String("vm_name", prepared.payload.VMName),
 		zap.String("event_id", ticket.EventID),
 	)
 
 	return nil
+}
+
+type preparedModifyApproval struct {
+	payload      domain.VMModifyPayload
+	modifiedSpec map[string]interface{}
+}
+
+func (g *Service) prepareModifyApproval(
+	ctx context.Context,
+	event *ent.DomainEvent,
+	ticketID string,
+	opts ExecutionOptions,
+) (*preparedModifyApproval, error) {
+	if event == nil {
+		return nil, fmt.Errorf("modify approval requires domain event")
+	}
+
+	var payload domain.VMModifyPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		return nil, fmt.Errorf("parse modify event payload: %w", err)
+	}
+	overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts)
+	if validationErr != nil {
+		return nil, validationErr
+	}
+
+	if g.vmService == nil {
+		return nil, apperrors.New(
+			"VM_MODIFY_APPROVAL_PREFLIGHT_UNAVAILABLE",
+			"modify approval requires live cluster mutation preflight",
+			http.StatusServiceUnavailable,
+		)
+	}
+
+	liveVM, err := g.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
+	if err != nil {
+		if isClusterRuntimeUnavailable(err) {
+			return nil, approvalPreflightUnavailable(err)
+		}
+		return nil, fmt.Errorf("load live vm for modify approval %s: %w", ticketID, err)
+	}
+	if liveVM == nil {
+		return nil, fmt.Errorf("live vm is unavailable for modify approval %s", ticketID)
+	}
+
+	plan, err := vmmutationplan.PlanVMResourceUpdatePatch(payload.Namespace, liveVM, vmmutationplan.VMLiveUpdateTargets{
+		CPUCores:        payload.TargetCPUCores,
+		MemoryGi:        payload.TargetMemoryGi,
+		DiskGB:          payload.TargetDiskGB,
+		CPURequest:      overrideCPURequest,
+		MemoryRequestGi: overrideMemoryRequest,
+	})
+	if err != nil {
+		return nil, apperrors.BadRequest(
+			"VM_MODIFY_APPROVAL_INVALID",
+			fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
+		)
+	}
+	if err := g.vmService.DryRunVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation); err != nil {
+		if isClusterRuntimeUnavailable(err) {
+			return nil, approvalPreflightUnavailable(err)
+		}
+		return nil, apperrors.BadRequest(
+			"VM_MODIFY_APPROVAL_INVALID",
+			fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
+		)
+	}
+	modifySpec = withApprovedVMMutation(modifySpec, plan)
+	return &preparedModifyApproval{
+		payload:      payload,
+		modifiedSpec: modifySpec,
+	}, nil
+}
+
+func approvalPreflightUnavailable(err error) *apperrors.AppError {
+	return apperrors.Wrap(
+		err,
+		apperrors.CodeClusterUnhealthy,
+		"approval requires live cluster preflight",
+		http.StatusServiceUnavailable,
+	).WithParams(map[string]interface{}{
+		"reason": err.Error(),
+	})
+}
+
+func isNonConsumingApprovalError(err error) bool {
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		return false
+	}
+	return appErr.HTTPStatus == http.StatusBadRequest ||
+		appErr.HTTPStatus == http.StatusServiceUnavailable ||
+		appErr.Code == apperrors.CodeClusterUnhealthy ||
+		appErr.Code == apperrors.CodeValidationFailed ||
+		appErr.Code == "VM_MODIFY_APPROVAL_INVALID" ||
+		appErr.Code == "VM_MODIFY_APPROVAL_PREFLIGHT_UNAVAILABLE"
 }
 
 func buildModifyApprovalSpec(
@@ -1096,12 +1142,38 @@ func (g *Service) approveBatchParent(
 		failedCount  int
 		firstErr     error
 	)
-	createReady := make(map[string]struct{}, len(children))
+	dispatchReady := make(map[string]struct{}, len(children))
 	for _, child := range children {
-		if child.Status != entticket.StatusPENDING || child.OperationType != entticket.OperationTypeCREATE {
+		if child.Status != entticket.StatusPENDING {
 			continue
 		}
-		if preflightErr := g.preflightCreateCloneSource(ctx, child, opts); preflightErr != nil {
+
+		var preflightErr error
+		switch child.OperationType {
+		case entticket.OperationTypeCREATE:
+			preflightErr = g.preflightCreateCloneSource(ctx, child, opts)
+			if preflightErr == nil {
+				preflightErr = g.approveCreateWithConfig(ctx, child, child.ID, approver, opts, approveCreateConfig{
+					skipClonePreflight: true,
+					preflightOnly:      true,
+				})
+			}
+		case entticket.OperationTypeMODIFY:
+			childEvent := parentEvent
+			if childEvent == nil || child.EventID != childEvent.ID {
+				childEvent, preflightErr = g.client.DomainEvent.Get(ctx, child.EventID)
+				if preflightErr != nil {
+					break
+				}
+			}
+			_, preflightErr = g.prepareModifyApproval(ctx, childEvent, child.ID, opts)
+		case entticket.OperationTypeDELETE, entticket.OperationTypePOWER, entticket.OperationTypeVNC_ACCESS:
+			// These operations do not have approval-time cluster dry-run checks.
+		}
+		if preflightErr != nil {
+			if isNonConsumingApprovalError(preflightErr) {
+				return preflightErr
+			}
 			failedCount++
 			if firstErr == nil {
 				firstErr = preflightErr
@@ -1109,20 +1181,22 @@ func (g *Service) approveBatchParent(
 			g.markChildApprovalDispatchFailed(ctx, child, approver, preflightErr)
 			continue
 		}
-		createReady[child.ID] = struct{}{}
+		dispatchReady[child.ID] = struct{}{}
 	}
 	for _, child := range children {
 		if child.Status != entticket.StatusPENDING {
 			continue
 		}
-		if child.OperationType == entticket.OperationTypeCREATE {
-			if _, ok := createReady[child.ID]; !ok {
-				continue
-			}
+		if _, ok := dispatchReady[child.ID]; !ok {
+			continue
 		}
 
 		var approveErr error
 		switch child.OperationType {
+		case entticket.OperationTypeCREATE:
+			approveErr = g.approveCreateWithConfig(ctx, child, child.ID, approver, opts, approveCreateConfig{
+				skipClonePreflight: true,
+			})
 		case entticket.OperationTypeMODIFY:
 			childEvent := parentEvent
 			if childEvent == nil || child.EventID != childEvent.ID {
@@ -1147,12 +1221,24 @@ func (g *Service) approveBatchParent(
 				}
 			}
 			approveErr = g.approvePower(ctx, child, childEvent, child.ID, approver)
+		case entticket.OperationTypeVNC_ACCESS:
+			childEvent := parentEvent
+			if childEvent == nil || child.EventID != childEvent.ID {
+				childEvent, approveErr = g.client.DomainEvent.Get(ctx, child.EventID)
+				if approveErr != nil {
+					failedCount++
+					g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load vnc child event %s: %w", child.EventID, approveErr))
+					continue
+				}
+			}
+			approveErr = g.approveVNC(ctx, child, childEvent, child.ID, approver)
 		default:
-			approveErr = g.approveCreateWithConfig(ctx, child, child.ID, approver, opts, approveCreateConfig{
-				skipClonePreflight: true,
-			})
+			approveErr = fmt.Errorf("unsupported ticket operation type %s for child ticket %s", child.OperationType, child.ID)
 		}
 		if approveErr != nil {
+			if isNonConsumingApprovalError(approveErr) && successCount == 0 {
+				return approveErr
+			}
 			failedCount++
 			if firstErr == nil {
 				firstErr = approveErr

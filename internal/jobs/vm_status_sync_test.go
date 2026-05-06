@@ -197,6 +197,7 @@ func TestDeriveHighTierSince(t *testing.T) {
 		}, vm.PollingTierHigh, now)
 		if got == nil {
 			t.Fatal("deriveHighTierSince() = nil, want non-nil")
+			return
 		}
 		if got.Sub(now) != 0 {
 			t.Fatalf("deriveHighTierSince() = %v, want %v", *got, now)
@@ -213,6 +214,7 @@ func TestDeriveHighTierSince(t *testing.T) {
 		}, vm.PollingTierHigh, now)
 		if got == nil {
 			t.Fatal("deriveHighTierSince() = nil, want non-nil")
+			return
 		}
 		if got.Sub(old) != 0 {
 			t.Fatalf("deriveHighTierSince() = %v, want %v", *got, old)

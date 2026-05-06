@@ -223,6 +223,7 @@ func assertTopOpenAPIVersion(t *testing.T, root *yaml.Node, want string) {
 	openapi := findMappingValue(root, "openapi")
 	if openapi == nil {
 		t.Fatalf("missing top-level openapi field")
+		return
 	}
 	if openapi.Value != want {
 		t.Fatalf("openapi = %q, want %q", openapi.Value, want)
@@ -234,6 +235,7 @@ func assertTypeAndNullable(t *testing.T, node *yaml.Node, wantType, wantNullable
 	typeNode := findMappingValue(node, "type")
 	if typeNode == nil {
 		t.Fatalf("missing type field")
+		return
 	}
 	if typeNode.Kind != yaml.ScalarNode {
 		t.Fatalf("type field should be scalar, got kind=%d", typeNode.Kind)
@@ -245,6 +247,7 @@ func assertTypeAndNullable(t *testing.T, node *yaml.Node, wantType, wantNullable
 	nullableNode := findMappingValue(node, "nullable")
 	if nullableNode == nil {
 		t.Fatalf("missing nullable field")
+		return
 	}
 	if !strings.EqualFold(nullableNode.Value, wantNullable) {
 		t.Fatalf("nullable = %q, want %q", nullableNode.Value, wantNullable)

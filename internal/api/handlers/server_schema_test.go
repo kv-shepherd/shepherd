@@ -172,6 +172,7 @@ func TestGetDynamicSchema_InstancesizeMask_RetainsMetadataKeys(t *testing.T) {
 	}
 	if target == nil {
 		t.Fatalf("quick_fields does not contain path %q", targetPath)
+		return
 	}
 	if target.DisplayNameKey == "" {
 		t.Errorf("display_name_key is empty for %q", targetPath)

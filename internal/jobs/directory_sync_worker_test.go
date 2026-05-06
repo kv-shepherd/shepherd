@@ -342,6 +342,7 @@ func registerWorkerDirectorySyncAdapter(t *testing.T, adapter *workerDirectorySy
 	t.Helper()
 	if adapter == nil {
 		t.Fatal("adapter is nil")
+		return adapter
 	}
 	if adapter.typeKey == "" {
 		adapter.typeKey = "test-worker-directory-sync-" + uuid.NewString()

@@ -304,6 +304,7 @@ func TestNillableTrimmed(t *testing.T) {
 	got := nillableTrimmed("  abc  ")
 	if got == nil {
 		t.Fatal("nillableTrimmed(non-empty) = nil, want non-nil")
+		return
 	}
 	if *got != "abc" {
 		t.Fatalf("nillableTrimmed(non-empty) = %q, want %q", *got, "abc")

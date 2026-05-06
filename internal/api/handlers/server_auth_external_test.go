@@ -859,6 +859,7 @@ func registerRuntimeAuthTestAdapter(t *testing.T, adapter *testRuntimeAuthAdapte
 	t.Helper()
 	if adapter == nil {
 		t.Fatal("adapter is nil")
+		return adapter
 	}
 	if adapter.typeKey == "" {
 		adapter.typeKey = "test-runtime-auth-" + uuid.NewString()
