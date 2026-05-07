@@ -864,8 +864,8 @@ without changing approval state semantics.
 │                                                                                              │
 │  External decision ingestion:                                                                │
 │    1) Signed callback maps external decision to canonical APPROVED/REJECTED                  │
-│    2) Provider-specific metadata is normalized before audit and execution                    │
-│    3) Polling-mode ingestion remains provider-connector follow-up scope                      │
+│    2) Signed polling endpoints expose pending tickets and accept per-ticket decisions        │
+│    3) Native connectors can add provider-specific metadata normalization                     │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1154,8 +1154,8 @@ without changing approval state semantics.
 #### Scope Boundary
 
 This stage defines provider-model intent and V1 boundary only. The signed
-callback contract is part of the current OpenAPI surface; polling-mode ingestion
-and native provider connector details remain roadmap content in
+callback and polling-mode ingestion contracts are part of the current OpenAPI
+surface; native provider connector details remain roadmap content in
 [Part 4 §Approval Provider Plugin Architecture (V2+ Roadmap)](#external-approval-v2-roadmap)
 and RFC-0004.
 
@@ -2551,7 +2551,7 @@ Key persisted data (schema authority remains in phase/database docs):
 | Note | Description |
 |----------|------|
 | **Idempotency** | Callback may retry; must be safe for duplicates |
-| **Status sync** | Polling-mode provider sync remains native-connector follow-up |
+| **Status sync** | Native provider sync remains connector follow-up |
 | **Timeout** | V1: No auto-cancel. External system may call rejection API on timeout (see ADR-0015 §11) |
 | **Security** | Always verify HMAC signature to prevent forged callbacks |
 | **Fallback** | If external system is unavailable, fall back to built-in approval |

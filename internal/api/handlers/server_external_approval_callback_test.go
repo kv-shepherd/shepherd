@@ -3,7 +3,12 @@ package handlers
 import (
 	"net/http"
 	"testing"
+	"time"
 
+	"github.com/gin-gonic/gin"
+
+	"kv-shepherd.io/shepherd/ent"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
 	approvalregistry "kv-shepherd.io/shepherd/internal/governance/approval/registry"
@@ -175,7 +180,111 @@ func TestReceiveExternalApprovalDecisionRejectsTicketHeaderMismatch(t *testing.T
 	}
 }
 
+func TestListExternalApprovalPendingTicketsReturnsSignedPendingTickets(t *testing.T) {
+	t.Parallel()
+
+	srv, client, system, _ := newExternalApprovalCallbackTestServerWithClient(t, true)
+	mustCreateDomainEvent(t, client, "event-pending", []byte(`{"vm_name":"vm-a"}`))
+	mustCreateTicket(t, client, "ticket-pending", "event-pending", entticket.OperationTypeCREATE, "user-a")
+	mustCreateDomainEvent(t, client, "event-approved", []byte(`{"vm_name":"vm-b"}`))
+	mustCreateTicket(t, client, "ticket-approved", "event-approved", entticket.OperationTypeCREATE, "user-b")
+	if _, err := client.Ticket.UpdateOneID("ticket-approved").
+		SetStatus(entticket.StatusAPPROVED).
+		Save(t.Context()); err != nil {
+		t.Fatalf("mark approved ticket: %v", err)
+	}
+
+	c, w := newPublicGinContext(t, http.MethodGet, "/api/v1/external-approval/pending?page=1&per_page=20", "")
+
+	srv.ListExternalApprovalPendingTickets(c, signedPollingParams(t, c, system.ID, time.Now()))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("polling status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var resp generated.TicketList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1: %+v", got, resp.Items)
+	}
+	if resp.Items[0].Id != "ticket-pending" || resp.Items[0].Status != generated.TicketStatus(entticket.StatusPENDING) {
+		t.Fatalf("item = %+v, want pending ticket-pending", resp.Items[0])
+	}
+	if resp.Pagination.Total != 1 || resp.Pagination.Page != 1 || resp.Pagination.PerPage != 20 {
+		t.Fatalf("pagination = %+v, want total=1 page=1 per_page=20", resp.Pagination)
+	}
+}
+
+func TestListExternalApprovalPendingTicketsRejectsStaleSignature(t *testing.T) {
+	t.Parallel()
+
+	srv, _, system, _ := newExternalApprovalCallbackTestServerWithClient(t, true)
+	c, w := newPublicGinContext(t, http.MethodGet, "/api/v1/external-approval/pending?page=1&per_page=20", "")
+
+	srv.ListExternalApprovalPendingTickets(c, signedPollingParams(t, c, system.ID, time.Now().Add(-10*time.Minute)))
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("polling status = %d, want %d body=%s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "UNAUTHORIZED")
+}
+
+func TestReceiveExternalApprovalTicketDecisionRoutesSignedApproval(t *testing.T) {
+	t.Parallel()
+
+	srv, system, capture := newExternalApprovalCallbackTestServer(t, true)
+	body := mustJSON(t, generated.ExternalApprovalDecisionRequest{
+		TicketId:           "ticket-5",
+		Approved:           true,
+		Approver:           "external.approver@example.com",
+		ProviderDecisionId: "chg-10005",
+	})
+	c, w := newPublicGinContext(t, http.MethodPost, "/external-approval/tickets/ticket-5/decision", body)
+
+	srv.ReceiveExternalApprovalTicketDecision(c, "ticket-5", signedTicketDecisionParams(system.ID, body))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("decision status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	var resp generated.ExternalApprovalDecisionResponse
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if resp.Status != generated.Accepted || resp.TicketId != "ticket-5" || !resp.Approved {
+		t.Fatalf("response = %+v, want accepted ticket-5 approval", resp)
+	}
+	if capture.processCalled != 1 || capture.lastTicketID != "ticket-5" {
+		t.Fatalf("processCalled=%d ticket=%q, want 1 ticket-5", capture.processCalled, capture.lastTicketID)
+	}
+}
+
+func TestReceiveExternalApprovalTicketDecisionRejectsPathMismatch(t *testing.T) {
+	t.Parallel()
+
+	srv, system, capture := newExternalApprovalCallbackTestServer(t, true)
+	body := mustJSON(t, generated.ExternalApprovalDecisionRequest{
+		TicketId: "ticket-6",
+		Approved: true,
+		Approver: "external.approver@example.com",
+	})
+	c, w := newPublicGinContext(t, http.MethodPost, "/external-approval/tickets/different-ticket/decision", body)
+
+	srv.ReceiveExternalApprovalTicketDecision(c, "different-ticket", signedTicketDecisionParams(system.ID, body))
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("decision status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "TICKET_ID_MISMATCH")
+	if capture.processCalled != 0 {
+		t.Fatalf("processCalled = %d, want 0", capture.processCalled)
+	}
+}
+
 func newExternalApprovalCallbackTestServer(t *testing.T, enabled bool) (*Server, *approvalregistry.System, *captureApprovalProvider) {
+	t.Helper()
+
+	srv, _, system, capture := newExternalApprovalCallbackTestServerWithClient(t, enabled)
+	return srv, system, capture
+}
+
+func newExternalApprovalCallbackTestServerWithClient(t *testing.T, enabled bool) (*Server, *ent.Client, *approvalregistry.System, *captureApprovalProvider) {
 	t.Helper()
 
 	client := testutil.OpenEntPostgres(t, "external_approval_callback")
@@ -192,10 +301,11 @@ func newExternalApprovalCallbackTestServer(t *testing.T, enabled bool) (*Server,
 	}
 	capture := &captureApprovalProvider{}
 	srv := NewServer(ServerDeps{
+		EntClient:                client,
 		ExternalApprovalRegistry: registry,
 		ApprovalRouter:           approval.NewApprovalProviderRouter(capture),
 	})
-	return srv, system, capture
+	return srv, client, system, capture
 }
 
 func signedCallbackParams(systemID, ticketID, body string) generated.ReceiveExternalApprovalDecisionParams {
@@ -203,5 +313,34 @@ func signedCallbackParams(systemID, ticketID, body string) generated.ReceiveExte
 		XExternalApprovalSystemID: systemID,
 		XSignature256:             approvalwebhook.SignPayload([]byte(body), []byte("callback-secret")),
 		XTicketID:                 ticketID,
+	}
+}
+
+func signedTicketDecisionParams(systemID, body string) generated.ReceiveExternalApprovalTicketDecisionParams {
+	return generated.ReceiveExternalApprovalTicketDecisionParams{
+		XExternalApprovalSystemID: systemID,
+		XSignature256:             approvalwebhook.SignPayload([]byte(body), []byte("callback-secret")),
+	}
+}
+
+func signedPollingParams(
+	t *testing.T,
+	c *gin.Context,
+	systemID string,
+	timestamp time.Time,
+) generated.ListExternalApprovalPendingTicketsParams {
+	t.Helper()
+
+	timestampHeader := timestamp.UTC().Format(time.RFC3339)
+	c.Request.Header.Set(externalApprovalTimestampHeader, timestampHeader)
+	return generated.ListExternalApprovalPendingTicketsParams{
+		Page:                      1,
+		PerPage:                   20,
+		XExternalApprovalSystemID: systemID,
+		XShepherdTimestamp:        timestamp.UTC(),
+		XSignature256: approvalwebhook.SignPayload(
+			externalApprovalPollingSignaturePayload(c, timestampHeader),
+			[]byte("callback-secret"),
+		),
 	}
 }

@@ -1283,11 +1283,11 @@ Key operations:
 ---
 
 <a id="9-external-approval-systems-v1-interface-only"></a>
-## 9. External Approval Systems (V1 Registry + Webhook Dispatch + Signed Callback)
+## 9. External Approval Systems (V1 Registry + Webhook Dispatch + Signed Ingestion)
 
 > **V1 Scope**: Provider interface, built-in fallback, outbound webhook dispatch,
-> signed callback decision ingestion, adapter registry, admin API/UI, and
-> startup/runtime provider wiring.
+> signed callback and polling-mode decision ingestion, adapter registry,
+> admin API/UI, and startup/runtime provider wiring.
 
 ### 9.1 Interface Definition
 
@@ -1326,7 +1326,7 @@ field.Int("sort_order").Default(0),
 
 | Feature | V2 Target |
 |---------|-----------|
-| Decision ingestion | Polling-mode status sync |
+| Native connector decision sync | Provider-specific status polling |
 | ServiceNow connector | Native ServiceNow API |
 | JIRA connector | JIRA issue-based approval |
 | External audit enrichment | Provider decision metadata normalization |
@@ -1513,7 +1513,7 @@ If >50% of resources detected as ghosts, halt and alert.
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
 | §22 Authentication | ✅ Done | Section 8 (this doc) | Local/JWT, external provider runtime, JIT provisioning, directory sync, and cohort mapping implemented; active session revocation remains RFC-0008 |
-| External Approval Systems | ✅ Webhook Registry + Callback | Section 9 (this doc) | Built-in provider fallback, outbound webhook adapter, registry schema, admin API/UI, runtime wiring, and signed callback decision ingestion implemented; polling-mode ingestion remains RFC-0004 follow-up |
+| External Approval Systems | ✅ Webhook Registry + Signed Ingestion | Section 9 (this doc) | Built-in provider fallback, outbound webhook adapter, registry schema, admin API/UI, runtime wiring, signed callback decision ingestion, and signed polling-mode decision ingestion implemented; native connectors remain RFC-0004 follow-up |
 
 > **Legend**: ✅ Done = Implemented in V1 | ✅ V1 Baseline = V1 product baseline implemented with optional enhancements deferred
 

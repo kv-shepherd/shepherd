@@ -155,6 +155,15 @@ func TestIsJWTOptionalPath_AllowsExternalApprovalCallback(t *testing.T) {
 	require.False(t, isJWTOptionalPath("/api/v1/webhooks/approval-callback-extra"))
 }
 
+func TestIsJWTOptionalPath_AllowsExternalApprovalPolling(t *testing.T) {
+	require.True(t, isJWTOptionalPath("/api/v1/external-approval/pending"))
+	require.True(t, isJWTOptionalPath("/api/v1/external-approval/tickets/ticket-1/decision"))
+
+	require.False(t, isJWTOptionalPath("/api/v1/external-approval/pending-extra"))
+	require.False(t, isJWTOptionalPath("/api/v1/external-approval/tickets/ticket-1/decision-extra"))
+	require.False(t, isJWTOptionalPath("/api/v1/external-approval/tickets/ticket-1/extra/decision"))
+}
+
 func TestNewRouterAppliesMaxRequestBodyBytesBeforeHandlers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

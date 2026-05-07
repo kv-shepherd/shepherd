@@ -45,10 +45,15 @@ Current codebase already implements the shared foundation for this RFC:
 - persisted enabled systems are loaded into the active router by sort order
 - `POST /api/v1/webhooks/approval-callback` accepts signed external approval
   decisions and maps them to Shepherd's canonical approval provider path
+- `GET /api/v1/external-approval/pending` exposes signed pull-style pending
+  ticket polling for registered external approval systems
+- `POST /api/v1/external-approval/tickets/{ticket_id}/decision` accepts signed
+  pull-style decisions and reuses the canonical approval provider path
 
-The remaining RFC-backed work is pull-style decision ingestion from external systems:
+The remaining RFC-backed work is native provider connector depth:
 
-- polling-mode external decision ingestion
+- ServiceNow/JIRA-specific connectors
+- provider metadata normalization and audit enrichment
 
 ### Architecture
 
@@ -137,11 +142,14 @@ func (h *WebhookCallbackHandler) HandleCallback(c *gin.Context) {
 External system pulls pending approvals via API.
 
 ```
-GET /api/v1/approvals/pending?external_system=servicenow
+GET /api/v1/external-approval/pending?page=1&per_page=20
 → Returns list of tickets awaiting external decision
+→ Headers: X-External-Approval-System-ID, X-Shepherd-Timestamp, X-Signature-256
+→ Signature: HMAC-SHA256 over METHOD, path, raw query, and timestamp
 
-POST /api/v1/approvals/{id}/decision
+POST /api/v1/external-approval/tickets/{ticket_id}/decision
 → Submit decision with signature verification
+→ Body ticket_id must match the path ticket_id
 ```
 
 ---
@@ -153,6 +161,7 @@ POST /api/v1/approvals/{id}/decision
 | **Transport Security** | TLS 1.2+ mandatory for all webhook traffic |
 | **Request Signing** | HMAC-SHA256 signature in `X-Signature-256` header |
 | **Callback Verification** | HMAC-SHA256 verification of the raw callback body; `X-External-Approval-System-ID` selects the encrypted signing key |
+| **Polling Verification** | Timestamped HMAC-SHA256 verification over the canonical polling request; stale timestamps are rejected |
 | **Secret Storage** | AES-256-GCM encryption at rest |
 | **Audit Logging** | All external calls logged (redact secrets per ADR-0019) |
 

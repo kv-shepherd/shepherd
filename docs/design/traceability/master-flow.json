@@ -138,11 +138,14 @@
         "docs/adr/ADR-0005-workflow-extensibility.md"
       ],
       "examples": [
+        "api/openapi.yaml",
         "ent/schema/external_approval_system.go",
         "internal/api/handlers/server_admin_external_approval.go",
         "internal/api/handlers/server_external_approval_callback.go",
+        "internal/api/handlers/server_external_approval_callback_test.go",
         "internal/governance/approval/registry/service.go",
         "internal/governance/approval/webhook/provider.go",
+        "internal/app/router.go",
         "web/src/features/admin-external-approval-systems/components/AdminExternalApprovalSystemsContent.tsx"
       ]
     },

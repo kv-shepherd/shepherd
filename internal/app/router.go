@@ -32,6 +32,7 @@ var publicPrefixes = []string{
 }
 
 var publicExactPaths = []string{
+	"/api/v1/external-approval/pending",
 	"/api/v1/webhooks/approval-callback",
 }
 
@@ -47,7 +48,18 @@ func isJWTOptionalPath(path string) bool {
 		}
 	}
 	return strings.HasPrefix(path, "/api/v1/vms/") &&
-		(strings.HasSuffix(path, "/vnc") || strings.HasSuffix(path, "/serial"))
+		(strings.HasSuffix(path, "/vnc") || strings.HasSuffix(path, "/serial")) ||
+		isExternalApprovalDecisionPath(path)
+}
+
+func isExternalApprovalDecisionPath(path string) bool {
+	const prefix = "/api/v1/external-approval/tickets/"
+	const suffix = "/decision"
+	if !strings.HasPrefix(path, prefix) || !strings.HasSuffix(path, suffix) {
+		return false
+	}
+	ticketID := strings.TrimSuffix(strings.TrimPrefix(path, prefix), suffix)
+	return strings.TrimSpace(ticketID) != "" && !strings.Contains(ticketID, "/")
 }
 
 var defaultTrustedLoopbackProxies = []string{
@@ -88,7 +100,7 @@ func buildCORSConfig(cfg *config.Config, requestChecker corsRequestOriginChecker
 
 	corsCfg := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Request-ID", "X-Shepherd-Session-Mode", "X-External-Approval-System-ID", "X-Signature-256", "X-Ticket-ID"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Request-ID", "X-Shepherd-Session-Mode", "X-External-Approval-System-ID", "X-Shepherd-Timestamp", "X-Signature-256", "X-Ticket-ID"},
 		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: cfg.Server.AllowCredentials,
 		MaxAge:           12 * time.Hour,

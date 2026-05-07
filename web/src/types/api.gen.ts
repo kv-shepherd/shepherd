@@ -770,6 +770,55 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/external-approval/pending": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List pending tickets for external approval polling
+         * @description Public server-to-server polling endpoint for registered external approval
+         *     systems. The request must include `X-External-Approval-System-ID`,
+         *     `X-Shepherd-Timestamp`, and `X-Signature-256`. The signature is
+         *     HMAC-SHA256 over `METHOD + "\n" + path + "\n" + raw_query + "\n" +
+         *     timestamp`, where `path` is the request path sent by the client and
+         *     `raw_query` preserves the exact query string.
+         */
+        get: operations["listExternalApprovalPendingTickets"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/external-approval/tickets/{ticket_id}/decision": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive an external approval decision for a polled ticket
+         * @description Public server-to-server decision endpoint for polling-mode external
+         *     approval systems. The raw JSON body must verify against
+         *     `X-Signature-256` using the signing key selected by
+         *     `X-External-Approval-System-ID`. The body `ticket_id` must match the
+         *     path `ticket_id`.
+         */
+        post: operations["receiveExternalApprovalTicketDecision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/webhooks/approval-callback": {
         parameters: {
             query?: never;
@@ -10935,6 +10984,150 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    listExternalApprovalPendingTickets: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
+                page?: components["parameters"]["Page"];
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
+                per_page?: components["parameters"]["PerPage"];
+            };
+            header: {
+                /**
+                 * @description External approval system id registered in Shepherd.
+                 * @example external-approval-001
+                 */
+                "X-External-Approval-System-ID": string;
+                /**
+                 * @description RFC3339 timestamp included in the polling request signature.
+                 * @example 2026-01-01T00:00:00Z
+                 */
+                "X-Shepherd-Timestamp": string;
+                /**
+                 * @description HMAC-SHA256 signature over the canonical polling request, formatted as `sha256=<hex>`.
+                 * @example sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+                 */
+                "X-Signature-256": string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending external approval ticket list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "ticket-001",
+                     *           "event_id": "event-001",
+                     *           "status": "PENDING",
+                     *           "requester": "example"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 20,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["TicketList"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            500: components["responses"]["InternalServerError"];
+        };
+    };
+    receiveExternalApprovalTicketDecision: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description External approval system id registered in Shepherd.
+                 * @example external-approval-001
+                 */
+                "X-External-Approval-System-ID": string;
+                /**
+                 * @description HMAC-SHA256 signature over the raw JSON request body, formatted as `sha256=<hex>`.
+                 * @example sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+                 */
+                "X-Signature-256": string;
+            };
+            path: {
+                /**
+                 * @description Stable work-order ticket identifier.
+                 * @example ticket-001
+                 */
+                ticket_id: components["parameters"]["TicketID"];
+            };
+            cookie?: never;
+        };
+        /** @description External approval decision payload for the polled ticket. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ticket_id": "ticket-001",
+                 *       "approved": true,
+                 *       "approver": "external.approver@example.com",
+                 *       "provider_decision_id": "chg-10001"
+                 *     }
+                 */
+                "application/json": components["schemas"]["ExternalApprovalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description External decision accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "status": "accepted",
+                     *       "ticket_id": "ticket-001",
+                     *       "approved": true
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ExternalApprovalDecisionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Decision request body is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "REQUEST_TOO_LARGE",
+                     *       "message": "request body is too large"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
         };
     };
     receiveExternalApprovalDecision: {

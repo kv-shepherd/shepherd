@@ -2,7 +2,9 @@
 # Format: METHOD /path
 GET /auth/providers/{provider_id}/callback
 POST /auth/providers/{provider_id}/callback
-# External approval callbacks are server-to-server webhooks, not frontend calls.
+# External approval callbacks and polling endpoints are server-to-server calls.
+GET /external-approval/pending
+POST /external-approval/tickets/{ticket_id}/decision
 POST /webhooks/approval-callback
 # Console websocket endpoints are negotiated via POST /vms/{vm_id}/console/request
 # and opened with the browser WebSocket API instead of api.get().

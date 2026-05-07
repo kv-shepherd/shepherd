@@ -7,10 +7,12 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	apivalidator "kv-shepherd.io/shepherd/internal/api/validator"
 	approvalregistry "kv-shepherd.io/shepherd/internal/governance/approval/registry"
@@ -20,10 +22,54 @@ import (
 	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 )
 
-const maxExternalApprovalCallbackBodyBytes int64 = 64 * 1024
+const (
+	maxExternalApprovalCallbackBodyBytes int64 = 64 * 1024
+	externalApprovalSignatureTolerance         = 5 * time.Minute
+	externalApprovalTimestampHeader            = "X-Shepherd-Timestamp"
+)
+
+// ListExternalApprovalPendingTickets handles GET /external-approval/pending.
+func (s *Server) ListExternalApprovalPendingTickets(c *gin.Context, params generated.ListExternalApprovalPendingTicketsParams) {
+	if s.client == nil || s.externalApprovalRegistry == nil {
+		logger.Error("external approval polling dependencies are not configured")
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+
+	if !s.verifyExternalApprovalPollingSignature(c, strings.TrimSpace(params.XExternalApprovalSystemID), strings.TrimSpace(params.XSignature256)) {
+		return
+	}
+
+	s.writeTicketListResponse(c, "", ticketListOptions{
+		page:    params.Page,
+		perPage: params.PerPage,
+		status:  string(entticket.StatusPENDING),
+	})
+}
 
 // ReceiveExternalApprovalDecision handles POST /webhooks/approval-callback.
 func (s *Server) ReceiveExternalApprovalDecision(c *gin.Context, params generated.ReceiveExternalApprovalDecisionParams) {
+	s.receiveExternalApprovalDecision(
+		c,
+		strings.TrimSpace(params.XExternalApprovalSystemID),
+		strings.TrimSpace(params.XSignature256),
+		strings.TrimSpace(params.XTicketID),
+		"",
+	)
+}
+
+// ReceiveExternalApprovalTicketDecision handles POST /external-approval/tickets/{ticket_id}/decision.
+func (s *Server) ReceiveExternalApprovalTicketDecision(c *gin.Context, ticketID generated.TicketID, params generated.ReceiveExternalApprovalTicketDecisionParams) {
+	s.receiveExternalApprovalDecision(
+		c,
+		strings.TrimSpace(params.XExternalApprovalSystemID),
+		strings.TrimSpace(params.XSignature256),
+		"",
+		strings.TrimSpace(ticketID),
+	)
+}
+
+func (s *Server) receiveExternalApprovalDecision(c *gin.Context, systemID, signature, headerTicketID, pathTicketID string) {
 	ctx := c.Request.Context()
 	if s.externalApprovalRegistry == nil || s.approvalRouter == nil {
 		logger.Error("external approval callback dependencies are not configured")
@@ -31,9 +77,6 @@ func (s *Server) ReceiveExternalApprovalDecision(c *gin.Context, params generate
 		return
 	}
 
-	systemID := strings.TrimSpace(params.XExternalApprovalSystemID)
-	signature := strings.TrimSpace(params.XSignature256)
-	headerTicketID := strings.TrimSpace(params.XTicketID)
 	if systemID == "" || signature == "" {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
 		return
@@ -52,7 +95,7 @@ func (s *Server) ReceiveExternalApprovalDecision(c *gin.Context, params generate
 	if !approvalwebhook.VerifySignature(rawBody, []byte(signingKey), signature) {
 		logger.Warn("external approval callback signature verification failed",
 			zap.String("external_approval_system_id", systemID),
-			zap.String("ticket_id", headerTicketID),
+			zap.String("ticket_id", firstNonEmptyString(headerTicketID, pathTicketID)),
 		)
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
 		return
@@ -62,7 +105,7 @@ func (s *Server) ReceiveExternalApprovalDecision(c *gin.Context, params generate
 	if !ok {
 		return
 	}
-	ticketID, approver, rejectReason, ok := validateExternalApprovalDecisionRequest(c, req, headerTicketID)
+	ticketID, approver, rejectReason, ok := validateExternalApprovalDecisionRequest(c, req, headerTicketID, pathTicketID)
 	if !ok {
 		return
 	}
@@ -91,6 +134,65 @@ func (s *Server) ReceiveExternalApprovalDecision(c *gin.Context, params generate
 		Status:   generated.Accepted,
 		TicketId: ticketID,
 	})
+}
+
+func (s *Server) verifyExternalApprovalPollingSignature(c *gin.Context, systemID, signature string) bool {
+	if systemID == "" || signature == "" {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+		return false
+	}
+	timestampHeader := strings.TrimSpace(c.GetHeader(externalApprovalTimestampHeader))
+	if timestampHeader == "" {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+		return false
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, timestampHeader)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+		return false
+	}
+	age := time.Since(timestamp)
+	if age > externalApprovalSignatureTolerance || age < -externalApprovalSignatureTolerance {
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+		return false
+	}
+
+	_, signingKey, err := s.externalApprovalRegistry.CallbackSigningKey(c.Request.Context(), systemID)
+	if err != nil {
+		writeExternalApprovalCallbackRegistryError(c, err, systemID)
+		return false
+	}
+	payload := externalApprovalPollingSignaturePayload(c, timestampHeader)
+	if !approvalwebhook.VerifySignature(payload, []byte(signingKey), signature) {
+		logger.Warn("external approval polling signature verification failed",
+			zap.String("external_approval_system_id", systemID),
+		)
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+		return false
+	}
+	return true
+}
+
+func externalApprovalPollingSignaturePayload(c *gin.Context, timestampHeader string) []byte {
+	method := ""
+	path := ""
+	rawQuery := ""
+	if c != nil && c.Request != nil {
+		method = c.Request.Method
+		if c.Request.URL != nil {
+			path = c.Request.URL.EscapedPath()
+			if path == "" {
+				path = c.Request.URL.Path
+			}
+			rawQuery = c.Request.URL.RawQuery
+		}
+	}
+	return []byte(strings.Join([]string{
+		strings.ToUpper(method),
+		path,
+		rawQuery,
+		strings.TrimSpace(timestampHeader),
+	}, "\n"))
 }
 
 func readExternalApprovalCallbackBody(c *gin.Context) ([]byte, bool) {
@@ -161,6 +263,7 @@ func validateExternalApprovalDecisionRequest(
 	c *gin.Context,
 	req generated.ExternalApprovalDecisionRequest,
 	headerTicketID string,
+	pathTicketID string,
 ) (ticketID, approver, rejectReason string, ok bool) {
 	ticketID = strings.TrimSpace(req.TicketId)
 	approver = strings.TrimSpace(req.Approver)
@@ -170,6 +273,10 @@ func validateExternalApprovalDecisionRequest(
 		return "", "", "", false
 	}
 	if headerTicketID != "" && headerTicketID != ticketID {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "TICKET_ID_MISMATCH"})
+		return "", "", "", false
+	}
+	if pathTicketID != "" && pathTicketID != ticketID {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "TICKET_ID_MISMATCH"})
 		return "", "", "", false
 	}

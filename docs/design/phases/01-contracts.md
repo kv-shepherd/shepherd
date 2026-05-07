@@ -567,7 +567,7 @@ const (
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
 - [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time)
 - [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (InstanceSize, Users, AuthProviders schemas)
-- [RFC-0004](../../rfc/RFC-0004-external-approval.md) - External Approval Systems (Accepted; webhook registry and signed callback implemented, polling follow-up)
+- [RFC-0004](../../rfc/RFC-0004-external-approval.md) - External Approval Systems (Accepted; webhook registry plus signed callback and polling ingestion implemented)
 
 ---
 
@@ -589,6 +589,6 @@ const (
 > **² ExternalApprovalSystem (RFC-0004)**:
 > 
 > RFC-0004 status is `Accepted`. Design is defined in [Master Flow Stage 2.E](../interaction-flows/master-flow.md#stage-2-e).
-> V1 scope includes the provider contract, webhook registry data model, outbound webhook dispatch, built-in fallback, admin/runtime wiring, and signed callback decision ingestion.
-> Polling-mode provider-owned decision ingestion is tracked by RFC-0004 follow-up work.
+> V1 scope includes the provider contract, webhook registry data model, outbound webhook dispatch, built-in fallback, admin/runtime wiring, signed callback decision ingestion, and signed polling-mode decision ingestion.
+> Native provider connectors and provider-specific metadata enrichment are tracked by RFC-0004 follow-up work.
 > Security baseline for adapter integration: TLS mandatory, HMAC signature verification, fallback to built-in on failure.

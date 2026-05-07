@@ -2860,6 +2860,170 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /external-approval/pending:
+    get:
+      tags: [external-approval]
+      summary: List pending tickets for external approval polling
+      description: |
+        Public server-to-server polling endpoint for registered external approval
+        systems. The request must include `X-External-Approval-System-ID`,
+        `X-Shepherd-Timestamp`, and `X-Signature-256`. The signature is
+        HMAC-SHA256 over `METHOD + "\n" + path + "\n" + raw_query + "\n" +
+        timestamp`, where `path` is the request path sent by the client and
+        `raw_query` preserves the exact query string.
+      operationId: listExternalApprovalPendingTickets
+      security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
+      parameters:
+        - name: X-External-Approval-System-ID
+          in: header
+          description: External approval system id registered in Shepherd.
+          required: true
+          schema:
+            type: string
+            example: external-approval-001
+          example: external-approval-001
+        - name: X-Shepherd-Timestamp
+          in: header
+          description: RFC3339 timestamp included in the polling request signature.
+          required: true
+          schema:
+            type: string
+            format: date-time
+            example: '2026-01-01T00:00:00Z'
+          example: '2026-01-01T00:00:00Z'
+        - name: X-Signature-256
+          in: header
+          description: HMAC-SHA256 signature over the canonical polling request, formatted as `sha256=<hex>`.
+          required: true
+          schema:
+            type: string
+            example: sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+          example: sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PerPage'
+      responses:
+        '200':
+          description: Pending external approval ticket list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TicketList'
+                example:
+                  items:
+                    - id: ticket-001
+                      event_id: event-001
+                      status: PENDING
+                      requester: example
+                  pagination:
+                    page: 1
+                    per_page: 20
+                    total: 1
+              example:
+                items:
+                  - id: ticket-001
+                    event_id: event-001
+                    status: PENDING
+                    requester: example
+                pagination:
+                  page: 1
+                  per_page: 20
+                  total: 1
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '500':
+          $ref: '#/components/responses/InternalServerError'
+  /external-approval/tickets/{ticket_id}/decision:
+    post:
+      tags: [external-approval]
+      summary: Receive an external approval decision for a polled ticket
+      description: |
+        Public server-to-server decision endpoint for polling-mode external
+        approval systems. The raw JSON body must verify against
+        `X-Signature-256` using the signing key selected by
+        `X-External-Approval-System-ID`. The body `ticket_id` must match the
+        path `ticket_id`.
+      operationId: receiveExternalApprovalTicketDecision
+      security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
+      parameters:
+        - $ref: '#/components/parameters/TicketID'
+        - name: X-External-Approval-System-ID
+          in: header
+          description: External approval system id registered in Shepherd.
+          required: true
+          schema:
+            type: string
+            example: external-approval-001
+          example: external-approval-001
+        - name: X-Signature-256
+          in: header
+          description: HMAC-SHA256 signature over the raw JSON request body, formatted as `sha256=<hex>`.
+          required: true
+          schema:
+            type: string
+            example: sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+          example: sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+      requestBody:
+        description: External approval decision payload for the polled ticket.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalApprovalDecisionRequest'
+              example:
+                ticket_id: ticket-001
+                approved: true
+                approver: external.approver@example.com
+                provider_decision_id: chg-10001
+            example:
+              ticket_id: ticket-001
+              approved: true
+              approver: external.approver@example.com
+              provider_decision_id: chg-10001
+      responses:
+        '200':
+          description: External decision accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalApprovalDecisionResponse'
+                example:
+                  status: accepted
+                  ticket_id: ticket-001
+                  approved: true
+              example:
+                status: accepted
+                ticket_id: ticket-001
+                approved: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: Decision request body is too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                example:
+                  code: REQUEST_TOO_LARGE
+                  message: request body is too large
+              example:
+                code: REQUEST_TOO_LARGE
+                message: request body is too large
+        '500':
+          $ref: '#/components/responses/InternalServerError'
   /webhooks/approval-callback:
     post:
       tags: [external-approval]
