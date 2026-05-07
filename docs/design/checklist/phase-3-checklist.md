@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/03-service-layer.md](../phases/03-service-layer.md)
 >
-> **Implementation Status**: 🔄 Partial (~80%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler done; CI checks/concurrency deferred
+> **Implementation Status**: 🔄 Partial (~84%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates done; concurrency/degradation deferred
 
 ---
 
@@ -12,18 +12,20 @@
   - [x] `internal/app/bootstrap.go` created (Phase 0)
   - [x] All dependency assembly centralized in this file
   - [x] Layered construction: Infrastructure → Repository → Service → UseCase → Handler
-- [ ] **CI Check**:
-  - [ ] `docs/design/ci/scripts/check_manual_di.sh` created
-  - [ ] Forbidden to instantiate Service/Repository outside `internal/app/`
-  - [ ] Forbidden to initialize dependencies in `init()` functions
-- [ ] **Standards**:
-  - [ ] ✅ All `New*()` constructor calls centralized in `bootstrap.go`
-  - [ ] ✅ Dependencies explicitly injected via constructors
-  - [ ] ❌ Forbidden to use global variables for dependencies
-  - [ ] ❌ Forbidden to use `init()` functions for dependency initialization
-- [ ] Provider factory functions
-- [ ] Repository factory functions
-- [ ] Service dependencies injected via constructors
+- [x] **CI Check**:
+  - [x] `shepherd-arch/manualdi` analyzer active in the golangci-lint gate
+  - [x] `docs/design/ci/scripts/check_manual_di.sh` retained as legacy reference only
+  - [x] Forbidden to wire Service/Repository structs outside `internal/app/`
+  - [x] Forbidden to call constructor-style Service/Repository/UseCase/Gateway/Sender wiring outside the composition root
+  - [x] Wire and Redis runtime imports blocked by analyzer-backed architecture lint
+- [x] **Blocking Standards**:
+  - [x] Constructor-style dependency wiring centralized in `internal/app/` module/bootstrap wiring
+  - [x] Dependencies explicitly injected via constructors
+  - [x] Global dependency containers remain prohibited by review and analyzer-backed wiring constraints
+  - [x] Dependency initialization in `init()` remains prohibited; registration-only `init()` is allowed where documented by package purpose
+- [x] Provider factory functions centralized in infrastructure/module wiring
+- [x] Repository factory functions centralized in infrastructure/module wiring
+- [x] Service dependencies injected via constructors
 
 ---
 
@@ -63,7 +65,7 @@
 - [x] **sqlc Configuration and Code Generation** complete (`internal/repository/sqlc/`)
 - [x] **DatabaseClients Shared Pool** implemented
 - [x] **CreateVMAtomicUseCase Implementation** complete (`internal/usecase/approval_atomic.go`)
-- [ ] **CI Block: sqlc Usage Scope Check** active
+- [x] **CI Block: sqlc Usage Scope Check** active (`check_sqlc_usage.sh`)
 - [ ] **Lock Key Standardization** implemented
 
 ---

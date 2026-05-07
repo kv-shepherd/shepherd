@@ -286,6 +286,15 @@ K8s operation concurrency controlled at **River Worker layer**, not HTTP layer:
 >
 > See [DEPENDENCIES.md](../DEPENDENCIES.md#hpa-concurrency-constraints-required) for detailed calculation examples.
 
+### Manual DI Gate Status
+
+The original legacy scanner `docs/design/ci/scripts/check_manual_di.sh` is no
+longer the blocking implementation. The active gate is the syntax-aware
+`shepherd-arch/manualdi` golangci-lint analyzer, which enforces centralized
+hand-written DI, blocks Wire/Redis runtime drift, and prevents service/repository
+wiring outside `internal/app/`. The shell script remains only as historical
+reference in `docs/design/ci/README.md`.
+
 ### ResizableSemaphore
 
 ```go
