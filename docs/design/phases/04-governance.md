@@ -57,7 +57,7 @@ The following features are **explicitly out of scope** for V1:
 | Complex Approval Workflows | ❌ Not in V1 | See RFC-0002 for Temporal integration |
 | Approval Timeout Auto-processing | ❌ Not in V1 | UI prioritization used instead |
 | Automatic Page Refresh via WebSocket | ❌ Not in V1 | Manual refresh in V1 |
-| External Approval System Integration | ✅ Webhook Registry | Provider interface, outbound webhook dispatch, registry/admin UI/runtime wiring |
+| External Approval System Integration | ✅ Webhook Registry + Callback | Provider interface, outbound webhook dispatch, signed callback ingestion, registry/admin UI/runtime wiring |
 
 **Implementation Guidance**:
 - If a feature request touches any item above, redirect to future RFC
@@ -1283,10 +1283,11 @@ Key operations:
 ---
 
 <a id="9-external-approval-systems-v1-interface-only"></a>
-## 9. External Approval Systems (V1 Registry + Webhook Dispatch)
+## 9. External Approval Systems (V1 Registry + Webhook Dispatch + Signed Callback)
 
 > **V1 Scope**: Provider interface, built-in fallback, outbound webhook dispatch,
-> adapter registry, admin API/UI, and startup/runtime provider wiring.
+> signed callback decision ingestion, adapter registry, admin API/UI, and
+> startup/runtime provider wiring.
 
 ### 9.1 Interface Definition
 
@@ -1325,7 +1326,7 @@ field.Int("sort_order").Default(0),
 
 | Feature | V2 Target |
 |---------|-----------|
-| Decision ingestion | Signed callback endpoint or polling-mode status sync |
+| Decision ingestion | Polling-mode status sync |
 | ServiceNow connector | Native ServiceNow API |
 | JIRA connector | JIRA issue-based approval |
 | External audit enrichment | Provider decision metadata normalization |
@@ -1512,7 +1513,7 @@ If >50% of resources detected as ghosts, halt and alert.
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
 | §22 Authentication | ✅ Done | Section 8 (this doc) | Local/JWT, external provider runtime, JIT provisioning, directory sync, and cohort mapping implemented; active session revocation remains RFC-0008 |
-| External Approval Systems | ✅ Webhook Registry | Section 9 (this doc) | Built-in provider fallback, outbound webhook adapter, registry schema, admin API/UI, and runtime wiring implemented; decision ingestion remains RFC-0004 follow-up |
+| External Approval Systems | ✅ Webhook Registry + Callback | Section 9 (this doc) | Built-in provider fallback, outbound webhook adapter, registry schema, admin API/UI, runtime wiring, and signed callback decision ingestion implemented; polling-mode ingestion remains RFC-0004 follow-up |
 
 > **Legend**: ✅ Done = Implemented in V1 | ✅ V1 Baseline = V1 product baseline implemented with optional enhancements deferred
 

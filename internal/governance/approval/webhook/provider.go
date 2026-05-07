@@ -20,8 +20,8 @@ import (
 
 const (
 	providerType             = "webhook"
-	signatureHeader          = "X-Signature-256"
-	ticketIDHeader           = "X-Ticket-ID"
+	SignatureHeader          = "X-Signature-256"
+	TicketIDHeader           = "X-Ticket-ID"
 	defaultTimeout           = 30 * time.Second
 	defaultRetryCount        = 3
 	defaultRetryBackoff      = 2 * time.Second
@@ -187,8 +187,8 @@ func (p *Provider) sendOnce(ctx context.Context, ticketID string, body []byte) e
 		request.Header.Set(key, value)
 	}
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set(signatureHeader, SignPayload(body, p.signingKey))
-	request.Header.Set(ticketIDHeader, ticketID)
+	request.Header.Set(SignatureHeader, SignPayload(body, p.signingKey))
+	request.Header.Set(TicketIDHeader, ticketID)
 
 	// #nosec G704 -- external approval webhooks are explicitly administrator-configured;
 	// NewProvider validates the endpoint as an absolute HTTPS URL before use.

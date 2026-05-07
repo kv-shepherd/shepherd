@@ -140,6 +140,7 @@
       "examples": [
         "ent/schema/external_approval_system.go",
         "internal/api/handlers/server_admin_external_approval.go",
+        "internal/api/handlers/server_external_approval_callback.go",
         "internal/governance/approval/registry/service.go",
         "internal/governance/approval/webhook/provider.go",
         "web/src/features/admin-external-approval-systems/components/AdminExternalApprovalSystemsContent.tsx"

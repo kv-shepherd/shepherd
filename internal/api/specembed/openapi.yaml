@@ -31,6 +31,8 @@ tags:
   description: Built-in approval provider task operations
 - name: external-approval-systems
   description: External approval provider registry management
+- name: external-approval
+  description: External approval provider decision callbacks
 - name: tickets
   description: Work-order ticket query and lifecycle operations
 - name: clusters
@@ -2899,6 +2901,109 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+
+  /webhooks/approval-callback:
+    post:
+      tags: [external-approval]
+      summary: Receive an external approval decision callback
+      description: |
+        Public server-to-server callback endpoint. The external system id selects
+        the configured signing key, and the raw JSON request body must verify
+        against the `X-Signature-256` HMAC-SHA256 signature.
+      operationId: receiveExternalApprovalDecision
+      security: []
+      x-rbac:
+        authentication: public
+        platformAdminOverride: false
+      parameters:
+      - name: X-External-Approval-System-ID
+        in: header
+        description: External approval system id registered in Shepherd.
+        required: true
+        schema:
+          type: string
+          example: external-approval-001
+        example: external-approval-001
+      - name: X-Signature-256
+        in: header
+        description: HMAC-SHA256 signature over the raw JSON request body, formatted as `sha256=<hex>`.
+        required: true
+        schema:
+          type: string
+          example: sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+        example: sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+      - name: X-Ticket-ID
+        in: header
+        description: Optional ticket id echo. When present, it must match the request body `ticket_id`.
+        required: false
+        schema:
+          type: string
+          example: ticket-001
+        example: ticket-001
+      requestBody:
+        description: External approval decision payload.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalApprovalDecisionRequest'
+              example:
+                ticket_id: ticket-001
+                approved: true
+                approver: external.approver@example.com
+                provider_decision_id: chg-10001
+                execution:
+                  selected_cluster_id: cluster-prod-a
+                  selected_storage_class: rook-ceph
+                  selected_dv_access_modes: [ReadWriteOnce]
+                  selected_dv_volume_mode: Filesystem
+            example:
+              ticket_id: ticket-001
+              approved: true
+              approver: external.approver@example.com
+              provider_decision_id: chg-10001
+              execution:
+                selected_cluster_id: cluster-prod-a
+                selected_storage_class: rook-ceph
+                selected_dv_access_modes: [ReadWriteOnce]
+                selected_dv_volume_mode: Filesystem
+      responses:
+        '200':
+          description: External decision accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalApprovalDecisionResponse'
+                example:
+                  status: accepted
+                  ticket_id: ticket-001
+                  approved: true
+              example:
+                status: accepted
+                ticket_id: ticket-001
+                approved: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '413':
+          description: Callback request body is too large
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+                example:
+                  code: REQUEST_TOO_LARGE
+                  message: request body is too large
+              example:
+                code: REQUEST_TOO_LARGE
+                message: request body is too large
+        '500':
+          $ref: '#/components/responses/InternalServerError'
 
   /tickets/{ticket_id}/cancel:
     post:
@@ -9697,6 +9802,86 @@ components:
           type: string
 
           example: example
+    ExternalApprovalDecisionRequest:
+      description: External provider decision callback payload.
+      type: object
+      additionalProperties: false
+      required: [ticket_id, approved, approver]
+      example:
+        ticket_id: ticket-001
+        approved: true
+        approver: external.approver@example.com
+        provider_decision_id: chg-10001
+        decided_at: '2026-01-01T00:00:00Z'
+        execution:
+          selected_cluster_id: cluster-prod-a
+          selected_storage_class: rook-ceph
+          selected_dv_access_modes: [ReadWriteOnce]
+          selected_dv_volume_mode: Filesystem
+      properties:
+        ticket_id:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          description: Shepherd ticket id being decided.
+          example: ticket-001
+        approved:
+          type: boolean
+          description: True approves the ticket; false rejects it.
+          example: true
+        approver:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          description: External approver identity to persist on the ticket.
+          example: external.approver@example.com
+        reject_reason:
+          type: string
+          description: Required when `approved` is false.
+          example: Policy mismatch
+        execution:
+          $ref: '#/components/schemas/ApprovalDecisionRequest'
+          description: Optional execution planning inputs for CREATE approvals.
+          example:
+            selected_cluster_id: cluster-prod-a
+            selected_storage_class: rook-ceph
+            selected_dv_access_modes: [ReadWriteOnce]
+            selected_dv_volume_mode: Filesystem
+        provider_decision_id:
+          type: string
+          description: External provider decision/change identifier for audit correlation.
+          example: chg-10001
+        decided_at:
+          type: string
+          format: date-time
+          description: Provider decision timestamp.
+          example: '2026-01-01T00:00:00Z'
+        metadata:
+          type: object
+          additionalProperties: true
+          description: Provider-owned metadata; do not include secrets.
+          example:
+            source: servicenow
+            queue: production-change
+    ExternalApprovalDecisionResponse:
+      description: Acknowledgement for an accepted external approval decision.
+      type: object
+      required: [status, ticket_id, approved]
+      example:
+        status: accepted
+        ticket_id: ticket-001
+        approved: true
+      properties:
+        status:
+          type: string
+          enum: [accepted]
+          example: accepted
+        ticket_id:
+          type: string
+          example: ticket-001
+        approved:
+          type: boolean
+          example: true
     RejectDecisionRequest:
       description: OpenAPI schema for Reject Decision Request.
       type: object

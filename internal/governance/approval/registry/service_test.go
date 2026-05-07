@@ -2,6 +2,7 @@ package registry
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -140,6 +141,50 @@ func TestServiceActiveProviderUsesFirstEnabledWebhook(t *testing.T) {
 	}
 	if got := active.Type(); got != ProviderTypeWebhook {
 		t.Fatalf("active provider type = %q, want webhook", got)
+	}
+}
+
+func TestServiceCallbackSigningKeyRequiresEnabledWebhook(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "external_approval_registry_callback")
+	service := NewService(client, []byte("0123456789abcdef0123456789abcdef"))
+
+	disabled := false
+	created, err := service.Create(t.Context(), CreateInput{
+		Name:       "callback-webhook",
+		Enabled:    &disabled,
+		WebhookURL: "https://approval.example.com/shepherd",
+		SigningKey: "callback-secret",
+		CreatedBy:  "admin-1",
+	})
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	_, _, callbackErr := service.CallbackSigningKey(t.Context(), created.ID)
+	if !errors.Is(callbackErr, ErrCallbackSigningKeyUnavailable) {
+		t.Fatalf("CallbackSigningKey disabled error = %v, want ErrCallbackSigningKeyUnavailable", callbackErr)
+	}
+
+	enabled := true
+	if _, updateErr := service.Update(t.Context(), created.ID, UpdateInput{Enabled: &enabled}); updateErr != nil {
+		t.Fatalf("Update enabled: %v", updateErr)
+	}
+
+	system, signingKey, err := service.CallbackSigningKey(t.Context(), created.ID)
+	if err != nil {
+		t.Fatalf("CallbackSigningKey enabled: %v", err)
+	}
+	if system.ID != created.ID {
+		t.Fatalf("system.ID = %q, want %q", system.ID, created.ID)
+	}
+	if signingKey != "callback-secret" {
+		t.Fatalf("signingKey = %q, want callback-secret", signingKey)
+	}
+
+	if _, _, err := service.CallbackSigningKey(t.Context(), "missing-system"); !errors.Is(err, ErrCallbackSigningKeyUnavailable) {
+		t.Fatalf("CallbackSigningKey missing error = %v, want ErrCallbackSigningKeyUnavailable", err)
 	}
 }
 

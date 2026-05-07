@@ -41,10 +41,10 @@ func TestProviderSubmitForApprovalSendsSignedWebhook(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read body: %v", err)
 		}
-		if !VerifySignature(body, []byte(secret), r.Header.Get(signatureHeader)) {
+		if !VerifySignature(body, []byte(secret), r.Header.Get(SignatureHeader)) {
 			t.Fatal("webhook signature did not verify")
 		}
-		gotTicketID = r.Header.Get(ticketIDHeader)
+		gotTicketID = r.Header.Get(TicketIDHeader)
 		gotSource = r.Header.Get("X-Shepherd-Source")
 		if err := json.Unmarshal(body, &gotPayload); err != nil {
 			t.Fatalf("unmarshal payload: %v", err)

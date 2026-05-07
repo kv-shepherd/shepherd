@@ -770,6 +770,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webhooks/approval-callback": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Receive an external approval decision callback
+         * @description Public server-to-server callback endpoint. The external system id selects
+         *     the configured signing key, and the raw JSON request body must verify
+         *     against the `X-Signature-256` HMAC-SHA256 signature.
+         */
+        post: operations["receiveExternalApprovalDecision"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tickets/{ticket_id}/cancel": {
         parameters: {
             query?: never;
@@ -3965,6 +3987,98 @@ export interface components {
             disk_gb?: number;
             /** @example example */
             comment?: string;
+        };
+        /**
+         * @description External provider decision callback payload.
+         * @example {
+         *       "ticket_id": "ticket-001",
+         *       "approved": true,
+         *       "approver": "external.approver@example.com",
+         *       "provider_decision_id": "chg-10001",
+         *       "decided_at": "2026-01-01T00:00:00Z",
+         *       "execution": {
+         *         "selected_cluster_id": "cluster-prod-a",
+         *         "selected_storage_class": "rook-ceph",
+         *         "selected_dv_access_modes": [
+         *           "ReadWriteOnce"
+         *         ],
+         *         "selected_dv_volume_mode": "Filesystem"
+         *       }
+         *     }
+         */
+        ExternalApprovalDecisionRequest: {
+            /**
+             * @description Shepherd ticket id being decided.
+             * @example ticket-001
+             */
+            ticket_id: string;
+            /**
+             * @description True approves the ticket; false rejects it.
+             * @example true
+             */
+            approved: boolean;
+            /**
+             * @description External approver identity to persist on the ticket.
+             * @example external.approver@example.com
+             */
+            approver: string;
+            /**
+             * @description Required when `approved` is false.
+             * @example Policy mismatch
+             */
+            reject_reason?: string;
+            /**
+             * @description Optional execution planning inputs for CREATE approvals.
+             * @example {
+             *       "selected_cluster_id": "cluster-prod-a",
+             *       "selected_storage_class": "rook-ceph",
+             *       "selected_dv_access_modes": [
+             *         "ReadWriteOnce"
+             *       ],
+             *       "selected_dv_volume_mode": "Filesystem"
+             *     }
+             */
+            execution?: components["schemas"]["ApprovalDecisionRequest"];
+            /**
+             * @description External provider decision/change identifier for audit correlation.
+             * @example chg-10001
+             */
+            provider_decision_id?: string;
+            /**
+             * Format: date-time
+             * @description Provider decision timestamp.
+             * @example 2026-01-01T00:00:00Z
+             */
+            decided_at?: string;
+            /**
+             * @description Provider-owned metadata; do not include secrets.
+             * @example {
+             *       "source": "servicenow",
+             *       "queue": "production-change"
+             *     }
+             */
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * @description Acknowledgement for an accepted external approval decision.
+         * @example {
+         *       "status": "accepted",
+         *       "ticket_id": "ticket-001",
+         *       "approved": true
+         *     }
+         */
+        ExternalApprovalDecisionResponse: {
+            /**
+             * @example accepted
+             * @enum {string}
+             */
+            status: "accepted";
+            /** @example ticket-001 */
+            ticket_id: string;
+            /** @example true */
+            approved: boolean;
         };
         /**
          * @description OpenAPI schema for Reject Decision Request.
@@ -10821,6 +10935,90 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    receiveExternalApprovalDecision: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description External approval system id registered in Shepherd.
+                 * @example external-approval-001
+                 */
+                "X-External-Approval-System-ID": string;
+                /**
+                 * @description HMAC-SHA256 signature over the raw JSON request body, formatted as `sha256=<hex>`.
+                 * @example sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
+                 */
+                "X-Signature-256": string;
+                /**
+                 * @description Optional ticket id echo. When present, it must match the request body `ticket_id`.
+                 * @example ticket-001
+                 */
+                "X-Ticket-ID"?: string;
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description External approval decision payload. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "ticket_id": "ticket-001",
+                 *       "approved": true,
+                 *       "approver": "external.approver@example.com",
+                 *       "provider_decision_id": "chg-10001",
+                 *       "execution": {
+                 *         "selected_cluster_id": "cluster-prod-a",
+                 *         "selected_storage_class": "rook-ceph",
+                 *         "selected_dv_access_modes": [
+                 *           "ReadWriteOnce"
+                 *         ],
+                 *         "selected_dv_volume_mode": "Filesystem"
+                 *       }
+                 *     }
+                 */
+                "application/json": components["schemas"]["ExternalApprovalDecisionRequest"];
+            };
+        };
+        responses: {
+            /** @description External decision accepted */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "status": "accepted",
+                     *       "ticket_id": "ticket-001",
+                     *       "approved": true
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ExternalApprovalDecisionResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+            /** @description Callback request body is too large */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "REQUEST_TOO_LARGE",
+                     *       "message": "request body is too large"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalServerError"];
         };
     };
     cancelTicket: {

@@ -2384,7 +2384,7 @@ Part 4 属于参考视图，不是用户操作流程。
 {
   "shepherd_ticket_id": "ticket-001",
   "type": "VM_CREATE",
-  "callback_url": "https://shepherd.company.com/api/v1/approvals/callback",
+  "callback_url": "https://shepherd.company.com/api/v1/webhooks/approval-callback",
   "requester": {
     "id": "zhang.san",
     "name": "张三",
@@ -2412,20 +2412,24 @@ Part 4 属于参考视图，不是用户操作流程。
 #### Callback 接收格式 (外部系统 → Shepherd)
 
 ```json
-// POST https://shepherd.company.com/api/v1/approvals/callback
+// POST https://shepherd.company.com/api/v1/webhooks/approval-callback
 // Headers:
-//   X-Shepherd-Signature: HMAC-SHA256 签名
+//   X-External-Approval-System-ID: external-approval-001
+//   X-Signature-256: sha256=<原始请求体的十六进制 HMAC-SHA256 签名>
+//   X-Ticket-ID: ticket-001
 //   Content-Type: application/json
 {
-  "shepherd_ticket_id": "ticket-001",
-  "external_ticket_id": "JIRA-12345",    // 外部系统工单 ID (用于追溯)
-  "status": "Approved",                   // 外部系统状态 (将通过 status_mapping 转换)
-  "approver": {
-    "id": "admin.li",
-    "name": "管理员李四"
-  },
-  "comments": "资源充足，批准创建",
-  "approved_at": "2026-01-26T11:30:00Z"
+  "ticket_id": "ticket-001",
+  "approved": true,
+  "approver": "admin.li",
+  "provider_decision_id": "JIRA-12345",
+  "decided_at": "2026-01-26T11:30:00Z",
+  "execution": {
+    "selected_cluster_id": "cluster-prod-a",
+    "selected_storage_class": "rook-ceph",
+    "selected_dv_access_modes": ["ReadWriteOnce"],
+    "selected_dv_volume_mode": "Filesystem"
+  }
 }
 ```
 
@@ -2437,8 +2441,8 @@ Part 4 属于参考视图，不是用户操作流程。
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  1. 验证 HMAC 签名                                                                           │
-│  2. 查找 shepherd_ticket_id 对应的工单                                                       │
-│  3. 通过 status_mapping 转换状态                                                             │
+│  2. 根据 Header ID 加载启用的外部审批系统                                                    │
+│  3. 从请求体解析 ticket_id / approved / approver                                             │
 │  4. 更新工单状态和 approver 信息                                                              │
 │  5. 如果 APPROVED:                                                                          │
 │     a. 触发 VM 创建 Worker 任务                                                              │
@@ -2456,7 +2460,7 @@ Part 4 属于参考视图，不是用户操作流程。
 | 注意事项 | 说明 |
 |----------|------|
 | **幂等性** | Callback 可能重试，需确保多次处理同一回调不会产生副作用 |
-| **状态同步** | 定期检查外部系统中 pending 状态的工单，防止回调丢失 |
+| **状态同步** | 轮询模式状态同步属于原生连接器后续范围 |
 | **超时处理** | V1: 不自动取消。超时后外部系统可调用拒绝 API（参见 [ADR-0015 §11](../../../../adr/ADR-0015-governance-model-v2.md#11-approval-timeout-handling)） |
 | **安全性** | 始终验证 HMAC 签名，防止伪造回调 |
 | **回退机制** | 外部系统不可用时，自动回退到内置审批 |

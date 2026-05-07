@@ -150,6 +150,11 @@ func TestIsJWTOptionalPath_AllowsVMVNCBootstrap(t *testing.T) {
 	require.False(t, isJWTOptionalPath("/api/v1/vms/vm-1/console/status"))
 }
 
+func TestIsJWTOptionalPath_AllowsExternalApprovalCallback(t *testing.T) {
+	require.True(t, isJWTOptionalPath("/api/v1/webhooks/approval-callback"))
+	require.False(t, isJWTOptionalPath("/api/v1/webhooks/approval-callback-extra"))
+}
+
 func TestNewRouterAppliesMaxRequestBodyBytesBeforeHandlers(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

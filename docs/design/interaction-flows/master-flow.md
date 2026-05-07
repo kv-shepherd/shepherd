@@ -862,9 +862,10 @@ without changing approval state semantics.
 │    4) Provider unavailable or unconfigured -> controlled fallback to built-in queue          │
 │    5) Shepherd executes canonical decision path and appends audit logs                       │
 │                                                                                              │
-│  External decision ingestion follow-up:                                                      │
-│    1) Signed callback or polling maps external decision to canonical APPROVED/REJECTED       │
+│  External decision ingestion:                                                                │
+│    1) Signed callback maps external decision to canonical APPROVED/REJECTED                  │
 │    2) Provider-specific metadata is normalized before audit and execution                    │
+│    3) Polling-mode ingestion remains provider-connector follow-up scope                      │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1152,8 +1153,9 @@ without changing approval state semantics.
 
 #### Scope Boundary
 
-This stage defines provider-model intent and V1 boundary only.
-Detailed provider payload/callback/security design is roadmap content in
+This stage defines provider-model intent and V1 boundary only. The signed
+callback contract is part of the current OpenAPI surface; polling-mode ingestion
+and native provider connector details remain roadmap content in
 [Part 4 §Approval Provider Plugin Architecture (V2+ Roadmap)](#external-approval-v2-roadmap)
 and RFC-0004.
 
@@ -2473,7 +2475,7 @@ Key persisted data (schema authority remains in phase/database docs):
 {
   "shepherd_ticket_id": "ticket-001",
   "type": "VM_CREATE",
-  "callback_url": "https://shepherd.company.com/api/v1/approvals/callback",
+  "callback_url": "https://shepherd.company.com/api/v1/webhooks/approval-callback",
   "requester": {
     "id": "zhang.san",
     "name": "Zhang San",
@@ -2501,20 +2503,24 @@ Key persisted data (schema authority remains in phase/database docs):
 #### Callback Payload (External System → Shepherd)
 
 ```json
-// POST https://shepherd.company.com/api/v1/approvals/callback
+// POST https://shepherd.company.com/api/v1/webhooks/approval-callback
 // Headers:
-//   X-Shepherd-Signature: HMAC-SHA256 signature
+//   X-External-Approval-System-ID: external-approval-001
+//   X-Signature-256: sha256=<hex HMAC-SHA256 signature of raw body>
+//   X-Ticket-ID: ticket-001
 //   Content-Type: application/json
 {
-  "shepherd_ticket_id": "ticket-001",
-  "external_ticket_id": "JIRA-12345",    // external ticket ID (trace)
-  "status": "Approved",                   // mapped via status_mapping
-  "approver": {
-    "id": "admin.li",
-    "name": "Admin Li Si"
-  },
-  "comments": "Resources available, approved",
-  "approved_at": "2026-01-26T11:30:00Z"
+  "ticket_id": "ticket-001",
+  "approved": true,
+  "approver": "admin.li",
+  "provider_decision_id": "JIRA-12345",
+  "decided_at": "2026-01-26T11:30:00Z",
+  "execution": {
+    "selected_cluster_id": "cluster-prod-a",
+    "selected_storage_class": "rook-ceph",
+    "selected_dv_access_modes": ["ReadWriteOnce"],
+    "selected_dv_volume_mode": "Filesystem"
+  }
 }
 ```
 
@@ -2526,8 +2532,8 @@ Key persisted data (schema authority remains in phase/database docs):
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  1. Validate HMAC signature                                                                  │
-│  2. Lookup ticket by shepherd_ticket_id                                                      │
-│  3. Map status via status_mapping                                                            │
+│  2. Load enabled external approval system by header id                                       │
+│  3. Parse ticket_id / approved / approver from callback body                                 │
 │  4. Update ticket status and approver                                                        │
 │  5. If APPROVED:                                                                             │
 │     a. Trigger VM provisioning worker job                                                    │
@@ -2545,7 +2551,7 @@ Key persisted data (schema authority remains in phase/database docs):
 | Note | Description |
 |----------|------|
 | **Idempotency** | Callback may retry; must be safe for duplicates |
-| **Status sync** | Periodically check pending tickets in external system |
+| **Status sync** | Polling-mode provider sync remains native-connector follow-up |
 | **Timeout** | V1: No auto-cancel. External system may call rejection API on timeout (see ADR-0015 §11) |
 | **Security** | Always verify HMAC signature to prevent forged callbacks |
 | **Fallback** | If external system is unavailable, fall back to built-in approval |

@@ -23,6 +23,8 @@ const (
 	DefaultRetryBackoffSecond = 2
 )
 
+var ErrCallbackSigningKeyUnavailable = errors.New("external approval callback signing key is unavailable")
+
 type Service struct {
 	client *ent.Client
 	codec  *SigningKeyCodec
@@ -311,6 +313,36 @@ func (s *Service) ActiveProvider(ctx context.Context, fallback approvalcontract.
 		return nil, fmt.Errorf("create external approval webhook provider: %w", err)
 	}
 	return provider, nil
+}
+
+func (s *Service) CallbackSigningKey(ctx context.Context, systemID string) (System, string, error) {
+	if s == nil || s.client == nil || s.codec == nil {
+		return System{}, "", fmt.Errorf("external approval registry is not initialized")
+	}
+	systemID = strings.TrimSpace(systemID)
+	if systemID == "" {
+		return System{}, "", ValidationError{Message: "external approval system id is required"}
+	}
+	row, err := s.client.ExternalApprovalSystem.Get(ctx, systemID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return System{}, "", ErrCallbackSigningKeyUnavailable
+		}
+		return System{}, "", fmt.Errorf("load external approval system for callback: %w", err)
+	}
+	if !row.Enabled ||
+		string(row.ProviderType) != ProviderTypeWebhook ||
+		strings.TrimSpace(row.SigningKeyCiphertext) == "" {
+		return System{}, "", ErrCallbackSigningKeyUnavailable
+	}
+	signingKey, err := s.codec.DecryptForUse(row.SigningKeyCiphertext, row.EncryptionKeyID)
+	if err != nil {
+		return System{}, "", fmt.Errorf("decrypt external approval callback signing key: %w", err)
+	}
+	if strings.TrimSpace(signingKey) == "" {
+		return System{}, "", ErrCallbackSigningKeyUnavailable
+	}
+	return systemToModel(row), signingKey, nil
 }
 
 func normalizeCreateInput(in CreateInput) (normalizedCreateInput, error) {

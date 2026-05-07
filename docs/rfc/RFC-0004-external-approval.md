@@ -43,10 +43,12 @@ Current codebase already implements the shared foundation for this RFC:
 - `external_approval_systems` Ent schema, Atlas migration, and registry service are implemented
 - admin OpenAPI/Go handlers/frontend UI manage webhook approval systems
 - persisted enabled systems are loaded into the active router by sort order
+- `POST /api/v1/webhooks/approval-callback` accepts signed external approval
+  decisions and maps them to Shepherd's canonical approval provider path
 
-The remaining RFC-backed work is decision ingestion from external systems:
+The remaining RFC-backed work is pull-style decision ingestion from external systems:
 
-- signed callback endpoint and polling-mode external decision ingestion
+- polling-mode external decision ingestion
 
 ### Architecture
 
@@ -57,7 +59,7 @@ The remaining RFC-backed work is decision ingestion from external systems:
 │                                                                                  │
 │  ┌─────────────┐     Webhook      ┌──────────────┐     Callback    ┌──────────┐│
 │  │   Shepherd  │ ───────────────► │ External Sys │ ──────────────► │ Shepherd ││
-│  │ (Initiator) │   (TLS + HMAC)   │(ServiceNow)  │  (Signed JWT)   │(Receiver)││
+│  │ (Initiator) │   (TLS + HMAC)   │(ServiceNow)  │  (TLS + HMAC)   │(Receiver)││
 │  └─────────────┘                  └──────────────┘                  └──────────┘│
 │        │                                                                  │      │
 │        │                      ┌───────────────┐                          │      │
@@ -150,7 +152,7 @@ POST /api/v1/approvals/{id}/decision
 |-------------|---------------|
 | **Transport Security** | TLS 1.2+ mandatory for all webhook traffic |
 | **Request Signing** | HMAC-SHA256 signature in `X-Signature-256` header |
-| **Callback Verification** | JWT with short expiry (5 min) for callback authentication |
+| **Callback Verification** | HMAC-SHA256 verification of the raw callback body; `X-External-Approval-System-ID` selects the encrypted signing key |
 | **Secret Storage** | AES-256-GCM encryption at rest |
 | **Audit Logging** | All external calls logged (redact secrets per ADR-0019) |
 

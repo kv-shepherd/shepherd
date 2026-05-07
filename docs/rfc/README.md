@@ -39,7 +39,7 @@
 
 | RFC | Current State |
 |-----|---------------|
-| [RFC-0004](./RFC-0004-external-approval.md) | Provider-router, outbound webhook dispatch, registry schema, admin API/UI, and runtime wiring are implemented; signed decision ingestion remains future work. |
+| [RFC-0004](./RFC-0004-external-approval.md) | Provider-router, outbound webhook dispatch, registry schema, admin API/UI, runtime wiring, and signed callback decision ingestion are implemented; polling-mode ingestion remains future work. |
 | [RFC-0005](./RFC-0005-event-archiving.md) | Soft archiving via `archived_at` is implemented; this RFC only covers physical archive tables and purge. |
 | [RFC-0006](./RFC-0006-hot-reload.md) | Limited runtime hot-reload primitives exist; config admin API and multi-instance sync do not. |
 | [RFC-0008](./RFC-0008-extended-auth.md) | Auth-provider admin/plugin-management foundation is implemented; MFA, SAML, and active session revocation remain deferred. |

@@ -254,6 +254,7 @@
 - [x] `external_approval_systems` schema + migration present for adapter registry
 - [x] V1 runtime keeps built-in approval fallback while supporting outbound webhook dispatch
 - [x] Admin API/UI manages external approval webhook registry entries
+- [x] Signed external approval callback maps provider decisions to the canonical approval path
 
 ---
 

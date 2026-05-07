@@ -31,7 +31,16 @@ var publicPrefixes = []string{
 	"/api/v1/schemas/",
 }
 
+var publicExactPaths = []string{
+	"/api/v1/webhooks/approval-callback",
+}
+
 func isJWTOptionalPath(path string) bool {
+	for _, publicPath := range publicExactPaths {
+		if path == publicPath {
+			return true
+		}
+	}
 	for _, prefix := range publicPrefixes {
 		if strings.HasPrefix(path, prefix) {
 			return true
@@ -79,7 +88,7 @@ func buildCORSConfig(cfg *config.Config, requestChecker corsRequestOriginChecker
 
 	corsCfg := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
-		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Request-ID", "X-Shepherd-Session-Mode"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Request-ID", "X-Shepherd-Session-Mode", "X-External-Approval-System-ID", "X-Signature-256", "X-Ticket-ID"},
 		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
 		AllowCredentials: cfg.Server.AllowCredentials,
 		MaxAge:           12 * time.Hour,
