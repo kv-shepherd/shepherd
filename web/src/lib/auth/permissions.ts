@@ -3,6 +3,7 @@ import type { components } from '@/types/api.gen';
 type UserInfo = components['schemas']['UserInfo'];
 export type AdminMenuRouteKey =
     | 'approvalTasks'
+    | 'externalApprovalSystems'
     | 'clusters'
     | 'namespaces'
     | 'templates'
@@ -17,6 +18,7 @@ export const PLATFORM_ADMIN_PERMISSION = 'platform:admin';
 export const USER_DIRECTORY_ROUTE_PERMISSIONS = ['user:manage', 'rbac:read', 'rbac:manage'] as const;
 export const ADMIN_MENU_ROUTE_PERMISSIONS: Record<AdminMenuRouteKey, readonly string[]> = {
     approvalTasks: ['builtin_approval:view', 'builtin_approval:approve'],
+    externalApprovalSystems: [PLATFORM_ADMIN_PERMISSION],
     clusters: ['cluster:read', 'cluster:write'],
     namespaces: ['namespace:read', 'namespace:write'],
     templates: ['template:read', 'template:write'],

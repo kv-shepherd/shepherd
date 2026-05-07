@@ -31,6 +31,7 @@ const (
 type Config struct {
 	WebhookURL   string
 	SigningKey   string
+	Headers      map[string]string
 	Timeout      time.Duration
 	RetryCount   int
 	RetryBackoff time.Duration
@@ -47,6 +48,7 @@ type Provider struct {
 	timeout      time.Duration
 	retryCount   int
 	retryBackoff time.Duration
+	headers      map[string]string
 	httpClient   *http.Client
 	fallback     approvalcontract.ApprovalProvider
 	now          func() time.Time
@@ -82,6 +84,10 @@ func NewProvider(config Config, fallback approvalcontract.ApprovalProvider) (*Pr
 	if signingKey == "" {
 		return nil, errors.New("approval webhook provider: signing key is required")
 	}
+	headers, err := normalizeHeaders(config.Headers)
+	if err != nil {
+		return nil, err
+	}
 
 	timeout := config.Timeout
 	if timeout <= 0 {
@@ -106,6 +112,7 @@ func NewProvider(config Config, fallback approvalcontract.ApprovalProvider) (*Pr
 		timeout:      timeout,
 		retryCount:   retryCount,
 		retryBackoff: retryBackoff,
+		headers:      headers,
 		httpClient:   httpClient,
 		fallback:     fallback,
 		now:          time.Now,
@@ -176,6 +183,9 @@ func (p *Provider) sendOnce(ctx context.Context, ticketID string, body []byte) e
 	if err != nil {
 		return fmt.Errorf("approval webhook provider: create request: %w", err)
 	}
+	for key, value := range p.headers {
+		request.Header.Set(key, value)
+	}
 	request.Header.Set("Content-Type", "application/json")
 	request.Header.Set(signatureHeader, SignPayload(body, p.signingKey))
 	request.Header.Set(ticketIDHeader, ticketID)
@@ -227,6 +237,41 @@ func backoffDelay(base time.Duration, attempt int) time.Duration {
 		delay *= 2
 	}
 	return delay
+}
+
+func normalizeHeaders(raw map[string]string) (map[string]string, error) {
+	if len(raw) == 0 {
+		return nil, nil
+	}
+	headers := make(map[string]string, len(raw))
+	for key, value := range raw {
+		name := strings.TrimSpace(key)
+		if name == "" {
+			return nil, errors.New("approval webhook provider: header name must not be empty")
+		}
+		if !isHTTPToken(name) {
+			return nil, fmt.Errorf("approval webhook provider: invalid header name %q", name)
+		}
+		if strings.ContainsAny(value, "\r\n") {
+			return nil, fmt.Errorf("approval webhook provider: invalid header value for %q", name)
+		}
+		headers[name] = strings.TrimSpace(value)
+	}
+	return headers, nil
+}
+
+func isHTTPToken(value string) bool {
+	for _, r := range value {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case strings.ContainsRune("!#$%&'*+-.^_`|~", r):
+		default:
+			return false
+		}
+	}
+	return value != ""
 }
 
 func sleepWithContext(ctx context.Context, delay time.Duration) error {

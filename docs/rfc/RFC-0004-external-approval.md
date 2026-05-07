@@ -32,21 +32,21 @@ Implement a **pluggable external approval system** with the following characteri
 | **Timeout handling** | Configurable timeout with fallback behavior |
 | **Retry with backoff** | Exponential backoff for transient failures |
 
-## Current State (2026-03-11)
+## Current State (2026-05-07)
 
 Current codebase already implements the shared foundation for this RFC:
 
-- `ApprovalProviderRouter` is wired, with the built-in provider as the only active V1 backend
+- `ApprovalProviderRouter` is wired and can swap the active provider at runtime
 - request submission handlers already route through the provider-router seam
 - outbound webhook provider package exists with HMAC-SHA256 request signing,
-  timeout, retry/backoff, and built-in-provider fallback behavior
+  timeout, retry/backoff, custom headers, and built-in-provider fallback behavior
+- `external_approval_systems` Ent schema, Atlas migration, and registry service are implemented
+- admin OpenAPI/Go handlers/frontend UI manage webhook approval systems
+- persisted enabled systems are loaded into the active router by sort order
 
-The following pieces are still not implemented:
+The remaining RFC-backed work is decision ingestion from external systems:
 
-- `external_approval_systems` schema and migration for adapter registry data
 - signed callback endpoint and polling-mode external decision ingestion
-- admin CRUD/API and UI for managing external approval systems
-- runtime wiring from persisted external approval-system configuration into the active router
 
 ### Architecture
 
@@ -164,13 +164,16 @@ POST /api/v1/approvals/{id}/decision
 CREATE TABLE external_approval_systems (
     id              VARCHAR(36) PRIMARY KEY,
     name            VARCHAR(255) NOT NULL UNIQUE,
-    type            VARCHAR(50) NOT NULL,  -- 'webhook', 'servicenow', 'jira'
+    provider_type   VARCHAR(50) NOT NULL DEFAULT 'webhook',
     enabled         BOOLEAN DEFAULT true,
-    webhook_url     TEXT,
-    webhook_secret  TEXT,                   -- Encrypted (AES-256-GCM)
+    webhook_url     TEXT NOT NULL,
+    signing_key_ciphertext TEXT,            -- Encrypted (AES-256-GCM)
+    encryption_key_id TEXT,
     webhook_headers JSONB,                  -- Custom headers
     timeout_seconds INTEGER DEFAULT 30,
     retry_count     INTEGER DEFAULT 3,
+    retry_backoff_seconds INTEGER DEFAULT 2,
+    sort_order      INTEGER DEFAULT 0,
     created_by      VARCHAR(255) NOT NULL,
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()

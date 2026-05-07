@@ -57,7 +57,7 @@ The following features are **explicitly out of scope** for V1:
 | Complex Approval Workflows | ❌ Not in V1 | See RFC-0002 for Temporal integration |
 | Approval Timeout Auto-processing | ❌ Not in V1 | UI prioritization used instead |
 | Automatic Page Refresh via WebSocket | ❌ Not in V1 | Manual refresh in V1 |
-| External Approval System Integration | ⚠️ Interface Only | Standard interface; adapters in V2+ |
+| External Approval System Integration | ✅ Webhook Registry | Provider interface, outbound webhook dispatch, registry/admin UI/runtime wiring |
 
 **Implementation Guidance**:
 - If a feature request touches any item above, redirect to future RFC
@@ -96,7 +96,7 @@ The following features are **explicitly out of scope** for V1:
 | Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead; triggers/sender integrated; retention cleanup scheduled |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes CRUD + UpdateClusterEnvironment (omitzero adapted) |
 | SSAApplier | `internal/provider/ssa_applier.go` | ✅ | SSA apply + dry-run implementation present |
-| OpenAPI Spec | `api/openapi.yaml` | ✅ | 97 operationIds; includes Namespace/Notification/Batch/VNC/AuthProvider/ClusterPolicy scope |
+| OpenAPI Spec | `api/openapi.yaml` | ✅ | 132 operationIds; includes Namespace/Notification/Batch/VNC/AuthProvider/ClusterPolicy/ExternalApproval scope |
 
 ---
 
@@ -1282,9 +1282,11 @@ Key operations:
 
 ---
 
-## 9. External Approval Systems (V1 Interface Only)
+<a id="9-external-approval-systems-v1-interface-only"></a>
+## 9. External Approval Systems (V1 Registry + Webhook Dispatch)
 
-> **V1 Scope**: Interface and schema defined. Full implementation in V2.
+> **V1 Scope**: Provider interface, built-in fallback, outbound webhook dispatch,
+> adapter registry, admin API/UI, and startup/runtime provider wiring.
 
 ### 9.1 Interface Definition
 
@@ -1301,29 +1303,32 @@ type ApprovalProvider interface {
 }
 ```
 
-### 9.2 Schema (V1 - Defined but not fully implemented)
+### 9.2 Schema
 
 ```go
 // ent/schema/external_approval_system.go
 field.String("id"),
 field.String("name"),
-field.Enum("type").Values("webhook", "servicenow", "jira"),
+field.Enum("provider_type").Values("webhook"),
 field.Bool("enabled"),
-field.String("webhook_url").Optional(),
-field.String("webhook_secret").Optional().Sensitive(), // Encrypted
+field.String("webhook_url"),
 field.JSON("webhook_headers", map[string]string{}),
 field.Int("timeout_seconds").Default(30),
 field.Int("retry_count").Default(3),
+field.Int("retry_backoff_seconds").Default(2),
+field.String("signing_key_ciphertext").Optional().Sensitive(), // AES-256-GCM protected
+field.String("encryption_key_id").Optional(),
+field.Int("sort_order").Default(0),
 ```
 
-### 9.3 V2 Roadmap
+### 9.3 Roadmap
 
 | Feature | V2 Target |
 |---------|-----------|
-| Webhook integration | Full bidirectional webhook |
+| Decision ingestion | Signed callback endpoint or polling-mode status sync |
 | ServiceNow connector | Native ServiceNow API |
 | JIRA connector | JIRA issue-based approval |
-| Callback handling | Async approval notification |
+| External audit enrichment | Provider decision metadata normalization |
 
 ---
 
@@ -1507,9 +1512,9 @@ If >50% of resources detected as ghosts, halt and alert.
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
 | §22 Authentication | ✅ Done | Section 8 (this doc) | Local/JWT, external provider runtime, JIT provisioning, directory sync, and cohort mapping implemented; active session revocation remains RFC-0008 |
-| External Approval Systems | ⚠️ V1 Interface | - | Built-in approval provider and outbound webhook adapter package are implemented; callback ingestion and runtime/admin wiring remain RFC-0004 |
+| External Approval Systems | ✅ Webhook Registry | Section 9 (this doc) | Built-in provider fallback, outbound webhook adapter, registry schema, admin API/UI, and runtime wiring implemented; decision ingestion remains RFC-0004 follow-up |
 
-> **Legend**: ✅ Done = Implemented in V1 | ✅ V1 Baseline = V1 product baseline implemented with optional enhancements deferred | ⚠️ V1 Interface = Core data/interface shape exists, external adapters deferred
+> **Legend**: ✅ Done = Implemented in V1 | ✅ V1 Baseline = V1 product baseline implemented with optional enhancements deferred
 
 > **Interface-First Design**: Notification and Approval systems use **standard data interfaces** (ADR-0015 §20, §9).
 > V1 implements simple built-in solutions. External integrations (Slack, ServiceNow, Jira) are handled by plugin adapters without core interface changes.

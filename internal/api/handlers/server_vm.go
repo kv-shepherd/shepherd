@@ -918,7 +918,7 @@ func (s *Server) CreateVMRequest(c *gin.Context) {
 	}
 
 	// Stage 2.E: route submission through the approval provider seam.
-	// V1 uses the built-in provider implementation behind this router.
+	// The router owns built-in fallback and any active external provider.
 	// Non-fatal: ticket is already PENDING in DB; log the error but do not unwind the user response.
 	if s.approvalRouter != nil {
 		if _, routerErr := s.approvalRouter.SubmitForApproval(ctx, &approvalcontract.ApprovalRequest{

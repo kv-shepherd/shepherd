@@ -19,6 +19,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
 	"kv-shepherd.io/shepherd/ent/externalcohort"
 	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
@@ -54,37 +55,38 @@ const (
 	OpUpdateOne = ent.OpUpdateOne
 
 	// Node types.
-	TypeApprovalPolicy        = "ApprovalPolicy"
-	TypeAuditLog              = "AuditLog"
-	TypeAuthProvider          = "AuthProvider"
-	TypeBatchTicket           = "BatchTicket"
-	TypeCluster               = "Cluster"
-	TypeClusterPolicy         = "ClusterPolicy"
-	TypeDirectorySyncJob      = "DirectorySyncJob"
-	TypeDomainEvent           = "DomainEvent"
-	TypeExternalCohort        = "ExternalCohort"
-	TypeExternalCohortGrant   = "ExternalCohortGrant"
-	TypeExternalCohortMapping = "ExternalCohortMapping"
-	TypeInstanceSize          = "InstanceSize"
-	TypeNamespaceRegistry     = "NamespaceRegistry"
-	TypeNotification          = "Notification"
-	TypePendingAdoption       = "PendingAdoption"
-	TypePlatformSetting       = "PlatformSetting"
-	TypeRateLimitExemption    = "RateLimitExemption"
-	TypeRateLimitUserOverride = "RateLimitUserOverride"
-	TypeResourceRoleBinding   = "ResourceRoleBinding"
-	TypeRole                  = "Role"
-	TypeRoleBinding           = "RoleBinding"
-	TypeService               = "Service"
-	TypeSystem                = "System"
-	TypeSystemSecret          = "SystemSecret"
-	TypeTemplate              = "Template"
-	TypeTicket                = "Ticket"
-	TypeUser                  = "User"
-	TypeUserDirectoryProfile  = "UserDirectoryProfile"
-	TypeUserPreference        = "UserPreference"
-	TypeVM                    = "VM"
-	TypeVMRevision            = "VMRevision"
+	TypeApprovalPolicy         = "ApprovalPolicy"
+	TypeAuditLog               = "AuditLog"
+	TypeAuthProvider           = "AuthProvider"
+	TypeBatchTicket            = "BatchTicket"
+	TypeCluster                = "Cluster"
+	TypeClusterPolicy          = "ClusterPolicy"
+	TypeDirectorySyncJob       = "DirectorySyncJob"
+	TypeDomainEvent            = "DomainEvent"
+	TypeExternalApprovalSystem = "ExternalApprovalSystem"
+	TypeExternalCohort         = "ExternalCohort"
+	TypeExternalCohortGrant    = "ExternalCohortGrant"
+	TypeExternalCohortMapping  = "ExternalCohortMapping"
+	TypeInstanceSize           = "InstanceSize"
+	TypeNamespaceRegistry      = "NamespaceRegistry"
+	TypeNotification           = "Notification"
+	TypePendingAdoption        = "PendingAdoption"
+	TypePlatformSetting        = "PlatformSetting"
+	TypeRateLimitExemption     = "RateLimitExemption"
+	TypeRateLimitUserOverride  = "RateLimitUserOverride"
+	TypeResourceRoleBinding    = "ResourceRoleBinding"
+	TypeRole                   = "Role"
+	TypeRoleBinding            = "RoleBinding"
+	TypeService                = "Service"
+	TypeSystem                 = "System"
+	TypeSystemSecret           = "SystemSecret"
+	TypeTemplate               = "Template"
+	TypeTicket                 = "Ticket"
+	TypeUser                   = "User"
+	TypeUserDirectoryProfile   = "UserDirectoryProfile"
+	TypeUserPreference         = "UserPreference"
+	TypeVM                     = "VM"
+	TypeVMRevision             = "VMRevision"
 )
 
 // ApprovalPolicyMutation represents an operation that mutates the ApprovalPolicy nodes in the graph.
@@ -8276,6 +8278,1216 @@ func (m *DomainEventMutation) ClearEdge(name string) error {
 // It returns an error if the edge is not defined in the schema.
 func (m *DomainEventMutation) ResetEdge(name string) error {
 	return fmt.Errorf("unknown DomainEvent edge %s", name)
+}
+
+// ExternalApprovalSystemMutation represents an operation that mutates the ExternalApprovalSystem nodes in the graph.
+type ExternalApprovalSystemMutation struct {
+	config
+	op                       Op
+	typ                      string
+	id                       *string
+	created_at               *time.Time
+	updated_at               *time.Time
+	name                     *string
+	provider_type            *externalapprovalsystem.ProviderType
+	enabled                  *bool
+	webhook_url              *string
+	webhook_headers          *map[string]string
+	timeout_seconds          *int
+	addtimeout_seconds       *int
+	retry_count              *int
+	addretry_count           *int
+	retry_backoff_seconds    *int
+	addretry_backoff_seconds *int
+	signing_key_ciphertext   *string
+	encryption_key_id        *string
+	sort_order               *int
+	addsort_order            *int
+	created_by               *string
+	clearedFields            map[string]struct{}
+	done                     bool
+	oldValue                 func(context.Context) (*ExternalApprovalSystem, error)
+	predicates               []predicate.ExternalApprovalSystem
+}
+
+var _ ent.Mutation = (*ExternalApprovalSystemMutation)(nil)
+
+// externalapprovalsystemOption allows management of the mutation configuration using functional options.
+type externalapprovalsystemOption func(*ExternalApprovalSystemMutation)
+
+// newExternalApprovalSystemMutation creates new mutation for the ExternalApprovalSystem entity.
+func newExternalApprovalSystemMutation(c config, op Op, opts ...externalapprovalsystemOption) *ExternalApprovalSystemMutation {
+	m := &ExternalApprovalSystemMutation{
+		config:        c,
+		op:            op,
+		typ:           TypeExternalApprovalSystem,
+		clearedFields: make(map[string]struct{}),
+	}
+	for _, opt := range opts {
+		opt(m)
+	}
+	return m
+}
+
+// withExternalApprovalSystemID sets the ID field of the mutation.
+func withExternalApprovalSystemID(id string) externalapprovalsystemOption {
+	return func(m *ExternalApprovalSystemMutation) {
+		var (
+			err   error
+			once  sync.Once
+			value *ExternalApprovalSystem
+		)
+		m.oldValue = func(ctx context.Context) (*ExternalApprovalSystem, error) {
+			once.Do(func() {
+				if m.done {
+					err = errors.New("querying old values post mutation is not allowed")
+				} else {
+					value, err = m.Client().ExternalApprovalSystem.Get(ctx, id)
+				}
+			})
+			return value, err
+		}
+		m.id = &id
+	}
+}
+
+// withExternalApprovalSystem sets the old ExternalApprovalSystem of the mutation.
+func withExternalApprovalSystem(node *ExternalApprovalSystem) externalapprovalsystemOption {
+	return func(m *ExternalApprovalSystemMutation) {
+		m.oldValue = func(context.Context) (*ExternalApprovalSystem, error) {
+			return node, nil
+		}
+		m.id = &node.ID
+	}
+}
+
+// Client returns a new `ent.Client` from the mutation. If the mutation was
+// executed in a transaction (ent.Tx), a transactional client is returned.
+func (m ExternalApprovalSystemMutation) Client() *Client {
+	client := &Client{config: m.config}
+	client.init()
+	return client
+}
+
+// Tx returns an `ent.Tx` for mutations that were executed in transactions;
+// it returns an error otherwise.
+func (m ExternalApprovalSystemMutation) Tx() (*Tx, error) {
+	if _, ok := m.driver.(*txDriver); !ok {
+		return nil, errors.New("ent: mutation is not running in a transaction")
+	}
+	tx := &Tx{config: m.config}
+	tx.init()
+	return tx, nil
+}
+
+// SetID sets the value of the id field. Note that this
+// operation is only accepted on creation of ExternalApprovalSystem entities.
+func (m *ExternalApprovalSystemMutation) SetID(id string) {
+	m.id = &id
+}
+
+// ID returns the ID value in the mutation. Note that the ID is only available
+// if it was provided to the builder or after it was returned from the database.
+func (m *ExternalApprovalSystemMutation) ID() (id string, exists bool) {
+	if m.id == nil {
+		return
+	}
+	return *m.id, true
+}
+
+// IDs queries the database and returns the entity ids that match the mutation's predicate.
+// That means, if the mutation is applied within a transaction with an isolation level such
+// as sql.LevelSerializable, the returned ids match the ids of the rows that will be updated
+// or updated by the mutation.
+func (m *ExternalApprovalSystemMutation) IDs(ctx context.Context) ([]string, error) {
+	switch {
+	case m.op.Is(OpUpdateOne | OpDeleteOne):
+		id, exists := m.ID()
+		if exists {
+			return []string{id}, nil
+		}
+		fallthrough
+	case m.op.Is(OpUpdate | OpDelete):
+		return m.Client().ExternalApprovalSystem.Query().Where(m.predicates...).IDs(ctx)
+	default:
+		return nil, fmt.Errorf("IDs is not allowed on %s operations", m.op)
+	}
+}
+
+// SetCreatedAt sets the "created_at" field.
+func (m *ExternalApprovalSystemMutation) SetCreatedAt(t time.Time) {
+	m.created_at = &t
+}
+
+// CreatedAt returns the value of the "created_at" field in the mutation.
+func (m *ExternalApprovalSystemMutation) CreatedAt() (r time.Time, exists bool) {
+	v := m.created_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedAt returns the old "created_at" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldCreatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedAt: %w", err)
+	}
+	return oldValue.CreatedAt, nil
+}
+
+// ResetCreatedAt resets all changes to the "created_at" field.
+func (m *ExternalApprovalSystemMutation) ResetCreatedAt() {
+	m.created_at = nil
+}
+
+// SetUpdatedAt sets the "updated_at" field.
+func (m *ExternalApprovalSystemMutation) SetUpdatedAt(t time.Time) {
+	m.updated_at = &t
+}
+
+// UpdatedAt returns the value of the "updated_at" field in the mutation.
+func (m *ExternalApprovalSystemMutation) UpdatedAt() (r time.Time, exists bool) {
+	v := m.updated_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldUpdatedAt returns the old "updated_at" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldUpdatedAt(ctx context.Context) (v time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldUpdatedAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldUpdatedAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldUpdatedAt: %w", err)
+	}
+	return oldValue.UpdatedAt, nil
+}
+
+// ResetUpdatedAt resets all changes to the "updated_at" field.
+func (m *ExternalApprovalSystemMutation) ResetUpdatedAt() {
+	m.updated_at = nil
+}
+
+// SetName sets the "name" field.
+func (m *ExternalApprovalSystemMutation) SetName(s string) {
+	m.name = &s
+}
+
+// Name returns the value of the "name" field in the mutation.
+func (m *ExternalApprovalSystemMutation) Name() (r string, exists bool) {
+	v := m.name
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldName returns the old "name" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldName(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldName is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldName requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldName: %w", err)
+	}
+	return oldValue.Name, nil
+}
+
+// ResetName resets all changes to the "name" field.
+func (m *ExternalApprovalSystemMutation) ResetName() {
+	m.name = nil
+}
+
+// SetProviderType sets the "provider_type" field.
+func (m *ExternalApprovalSystemMutation) SetProviderType(et externalapprovalsystem.ProviderType) {
+	m.provider_type = &et
+}
+
+// ProviderType returns the value of the "provider_type" field in the mutation.
+func (m *ExternalApprovalSystemMutation) ProviderType() (r externalapprovalsystem.ProviderType, exists bool) {
+	v := m.provider_type
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldProviderType returns the old "provider_type" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldProviderType(ctx context.Context) (v externalapprovalsystem.ProviderType, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldProviderType is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldProviderType requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldProviderType: %w", err)
+	}
+	return oldValue.ProviderType, nil
+}
+
+// ResetProviderType resets all changes to the "provider_type" field.
+func (m *ExternalApprovalSystemMutation) ResetProviderType() {
+	m.provider_type = nil
+}
+
+// SetEnabled sets the "enabled" field.
+func (m *ExternalApprovalSystemMutation) SetEnabled(b bool) {
+	m.enabled = &b
+}
+
+// Enabled returns the value of the "enabled" field in the mutation.
+func (m *ExternalApprovalSystemMutation) Enabled() (r bool, exists bool) {
+	v := m.enabled
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEnabled returns the old "enabled" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldEnabled(ctx context.Context) (v bool, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEnabled is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEnabled requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEnabled: %w", err)
+	}
+	return oldValue.Enabled, nil
+}
+
+// ResetEnabled resets all changes to the "enabled" field.
+func (m *ExternalApprovalSystemMutation) ResetEnabled() {
+	m.enabled = nil
+}
+
+// SetWebhookURL sets the "webhook_url" field.
+func (m *ExternalApprovalSystemMutation) SetWebhookURL(s string) {
+	m.webhook_url = &s
+}
+
+// WebhookURL returns the value of the "webhook_url" field in the mutation.
+func (m *ExternalApprovalSystemMutation) WebhookURL() (r string, exists bool) {
+	v := m.webhook_url
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWebhookURL returns the old "webhook_url" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldWebhookURL(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWebhookURL is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWebhookURL requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWebhookURL: %w", err)
+	}
+	return oldValue.WebhookURL, nil
+}
+
+// ResetWebhookURL resets all changes to the "webhook_url" field.
+func (m *ExternalApprovalSystemMutation) ResetWebhookURL() {
+	m.webhook_url = nil
+}
+
+// SetWebhookHeaders sets the "webhook_headers" field.
+func (m *ExternalApprovalSystemMutation) SetWebhookHeaders(value map[string]string) {
+	m.webhook_headers = &value
+}
+
+// WebhookHeaders returns the value of the "webhook_headers" field in the mutation.
+func (m *ExternalApprovalSystemMutation) WebhookHeaders() (r map[string]string, exists bool) {
+	v := m.webhook_headers
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldWebhookHeaders returns the old "webhook_headers" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldWebhookHeaders(ctx context.Context) (v map[string]string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldWebhookHeaders is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldWebhookHeaders requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldWebhookHeaders: %w", err)
+	}
+	return oldValue.WebhookHeaders, nil
+}
+
+// ResetWebhookHeaders resets all changes to the "webhook_headers" field.
+func (m *ExternalApprovalSystemMutation) ResetWebhookHeaders() {
+	m.webhook_headers = nil
+}
+
+// SetTimeoutSeconds sets the "timeout_seconds" field.
+func (m *ExternalApprovalSystemMutation) SetTimeoutSeconds(i int) {
+	m.timeout_seconds = &i
+	m.addtimeout_seconds = nil
+}
+
+// TimeoutSeconds returns the value of the "timeout_seconds" field in the mutation.
+func (m *ExternalApprovalSystemMutation) TimeoutSeconds() (r int, exists bool) {
+	v := m.timeout_seconds
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldTimeoutSeconds returns the old "timeout_seconds" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldTimeoutSeconds(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldTimeoutSeconds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldTimeoutSeconds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldTimeoutSeconds: %w", err)
+	}
+	return oldValue.TimeoutSeconds, nil
+}
+
+// AddTimeoutSeconds adds i to the "timeout_seconds" field.
+func (m *ExternalApprovalSystemMutation) AddTimeoutSeconds(i int) {
+	if m.addtimeout_seconds != nil {
+		*m.addtimeout_seconds += i
+	} else {
+		m.addtimeout_seconds = &i
+	}
+}
+
+// AddedTimeoutSeconds returns the value that was added to the "timeout_seconds" field in this mutation.
+func (m *ExternalApprovalSystemMutation) AddedTimeoutSeconds() (r int, exists bool) {
+	v := m.addtimeout_seconds
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetTimeoutSeconds resets all changes to the "timeout_seconds" field.
+func (m *ExternalApprovalSystemMutation) ResetTimeoutSeconds() {
+	m.timeout_seconds = nil
+	m.addtimeout_seconds = nil
+}
+
+// SetRetryCount sets the "retry_count" field.
+func (m *ExternalApprovalSystemMutation) SetRetryCount(i int) {
+	m.retry_count = &i
+	m.addretry_count = nil
+}
+
+// RetryCount returns the value of the "retry_count" field in the mutation.
+func (m *ExternalApprovalSystemMutation) RetryCount() (r int, exists bool) {
+	v := m.retry_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRetryCount returns the old "retry_count" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldRetryCount(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRetryCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRetryCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRetryCount: %w", err)
+	}
+	return oldValue.RetryCount, nil
+}
+
+// AddRetryCount adds i to the "retry_count" field.
+func (m *ExternalApprovalSystemMutation) AddRetryCount(i int) {
+	if m.addretry_count != nil {
+		*m.addretry_count += i
+	} else {
+		m.addretry_count = &i
+	}
+}
+
+// AddedRetryCount returns the value that was added to the "retry_count" field in this mutation.
+func (m *ExternalApprovalSystemMutation) AddedRetryCount() (r int, exists bool) {
+	v := m.addretry_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRetryCount resets all changes to the "retry_count" field.
+func (m *ExternalApprovalSystemMutation) ResetRetryCount() {
+	m.retry_count = nil
+	m.addretry_count = nil
+}
+
+// SetRetryBackoffSeconds sets the "retry_backoff_seconds" field.
+func (m *ExternalApprovalSystemMutation) SetRetryBackoffSeconds(i int) {
+	m.retry_backoff_seconds = &i
+	m.addretry_backoff_seconds = nil
+}
+
+// RetryBackoffSeconds returns the value of the "retry_backoff_seconds" field in the mutation.
+func (m *ExternalApprovalSystemMutation) RetryBackoffSeconds() (r int, exists bool) {
+	v := m.retry_backoff_seconds
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldRetryBackoffSeconds returns the old "retry_backoff_seconds" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldRetryBackoffSeconds(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldRetryBackoffSeconds is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldRetryBackoffSeconds requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldRetryBackoffSeconds: %w", err)
+	}
+	return oldValue.RetryBackoffSeconds, nil
+}
+
+// AddRetryBackoffSeconds adds i to the "retry_backoff_seconds" field.
+func (m *ExternalApprovalSystemMutation) AddRetryBackoffSeconds(i int) {
+	if m.addretry_backoff_seconds != nil {
+		*m.addretry_backoff_seconds += i
+	} else {
+		m.addretry_backoff_seconds = &i
+	}
+}
+
+// AddedRetryBackoffSeconds returns the value that was added to the "retry_backoff_seconds" field in this mutation.
+func (m *ExternalApprovalSystemMutation) AddedRetryBackoffSeconds() (r int, exists bool) {
+	v := m.addretry_backoff_seconds
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetRetryBackoffSeconds resets all changes to the "retry_backoff_seconds" field.
+func (m *ExternalApprovalSystemMutation) ResetRetryBackoffSeconds() {
+	m.retry_backoff_seconds = nil
+	m.addretry_backoff_seconds = nil
+}
+
+// SetSigningKeyCiphertext sets the "signing_key_ciphertext" field.
+func (m *ExternalApprovalSystemMutation) SetSigningKeyCiphertext(s string) {
+	m.signing_key_ciphertext = &s
+}
+
+// SigningKeyCiphertext returns the value of the "signing_key_ciphertext" field in the mutation.
+func (m *ExternalApprovalSystemMutation) SigningKeyCiphertext() (r string, exists bool) {
+	v := m.signing_key_ciphertext
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSigningKeyCiphertext returns the old "signing_key_ciphertext" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldSigningKeyCiphertext(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSigningKeyCiphertext is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSigningKeyCiphertext requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSigningKeyCiphertext: %w", err)
+	}
+	return oldValue.SigningKeyCiphertext, nil
+}
+
+// ClearSigningKeyCiphertext clears the value of the "signing_key_ciphertext" field.
+func (m *ExternalApprovalSystemMutation) ClearSigningKeyCiphertext() {
+	m.signing_key_ciphertext = nil
+	m.clearedFields[externalapprovalsystem.FieldSigningKeyCiphertext] = struct{}{}
+}
+
+// SigningKeyCiphertextCleared returns if the "signing_key_ciphertext" field was cleared in this mutation.
+func (m *ExternalApprovalSystemMutation) SigningKeyCiphertextCleared() bool {
+	_, ok := m.clearedFields[externalapprovalsystem.FieldSigningKeyCiphertext]
+	return ok
+}
+
+// ResetSigningKeyCiphertext resets all changes to the "signing_key_ciphertext" field.
+func (m *ExternalApprovalSystemMutation) ResetSigningKeyCiphertext() {
+	m.signing_key_ciphertext = nil
+	delete(m.clearedFields, externalapprovalsystem.FieldSigningKeyCiphertext)
+}
+
+// SetEncryptionKeyID sets the "encryption_key_id" field.
+func (m *ExternalApprovalSystemMutation) SetEncryptionKeyID(s string) {
+	m.encryption_key_id = &s
+}
+
+// EncryptionKeyID returns the value of the "encryption_key_id" field in the mutation.
+func (m *ExternalApprovalSystemMutation) EncryptionKeyID() (r string, exists bool) {
+	v := m.encryption_key_id
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldEncryptionKeyID returns the old "encryption_key_id" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldEncryptionKeyID(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldEncryptionKeyID is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldEncryptionKeyID requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldEncryptionKeyID: %w", err)
+	}
+	return oldValue.EncryptionKeyID, nil
+}
+
+// ClearEncryptionKeyID clears the value of the "encryption_key_id" field.
+func (m *ExternalApprovalSystemMutation) ClearEncryptionKeyID() {
+	m.encryption_key_id = nil
+	m.clearedFields[externalapprovalsystem.FieldEncryptionKeyID] = struct{}{}
+}
+
+// EncryptionKeyIDCleared returns if the "encryption_key_id" field was cleared in this mutation.
+func (m *ExternalApprovalSystemMutation) EncryptionKeyIDCleared() bool {
+	_, ok := m.clearedFields[externalapprovalsystem.FieldEncryptionKeyID]
+	return ok
+}
+
+// ResetEncryptionKeyID resets all changes to the "encryption_key_id" field.
+func (m *ExternalApprovalSystemMutation) ResetEncryptionKeyID() {
+	m.encryption_key_id = nil
+	delete(m.clearedFields, externalapprovalsystem.FieldEncryptionKeyID)
+}
+
+// SetSortOrder sets the "sort_order" field.
+func (m *ExternalApprovalSystemMutation) SetSortOrder(i int) {
+	m.sort_order = &i
+	m.addsort_order = nil
+}
+
+// SortOrder returns the value of the "sort_order" field in the mutation.
+func (m *ExternalApprovalSystemMutation) SortOrder() (r int, exists bool) {
+	v := m.sort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSortOrder returns the old "sort_order" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldSortOrder(ctx context.Context) (v int, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSortOrder is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSortOrder requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSortOrder: %w", err)
+	}
+	return oldValue.SortOrder, nil
+}
+
+// AddSortOrder adds i to the "sort_order" field.
+func (m *ExternalApprovalSystemMutation) AddSortOrder(i int) {
+	if m.addsort_order != nil {
+		*m.addsort_order += i
+	} else {
+		m.addsort_order = &i
+	}
+}
+
+// AddedSortOrder returns the value that was added to the "sort_order" field in this mutation.
+func (m *ExternalApprovalSystemMutation) AddedSortOrder() (r int, exists bool) {
+	v := m.addsort_order
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetSortOrder resets all changes to the "sort_order" field.
+func (m *ExternalApprovalSystemMutation) ResetSortOrder() {
+	m.sort_order = nil
+	m.addsort_order = nil
+}
+
+// SetCreatedBy sets the "created_by" field.
+func (m *ExternalApprovalSystemMutation) SetCreatedBy(s string) {
+	m.created_by = &s
+}
+
+// CreatedBy returns the value of the "created_by" field in the mutation.
+func (m *ExternalApprovalSystemMutation) CreatedBy() (r string, exists bool) {
+	v := m.created_by
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldCreatedBy returns the old "created_by" field's value of the ExternalApprovalSystem entity.
+// If the ExternalApprovalSystem object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *ExternalApprovalSystemMutation) OldCreatedBy(ctx context.Context) (v string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldCreatedBy is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldCreatedBy requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldCreatedBy: %w", err)
+	}
+	return oldValue.CreatedBy, nil
+}
+
+// ResetCreatedBy resets all changes to the "created_by" field.
+func (m *ExternalApprovalSystemMutation) ResetCreatedBy() {
+	m.created_by = nil
+}
+
+// Where appends a list predicates to the ExternalApprovalSystemMutation builder.
+func (m *ExternalApprovalSystemMutation) Where(ps ...predicate.ExternalApprovalSystem) {
+	m.predicates = append(m.predicates, ps...)
+}
+
+// WhereP appends storage-level predicates to the ExternalApprovalSystemMutation builder. Using this method,
+// users can use type-assertion to append predicates that do not depend on any generated package.
+func (m *ExternalApprovalSystemMutation) WhereP(ps ...func(*sql.Selector)) {
+	p := make([]predicate.ExternalApprovalSystem, len(ps))
+	for i := range ps {
+		p[i] = ps[i]
+	}
+	m.Where(p...)
+}
+
+// Op returns the operation name.
+func (m *ExternalApprovalSystemMutation) Op() Op {
+	return m.op
+}
+
+// SetOp allows setting the mutation operation.
+func (m *ExternalApprovalSystemMutation) SetOp(op Op) {
+	m.op = op
+}
+
+// Type returns the node type of this mutation (ExternalApprovalSystem).
+func (m *ExternalApprovalSystemMutation) Type() string {
+	return m.typ
+}
+
+// Fields returns all fields that were changed during this mutation. Note that in
+// order to get all numeric fields that were incremented/decremented, call
+// AddedFields().
+func (m *ExternalApprovalSystemMutation) Fields() []string {
+	fields := make([]string, 0, 14)
+	if m.created_at != nil {
+		fields = append(fields, externalapprovalsystem.FieldCreatedAt)
+	}
+	if m.updated_at != nil {
+		fields = append(fields, externalapprovalsystem.FieldUpdatedAt)
+	}
+	if m.name != nil {
+		fields = append(fields, externalapprovalsystem.FieldName)
+	}
+	if m.provider_type != nil {
+		fields = append(fields, externalapprovalsystem.FieldProviderType)
+	}
+	if m.enabled != nil {
+		fields = append(fields, externalapprovalsystem.FieldEnabled)
+	}
+	if m.webhook_url != nil {
+		fields = append(fields, externalapprovalsystem.FieldWebhookURL)
+	}
+	if m.webhook_headers != nil {
+		fields = append(fields, externalapprovalsystem.FieldWebhookHeaders)
+	}
+	if m.timeout_seconds != nil {
+		fields = append(fields, externalapprovalsystem.FieldTimeoutSeconds)
+	}
+	if m.retry_count != nil {
+		fields = append(fields, externalapprovalsystem.FieldRetryCount)
+	}
+	if m.retry_backoff_seconds != nil {
+		fields = append(fields, externalapprovalsystem.FieldRetryBackoffSeconds)
+	}
+	if m.signing_key_ciphertext != nil {
+		fields = append(fields, externalapprovalsystem.FieldSigningKeyCiphertext)
+	}
+	if m.encryption_key_id != nil {
+		fields = append(fields, externalapprovalsystem.FieldEncryptionKeyID)
+	}
+	if m.sort_order != nil {
+		fields = append(fields, externalapprovalsystem.FieldSortOrder)
+	}
+	if m.created_by != nil {
+		fields = append(fields, externalapprovalsystem.FieldCreatedBy)
+	}
+	return fields
+}
+
+// Field returns the value of a field with the given name. The second boolean
+// return value indicates that this field was not set, or was not defined in the
+// schema.
+func (m *ExternalApprovalSystemMutation) Field(name string) (ent.Value, bool) {
+	switch name {
+	case externalapprovalsystem.FieldCreatedAt:
+		return m.CreatedAt()
+	case externalapprovalsystem.FieldUpdatedAt:
+		return m.UpdatedAt()
+	case externalapprovalsystem.FieldName:
+		return m.Name()
+	case externalapprovalsystem.FieldProviderType:
+		return m.ProviderType()
+	case externalapprovalsystem.FieldEnabled:
+		return m.Enabled()
+	case externalapprovalsystem.FieldWebhookURL:
+		return m.WebhookURL()
+	case externalapprovalsystem.FieldWebhookHeaders:
+		return m.WebhookHeaders()
+	case externalapprovalsystem.FieldTimeoutSeconds:
+		return m.TimeoutSeconds()
+	case externalapprovalsystem.FieldRetryCount:
+		return m.RetryCount()
+	case externalapprovalsystem.FieldRetryBackoffSeconds:
+		return m.RetryBackoffSeconds()
+	case externalapprovalsystem.FieldSigningKeyCiphertext:
+		return m.SigningKeyCiphertext()
+	case externalapprovalsystem.FieldEncryptionKeyID:
+		return m.EncryptionKeyID()
+	case externalapprovalsystem.FieldSortOrder:
+		return m.SortOrder()
+	case externalapprovalsystem.FieldCreatedBy:
+		return m.CreatedBy()
+	}
+	return nil, false
+}
+
+// OldField returns the old value of the field from the database. An error is
+// returned if the mutation operation is not UpdateOne, or the query to the
+// database failed.
+func (m *ExternalApprovalSystemMutation) OldField(ctx context.Context, name string) (ent.Value, error) {
+	switch name {
+	case externalapprovalsystem.FieldCreatedAt:
+		return m.OldCreatedAt(ctx)
+	case externalapprovalsystem.FieldUpdatedAt:
+		return m.OldUpdatedAt(ctx)
+	case externalapprovalsystem.FieldName:
+		return m.OldName(ctx)
+	case externalapprovalsystem.FieldProviderType:
+		return m.OldProviderType(ctx)
+	case externalapprovalsystem.FieldEnabled:
+		return m.OldEnabled(ctx)
+	case externalapprovalsystem.FieldWebhookURL:
+		return m.OldWebhookURL(ctx)
+	case externalapprovalsystem.FieldWebhookHeaders:
+		return m.OldWebhookHeaders(ctx)
+	case externalapprovalsystem.FieldTimeoutSeconds:
+		return m.OldTimeoutSeconds(ctx)
+	case externalapprovalsystem.FieldRetryCount:
+		return m.OldRetryCount(ctx)
+	case externalapprovalsystem.FieldRetryBackoffSeconds:
+		return m.OldRetryBackoffSeconds(ctx)
+	case externalapprovalsystem.FieldSigningKeyCiphertext:
+		return m.OldSigningKeyCiphertext(ctx)
+	case externalapprovalsystem.FieldEncryptionKeyID:
+		return m.OldEncryptionKeyID(ctx)
+	case externalapprovalsystem.FieldSortOrder:
+		return m.OldSortOrder(ctx)
+	case externalapprovalsystem.FieldCreatedBy:
+		return m.OldCreatedBy(ctx)
+	}
+	return nil, fmt.Errorf("unknown ExternalApprovalSystem field %s", name)
+}
+
+// SetField sets the value of a field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ExternalApprovalSystemMutation) SetField(name string, value ent.Value) error {
+	switch name {
+	case externalapprovalsystem.FieldCreatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedAt(v)
+		return nil
+	case externalapprovalsystem.FieldUpdatedAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetUpdatedAt(v)
+		return nil
+	case externalapprovalsystem.FieldName:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetName(v)
+		return nil
+	case externalapprovalsystem.FieldProviderType:
+		v, ok := value.(externalapprovalsystem.ProviderType)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetProviderType(v)
+		return nil
+	case externalapprovalsystem.FieldEnabled:
+		v, ok := value.(bool)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEnabled(v)
+		return nil
+	case externalapprovalsystem.FieldWebhookURL:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWebhookURL(v)
+		return nil
+	case externalapprovalsystem.FieldWebhookHeaders:
+		v, ok := value.(map[string]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetWebhookHeaders(v)
+		return nil
+	case externalapprovalsystem.FieldTimeoutSeconds:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetTimeoutSeconds(v)
+		return nil
+	case externalapprovalsystem.FieldRetryCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRetryCount(v)
+		return nil
+	case externalapprovalsystem.FieldRetryBackoffSeconds:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetRetryBackoffSeconds(v)
+		return nil
+	case externalapprovalsystem.FieldSigningKeyCiphertext:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSigningKeyCiphertext(v)
+		return nil
+	case externalapprovalsystem.FieldEncryptionKeyID:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetEncryptionKeyID(v)
+		return nil
+	case externalapprovalsystem.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSortOrder(v)
+		return nil
+	case externalapprovalsystem.FieldCreatedBy:
+		v, ok := value.(string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetCreatedBy(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ExternalApprovalSystem field %s", name)
+}
+
+// AddedFields returns all numeric fields that were incremented/decremented during
+// this mutation.
+func (m *ExternalApprovalSystemMutation) AddedFields() []string {
+	var fields []string
+	if m.addtimeout_seconds != nil {
+		fields = append(fields, externalapprovalsystem.FieldTimeoutSeconds)
+	}
+	if m.addretry_count != nil {
+		fields = append(fields, externalapprovalsystem.FieldRetryCount)
+	}
+	if m.addretry_backoff_seconds != nil {
+		fields = append(fields, externalapprovalsystem.FieldRetryBackoffSeconds)
+	}
+	if m.addsort_order != nil {
+		fields = append(fields, externalapprovalsystem.FieldSortOrder)
+	}
+	return fields
+}
+
+// AddedField returns the numeric value that was incremented/decremented on a field
+// with the given name. The second boolean return value indicates that this field
+// was not set, or was not defined in the schema.
+func (m *ExternalApprovalSystemMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case externalapprovalsystem.FieldTimeoutSeconds:
+		return m.AddedTimeoutSeconds()
+	case externalapprovalsystem.FieldRetryCount:
+		return m.AddedRetryCount()
+	case externalapprovalsystem.FieldRetryBackoffSeconds:
+		return m.AddedRetryBackoffSeconds()
+	case externalapprovalsystem.FieldSortOrder:
+		return m.AddedSortOrder()
+	}
+	return nil, false
+}
+
+// AddField adds the value to the field with the given name. It returns an error if
+// the field is not defined in the schema, or if the type mismatched the field
+// type.
+func (m *ExternalApprovalSystemMutation) AddField(name string, value ent.Value) error {
+	switch name {
+	case externalapprovalsystem.FieldTimeoutSeconds:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddTimeoutSeconds(v)
+		return nil
+	case externalapprovalsystem.FieldRetryCount:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRetryCount(v)
+		return nil
+	case externalapprovalsystem.FieldRetryBackoffSeconds:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddRetryBackoffSeconds(v)
+		return nil
+	case externalapprovalsystem.FieldSortOrder:
+		v, ok := value.(int)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddSortOrder(v)
+		return nil
+	}
+	return fmt.Errorf("unknown ExternalApprovalSystem numeric field %s", name)
+}
+
+// ClearedFields returns all nullable fields that were cleared during this
+// mutation.
+func (m *ExternalApprovalSystemMutation) ClearedFields() []string {
+	var fields []string
+	if m.FieldCleared(externalapprovalsystem.FieldSigningKeyCiphertext) {
+		fields = append(fields, externalapprovalsystem.FieldSigningKeyCiphertext)
+	}
+	if m.FieldCleared(externalapprovalsystem.FieldEncryptionKeyID) {
+		fields = append(fields, externalapprovalsystem.FieldEncryptionKeyID)
+	}
+	return fields
+}
+
+// FieldCleared returns a boolean indicating if a field with the given name was
+// cleared in this mutation.
+func (m *ExternalApprovalSystemMutation) FieldCleared(name string) bool {
+	_, ok := m.clearedFields[name]
+	return ok
+}
+
+// ClearField clears the value of the field with the given name. It returns an
+// error if the field is not defined in the schema.
+func (m *ExternalApprovalSystemMutation) ClearField(name string) error {
+	switch name {
+	case externalapprovalsystem.FieldSigningKeyCiphertext:
+		m.ClearSigningKeyCiphertext()
+		return nil
+	case externalapprovalsystem.FieldEncryptionKeyID:
+		m.ClearEncryptionKeyID()
+		return nil
+	}
+	return fmt.Errorf("unknown ExternalApprovalSystem nullable field %s", name)
+}
+
+// ResetField resets all changes in the mutation for the field with the given name.
+// It returns an error if the field is not defined in the schema.
+func (m *ExternalApprovalSystemMutation) ResetField(name string) error {
+	switch name {
+	case externalapprovalsystem.FieldCreatedAt:
+		m.ResetCreatedAt()
+		return nil
+	case externalapprovalsystem.FieldUpdatedAt:
+		m.ResetUpdatedAt()
+		return nil
+	case externalapprovalsystem.FieldName:
+		m.ResetName()
+		return nil
+	case externalapprovalsystem.FieldProviderType:
+		m.ResetProviderType()
+		return nil
+	case externalapprovalsystem.FieldEnabled:
+		m.ResetEnabled()
+		return nil
+	case externalapprovalsystem.FieldWebhookURL:
+		m.ResetWebhookURL()
+		return nil
+	case externalapprovalsystem.FieldWebhookHeaders:
+		m.ResetWebhookHeaders()
+		return nil
+	case externalapprovalsystem.FieldTimeoutSeconds:
+		m.ResetTimeoutSeconds()
+		return nil
+	case externalapprovalsystem.FieldRetryCount:
+		m.ResetRetryCount()
+		return nil
+	case externalapprovalsystem.FieldRetryBackoffSeconds:
+		m.ResetRetryBackoffSeconds()
+		return nil
+	case externalapprovalsystem.FieldSigningKeyCiphertext:
+		m.ResetSigningKeyCiphertext()
+		return nil
+	case externalapprovalsystem.FieldEncryptionKeyID:
+		m.ResetEncryptionKeyID()
+		return nil
+	case externalapprovalsystem.FieldSortOrder:
+		m.ResetSortOrder()
+		return nil
+	case externalapprovalsystem.FieldCreatedBy:
+		m.ResetCreatedBy()
+		return nil
+	}
+	return fmt.Errorf("unknown ExternalApprovalSystem field %s", name)
+}
+
+// AddedEdges returns all edge names that were set/added in this mutation.
+func (m *ExternalApprovalSystemMutation) AddedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// AddedIDs returns all IDs (to other nodes) that were added for the given edge
+// name in this mutation.
+func (m *ExternalApprovalSystemMutation) AddedIDs(name string) []ent.Value {
+	return nil
+}
+
+// RemovedEdges returns all edge names that were removed in this mutation.
+func (m *ExternalApprovalSystemMutation) RemovedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// RemovedIDs returns all IDs (to other nodes) that were removed for the edge with
+// the given name in this mutation.
+func (m *ExternalApprovalSystemMutation) RemovedIDs(name string) []ent.Value {
+	return nil
+}
+
+// ClearedEdges returns all edge names that were cleared in this mutation.
+func (m *ExternalApprovalSystemMutation) ClearedEdges() []string {
+	edges := make([]string, 0, 0)
+	return edges
+}
+
+// EdgeCleared returns a boolean which indicates if the edge with the given name
+// was cleared in this mutation.
+func (m *ExternalApprovalSystemMutation) EdgeCleared(name string) bool {
+	return false
+}
+
+// ClearEdge clears the value of the edge with the given name. It returns an error
+// if that edge is not defined in the schema.
+func (m *ExternalApprovalSystemMutation) ClearEdge(name string) error {
+	return fmt.Errorf("unknown ExternalApprovalSystem unique edge %s", name)
+}
+
+// ResetEdge resets all changes to the edge with the given name in this mutation.
+// It returns an error if the edge is not defined in the schema.
+func (m *ExternalApprovalSystemMutation) ResetEdge(name string) error {
+	return fmt.Errorf("unknown ExternalApprovalSystem edge %s", name)
 }
 
 // ExternalCohortMutation represents an operation that mutates the ExternalCohort nodes in the graph.

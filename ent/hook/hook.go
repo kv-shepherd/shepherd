@@ -105,6 +105,18 @@ func (f DomainEventFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value,
 	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.DomainEventMutation", m)
 }
 
+// The ExternalApprovalSystemFunc type is an adapter to allow the use of ordinary
+// function as ExternalApprovalSystem mutator.
+type ExternalApprovalSystemFunc func(context.Context, *ent.ExternalApprovalSystemMutation) (ent.Value, error)
+
+// Mutate calls f(ctx, m).
+func (f ExternalApprovalSystemFunc) Mutate(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+	if mv, ok := m.(*ent.ExternalApprovalSystemMutation); ok {
+		return f(ctx, mv)
+	}
+	return nil, fmt.Errorf("unexpected mutation type %T. expect *ent.ExternalApprovalSystemMutation", m)
+}
+
 // The ExternalCohortFunc type is an adapter to allow the use of ordinary
 // function as ExternalCohort mutator.
 type ExternalCohortFunc func(context.Context, *ent.ExternalCohortMutation) (ent.Value, error)

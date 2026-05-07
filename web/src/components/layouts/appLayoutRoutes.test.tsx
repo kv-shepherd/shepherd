@@ -45,6 +45,12 @@ describe('getMenuRoutes', () => {
         expect(admin?.name).toBe('nav.admin');
         expect(admin?.path).toBe('/admin');
         expect(approvalTasks?.name).toBe('nav.approval_tasks');
+        expect(admin?.routes).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                path: '/admin/external-approval-systems',
+                name: 'nav.external_approval_systems',
+            }),
+        ]));
         expect(rateLimits?.name).toBe('nav.rate_limits');
     });
 
@@ -102,6 +108,7 @@ describe('getMenuRoutes', () => {
         expect(adminPaths).toHaveLength(Object.keys(ADMIN_MENU_ROUTE_PERMISSIONS).length);
         expect(adminPaths).toEqual(expect.arrayContaining([
             '/admin/approval-tasks',
+            '/admin/external-approval-systems',
             '/admin/clusters',
             '/admin/namespaces',
             '/admin/templates',

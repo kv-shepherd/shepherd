@@ -248,12 +248,12 @@
 
 ---
 
-## External Approval Provider Boundary (V1 Interface Only)
+## External Approval Provider Boundary
 
 - [x] `ApprovalProvider` contract defined (`SubmitForApproval`, `ProcessApproval`) — in `internal/provider/approvalcontract/contract.go` (thin re-export in `internal/provider/approval.go`)
 - [x] `external_approval_systems` schema + migration present for adapter registry
-- [x] V1 runtime keeps built-in approval as required go-live path
-- [x] External approval adapters are explicitly treated as V2+ plugin roadmap capability
+- [x] V1 runtime keeps built-in approval fallback while supporting outbound webhook dispatch
+- [x] Admin API/UI manages external approval webhook registry entries
 
 ---
 

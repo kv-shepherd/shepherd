@@ -2374,7 +2374,7 @@ Part 4 属于参考视图，不是用户操作流程。
 
 | 对象 | 代表字段 | 作用 |
 |----------|------|------|
-| `external_approval_systems` | `id`, `name`, `type`, `enabled`, `webhook_url`, `webhook_secret`, `timeout_seconds`, `retry_count` | 外部适配器注册与投递保护策略 |
+| `external_approval_systems` | `id`, `name`, `provider_type`, `enabled`, `webhook_url`, `signing_key_ciphertext`, `timeout_seconds`, `retry_count`, `retry_backoff_seconds` | 外部适配器注册与投递保护策略 |
 | `audit_logs` | `action`, `resource_type`, `resource_id`, `result`, `metadata` | 外部决策/回退动作的本地不可变审计轨迹 |
 
 #### Webhook 发送格式 (Shepherd → 外部系统)

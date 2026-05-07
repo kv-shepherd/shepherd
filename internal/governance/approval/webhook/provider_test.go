@@ -35,6 +35,7 @@ func TestProviderSubmitForApprovalSendsSignedWebhook(t *testing.T) {
 	secret := "webhook-secret"
 	var gotPayload submitPayload
 	var gotTicketID string
+	var gotSource string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
 		if err != nil {
@@ -44,6 +45,7 @@ func TestProviderSubmitForApprovalSendsSignedWebhook(t *testing.T) {
 			t.Fatal("webhook signature did not verify")
 		}
 		gotTicketID = r.Header.Get(ticketIDHeader)
+		gotSource = r.Header.Get("X-Shepherd-Source")
 		if err := json.Unmarshal(body, &gotPayload); err != nil {
 			t.Fatalf("unmarshal payload: %v", err)
 		}
@@ -55,6 +57,7 @@ func TestProviderSubmitForApprovalSendsSignedWebhook(t *testing.T) {
 	provider, err := NewProvider(Config{
 		WebhookURL:        server.URL,
 		SigningKey:        secret,
+		Headers:           map[string]string{"X-Shepherd-Source": "shepherd"},
 		RetryCount:        1,
 		AllowInsecureHTTP: true,
 	}, fallback)
@@ -83,6 +86,9 @@ func TestProviderSubmitForApprovalSendsSignedWebhook(t *testing.T) {
 	}
 	if gotTicketID != "ticket-1" || gotPayload.EventID != "ticket-1" || gotPayload.Requester != "alice" {
 		t.Fatalf("unexpected webhook payload: ticket header=%q payload=%+v", gotTicketID, gotPayload)
+	}
+	if gotSource != "shepherd" {
+		t.Fatalf("custom source header = %q, want shepherd", gotSource)
 	}
 	if gotPayload.SubmittedAt != "2026-03-17T00:00:00Z" {
 		t.Fatalf("submitted_at = %q", gotPayload.SubmittedAt)
@@ -162,6 +168,18 @@ func TestProviderRequiresHTTPSByDefault(t *testing.T) {
 	}, &fallbackProvider{})
 	if err == nil {
 		t.Fatal("NewProvider succeeded with insecure HTTP URL")
+	}
+}
+
+func TestProviderRejectsInvalidCustomHeader(t *testing.T) {
+	_, err := NewProvider(Config{
+		WebhookURL:        "http://approval.example.test/hook",
+		SigningKey:        "webhook-secret",
+		Headers:           map[string]string{"bad header": "value"},
+		AllowInsecureHTTP: true,
+	}, &fallbackProvider{})
+	if err == nil {
+		t.Fatal("NewProvider succeeded with an invalid custom header")
 	}
 }
 

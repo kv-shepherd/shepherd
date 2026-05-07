@@ -20,6 +20,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
 	"kv-shepherd.io/shepherd/ent/externalcohort"
 	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
@@ -103,37 +104,38 @@ var (
 func checkColumn(t, c string) error {
 	initCheck.Do(func() {
 		columnCheck = sql.NewColumnCheck(map[string]func(string) bool{
-			approvalpolicy.Table:        approvalpolicy.ValidColumn,
-			auditlog.Table:              auditlog.ValidColumn,
-			authprovider.Table:          authprovider.ValidColumn,
-			batchticket.Table:           batchticket.ValidColumn,
-			cluster.Table:               cluster.ValidColumn,
-			clusterpolicy.Table:         clusterpolicy.ValidColumn,
-			directorysyncjob.Table:      directorysyncjob.ValidColumn,
-			domainevent.Table:           domainevent.ValidColumn,
-			externalcohort.Table:        externalcohort.ValidColumn,
-			externalcohortgrant.Table:   externalcohortgrant.ValidColumn,
-			externalcohortmapping.Table: externalcohortmapping.ValidColumn,
-			instancesize.Table:          instancesize.ValidColumn,
-			namespaceregistry.Table:     namespaceregistry.ValidColumn,
-			notification.Table:          notification.ValidColumn,
-			pendingadoption.Table:       pendingadoption.ValidColumn,
-			platformsetting.Table:       platformsetting.ValidColumn,
-			ratelimitexemption.Table:    ratelimitexemption.ValidColumn,
-			ratelimituseroverride.Table: ratelimituseroverride.ValidColumn,
-			resourcerolebinding.Table:   resourcerolebinding.ValidColumn,
-			role.Table:                  role.ValidColumn,
-			rolebinding.Table:           rolebinding.ValidColumn,
-			service.Table:               service.ValidColumn,
-			system.Table:                system.ValidColumn,
-			systemsecret.Table:          systemsecret.ValidColumn,
-			template.Table:              template.ValidColumn,
-			ticket.Table:                ticket.ValidColumn,
-			user.Table:                  user.ValidColumn,
-			userdirectoryprofile.Table:  userdirectoryprofile.ValidColumn,
-			userpreference.Table:        userpreference.ValidColumn,
-			vm.Table:                    vm.ValidColumn,
-			vmrevision.Table:            vmrevision.ValidColumn,
+			approvalpolicy.Table:         approvalpolicy.ValidColumn,
+			auditlog.Table:               auditlog.ValidColumn,
+			authprovider.Table:           authprovider.ValidColumn,
+			batchticket.Table:            batchticket.ValidColumn,
+			cluster.Table:                cluster.ValidColumn,
+			clusterpolicy.Table:          clusterpolicy.ValidColumn,
+			directorysyncjob.Table:       directorysyncjob.ValidColumn,
+			domainevent.Table:            domainevent.ValidColumn,
+			externalapprovalsystem.Table: externalapprovalsystem.ValidColumn,
+			externalcohort.Table:         externalcohort.ValidColumn,
+			externalcohortgrant.Table:    externalcohortgrant.ValidColumn,
+			externalcohortmapping.Table:  externalcohortmapping.ValidColumn,
+			instancesize.Table:           instancesize.ValidColumn,
+			namespaceregistry.Table:      namespaceregistry.ValidColumn,
+			notification.Table:           notification.ValidColumn,
+			pendingadoption.Table:        pendingadoption.ValidColumn,
+			platformsetting.Table:        platformsetting.ValidColumn,
+			ratelimitexemption.Table:     ratelimitexemption.ValidColumn,
+			ratelimituseroverride.Table:  ratelimituseroverride.ValidColumn,
+			resourcerolebinding.Table:    resourcerolebinding.ValidColumn,
+			role.Table:                   role.ValidColumn,
+			rolebinding.Table:            rolebinding.ValidColumn,
+			service.Table:                service.ValidColumn,
+			system.Table:                 system.ValidColumn,
+			systemsecret.Table:           systemsecret.ValidColumn,
+			template.Table:               template.ValidColumn,
+			ticket.Table:                 ticket.ValidColumn,
+			user.Table:                   user.ValidColumn,
+			userdirectoryprofile.Table:   userdirectoryprofile.ValidColumn,
+			userpreference.Table:         userpreference.ValidColumn,
+			vm.Table:                     vm.ValidColumn,
+			vmrevision.Table:             vmrevision.ValidColumn,
 		})
 	})
 	return columnCheck(t, c)

@@ -309,6 +309,47 @@ var (
 			},
 		},
 	}
+	// ExternalApprovalSystemsColumns holds the columns for the "external_approval_systems" table.
+	ExternalApprovalSystemsColumns = []*schema.Column{
+		{Name: "id", Type: field.TypeString, Unique: true},
+		{Name: "created_at", Type: field.TypeTime},
+		{Name: "updated_at", Type: field.TypeTime},
+		{Name: "name", Type: field.TypeString},
+		{Name: "provider_type", Type: field.TypeEnum, Enums: []string{"webhook"}, Default: "webhook"},
+		{Name: "enabled", Type: field.TypeBool, Default: true},
+		{Name: "webhook_url", Type: field.TypeString},
+		{Name: "webhook_headers", Type: field.TypeJSON},
+		{Name: "timeout_seconds", Type: field.TypeInt, Default: 30},
+		{Name: "retry_count", Type: field.TypeInt, Default: 3},
+		{Name: "retry_backoff_seconds", Type: field.TypeInt, Default: 2},
+		{Name: "signing_key_ciphertext", Type: field.TypeString, Nullable: true},
+		{Name: "encryption_key_id", Type: field.TypeString, Nullable: true},
+		{Name: "sort_order", Type: field.TypeInt, Default: 0},
+		{Name: "created_by", Type: field.TypeString},
+	}
+	// ExternalApprovalSystemsTable holds the schema information for the "external_approval_systems" table.
+	ExternalApprovalSystemsTable = &schema.Table{
+		Name:       "external_approval_systems",
+		Columns:    ExternalApprovalSystemsColumns,
+		PrimaryKey: []*schema.Column{ExternalApprovalSystemsColumns[0]},
+		Indexes: []*schema.Index{
+			{
+				Name:    "externalapprovalsystem_name",
+				Unique:  true,
+				Columns: []*schema.Column{ExternalApprovalSystemsColumns[3]},
+			},
+			{
+				Name:    "externalapprovalsystem_provider_type",
+				Unique:  false,
+				Columns: []*schema.Column{ExternalApprovalSystemsColumns[4]},
+			},
+			{
+				Name:    "externalapprovalsystem_enabled_sort_order_name",
+				Unique:  false,
+				Columns: []*schema.Column{ExternalApprovalSystemsColumns[5], ExternalApprovalSystemsColumns[13], ExternalApprovalSystemsColumns[3]},
+			},
+		},
+	}
 	// ExternalCohortsColumns holds the columns for the "external_cohorts" table.
 	ExternalCohortsColumns = []*schema.Column{
 		{Name: "id", Type: field.TypeString, Unique: true},
@@ -1143,6 +1184,7 @@ var (
 		ClusterPoliciesTable,
 		DirectorySyncJobsTable,
 		DomainEventsTable,
+		ExternalApprovalSystemsTable,
 		ExternalCohortsTable,
 		ExternalCohortGrantsTable,
 		ExternalCohortMappingsTable,

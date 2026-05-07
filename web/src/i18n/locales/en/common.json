@@ -51,6 +51,7 @@
     "nav.vms": "Virtual Machines",
     "nav.my_requests": "My Requests",
     "nav.approval_tasks": "Approval Tasks",
+    "nav.external_approval_systems": "External Approvals",
     "nav.clusters": "Clusters",
     "nav.namespaces": "Namespaces",
     "nav.templates": "Templates",

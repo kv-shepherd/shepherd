@@ -23,6 +23,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
 	"kv-shepherd.io/shepherd/ent/externalcohort"
 	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
@@ -69,6 +70,8 @@ type Client struct {
 	DirectorySyncJob *DirectorySyncJobClient
 	// DomainEvent is the client for interacting with the DomainEvent builders.
 	DomainEvent *DomainEventClient
+	// ExternalApprovalSystem is the client for interacting with the ExternalApprovalSystem builders.
+	ExternalApprovalSystem *ExternalApprovalSystemClient
 	// ExternalCohort is the client for interacting with the ExternalCohort builders.
 	ExternalCohort *ExternalCohortClient
 	// ExternalCohortGrant is the client for interacting with the ExternalCohortGrant builders.
@@ -134,6 +137,7 @@ func (c *Client) init() {
 	c.ClusterPolicy = NewClusterPolicyClient(c.config)
 	c.DirectorySyncJob = NewDirectorySyncJobClient(c.config)
 	c.DomainEvent = NewDomainEventClient(c.config)
+	c.ExternalApprovalSystem = NewExternalApprovalSystemClient(c.config)
 	c.ExternalCohort = NewExternalCohortClient(c.config)
 	c.ExternalCohortGrant = NewExternalCohortGrantClient(c.config)
 	c.ExternalCohortMapping = NewExternalCohortMappingClient(c.config)
@@ -247,39 +251,40 @@ func (c *Client) Tx(ctx context.Context) (*Tx, error) {
 	cfg := c.config
 	cfg.driver = tx
 	return &Tx{
-		ctx:                   ctx,
-		config:                cfg,
-		ApprovalPolicy:        NewApprovalPolicyClient(cfg),
-		AuditLog:              NewAuditLogClient(cfg),
-		AuthProvider:          NewAuthProviderClient(cfg),
-		BatchTicket:           NewBatchTicketClient(cfg),
-		Cluster:               NewClusterClient(cfg),
-		ClusterPolicy:         NewClusterPolicyClient(cfg),
-		DirectorySyncJob:      NewDirectorySyncJobClient(cfg),
-		DomainEvent:           NewDomainEventClient(cfg),
-		ExternalCohort:        NewExternalCohortClient(cfg),
-		ExternalCohortGrant:   NewExternalCohortGrantClient(cfg),
-		ExternalCohortMapping: NewExternalCohortMappingClient(cfg),
-		InstanceSize:          NewInstanceSizeClient(cfg),
-		NamespaceRegistry:     NewNamespaceRegistryClient(cfg),
-		Notification:          NewNotificationClient(cfg),
-		PendingAdoption:       NewPendingAdoptionClient(cfg),
-		PlatformSetting:       NewPlatformSettingClient(cfg),
-		RateLimitExemption:    NewRateLimitExemptionClient(cfg),
-		RateLimitUserOverride: NewRateLimitUserOverrideClient(cfg),
-		ResourceRoleBinding:   NewResourceRoleBindingClient(cfg),
-		Role:                  NewRoleClient(cfg),
-		RoleBinding:           NewRoleBindingClient(cfg),
-		Service:               NewServiceClient(cfg),
-		System:                NewSystemClient(cfg),
-		SystemSecret:          NewSystemSecretClient(cfg),
-		Template:              NewTemplateClient(cfg),
-		Ticket:                NewTicketClient(cfg),
-		User:                  NewUserClient(cfg),
-		UserDirectoryProfile:  NewUserDirectoryProfileClient(cfg),
-		UserPreference:        NewUserPreferenceClient(cfg),
-		VM:                    NewVMClient(cfg),
-		VMRevision:            NewVMRevisionClient(cfg),
+		ctx:                    ctx,
+		config:                 cfg,
+		ApprovalPolicy:         NewApprovalPolicyClient(cfg),
+		AuditLog:               NewAuditLogClient(cfg),
+		AuthProvider:           NewAuthProviderClient(cfg),
+		BatchTicket:            NewBatchTicketClient(cfg),
+		Cluster:                NewClusterClient(cfg),
+		ClusterPolicy:          NewClusterPolicyClient(cfg),
+		DirectorySyncJob:       NewDirectorySyncJobClient(cfg),
+		DomainEvent:            NewDomainEventClient(cfg),
+		ExternalApprovalSystem: NewExternalApprovalSystemClient(cfg),
+		ExternalCohort:         NewExternalCohortClient(cfg),
+		ExternalCohortGrant:    NewExternalCohortGrantClient(cfg),
+		ExternalCohortMapping:  NewExternalCohortMappingClient(cfg),
+		InstanceSize:           NewInstanceSizeClient(cfg),
+		NamespaceRegistry:      NewNamespaceRegistryClient(cfg),
+		Notification:           NewNotificationClient(cfg),
+		PendingAdoption:        NewPendingAdoptionClient(cfg),
+		PlatformSetting:        NewPlatformSettingClient(cfg),
+		RateLimitExemption:     NewRateLimitExemptionClient(cfg),
+		RateLimitUserOverride:  NewRateLimitUserOverrideClient(cfg),
+		ResourceRoleBinding:    NewResourceRoleBindingClient(cfg),
+		Role:                   NewRoleClient(cfg),
+		RoleBinding:            NewRoleBindingClient(cfg),
+		Service:                NewServiceClient(cfg),
+		System:                 NewSystemClient(cfg),
+		SystemSecret:           NewSystemSecretClient(cfg),
+		Template:               NewTemplateClient(cfg),
+		Ticket:                 NewTicketClient(cfg),
+		User:                   NewUserClient(cfg),
+		UserDirectoryProfile:   NewUserDirectoryProfileClient(cfg),
+		UserPreference:         NewUserPreferenceClient(cfg),
+		VM:                     NewVMClient(cfg),
+		VMRevision:             NewVMRevisionClient(cfg),
 	}, nil
 }
 
@@ -297,39 +302,40 @@ func (c *Client) BeginTx(ctx context.Context, opts *sql.TxOptions) (*Tx, error) 
 	cfg := c.config
 	cfg.driver = &txDriver{tx: tx, drv: c.driver}
 	return &Tx{
-		ctx:                   ctx,
-		config:                cfg,
-		ApprovalPolicy:        NewApprovalPolicyClient(cfg),
-		AuditLog:              NewAuditLogClient(cfg),
-		AuthProvider:          NewAuthProviderClient(cfg),
-		BatchTicket:           NewBatchTicketClient(cfg),
-		Cluster:               NewClusterClient(cfg),
-		ClusterPolicy:         NewClusterPolicyClient(cfg),
-		DirectorySyncJob:      NewDirectorySyncJobClient(cfg),
-		DomainEvent:           NewDomainEventClient(cfg),
-		ExternalCohort:        NewExternalCohortClient(cfg),
-		ExternalCohortGrant:   NewExternalCohortGrantClient(cfg),
-		ExternalCohortMapping: NewExternalCohortMappingClient(cfg),
-		InstanceSize:          NewInstanceSizeClient(cfg),
-		NamespaceRegistry:     NewNamespaceRegistryClient(cfg),
-		Notification:          NewNotificationClient(cfg),
-		PendingAdoption:       NewPendingAdoptionClient(cfg),
-		PlatformSetting:       NewPlatformSettingClient(cfg),
-		RateLimitExemption:    NewRateLimitExemptionClient(cfg),
-		RateLimitUserOverride: NewRateLimitUserOverrideClient(cfg),
-		ResourceRoleBinding:   NewResourceRoleBindingClient(cfg),
-		Role:                  NewRoleClient(cfg),
-		RoleBinding:           NewRoleBindingClient(cfg),
-		Service:               NewServiceClient(cfg),
-		System:                NewSystemClient(cfg),
-		SystemSecret:          NewSystemSecretClient(cfg),
-		Template:              NewTemplateClient(cfg),
-		Ticket:                NewTicketClient(cfg),
-		User:                  NewUserClient(cfg),
-		UserDirectoryProfile:  NewUserDirectoryProfileClient(cfg),
-		UserPreference:        NewUserPreferenceClient(cfg),
-		VM:                    NewVMClient(cfg),
-		VMRevision:            NewVMRevisionClient(cfg),
+		ctx:                    ctx,
+		config:                 cfg,
+		ApprovalPolicy:         NewApprovalPolicyClient(cfg),
+		AuditLog:               NewAuditLogClient(cfg),
+		AuthProvider:           NewAuthProviderClient(cfg),
+		BatchTicket:            NewBatchTicketClient(cfg),
+		Cluster:                NewClusterClient(cfg),
+		ClusterPolicy:          NewClusterPolicyClient(cfg),
+		DirectorySyncJob:       NewDirectorySyncJobClient(cfg),
+		DomainEvent:            NewDomainEventClient(cfg),
+		ExternalApprovalSystem: NewExternalApprovalSystemClient(cfg),
+		ExternalCohort:         NewExternalCohortClient(cfg),
+		ExternalCohortGrant:    NewExternalCohortGrantClient(cfg),
+		ExternalCohortMapping:  NewExternalCohortMappingClient(cfg),
+		InstanceSize:           NewInstanceSizeClient(cfg),
+		NamespaceRegistry:      NewNamespaceRegistryClient(cfg),
+		Notification:           NewNotificationClient(cfg),
+		PendingAdoption:        NewPendingAdoptionClient(cfg),
+		PlatformSetting:        NewPlatformSettingClient(cfg),
+		RateLimitExemption:     NewRateLimitExemptionClient(cfg),
+		RateLimitUserOverride:  NewRateLimitUserOverrideClient(cfg),
+		ResourceRoleBinding:    NewResourceRoleBindingClient(cfg),
+		Role:                   NewRoleClient(cfg),
+		RoleBinding:            NewRoleBindingClient(cfg),
+		Service:                NewServiceClient(cfg),
+		System:                 NewSystemClient(cfg),
+		SystemSecret:           NewSystemSecretClient(cfg),
+		Template:               NewTemplateClient(cfg),
+		Ticket:                 NewTicketClient(cfg),
+		User:                   NewUserClient(cfg),
+		UserDirectoryProfile:   NewUserDirectoryProfileClient(cfg),
+		UserPreference:         NewUserPreferenceClient(cfg),
+		VM:                     NewVMClient(cfg),
+		VMRevision:             NewVMRevisionClient(cfg),
 	}, nil
 }
 
@@ -360,12 +366,13 @@ func (c *Client) Close() error {
 func (c *Client) Use(hooks ...Hook) {
 	for _, n := range []interface{ Use(...Hook) }{
 		c.ApprovalPolicy, c.AuditLog, c.AuthProvider, c.BatchTicket, c.Cluster,
-		c.ClusterPolicy, c.DirectorySyncJob, c.DomainEvent, c.ExternalCohort,
-		c.ExternalCohortGrant, c.ExternalCohortMapping, c.InstanceSize,
-		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.PlatformSetting,
-		c.RateLimitExemption, c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role,
-		c.RoleBinding, c.Service, c.System, c.SystemSecret, c.Template, c.Ticket,
-		c.User, c.UserDirectoryProfile, c.UserPreference, c.VM, c.VMRevision,
+		c.ClusterPolicy, c.DirectorySyncJob, c.DomainEvent, c.ExternalApprovalSystem,
+		c.ExternalCohort, c.ExternalCohortGrant, c.ExternalCohortMapping,
+		c.InstanceSize, c.NamespaceRegistry, c.Notification, c.PendingAdoption,
+		c.PlatformSetting, c.RateLimitExemption, c.RateLimitUserOverride,
+		c.ResourceRoleBinding, c.Role, c.RoleBinding, c.Service, c.System,
+		c.SystemSecret, c.Template, c.Ticket, c.User, c.UserDirectoryProfile,
+		c.UserPreference, c.VM, c.VMRevision,
 	} {
 		n.Use(hooks...)
 	}
@@ -376,12 +383,13 @@ func (c *Client) Use(hooks ...Hook) {
 func (c *Client) Intercept(interceptors ...Interceptor) {
 	for _, n := range []interface{ Intercept(...Interceptor) }{
 		c.ApprovalPolicy, c.AuditLog, c.AuthProvider, c.BatchTicket, c.Cluster,
-		c.ClusterPolicy, c.DirectorySyncJob, c.DomainEvent, c.ExternalCohort,
-		c.ExternalCohortGrant, c.ExternalCohortMapping, c.InstanceSize,
-		c.NamespaceRegistry, c.Notification, c.PendingAdoption, c.PlatformSetting,
-		c.RateLimitExemption, c.RateLimitUserOverride, c.ResourceRoleBinding, c.Role,
-		c.RoleBinding, c.Service, c.System, c.SystemSecret, c.Template, c.Ticket,
-		c.User, c.UserDirectoryProfile, c.UserPreference, c.VM, c.VMRevision,
+		c.ClusterPolicy, c.DirectorySyncJob, c.DomainEvent, c.ExternalApprovalSystem,
+		c.ExternalCohort, c.ExternalCohortGrant, c.ExternalCohortMapping,
+		c.InstanceSize, c.NamespaceRegistry, c.Notification, c.PendingAdoption,
+		c.PlatformSetting, c.RateLimitExemption, c.RateLimitUserOverride,
+		c.ResourceRoleBinding, c.Role, c.RoleBinding, c.Service, c.System,
+		c.SystemSecret, c.Template, c.Ticket, c.User, c.UserDirectoryProfile,
+		c.UserPreference, c.VM, c.VMRevision,
 	} {
 		n.Intercept(interceptors...)
 	}
@@ -406,6 +414,8 @@ func (c *Client) Mutate(ctx context.Context, m Mutation) (Value, error) {
 		return c.DirectorySyncJob.mutate(ctx, m)
 	case *DomainEventMutation:
 		return c.DomainEvent.mutate(ctx, m)
+	case *ExternalApprovalSystemMutation:
+		return c.ExternalApprovalSystem.mutate(ctx, m)
 	case *ExternalCohortMutation:
 		return c.ExternalCohort.mutate(ctx, m)
 	case *ExternalCohortGrantMutation:
@@ -1550,6 +1560,139 @@ func (c *DomainEventClient) mutate(ctx context.Context, m *DomainEventMutation) 
 		return (&DomainEventDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
 	default:
 		return nil, fmt.Errorf("ent: unknown DomainEvent mutation op: %q", m.Op())
+	}
+}
+
+// ExternalApprovalSystemClient is a client for the ExternalApprovalSystem schema.
+type ExternalApprovalSystemClient struct {
+	config
+}
+
+// NewExternalApprovalSystemClient returns a client for the ExternalApprovalSystem from the given config.
+func NewExternalApprovalSystemClient(c config) *ExternalApprovalSystemClient {
+	return &ExternalApprovalSystemClient{config: c}
+}
+
+// Use adds a list of mutation hooks to the hooks stack.
+// A call to `Use(f, g, h)` equals to `externalapprovalsystem.Hooks(f(g(h())))`.
+func (c *ExternalApprovalSystemClient) Use(hooks ...Hook) {
+	c.hooks.ExternalApprovalSystem = append(c.hooks.ExternalApprovalSystem, hooks...)
+}
+
+// Intercept adds a list of query interceptors to the interceptors stack.
+// A call to `Intercept(f, g, h)` equals to `externalapprovalsystem.Intercept(f(g(h())))`.
+func (c *ExternalApprovalSystemClient) Intercept(interceptors ...Interceptor) {
+	c.inters.ExternalApprovalSystem = append(c.inters.ExternalApprovalSystem, interceptors...)
+}
+
+// Create returns a builder for creating a ExternalApprovalSystem entity.
+func (c *ExternalApprovalSystemClient) Create() *ExternalApprovalSystemCreate {
+	mutation := newExternalApprovalSystemMutation(c.config, OpCreate)
+	return &ExternalApprovalSystemCreate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// CreateBulk returns a builder for creating a bulk of ExternalApprovalSystem entities.
+func (c *ExternalApprovalSystemClient) CreateBulk(builders ...*ExternalApprovalSystemCreate) *ExternalApprovalSystemCreateBulk {
+	return &ExternalApprovalSystemCreateBulk{config: c.config, builders: builders}
+}
+
+// MapCreateBulk creates a bulk creation builder from the given slice. For each item in the slice, the function creates
+// a builder and applies setFunc on it.
+func (c *ExternalApprovalSystemClient) MapCreateBulk(slice any, setFunc func(*ExternalApprovalSystemCreate, int)) *ExternalApprovalSystemCreateBulk {
+	rv := reflect.ValueOf(slice)
+	if rv.Kind() != reflect.Slice {
+		return &ExternalApprovalSystemCreateBulk{err: fmt.Errorf("calling to ExternalApprovalSystemClient.MapCreateBulk with wrong type %T, need slice", slice)}
+	}
+	builders := make([]*ExternalApprovalSystemCreate, rv.Len())
+	for i := 0; i < rv.Len(); i++ {
+		builders[i] = c.Create()
+		setFunc(builders[i], i)
+	}
+	return &ExternalApprovalSystemCreateBulk{config: c.config, builders: builders}
+}
+
+// Update returns an update builder for ExternalApprovalSystem.
+func (c *ExternalApprovalSystemClient) Update() *ExternalApprovalSystemUpdate {
+	mutation := newExternalApprovalSystemMutation(c.config, OpUpdate)
+	return &ExternalApprovalSystemUpdate{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOne returns an update builder for the given entity.
+func (c *ExternalApprovalSystemClient) UpdateOne(_m *ExternalApprovalSystem) *ExternalApprovalSystemUpdateOne {
+	mutation := newExternalApprovalSystemMutation(c.config, OpUpdateOne, withExternalApprovalSystem(_m))
+	return &ExternalApprovalSystemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// UpdateOneID returns an update builder for the given id.
+func (c *ExternalApprovalSystemClient) UpdateOneID(id string) *ExternalApprovalSystemUpdateOne {
+	mutation := newExternalApprovalSystemMutation(c.config, OpUpdateOne, withExternalApprovalSystemID(id))
+	return &ExternalApprovalSystemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// Delete returns a delete builder for ExternalApprovalSystem.
+func (c *ExternalApprovalSystemClient) Delete() *ExternalApprovalSystemDelete {
+	mutation := newExternalApprovalSystemMutation(c.config, OpDelete)
+	return &ExternalApprovalSystemDelete{config: c.config, hooks: c.Hooks(), mutation: mutation}
+}
+
+// DeleteOne returns a builder for deleting the given entity.
+func (c *ExternalApprovalSystemClient) DeleteOne(_m *ExternalApprovalSystem) *ExternalApprovalSystemDeleteOne {
+	return c.DeleteOneID(_m.ID)
+}
+
+// DeleteOneID returns a builder for deleting the given entity by its id.
+func (c *ExternalApprovalSystemClient) DeleteOneID(id string) *ExternalApprovalSystemDeleteOne {
+	builder := c.Delete().Where(externalapprovalsystem.ID(id))
+	builder.mutation.id = &id
+	builder.mutation.op = OpDeleteOne
+	return &ExternalApprovalSystemDeleteOne{builder}
+}
+
+// Query returns a query builder for ExternalApprovalSystem.
+func (c *ExternalApprovalSystemClient) Query() *ExternalApprovalSystemQuery {
+	return &ExternalApprovalSystemQuery{
+		config: c.config,
+		ctx:    &QueryContext{Type: TypeExternalApprovalSystem},
+		inters: c.Interceptors(),
+	}
+}
+
+// Get returns a ExternalApprovalSystem entity by its id.
+func (c *ExternalApprovalSystemClient) Get(ctx context.Context, id string) (*ExternalApprovalSystem, error) {
+	return c.Query().Where(externalapprovalsystem.ID(id)).Only(ctx)
+}
+
+// GetX is like Get, but panics if an error occurs.
+func (c *ExternalApprovalSystemClient) GetX(ctx context.Context, id string) *ExternalApprovalSystem {
+	obj, err := c.Get(ctx, id)
+	if err != nil {
+		panic(err)
+	}
+	return obj
+}
+
+// Hooks returns the client hooks.
+func (c *ExternalApprovalSystemClient) Hooks() []Hook {
+	return c.hooks.ExternalApprovalSystem
+}
+
+// Interceptors returns the client interceptors.
+func (c *ExternalApprovalSystemClient) Interceptors() []Interceptor {
+	return c.inters.ExternalApprovalSystem
+}
+
+func (c *ExternalApprovalSystemClient) mutate(ctx context.Context, m *ExternalApprovalSystemMutation) (Value, error) {
+	switch m.Op() {
+	case OpCreate:
+		return (&ExternalApprovalSystemCreate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdate:
+		return (&ExternalApprovalSystemUpdate{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpUpdateOne:
+		return (&ExternalApprovalSystemUpdateOne{config: c.config, hooks: c.Hooks(), mutation: m}).Save(ctx)
+	case OpDelete, OpDeleteOne:
+		return (&ExternalApprovalSystemDelete{config: c.config, hooks: c.Hooks(), mutation: m}).Exec(ctx)
+	default:
+		return nil, fmt.Errorf("ent: unknown ExternalApprovalSystem mutation op: %q", m.Op())
 	}
 }
 
@@ -4936,20 +5079,20 @@ func (c *VMRevisionClient) mutate(ctx context.Context, m *VMRevisionMutation) (V
 type (
 	hooks struct {
 		ApprovalPolicy, AuditLog, AuthProvider, BatchTicket, Cluster, ClusterPolicy,
-		DirectorySyncJob, DomainEvent, ExternalCohort, ExternalCohortGrant,
-		ExternalCohortMapping, InstanceSize, NamespaceRegistry, Notification,
-		PendingAdoption, PlatformSetting, RateLimitExemption, RateLimitUserOverride,
-		ResourceRoleBinding, Role, RoleBinding, Service, System, SystemSecret,
-		Template, Ticket, User, UserDirectoryProfile, UserPreference, VM,
+		DirectorySyncJob, DomainEvent, ExternalApprovalSystem, ExternalCohort,
+		ExternalCohortGrant, ExternalCohortMapping, InstanceSize, NamespaceRegistry,
+		Notification, PendingAdoption, PlatformSetting, RateLimitExemption,
+		RateLimitUserOverride, ResourceRoleBinding, Role, RoleBinding, Service, System,
+		SystemSecret, Template, Ticket, User, UserDirectoryProfile, UserPreference, VM,
 		VMRevision []ent.Hook
 	}
 	inters struct {
 		ApprovalPolicy, AuditLog, AuthProvider, BatchTicket, Cluster, ClusterPolicy,
-		DirectorySyncJob, DomainEvent, ExternalCohort, ExternalCohortGrant,
-		ExternalCohortMapping, InstanceSize, NamespaceRegistry, Notification,
-		PendingAdoption, PlatformSetting, RateLimitExemption, RateLimitUserOverride,
-		ResourceRoleBinding, Role, RoleBinding, Service, System, SystemSecret,
-		Template, Ticket, User, UserDirectoryProfile, UserPreference, VM,
+		DirectorySyncJob, DomainEvent, ExternalApprovalSystem, ExternalCohort,
+		ExternalCohortGrant, ExternalCohortMapping, InstanceSize, NamespaceRegistry,
+		Notification, PendingAdoption, PlatformSetting, RateLimitExemption,
+		RateLimitUserOverride, ResourceRoleBinding, Role, RoleBinding, Service, System,
+		SystemSecret, Template, Ticket, User, UserDirectoryProfile, UserPreference, VM,
 		VMRevision []ent.Interceptor
 	}
 )

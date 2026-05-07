@@ -38,7 +38,7 @@ future-scoped by RFC/ADR.
 | VM snapshot workflow | RFC / V2 scope | [RFC-0013](../rfc/RFC-0013-vm-snapshot.md) |
 | Full VM clone workflow | RFC / V2 scope | [RFC-0014](../rfc/RFC-0014-vm-clone.md) |
 | Live migration workflow | RFC / V2 scope | [RFC-0012](../rfc/RFC-0012-kubevirt-advanced.md) |
-| External approval adapters | RFC / V2 scope | [RFC-0004](../rfc/RFC-0004-external-approval.md) |
+| External approval decision ingestion and native provider connectors | RFC / V2 scope | [RFC-0004](../rfc/RFC-0004-external-approval.md) |
 | Advanced observability / Prometheus metrics endpoint | RFC / V2 scope | [RFC-0010](../rfc/RFC-0010-observability.md) |
 | Full template lifecycle states (`draft -> active -> deprecated -> archived`) | RFC / V2 candidate | V1 uses `enabled`, `catalog_scope`, source validation, and delete guards. Add a contract-first design before introducing lifecycle states. |
 | Resource adoption admin workflow | RFC / V2 candidate | V1 keeps the `pending_adoptions` schema as a compensation hook; admin adoption APIs and periodic scan can be designed when adoption becomes a product workflow. |

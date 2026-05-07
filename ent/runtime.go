@@ -13,6 +13,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/clusterpolicy"
 	"kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/externalapprovalsystem"
 	"kv-shepherd.io/shepherd/ent/externalcohort"
 	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
@@ -349,6 +350,59 @@ func init() {
 	domaineventDescCreatedBy := domaineventFields[6].Descriptor()
 	// domainevent.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	domainevent.CreatedByValidator = domaineventDescCreatedBy.Validators[0].(func(string) error)
+	externalapprovalsystemMixin := schema.ExternalApprovalSystem{}.Mixin()
+	externalapprovalsystemMixinFields0 := externalapprovalsystemMixin[0].Fields()
+	_ = externalapprovalsystemMixinFields0
+	externalapprovalsystemFields := schema.ExternalApprovalSystem{}.Fields()
+	_ = externalapprovalsystemFields
+	// externalapprovalsystemDescCreatedAt is the schema descriptor for created_at field.
+	externalapprovalsystemDescCreatedAt := externalapprovalsystemMixinFields0[0].Descriptor()
+	// externalapprovalsystem.DefaultCreatedAt holds the default value on creation for the created_at field.
+	externalapprovalsystem.DefaultCreatedAt = externalapprovalsystemDescCreatedAt.Default.(func() time.Time)
+	// externalapprovalsystemDescUpdatedAt is the schema descriptor for updated_at field.
+	externalapprovalsystemDescUpdatedAt := externalapprovalsystemMixinFields0[1].Descriptor()
+	// externalapprovalsystem.DefaultUpdatedAt holds the default value on creation for the updated_at field.
+	externalapprovalsystem.DefaultUpdatedAt = externalapprovalsystemDescUpdatedAt.Default.(func() time.Time)
+	// externalapprovalsystem.UpdateDefaultUpdatedAt holds the default value on update for the updated_at field.
+	externalapprovalsystem.UpdateDefaultUpdatedAt = externalapprovalsystemDescUpdatedAt.UpdateDefault.(func() time.Time)
+	// externalapprovalsystemDescName is the schema descriptor for name field.
+	externalapprovalsystemDescName := externalapprovalsystemFields[1].Descriptor()
+	// externalapprovalsystem.NameValidator is a validator for the "name" field. It is called by the builders before save.
+	externalapprovalsystem.NameValidator = externalapprovalsystemDescName.Validators[0].(func(string) error)
+	// externalapprovalsystemDescEnabled is the schema descriptor for enabled field.
+	externalapprovalsystemDescEnabled := externalapprovalsystemFields[3].Descriptor()
+	// externalapprovalsystem.DefaultEnabled holds the default value on creation for the enabled field.
+	externalapprovalsystem.DefaultEnabled = externalapprovalsystemDescEnabled.Default.(bool)
+	// externalapprovalsystemDescWebhookURL is the schema descriptor for webhook_url field.
+	externalapprovalsystemDescWebhookURL := externalapprovalsystemFields[4].Descriptor()
+	// externalapprovalsystem.WebhookURLValidator is a validator for the "webhook_url" field. It is called by the builders before save.
+	externalapprovalsystem.WebhookURLValidator = externalapprovalsystemDescWebhookURL.Validators[0].(func(string) error)
+	// externalapprovalsystemDescTimeoutSeconds is the schema descriptor for timeout_seconds field.
+	externalapprovalsystemDescTimeoutSeconds := externalapprovalsystemFields[6].Descriptor()
+	// externalapprovalsystem.DefaultTimeoutSeconds holds the default value on creation for the timeout_seconds field.
+	externalapprovalsystem.DefaultTimeoutSeconds = externalapprovalsystemDescTimeoutSeconds.Default.(int)
+	// externalapprovalsystem.TimeoutSecondsValidator is a validator for the "timeout_seconds" field. It is called by the builders before save.
+	externalapprovalsystem.TimeoutSecondsValidator = externalapprovalsystemDescTimeoutSeconds.Validators[0].(func(int) error)
+	// externalapprovalsystemDescRetryCount is the schema descriptor for retry_count field.
+	externalapprovalsystemDescRetryCount := externalapprovalsystemFields[7].Descriptor()
+	// externalapprovalsystem.DefaultRetryCount holds the default value on creation for the retry_count field.
+	externalapprovalsystem.DefaultRetryCount = externalapprovalsystemDescRetryCount.Default.(int)
+	// externalapprovalsystem.RetryCountValidator is a validator for the "retry_count" field. It is called by the builders before save.
+	externalapprovalsystem.RetryCountValidator = externalapprovalsystemDescRetryCount.Validators[0].(func(int) error)
+	// externalapprovalsystemDescRetryBackoffSeconds is the schema descriptor for retry_backoff_seconds field.
+	externalapprovalsystemDescRetryBackoffSeconds := externalapprovalsystemFields[8].Descriptor()
+	// externalapprovalsystem.DefaultRetryBackoffSeconds holds the default value on creation for the retry_backoff_seconds field.
+	externalapprovalsystem.DefaultRetryBackoffSeconds = externalapprovalsystemDescRetryBackoffSeconds.Default.(int)
+	// externalapprovalsystem.RetryBackoffSecondsValidator is a validator for the "retry_backoff_seconds" field. It is called by the builders before save.
+	externalapprovalsystem.RetryBackoffSecondsValidator = externalapprovalsystemDescRetryBackoffSeconds.Validators[0].(func(int) error)
+	// externalapprovalsystemDescSortOrder is the schema descriptor for sort_order field.
+	externalapprovalsystemDescSortOrder := externalapprovalsystemFields[11].Descriptor()
+	// externalapprovalsystem.DefaultSortOrder holds the default value on creation for the sort_order field.
+	externalapprovalsystem.DefaultSortOrder = externalapprovalsystemDescSortOrder.Default.(int)
+	// externalapprovalsystemDescCreatedBy is the schema descriptor for created_by field.
+	externalapprovalsystemDescCreatedBy := externalapprovalsystemFields[12].Descriptor()
+	// externalapprovalsystem.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
+	externalapprovalsystem.CreatedByValidator = externalapprovalsystemDescCreatedBy.Validators[0].(func(string) error)
 	externalcohortMixin := schema.ExternalCohort{}.Mixin()
 	externalcohortMixinFields0 := externalcohortMixin[0].Fields()
 	_ = externalcohortMixinFields0

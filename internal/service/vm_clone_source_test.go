@@ -200,6 +200,7 @@ func TestGetPVCCloneAdvisory_StorageClassMismatchWarnsHostAssistedFallback(t *te
 	}
 	if advisory == nil {
 		t.Fatal("GetPVCCloneAdvisory advisory = nil, want non-nil")
+		return
 	}
 	if advisory.Code != pvcCloneHostAssistedFallbackLikelyCode {
 		t.Fatalf("advisory.Code = %q, want %q", advisory.Code, pvcCloneHostAssistedFallbackLikelyCode)
@@ -238,6 +239,7 @@ func TestGetPVCCloneAdvisory_StorageProfileCopyCloneStrategyWarnsHostAssistedFal
 	}
 	if advisory == nil {
 		t.Fatal("GetPVCCloneAdvisory advisory = nil, want non-nil")
+		return
 	}
 	if advisory.Code != pvcCloneHostAssistedFallbackLikelyCode {
 		t.Fatalf("advisory.Code = %q, want %q", advisory.Code, pvcCloneHostAssistedFallbackLikelyCode)
@@ -277,6 +279,7 @@ func TestGetPVCCloneAdvisory_BlockVolumeModeMismatchWarnsHostAssistedFallback(t 
 	}
 	if advisory == nil {
 		t.Fatal("GetPVCCloneAdvisory advisory = nil, want non-nil")
+		return
 	}
 	if advisory.Code != pvcCloneHostAssistedFallbackLikelyCode {
 		t.Fatalf("advisory.Code = %q, want %q", advisory.Code, pvcCloneHostAssistedFallbackLikelyCode)

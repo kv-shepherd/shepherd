@@ -107,6 +107,7 @@ func TestGetProvisioningStatus_AggregatesDataVolumePVCAndEvents(t *testing.T) {
 	}
 	if got == nil {
 		t.Fatal("GetProvisioningStatus = nil, want aggregated status")
+		return
 	}
 	if got.RootDataVolumeName != "vm-a-rootfs" {
 		t.Fatalf("RootDataVolumeName = %q, want %q", got.RootDataVolumeName, "vm-a-rootfs")
@@ -208,6 +209,7 @@ func TestGetProvisioningStatus_DoesNotExposeFailureMessage_WhenProvisioningNotFa
 	}
 	if got == nil {
 		t.Fatal("GetProvisioningStatus = nil, want aggregated status")
+		return
 	}
 	if got.FailureMessage != "" {
 		t.Fatalf("FailureMessage = %q, want empty when phase is not failed", got.FailureMessage)

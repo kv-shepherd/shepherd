@@ -18,7 +18,7 @@
 | Domain | Core Tables | Notes |
 |------|------|------|
 | Primary resources | `systems`, `services`, `vms`, `templates`, `instance_sizes`, `clusters`, `namespace_registry` | Runtime-owned entities |
-| Governance and approvals | `approval_tickets`, `batch_approval_tickets`, `approval_policies` | Approval workflow and batch orchestration (`approval_tickets.parent_ticket_id` models child linkage) |
+| Governance and approvals | `approval_tickets`, `batch_approval_tickets`, `approval_policies`, `external_approval_systems` | Approval workflow, batch orchestration, and external approval adapter registry (`approval_tickets.parent_ticket_id` models child linkage) |
 | Access Control | `users`, `roles`, `permissions`, `role_permissions`, `role_bindings`, `resource_role_bindings` | Global/platform RBAC plus resource membership inheritance |
 | Event and async | `domain_events`, River tables (`river_job`, `river_*`) | Claim-check and async execution |
 | Audit and notifications | `audit_logs`, `notifications` | Compliance and user feedback |

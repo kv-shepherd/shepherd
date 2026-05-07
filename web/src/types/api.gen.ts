@@ -986,6 +986,42 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/external-approval-systems": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List external approval systems */
+        get: operations["listExternalApprovalSystems"];
+        put?: never;
+        /** Create external approval system */
+        post: operations["createExternalApprovalSystem"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/external-approval-systems/{system_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete external approval system */
+        delete: operations["deleteExternalApprovalSystem"];
+        options?: never;
+        head?: never;
+        /** Update external approval system */
+        patch: operations["updateExternalApprovalSystem"];
+        trace?: never;
+    };
     "/admin/auth-providers": {
         parameters: {
             query?: never;
@@ -5840,6 +5876,187 @@ export interface components {
             updated_at?: string;
         };
         /**
+         * @description OpenAPI schema for an administrator-managed external approval system.
+         * @example {
+         *       "id": "external-approval-001",
+         *       "name": "enterprise-approval",
+         *       "type": "webhook",
+         *       "enabled": true,
+         *       "webhook_url": "https://approval.example.com/shepherd",
+         *       "timeout_seconds": 30,
+         *       "retry_count": 3,
+         *       "retry_backoff_seconds": 2,
+         *       "signing_key_set": true
+         *     }
+         */
+        ExternalApprovalSystem: {
+            /** @example external-approval-001 */
+            id: string;
+            /** @example enterprise-approval */
+            name: string;
+            /**
+             * @example webhook
+             * @enum {string}
+             */
+            type: "webhook";
+            /** @example true */
+            enabled: boolean;
+            /** @example https://approval.example.com/shepherd */
+            webhook_url: string;
+            /**
+             * @example {
+             *       "X-Shepherd-Source": "shepherd"
+             *     }
+             */
+            webhook_headers?: {
+                [key: string]: string;
+            };
+            /** @example 30 */
+            timeout_seconds: number;
+            /** @example 3 */
+            retry_count: number;
+            /** @example 2 */
+            retry_backoff_seconds: number;
+            /**
+             * @description True when protected signing material is stored for this system.
+             * @example true
+             */
+            signing_key_set: boolean;
+            /** @example 10 */
+            sort_order?: number;
+            /** @example admin-001 */
+            created_by?: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
+            created_at?: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
+            updated_at?: string;
+        };
+        /**
+         * @description OpenAPI schema for external approval system lists.
+         * @example {
+         *       "items": [
+         *         {
+         *           "id": "external-approval-001",
+         *           "name": "enterprise-approval",
+         *           "type": "webhook",
+         *           "enabled": true,
+         *           "webhook_url": "https://approval.example.com/shepherd",
+         *           "timeout_seconds": 30,
+         *           "retry_count": 3,
+         *           "retry_backoff_seconds": 2,
+         *           "signing_key_set": true
+         *         }
+         *       ]
+         *     }
+         */
+        ExternalApprovalSystemList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "external-approval-001",
+             *         "name": "enterprise-approval",
+             *         "type": "webhook",
+             *         "enabled": true,
+             *         "webhook_url": "https://approval.example.com/shepherd",
+             *         "timeout_seconds": 30,
+             *         "retry_count": 3,
+             *         "retry_backoff_seconds": 2,
+             *         "signing_key_set": true
+             *       }
+             *     ]
+             */
+            items: components["schemas"]["ExternalApprovalSystem"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        /**
+         * @description OpenAPI schema for creating an external approval system.
+         * @example {
+         *       "name": "enterprise-approval",
+         *       "type": "webhook",
+         *       "webhook_url": "https://approval.example.com/shepherd",
+         *       "signing_key": "example-signing-material"
+         *     }
+         */
+        ExternalApprovalSystemCreateRequest: {
+            /** @example enterprise-approval */
+            name: string;
+            /**
+             * @default webhook
+             * @example webhook
+             * @enum {string}
+             */
+            type: "webhook";
+            /** @example true */
+            enabled?: boolean;
+            /** @example https://approval.example.com/shepherd */
+            webhook_url: string;
+            /**
+             * @example {
+             *       "X-Shepherd-Source": "shepherd"
+             *     }
+             */
+            webhook_headers?: {
+                [key: string]: string;
+            };
+            /** @example 30 */
+            timeout_seconds?: number;
+            /** @example 3 */
+            retry_count?: number;
+            /** @example 2 */
+            retry_backoff_seconds?: number;
+            /**
+             * Format: password
+             * @description HMAC signing key encrypted before storage and never returned by list responses.
+             * @example example-signing-material
+             */
+            signing_key: string;
+            /** @example 10 */
+            sort_order?: number;
+        };
+        /**
+         * @description OpenAPI schema for updating an external approval system.
+         * @example {
+         *       "enabled": true,
+         *       "timeout_seconds": 30
+         *     }
+         */
+        ExternalApprovalSystemUpdateRequest: {
+            /** @example enterprise-approval */
+            name?: string;
+            /** @example true */
+            enabled?: boolean;
+            /** @example https://approval.example.com/shepherd */
+            webhook_url?: string;
+            /**
+             * @example {
+             *       "X-Shepherd-Source": "shepherd"
+             *     }
+             */
+            webhook_headers?: {
+                [key: string]: string;
+            };
+            /** @example 30 */
+            timeout_seconds?: number;
+            /** @example 3 */
+            retry_count?: number;
+            /** @example 2 */
+            retry_backoff_seconds?: number;
+            /**
+             * Format: password
+             * @description Provide a new signing key to rotate it; omit to keep the stored value.
+             * @example example-signing-material
+             */
+            signing_key?: string;
+            /** @example 10 */
+            sort_order?: number;
+        };
+        /**
          * @description OpenAPI schema for Auth Provider List.
          * @example {
          *       "items": [
@@ -8032,6 +8249,11 @@ export interface components {
          * @example provider-001
          */
         ProviderID: string;
+        /**
+         * @description Stable external approval system identifier.
+         * @example external-approval-001
+         */
+        ExternalApprovalSystemID: string;
         /**
          * @description Stable external cohort mapping identifier.
          * @example mapping-001
@@ -11512,6 +11734,183 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    listExternalApprovalSystems: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External approval system list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "external-approval-001",
+                     *           "name": "enterprise-approval",
+                     *           "type": "webhook",
+                     *           "enabled": true,
+                     *           "webhook_url": "https://approval.example.com/shepherd",
+                     *           "timeout_seconds": 30,
+                     *           "retry_count": 3,
+                     *           "retry_backoff_seconds": 2,
+                     *           "signing_key_set": true
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ExternalApprovalSystemList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    createExternalApprovalSystem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description External approval webhook registration and protected signing material. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "name": "enterprise-approval",
+                 *       "type": "webhook",
+                 *       "webhook_url": "https://approval.example.com/shepherd",
+                 *       "signing_key": "example-signing-material",
+                 *       "enabled": true,
+                 *       "timeout_seconds": 30,
+                 *       "retry_count": 3,
+                 *       "retry_backoff_seconds": 2
+                 *     }
+                 */
+                "application/json": components["schemas"]["ExternalApprovalSystemCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description External approval system created */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "external-approval-001",
+                     *       "name": "enterprise-approval",
+                     *       "type": "webhook",
+                     *       "enabled": true,
+                     *       "webhook_url": "https://approval.example.com/shepherd",
+                     *       "timeout_seconds": 30,
+                     *       "retry_count": 3,
+                     *       "retry_backoff_seconds": 2,
+                     *       "signing_key_set": true
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ExternalApprovalSystem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    deleteExternalApprovalSystem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Stable external approval system identifier.
+                 * @example external-approval-001
+                 */
+                system_id: components["parameters"]["ExternalApprovalSystemID"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description External approval system deleted */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+        };
+    };
+    updateExternalApprovalSystem: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Stable external approval system identifier.
+                 * @example external-approval-001
+                 */
+                system_id: components["parameters"]["ExternalApprovalSystemID"];
+            };
+            cookie?: never;
+        };
+        /** @description Partial external approval system update. */
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "enabled": true,
+                 *       "timeout_seconds": 30,
+                 *       "retry_count": 3,
+                 *       "retry_backoff_seconds": 2
+                 *     }
+                 */
+                "application/json": components["schemas"]["ExternalApprovalSystemUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description External approval system updated */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "id": "external-approval-001",
+                     *       "name": "enterprise-approval",
+                     *       "type": "webhook",
+                     *       "enabled": true,
+                     *       "webhook_url": "https://approval.example.com/shepherd",
+                     *       "timeout_seconds": 30,
+                     *       "retry_count": 3,
+                     *       "retry_backoff_seconds": 2,
+                     *       "signing_key_set": true
+                     *     }
+                     */
+                    "application/json": components["schemas"]["ExternalApprovalSystem"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     listAuthProviders: {

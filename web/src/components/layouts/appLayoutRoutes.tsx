@@ -100,6 +100,13 @@ export const getMenuRoutes = (
             icon: <ApprovalTasksIcon />,
         },
         {
+            routeKey: 'externalApprovalSystems',
+            requiredPermissions: ADMIN_MENU_ROUTE_PERMISSIONS.externalApprovalSystems,
+            path: '/admin/external-approval-systems',
+            name: t('nav.external_approval_systems'),
+            icon: <ApprovalTasksIcon />,
+        },
+        {
             routeKey: 'clusters',
             requiredPermissions: ADMIN_MENU_ROUTE_PERMISSIONS.clusters,
             path: '/admin/clusters',

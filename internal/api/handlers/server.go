@@ -21,9 +21,11 @@ import (
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
 	approvalbuiltin "kv-shepherd.io/shepherd/internal/governance/approval/builtin"
+	approvalregistry "kv-shepherd.io/shepherd/internal/governance/approval/registry"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/governance/ticketing"
 	"kv-shepherd.io/shepherd/internal/notification"
+	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 	configcodec "kv-shepherd.io/shepherd/internal/provider/configcodec"
 	kubeconfigcodec "kv-shepherd.io/shepherd/internal/provider/kubeconfigcodec"
 	"kv-shepherd.io/shepherd/internal/service"
@@ -35,21 +37,23 @@ var _ generated.ServerInterface = (*Server)(nil)
 
 // Server implements all API handlers satisfying generated.ServerInterface.
 type Server struct {
-	client               *ent.Client
-	pool                 *pgxpool.Pool
-	jwtCfg               middleware.JWTConfig
-	audit                *audit.Logger
-	vmService            *service.VMService
-	clusterPolicy        *service.ClusterPolicyService
-	approvalReqs         *service.ApprovalRequirementService
-	directorySync        *service.DirectorySyncService
-	vncTokens            *service.VNCTokenManager
-	authSessions         *service.AuthSessionManager
-	createVMUC           *usecase.CreateVMUseCase
-	deleteVMUC           *usecase.DeleteVMUseCase
-	externalAuth         *service.ExternalAuthService
-	ticketService        *ticketing.Service
-	approvalRouter       *approval.ApprovalProviderRouter // Stage 2.E: provider router
+	client                   *ent.Client
+	pool                     *pgxpool.Pool
+	jwtCfg                   middleware.JWTConfig
+	audit                    *audit.Logger
+	vmService                *service.VMService
+	clusterPolicy            *service.ClusterPolicyService
+	approvalReqs             *service.ApprovalRequirementService
+	directorySync            *service.DirectorySyncService
+	vncTokens                *service.VNCTokenManager
+	authSessions             *service.AuthSessionManager
+	createVMUC               *usecase.CreateVMUseCase
+	deleteVMUC               *usecase.DeleteVMUseCase
+	externalAuth             *service.ExternalAuthService
+	ticketService            *ticketing.Service
+	approvalRouter           *approval.ApprovalProviderRouter // Stage 2.E: provider router
+	externalApprovalRegistry *approvalregistry.Service
+
 	authProviderConfig   *configcodec.AuthProviderConfigCodec
 	kubeconfigCodec      *kubeconfigcodec.ClusterKubeconfigCodec
 	publicBaseURL        string
@@ -68,30 +72,31 @@ type Server struct {
 // ServerDeps holds all dependencies for creating a Server.
 // ADR-0013: Manual DI, no Wire/Dig.
 type ServerDeps struct {
-	EntClient            *ent.Client
-	Pool                 *pgxpool.Pool
-	JWTCfg               middleware.JWTConfig
-	EncryptionKey        []byte
-	Audit                *audit.Logger
-	VMService            *service.VMService
-	ClusterPolicy        *service.ClusterPolicyService
-	ApprovalReqs         *service.ApprovalRequirementService
-	DirectorySync        *service.DirectorySyncService
-	VNCTokens            *service.VNCTokenManager
-	AuthSessions         *service.AuthSessionManager
-	CreateVMUC           *usecase.CreateVMUseCase
-	DeleteVMUC           *usecase.DeleteVMUseCase
-	ExternalAuth         *service.ExternalAuthService
-	TicketService        *ticketing.Service
-	ApprovalRouter       *approval.ApprovalProviderRouter // Stage 2.E: provider router
-	RefreshClusterHealth func(context.Context, string) error
-	RiverClient          *river.Client[pgx.Tx]  // ISSUE-001: needed for async VM delete/power operations
-	Notifier             *notification.Triggers // Optional: notification trigger service
-	PublicBaseURL        string
-	AllowedOrigins       []string
-	SessionConfig        config.SessionConfig
-	PasswordPolicy       config.PasswordPolicy
-	LoginRateLimitConfig config.LoginRateLimit
+	EntClient                *ent.Client
+	Pool                     *pgxpool.Pool
+	JWTCfg                   middleware.JWTConfig
+	EncryptionKey            []byte
+	Audit                    *audit.Logger
+	VMService                *service.VMService
+	ClusterPolicy            *service.ClusterPolicyService
+	ApprovalReqs             *service.ApprovalRequirementService
+	DirectorySync            *service.DirectorySyncService
+	VNCTokens                *service.VNCTokenManager
+	AuthSessions             *service.AuthSessionManager
+	CreateVMUC               *usecase.CreateVMUseCase
+	DeleteVMUC               *usecase.DeleteVMUseCase
+	ExternalAuth             *service.ExternalAuthService
+	TicketService            *ticketing.Service
+	ApprovalRouter           *approval.ApprovalProviderRouter // Stage 2.E: provider router
+	ExternalApprovalRegistry *approvalregistry.Service
+	RefreshClusterHealth     func(context.Context, string) error
+	RiverClient              *river.Client[pgx.Tx]  // ISSUE-001: needed for async VM delete/power operations
+	Notifier                 *notification.Triggers // Optional: notification trigger service
+	PublicBaseURL            string
+	AllowedOrigins           []string
+	SessionConfig            config.SessionConfig
+	PasswordPolicy           config.PasswordPolicy
+	LoginRateLimitConfig     config.LoginRateLimit
 }
 
 // NewServer creates a new Server with all dependencies.
@@ -122,28 +127,39 @@ func NewServer(deps ServerDeps) *Server {
 			replay,
 		)
 	}
+	externalApprovalRegistry := deps.ExternalApprovalRegistry
+	if externalApprovalRegistry == nil && deps.EntClient != nil {
+		externalApprovalRegistry = approvalregistry.NewService(deps.EntClient, deps.EncryptionKey)
+	}
 	approvalRouter := deps.ApprovalRouter
 	if approvalRouter == nil && deps.TicketService != nil {
-		approvalRouter = approval.NewApprovalProviderRouter(
-			approvalbuiltin.NewProvider(deps.TicketService),
-		)
+		fallback := approvalbuiltin.NewProvider(deps.TicketService)
+		var activeProvider approvalcontract.ApprovalProvider = fallback
+		if externalApprovalRegistry != nil {
+			if provider, err := externalApprovalRegistry.ActiveProvider(context.Background(), fallback); err == nil {
+				activeProvider = provider
+			}
+		}
+		approvalRouter = approval.NewApprovalProviderRouter(activeProvider)
 	}
 	srv := &Server{
-		client:               deps.EntClient,
-		pool:                 deps.Pool,
-		jwtCfg:               deps.JWTCfg,
-		audit:                deps.Audit,
-		vmService:            deps.VMService,
-		clusterPolicy:        deps.ClusterPolicy,
-		approvalReqs:         deps.ApprovalReqs,
-		directorySync:        deps.DirectorySync,
-		vncTokens:            vncTokens,
-		authSessions:         authSessions,
-		createVMUC:           deps.CreateVMUC,
-		deleteVMUC:           deps.DeleteVMUC,
-		externalAuth:         deps.ExternalAuth,
-		ticketService:        deps.TicketService,
-		approvalRouter:       approvalRouter, // Stage 2.E: provider router
+		client:                   deps.EntClient,
+		pool:                     deps.Pool,
+		jwtCfg:                   deps.JWTCfg,
+		audit:                    deps.Audit,
+		vmService:                deps.VMService,
+		clusterPolicy:            deps.ClusterPolicy,
+		approvalReqs:             deps.ApprovalReqs,
+		directorySync:            deps.DirectorySync,
+		vncTokens:                vncTokens,
+		authSessions:             authSessions,
+		createVMUC:               deps.CreateVMUC,
+		deleteVMUC:               deps.DeleteVMUC,
+		externalAuth:             deps.ExternalAuth,
+		ticketService:            deps.TicketService,
+		approvalRouter:           approvalRouter, // Stage 2.E: provider router
+		externalApprovalRegistry: externalApprovalRegistry,
+
 		authProviderConfig:   configcodec.NewAuthProviderConfigCodec(deps.EncryptionKey),
 		kubeconfigCodec:      kubeconfigcodec.NewClusterKubeconfigCodec(deps.EncryptionKey),
 		publicBaseURL:        deps.PublicBaseURL,

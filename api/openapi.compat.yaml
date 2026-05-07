@@ -27,6 +27,8 @@ tags:
     description: Approval workflow (ADR-0005)
   - name: builtin-approval
     description: Built-in approval provider task operations
+  - name: external-approval-systems
+    description: External approval provider registry management
   - name: tickets
     description: Work-order ticket query and lifecycle operations
   - name: clusters
@@ -3858,6 +3860,206 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+  /admin/external-approval-systems:
+    get:
+      tags: [external-approval-systems, admin]
+      summary: List external approval systems
+      operationId: listExternalApprovalSystems
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'platform:admin'
+      responses:
+        '200':
+          description: External approval system list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalApprovalSystemList'
+                example:
+                  items:
+                    - id: external-approval-001
+                      name: enterprise-approval
+                      type: webhook
+                      enabled: true
+                      webhook_url: https://approval.example.com/shepherd
+                      timeout_seconds: 30
+                      retry_count: 3
+                      retry_backoff_seconds: 2
+                      signing_key_set: true
+                  pagination:
+                    page: 1
+                    per_page: 1
+                    total: 1
+              example:
+                items:
+                  - id: external-approval-001
+                    name: enterprise-approval
+                    type: webhook
+                    enabled: true
+                    webhook_url: https://approval.example.com/shepherd
+                    timeout_seconds: 30
+                    retry_count: 3
+                    retry_backoff_seconds: 2
+                    signing_key_set: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags: [external-approval-systems, admin]
+      summary: Create external approval system
+      operationId: createExternalApprovalSystem
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'platform:admin'
+      requestBody:
+        description: External approval webhook registration and protected signing material.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalApprovalSystemCreateRequest'
+              example:
+                name: enterprise-approval
+                type: webhook
+                webhook_url: https://approval.example.com/shepherd
+                signing_key: example-signing-material
+            example:
+              name: enterprise-approval
+              type: webhook
+              webhook_url: https://approval.example.com/shepherd
+              signing_key: example-signing-material
+              enabled: true
+              timeout_seconds: 30
+              retry_count: 3
+              retry_backoff_seconds: 2
+      responses:
+        '201':
+          description: External approval system created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalApprovalSystem'
+                example:
+                  id: external-approval-001
+                  name: enterprise-approval
+                  type: webhook
+                  enabled: true
+                  webhook_url: https://approval.example.com/shepherd
+                  timeout_seconds: 30
+                  retry_count: 3
+                  retry_backoff_seconds: 2
+                  signing_key_set: true
+              example:
+                id: external-approval-001
+                name: enterprise-approval
+                type: webhook
+                enabled: true
+                webhook_url: https://approval.example.com/shepherd
+                timeout_seconds: 30
+                retry_count: 3
+                retry_backoff_seconds: 2
+                signing_key_set: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /admin/external-approval-systems/{system_id}:
+    patch:
+      tags: [external-approval-systems, admin]
+      summary: Update external approval system
+      operationId: updateExternalApprovalSystem
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'platform:admin'
+      parameters:
+        - $ref: '#/components/parameters/ExternalApprovalSystemID'
+      requestBody:
+        description: Partial external approval system update.
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExternalApprovalSystemUpdateRequest'
+              example:
+                enabled: true
+                timeout_seconds: 30
+            example:
+              enabled: true
+              timeout_seconds: 30
+              retry_count: 3
+              retry_backoff_seconds: 2
+      responses:
+        '200':
+          description: External approval system updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ExternalApprovalSystem'
+                example:
+                  id: external-approval-001
+                  name: enterprise-approval
+                  type: webhook
+                  enabled: true
+                  webhook_url: https://approval.example.com/shepherd
+                  timeout_seconds: 30
+                  retry_count: 3
+                  retry_backoff_seconds: 2
+                  signing_key_set: true
+              example:
+                id: external-approval-001
+                name: enterprise-approval
+                type: webhook
+                enabled: true
+                webhook_url: https://approval.example.com/shepherd
+                timeout_seconds: 30
+                retry_count: 3
+                retry_backoff_seconds: 2
+                signing_key_set: true
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+    delete:
+      tags: [external-approval-systems, admin]
+      summary: Delete external approval system
+      operationId: deleteExternalApprovalSystem
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+            - 'platform:admin'
+      parameters:
+        - $ref: '#/components/parameters/ExternalApprovalSystemID'
+      responses:
+        '204':
+          description: External approval system deleted
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /admin/auth-providers:
     get:
       tags: [auth-providers, admin]
@@ -6930,6 +7132,15 @@ components:
         type: string
         example: provider-001
       example: provider-001
+    ExternalApprovalSystemID:
+      name: system_id
+      in: path
+      description: Stable external approval system identifier.
+      required: true
+      schema:
+        type: string
+        example: external-approval-001
+      example: external-approval-001
     MappingID:
       name: mapping_id
       in: path
@@ -11400,6 +11611,221 @@ components:
           type: string
           format: date-time
           example: '2026-01-01T00:00:00Z'
+    ExternalApprovalSystem:
+      description: OpenAPI schema for an administrator-managed external approval system.
+      type: object
+      required:
+        - id
+        - name
+        - type
+        - enabled
+        - webhook_url
+        - timeout_seconds
+        - retry_count
+        - retry_backoff_seconds
+        - signing_key_set
+      example:
+        id: external-approval-001
+        name: enterprise-approval
+        type: webhook
+        enabled: true
+        webhook_url: https://approval.example.com/shepherd
+        timeout_seconds: 30
+        retry_count: 3
+        retry_backoff_seconds: 2
+        signing_key_set: true
+      properties:
+        id:
+          type: string
+          example: external-approval-001
+        name:
+          type: string
+          example: enterprise-approval
+        type:
+          type: string
+          enum: [webhook]
+          example: webhook
+        enabled:
+          type: boolean
+          example: true
+        webhook_url:
+          type: string
+          example: https://approval.example.com/shepherd
+        webhook_headers:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            X-Shepherd-Source: shepherd
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 120
+          example: 30
+        retry_count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 3
+        retry_backoff_seconds:
+          type: integer
+          minimum: 1
+          maximum: 60
+          example: 2
+        signing_key_set:
+          type: boolean
+          description: True when protected signing material is stored for this system.
+          example: true
+        sort_order:
+          type: integer
+          example: 10
+        created_by:
+          type: string
+          example: admin-001
+        created_at:
+          type: string
+          format: date-time
+          example: '2026-01-01T00:00:00Z'
+        updated_at:
+          type: string
+          format: date-time
+          example: '2026-01-01T00:00:00Z'
+    ExternalApprovalSystemList:
+      description: OpenAPI schema for external approval system lists.
+      type: object
+      required: [items]
+      example:
+        items:
+          - id: external-approval-001
+            name: enterprise-approval
+            type: webhook
+            enabled: true
+            webhook_url: https://approval.example.com/shepherd
+            timeout_seconds: 30
+            retry_count: 3
+            retry_backoff_seconds: 2
+            signing_key_set: true
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExternalApprovalSystem'
+          example:
+            - id: external-approval-001
+              name: enterprise-approval
+              type: webhook
+              enabled: true
+              webhook_url: https://approval.example.com/shepherd
+              timeout_seconds: 30
+              retry_count: 3
+              retry_backoff_seconds: 2
+              signing_key_set: true
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    ExternalApprovalSystemCreateRequest:
+      description: OpenAPI schema for creating an external approval system.
+      type: object
+      required: [name, webhook_url, signing_key]
+      example:
+        name: enterprise-approval
+        type: webhook
+        webhook_url: https://approval.example.com/shepherd
+        signing_key: example-signing-material
+      properties:
+        name:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          example: enterprise-approval
+        type:
+          type: string
+          enum: [webhook]
+          default: webhook
+          example: webhook
+        enabled:
+          type: boolean
+          example: true
+        webhook_url:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          example: https://approval.example.com/shepherd
+        webhook_headers:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            X-Shepherd-Source: shepherd
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 120
+          example: 30
+        retry_count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 3
+        retry_backoff_seconds:
+          type: integer
+          minimum: 1
+          maximum: 60
+          example: 2
+        signing_key:
+          x-oapi-codegen-extra-tags:
+            validate: "required"
+          type: string
+          format: password
+          description: HMAC signing key encrypted before storage and never returned by list responses.
+          example: example-signing-material
+        sort_order:
+          type: integer
+          example: 10
+    ExternalApprovalSystemUpdateRequest:
+      description: OpenAPI schema for updating an external approval system.
+      type: object
+      example:
+        enabled: true
+        timeout_seconds: 30
+      properties:
+        name:
+          type: string
+          example: enterprise-approval
+        enabled:
+          type: boolean
+          example: true
+        webhook_url:
+          type: string
+          example: https://approval.example.com/shepherd
+        webhook_headers:
+          type: object
+          additionalProperties:
+            type: string
+          example:
+            X-Shepherd-Source: shepherd
+        timeout_seconds:
+          type: integer
+          minimum: 1
+          maximum: 120
+          example: 30
+        retry_count:
+          type: integer
+          minimum: 1
+          maximum: 10
+          example: 3
+        retry_backoff_seconds:
+          type: integer
+          minimum: 1
+          maximum: 60
+          example: 2
+        signing_key:
+          type: string
+          format: password
+          description: Provide a new signing key to rotate it; omit to keep the stored value.
+          example: example-signing-material
+        sort_order:
+          type: integer
+          example: 10
     AuthProviderList:
       description: OpenAPI schema for Auth Provider List.
       type: object

@@ -839,13 +839,14 @@ Protocol details and operational hardening checklists are maintained in phase an
 
 #### Purpose
 
-Define one canonical approval-provider contract. V1 ships with the built-in provider only;
-external systems are integrated as provider plugins without changing approval state semantics.
+Define one canonical approval-provider contract. V1 ships with the built-in provider
+as fallback and supports outbound webhook systems from the external approval registry
+without changing approval state semantics.
 
 #### Actors & Trigger
 
 - Trigger: platform admin defines approval provider strategy and policy.
-- Actors: platform admin, approval provider router, built-in provider, optional external provider adapter.
+- Actors: platform admin, approval provider router, built-in provider, external webhook provider.
 
 #### Interaction Flow
 
@@ -854,17 +855,16 @@ external systems are integrated as provider plugins without changing approval st
 │ Stage 2.E: Approval Provider Boundary (Single Contract, Pluggable Providers)                │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
-│  V1 go-live path (required):                                                                 │
-│    1) User submits request -> approval_tickets=PENDING                                       │
-│    2) Router selects built-in provider (`builtin-default`, only provider in V1)             │
-│    3) Built-in approver decides APPROVED / REJECTED                                          │
-│    4) Shepherd executes decision path and appends audit logs                                 │
+│  V1 go-live path:                                                                            │
+│    1) Platform admin optionally creates an enabled webhook approval system                   │
+│    2) User submits request -> approval_tickets=PENDING                                       │
+│    3) Router selects the first enabled registry provider by sort order                       │
+│    4) Provider unavailable or unconfigured -> controlled fallback to built-in queue          │
+│    5) Shepherd executes canonical decision path and appends audit logs                       │
 │                                                                                              │
-│  External plugin route (V2+ roadmap):                                                        │
-│    1) External adapter plugin is registered and enabled by policy                            │
-│    2) Router delegates ticket via ExternalApprovalProvider.SubmitForApproval                 │
-│    3) Callback/polling maps external decision to canonical APPROVED/REJECTED                 │
-│    4) Provider timeout/unavailable -> controlled fallback to built-in queue                  │
+│  External decision ingestion follow-up:                                                      │
+│    1) Signed callback or polling maps external decision to canonical APPROVED/REJECTED       │
+│    2) Provider-specific metadata is normalized before audit and execution                    │
 │                                                                                              │
 └─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1145,7 +1145,7 @@ external systems are integrated as provider plugins without changing approval st
 
 - [ADR-0005 §Decision](../../adr/ADR-0005-workflow-extensibility.md#decision)
 - [ADR-0015 §21 Scope Exclusions (V1)](../../adr/ADR-0015-governance-model-v2.md#21-scope-exclusions-v1)
-- [04-governance.md §9 External Approval Systems (V1 Interface Only)](../phases/04-governance.md#9-external-approval-systems-v1-interface-only)
+- [04-governance.md §9 External Approval Systems](../phases/04-governance.md#9-external-approval-systems-v1-interface-only)
 - [04-governance.md §9.1 Interface Definition](../phases/04-governance.md#91-interface-definition)
 - [04-governance.md §7 Audit Logging](../phases/04-governance.md#7-audit-logging)
 - [RFC-0004 External Approval Systems Integration](../../rfc/RFC-0004-external-approval.md)
@@ -2417,12 +2417,12 @@ Compatibility note:
 
 <a id="external-approval-v2-roadmap"></a>
 
-### Approval Provider Plugin Architecture (V2+ Roadmap)
+### Approval Provider Connector Roadmap
 
 > **Scenario**: integrate with enterprise ITSM (Jira Service Management, ServiceNow, etc.).
 >
-> **V1 Boundary**: V1 implements one unified approval-provider contract with a single built-in
-> provider (`builtin-default`). External systems are plugin adapters in V2+.
+> **V1 Boundary**: V1 implements one unified approval-provider contract with built-in fallback
+> and an outbound webhook registry. Native ITSM connectors remain future provider adapters.
 
 #### Design Principles
 
@@ -2463,7 +2463,7 @@ Key persisted data (schema authority remains in phase/database docs):
 
 | Object | Representative fields | Purpose |
 |----------|------|------|
-| `external_approval_systems` | `id`, `name`, `type`, `enabled`, `webhook_url`, `webhook_secret`, `timeout_seconds`, `retry_count` | External adapter registry and delivery guardrails |
+| `external_approval_systems` | `id`, `name`, `provider_type`, `enabled`, `webhook_url`, `signing_key_ciphertext`, `timeout_seconds`, `retry_count`, `retry_backoff_seconds` | External adapter registry and delivery guardrails |
 | `audit_logs` | `action`, `resource_type`, `resource_id`, `result`, `metadata` | Immutable local trace for external decisions/fallback actions |
 
 #### Webhook Payload (Shepherd → External System)

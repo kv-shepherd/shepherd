@@ -171,7 +171,7 @@ The following decisions from earlier ADRs and drafts are **DEPRECATED** and shou
 | `users.password_hash` | bcrypt | Never store plaintext |
 | `auth_providers.oidc_client_secret` | AES-256-GCM | App-level encryption |
 | `auth_providers.ldap_bind_password` | AES-256-GCM | App-level encryption |
-| `external_approval_systems.webhook_secret` | AES-256-GCM | App-level encryption |
+| `external_approval_systems.signing_key_ciphertext` | AES-256-GCM | App-level encryption |
 
 > **Encryption Key Management**: Use `ENCRYPTION_KEY` environment variable (32-byte hex string) for app-level encryption. For production, recommend using external KMS (Vault, AWS KMS).
 
@@ -2136,17 +2136,20 @@ CREATE TABLE auth_providers (
 CREATE TABLE external_approval_systems (
     id VARCHAR(36) PRIMARY KEY,
     name VARCHAR(100) NOT NULL,             -- "OA Approval", "ServiceNow"
-    type VARCHAR(50) NOT NULL,              -- 'webhook', 'servicenow', 'jira'
+    provider_type VARCHAR(50) NOT NULL,     -- 'webhook'
     enabled BOOLEAN NOT NULL DEFAULT TRUE,
     
     -- Webhook config
-    webhook_url TEXT,
-    webhook_secret TEXT,                    -- AES-256-GCM encrypted
+    webhook_url TEXT NOT NULL,
+    signing_key_ciphertext TEXT,            -- AES-256-GCM encrypted
+    encryption_key_id TEXT,
     webhook_headers JSONB,
     
     -- Common config
     timeout_seconds INT DEFAULT 30,
     retry_count INT DEFAULT 3,
+    retry_backoff_seconds INT DEFAULT 2,
+    sort_order INT DEFAULT 0,
     
     created_by VARCHAR(36) NOT NULL,
     created_at TIMESTAMP NOT NULL DEFAULT NOW(),

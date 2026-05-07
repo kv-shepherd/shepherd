@@ -45,6 +45,8 @@
   "AUTH_PROVIDER_NOT_FOUND": "Auth provider not found.",
   "AUTH_PROVIDER_IN_USE": "This auth provider is still in use and cannot be deleted.",
   "EXTERNAL_COHORT_MAPPING_NOT_FOUND": "External cohort mapping not found.",
+  "EXTERNAL_APPROVAL_SYSTEM_NOT_FOUND": "External approval system not found.",
+  "EXTERNAL_APPROVAL_SYSTEM_NAME_EXISTS": "External approval system name already exists.",
   "USER_NOT_FOUND": "User not found.",
   "ROLE_BINDING_NOT_FOUND": "Role binding not found.",
   "RATE_LIMIT_EXEMPTION_NOT_FOUND": "Rate limit exemption not found.",

@@ -45,6 +45,8 @@
   "AUTH_PROVIDER_NOT_FOUND": "未找到认证源。",
   "AUTH_PROVIDER_IN_USE": "该认证源仍在使用中，无法删除。",
   "EXTERNAL_COHORT_MAPPING_NOT_FOUND": "未找到外部 Cohort 映射。",
+  "EXTERNAL_APPROVAL_SYSTEM_NOT_FOUND": "未找到外部审批系统。",
+  "EXTERNAL_APPROVAL_SYSTEM_NAME_EXISTS": "外部审批系统名称已存在。",
   "USER_NOT_FOUND": "未找到用户。",
   "ROLE_BINDING_NOT_FOUND": "未找到角色绑定。",
   "RATE_LIMIT_EXEMPTION_NOT_FOUND": "未找到限流豁免记录。",

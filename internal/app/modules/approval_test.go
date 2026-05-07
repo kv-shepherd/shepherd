@@ -1,12 +1,33 @@
 package modules
 
 import (
+	"context"
 	"os"
 	"strings"
 	"testing"
 
 	"kv-shepherd.io/shepherd/ent"
+	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 )
+
+type approvalModuleFallbackProvider struct{}
+
+func (approvalModuleFallbackProvider) Type() string { return "fallback" }
+
+func (approvalModuleFallbackProvider) SubmitForApproval(
+	context.Context,
+	*approvalcontract.ApprovalRequest,
+) (*approvalcontract.ApprovalResponse, error) {
+	return &approvalcontract.ApprovalResponse{TicketID: "fallback", Status: "PENDING"}, nil
+}
+
+func (approvalModuleFallbackProvider) ProcessApproval(
+	context.Context,
+	string,
+	approvalcontract.ApprovalDecision,
+) error {
+	return nil
+}
 
 func TestNewApprovalModule_RequiresInfraDependencies(t *testing.T) {
 	t.Parallel()
@@ -48,10 +69,26 @@ func TestApprovalModule_WiringContract(t *testing.T) {
 		"ticketService.SetNotifier(",
 		"usecase.NewApprovalAtomicWriter(",
 		"ticketService.SetVMService(", // P1-A: DryRun Pre-flight Gate wiring
+		"approvalregistry.NewService(",
+		"approvalProviderOrFallback(",
+		"deps.ExternalApprovalRegistry = m.registry",
 	}
 	for _, fragment := range required {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("approval module missing required wiring fragment %q", fragment)
 		}
+	}
+}
+
+func TestApprovalProviderOrFallback_ReturnsFallbackWhenRegistryUnavailable(t *testing.T) {
+	t.Parallel()
+
+	fallback := approvalModuleFallbackProvider{}
+	got := approvalProviderOrFallback(nil, fallback)
+	if got == nil {
+		t.Fatal("approvalProviderOrFallback returned nil, want fallback provider")
+	}
+	if got.Type() != fallback.Type() {
+		t.Fatalf("approvalProviderOrFallback Type() = %q, want %q", got.Type(), fallback.Type())
 	}
 }

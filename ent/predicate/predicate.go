@@ -30,6 +30,9 @@ type DirectorySyncJob func(*sql.Selector)
 // DomainEvent is the predicate function for domainevent builders.
 type DomainEvent func(*sql.Selector)
 
+// ExternalApprovalSystem is the predicate function for externalapprovalsystem builders.
+type ExternalApprovalSystem func(*sql.Selector)
+
 // ExternalCohort is the predicate function for externalcohort builders.
 type ExternalCohort func(*sql.Selector)
 

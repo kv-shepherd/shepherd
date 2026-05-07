@@ -45,14 +45,14 @@ Define core contracts and types:
 
 | Deliverable | File Path | Status | Example |
 |-------------|-----------|--------|---------|
-| Core governance schemas | `ent/schema/{system,service,vm,vm_revision,audit_log,ticket,approval_policy,cluster,domain_event,pending_adoption}.go` | ✅ | 32 Ent schemas total |
+| Core governance schemas | `ent/schema/{system,service,vm,vm_revision,audit_log,ticket,approval_policy,cluster,domain_event,pending_adoption}.go` | ✅ | 33 Ent schemas total |
 | Catalog/RBAC/auth schemas | `ent/schema/{template,instance_size,user,auth_provider,role,role_binding,resource_role_binding}.go` | ✅ | [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) |
 | External cohort schemas | `ent/schema/{external_cohort,external_cohort_mapping,external_cohort_grant}.go` | ✅ | [master-flow Stage 2.C](../interaction-flows/master-flow.md#stage-2-c) ³ |
-| External approval system schema | - | Deferred | Future adapters remain [RFC-0004](../../rfc/RFC-0004-external-approval.md) scope ² |
+| External approval system schema | `ent/schema/external_approval_system.go` | ✅ | Webhook registry per [RFC-0004](../../rfc/RFC-0004-external-approval.md) ² |
 | Provider interfaces | `internal/provider/`, `internal/provider/*contract/` | ✅ | Capability-composed runtime/admin/directory/notification contracts |
 | Domain models | `internal/domain/` | ✅ | [examples/README.md §Directory Structure](../examples/README.md#directory-structure) |
 | Error system | `internal/pkg/errors/{errors.go,codes.go}` | ✅ | Structured `AppError` and canonical codes |
-| **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ✅ | OpenAPI 3.1.0, 127 operationIds |
+| **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ✅ | OpenAPI 3.1.0, 132 operationIds |
 | **OpenAPI Spec (Compat)** | `api/openapi.compat.yaml` | ✅ | Required because canonical spec uses OpenAPI 3.1 nullable union types |
 | **Go API Generated Types** | `internal/api/generated/` | ✅ | `make api-generate` |
 | **TS API Generated Types** | `web/src/types/api.gen.ts` | ✅ | `make api-generate` |
@@ -567,7 +567,7 @@ const (
 - [ADR-0016](../../adr/ADR-0016-go-module-vanity-import.md) - Go Module Vanity Import
 - [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md) - VM Request Flow (Cluster selection at approval time)
 - [ADR-0018](../../adr/ADR-0018-instance-size-abstraction.md) - Instance Size Abstraction (InstanceSize, Users, AuthProviders schemas)
-- [RFC-0004](../../rfc/RFC-0004-external-approval.md) - External Approval Systems (Accepted; V1 interface-only, adapters in V2+)
+- [RFC-0004](../../rfc/RFC-0004-external-approval.md) - External Approval Systems (Accepted; webhook registry implemented, decision ingestion follow-up)
 
 ---
 
@@ -589,6 +589,6 @@ const (
 > **² ExternalApprovalSystem (RFC-0004)**:
 > 
 > RFC-0004 status is `Accepted`. Design is defined in [Master Flow Stage 2.E](../interaction-flows/master-flow.md#stage-2-e).
-> V1 scope is **interface + schema only** (provider contract and data model), while the go-live execution path remains built-in approval.
-> External adapters are plugin-based roadmap capabilities for V2+.
+> V1 scope includes the provider contract, webhook registry data model, outbound webhook dispatch, built-in fallback, and admin/runtime wiring.
+> Provider-owned decision ingestion is tracked by RFC-0004 follow-up work.
 > Security baseline for adapter integration: TLS mandatory, HMAC signature verification, fallback to built-in on failure.

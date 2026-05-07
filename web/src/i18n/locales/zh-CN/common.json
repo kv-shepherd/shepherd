@@ -51,6 +51,7 @@
     "nav.vms": "虚拟机",
     "nav.my_requests": "我的申请",
     "nav.approval_tasks": "审批任务",
+    "nav.external_approval_systems": "外部审批",
     "nav.clusters": "集群",
     "nav.namespaces": "命名空间",
     "nav.templates": "模板",

@@ -132,7 +132,7 @@ All write operations return `202 Accepted` with event ID. Workers execute actual
 - Notifications: `NOTIFICATION_SENT`
 
 **External approval boundary**:
-- V1 uses built-in approval for go-live; external approval is interface/schema-ready and added via plugin adapters in V2+.
+- V1 supports built-in approval fallback plus outbound webhook registry/admin/runtime wiring.
 - See [Phase 4 §9 External Approval Systems](../phases/04-governance.md#9-external-approval-systems-v1-interface-only).
 
 ### Worker Pool (ADR-0031)

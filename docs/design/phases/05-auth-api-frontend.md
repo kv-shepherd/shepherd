@@ -16,7 +16,7 @@
 | RBAC Middleware | `internal/api/middleware/rbac.go` | ✅ | RequirePermission + RequireResourceAccess |
 | Member Handler | `internal/api/handlers/member.go` | ✅ | ResourceRoleBinding CRUD + audit |
 | oapi-codegen config | `api/oapi-codegen.yaml` | ✅ | v2 format, gin-server + models |
-| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 127 endpoints (ADR-0028 omitzero value types), all model types |
+| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 132 endpoints (ADR-0028 omitzero value types), all model types |
 | openapi-typescript | `web/src/types/api.gen.ts` | ✅ | Auto-generated from OpenAPI spec |
 | Seed Command | `cmd/seed/main.go` | ✅ | 6 roles + default admin |
 | Bootstrap | `internal/app/bootstrap.go` | ✅ | 127 file lines; `Bootstrap()` function is 57 lines and remains orchestration-only (see ADR-0043 design note) |
@@ -170,7 +170,7 @@ Phase 5 bridges the backend to a usable product by implementing:
 2. `openapi-fetch` creates type-safe API client (no manual typing)
 3. All API calls are fully typed end-to-end (OpenAPI → Go server → TS client)
 
-### Pages (MVP — 28 App Router page files)
+### Pages (MVP — 29 App Router page files)
 
 - Login page with force password change
 - Change password page (standalone)
@@ -185,6 +185,7 @@ Phase 5 bridges the backend to a usable product by implementing:
 - Instance Sizes management (admin: CRUD, capability filters, sort)
 - Users management (admin)
 - Auth Providers management (admin: CRUD + test connection + sample fields + directory preview/sync + external cohort mappings)
+- External Approval Systems management (admin: webhook registry CRUD)
 - Rate Limits management (admin: exemptions/overrides)
 - Permissions browser (admin)
 - RBAC management (admin: roles + role bindings)

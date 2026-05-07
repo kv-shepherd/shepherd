@@ -50,11 +50,11 @@ Current implementation facts:
 | Backend module | `kv-shepherd.io/shepherd` |
 | Go baseline | Go `1.25.9` |
 | Database | PostgreSQL 18, shared pgx pool for Ent + sqlc + River |
-| HTTP contract | OpenAPI `3.1.0`, 127 operationIds |
-| Ent schemas | 32 schema files |
+| HTTP contract | OpenAPI `3.1.0`, 132 operationIds |
+| Ent schemas | 33 schema files |
 | KubeVirt baseline | `kubevirt.io/client-go` `v1.8.1` |
 | Frontend | React 19.2 + Next.js 16.2 + Ant Design 5 |
-| Frontend route files | 28 App Router `page.tsx` files |
+| Frontend route files | 29 App Router `page.tsx` files |
 
 ## ADR Governance
 
@@ -98,7 +98,7 @@ docs/design/
 | Phase | Specification | Current status |
 |-------|---------------|----------------|
 | Phase 0 | [00-prerequisites.md](./phases/00-prerequisites.md) | Complete for current toolchain and local/dev bootstrap |
-| Phase 1 | [01-contracts.md](./phases/01-contracts.md) | Mostly complete: 32 Ent schemas, OpenAPI, Go/TS generation, core domain contracts |
+| Phase 1 | [01-contracts.md](./phases/01-contracts.md) | Mostly complete: 33 Ent schemas, OpenAPI, Go/TS generation, core domain contracts |
 | Phase 2 | [02-providers.md](./phases/02-providers.md) | Runtime provider baseline complete for V1. Snapshot/full clone/live migration remain RFC-backed future scope |
 | Phase 3 | [03-service-layer.md](./phases/03-service-layer.md) | Core services, use cases, manual DI, and transaction boundaries implemented |
 | Phase 4 | [04-governance.md](./phases/04-governance.md) | Governance baseline implemented: approval, audit, notifications, batch, VNC, cluster policy, status sync |

@@ -28,6 +28,8 @@ type Tx struct {
 	DirectorySyncJob *DirectorySyncJobClient
 	// DomainEvent is the client for interacting with the DomainEvent builders.
 	DomainEvent *DomainEventClient
+	// ExternalApprovalSystem is the client for interacting with the ExternalApprovalSystem builders.
+	ExternalApprovalSystem *ExternalApprovalSystemClient
 	// ExternalCohort is the client for interacting with the ExternalCohort builders.
 	ExternalCohort *ExternalCohortClient
 	// ExternalCohortGrant is the client for interacting with the ExternalCohortGrant builders.
@@ -213,6 +215,7 @@ func (tx *Tx) init() {
 	tx.ClusterPolicy = NewClusterPolicyClient(tx.config)
 	tx.DirectorySyncJob = NewDirectorySyncJobClient(tx.config)
 	tx.DomainEvent = NewDomainEventClient(tx.config)
+	tx.ExternalApprovalSystem = NewExternalApprovalSystemClient(tx.config)
 	tx.ExternalCohort = NewExternalCohortClient(tx.config)
 	tx.ExternalCohortGrant = NewExternalCohortGrantClient(tx.config)
 	tx.ExternalCohortMapping = NewExternalCohortMappingClient(tx.config)

@@ -3,12 +3,18 @@ package modules
 import (
 	"context"
 	"fmt"
+	"time"
+
+	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
 	approvalbuiltin "kv-shepherd.io/shepherd/internal/governance/approval/builtin"
+	approvalregistry "kv-shepherd.io/shepherd/internal/governance/approval/registry"
 	"kv-shepherd.io/shepherd/internal/governance/ticketing"
 	"kv-shepherd.io/shepherd/internal/notification"
+	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
@@ -18,6 +24,7 @@ import (
 type ApprovalModule struct {
 	ticketService  *ticketing.Service
 	providerRouter *approval.ApprovalProviderRouter
+	registry       *approvalregistry.Service
 	requirements   *service.ApprovalRequirementService
 	notifier       *notification.Triggers
 }
@@ -54,11 +61,14 @@ func NewApprovalModule(infra *Infrastructure, vmSvc *service.VMService) (*Approv
 
 	// Stage 2.E: host the built-in approval provider behind the provider seam.
 	builtinProvider := approvalbuiltin.NewProvider(ticketService)
-	providerRouter := approval.NewApprovalProviderRouter(builtinProvider)
+	registry := approvalregistry.NewService(infra.EntClient, infra.EncryptionKey)
+	activeProvider := approvalProviderOrFallback(registry, builtinProvider)
+	providerRouter := approval.NewApprovalProviderRouter(activeProvider)
 
 	return &ApprovalModule{
 		ticketService:  ticketService,
 		providerRouter: providerRouter,
+		registry:       registry,
 		requirements:   requirements,
 		notifier:       notifier,
 	}, nil
@@ -73,9 +83,24 @@ func (m *ApprovalModule) ContributeServerDeps(deps *handlers.ServerDeps) {
 	deps.TicketService = m.ticketService
 	deps.Notifier = m.notifier
 	deps.ApprovalReqs = m.requirements
+	deps.ExternalApprovalRegistry = m.registry
 	// Stage 2.E: expose the provider router so handlers route submissions and
 	// decisions through the provider seam instead of coupling to the built-in flow.
 	deps.ApprovalRouter = m.providerRouter
 }
 
 func (m *ApprovalModule) Shutdown(context.Context) error { return nil }
+
+func approvalProviderOrFallback(
+	registry *approvalregistry.Service,
+	fallback approvalcontract.ApprovalProvider,
+) approvalcontract.ApprovalProvider {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	provider, err := registry.ActiveProvider(ctx, fallback)
+	if err != nil {
+		logger.Warn("external approval registry unavailable; using built-in approval provider", zap.Error(err))
+		return fallback
+	}
+	return provider
+}

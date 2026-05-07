@@ -105,6 +105,39 @@ func TestPermissionEnforcement_ListNamespaces_RequiresNamespacePermission(t *tes
 	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
 }
 
+func TestPermissionEnforcement_ListExternalApprovalSystems_RequiresPlatformAdmin(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(t, http.MethodGet, "/admin/external-approval-systems", "", "user-a", []string{"auth_provider:read"})
+
+	srv.ListExternalApprovalSystems(c)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestPermissionEnforcement_CreateExternalApprovalSystem_RequiresPlatformAdmin(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/external-approval-systems",
+		`{"name":"approval","webhook_url":"https://approval.example.com/shepherd","signing_key":"webhook-secret"}`,
+		"user-a",
+		[]string{"auth_provider:update"},
+	)
+
+	srv.CreateExternalApprovalSystem(c)
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
 func TestPermissionEnforcement_CreateNamespace_RequiresNamespaceWrite(t *testing.T) {
 	t.Parallel()
 

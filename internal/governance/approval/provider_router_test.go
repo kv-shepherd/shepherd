@@ -86,6 +86,32 @@ func TestApprovalProviderRouter_ProcessApproval_UsesActiveProvider(t *testing.T)
 	}
 }
 
+func TestApprovalProviderRouter_SetActiveProvider(t *testing.T) {
+	first := &fakeApprovalProvider{typeKey: "builtin"}
+	second := &fakeApprovalProvider{typeKey: "webhook"}
+	router := approval.NewApprovalProviderRouter(first)
+
+	if got := router.ActiveProviderType(); got != "builtin" {
+		t.Fatalf("ActiveProviderType = %q, want builtin", got)
+	}
+	if err := router.SetActiveProvider(second); err != nil {
+		t.Fatalf("SetActiveProvider: %v", err)
+	}
+	if got := router.ActiveProviderType(); got != "webhook" {
+		t.Fatalf("ActiveProviderType = %q, want webhook", got)
+	}
+
+	if _, err := router.SubmitForApproval(context.Background(), &provider.ApprovalRequest{EventID: "ticket-swap"}); err != nil {
+		t.Fatalf("SubmitForApproval: %v", err)
+	}
+	if second.submitCalled != 1 {
+		t.Fatalf("second submitCalled = %d, want 1", second.submitCalled)
+	}
+	if first.submitCalled != 0 {
+		t.Fatalf("first submitCalled = %d, want 0", first.submitCalled)
+	}
+}
+
 func TestApprovalProviderRouter_ReturnsProviderErrors(t *testing.T) {
 	wantErr := errors.New("submit failed")
 	active := &fakeApprovalProvider{typeKey: "builtin-default", submitErr: wantErr}
