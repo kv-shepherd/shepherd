@@ -36,6 +36,7 @@ vi.mock('react-i18next', () => ({
                 'batch.pending_count': 'Pending',
                 'batch.retry_failed': 'Retry failed',
                 'batch.cancel_pending': 'Cancel pending',
+                'batch.export_result': 'Export result',
                 'batch.child.title': 'Child Tasks',
                 'batch.child.ticket': 'Ticket',
                 'batch.child.resource': 'Resource',
@@ -114,7 +115,37 @@ describe('VMBatchDetailPage', () => {
         expect(screen.getByTestId('batch-status-live')).toHaveTextContent('Batch batch-1 is PARTIAL_SUCCESS');
         expect(screen.getByText('Child Tasks')).toBeVisible();
         expect(screen.getByText('vm-a')).toBeVisible();
+        expect(screen.getByTestId('batch-export-button')).toBeEnabled();
         expect(screen.getByTestId('batch-retry-button')).toBeVisible();
         expect(screen.getByTestId('batch-cancel-button')).toBeVisible();
+    });
+
+    it('does not export cancelled batches', () => {
+        useApiGetMock.mockReturnValue({
+            data: {
+                id: 'batch-1',
+                batch_id: 'batch-1',
+                status: 'CANCELLED',
+                operation: 'DELETE',
+                child_count: 1,
+                success_count: 0,
+                failed_count: 0,
+                pending_count: 1,
+                created_by: 'owner-1',
+                created_at: '2026-03-17T00:00:00Z',
+                updated_at: '2026-03-17T00:05:00Z',
+                children: [],
+            },
+            isLoading: false,
+            refetch: vi.fn(),
+        });
+        useApiMutationMock.mockReturnValue({
+            isPending: false,
+            mutate: vi.fn(),
+        });
+
+        render(<VMBatchDetailPage />);
+
+        expect(screen.getByTestId('batch-export-button')).toBeDisabled();
     });
 });

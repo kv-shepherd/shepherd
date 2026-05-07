@@ -22,11 +22,31 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, options?: { defaultValue?: string }) => {
+    t: (
+      key: string,
+      options?: { defaultValue?: string; phase?: string; progress?: string },
+    ) => {
       const labels: Record<string, string> = {
         "common:button.back": "Back",
         "detail.subtitle":
           "Review VM state, power actions, and console access.",
+        "provisioning.title": "Provisioning",
+        "provisioning.current_title": "Provisioning telemetry",
+        "provisioning.failed_title": "Provisioning failed",
+        "provisioning.failed_without_message":
+          "The provider reported a failed provisioning phase.",
+        "provisioning.phase": "Phase",
+        "provisioning.phase_unknown": "unknown",
+        "provisioning.progress": "Progress",
+        "provisioning.progress_unknown": "unknown",
+        "provisioning.root_claim": "Root Claim",
+        "provisioning.pvc_phase": "PVC Phase",
+        "provisioning.clone_type": "Clone Type",
+        "provisioning.clone_type_copy": "Host-assisted copy",
+        "provisioning.restart_count": "Restarts",
+        "provisioning.clone_fallback_reason": "Clone fallback reason",
+        "provisioning.conditions": "Conditions",
+        "provisioning.recent_events": "Recent Events",
         "field.name": "Name",
         "common:table.status": "Status",
         "field.namespace": "Namespace",
@@ -97,6 +117,9 @@ vi.mock("react-i18next", () => ({
         "remote_access.rdp_help":
           "Use the native Windows Remote Desktop client when the guest network is reachable.",
       };
+      if (key === "provisioning.current_description") {
+        return `Phase ${options?.phase ?? ""}, progress ${options?.progress ?? ""}.`;
+      }
       return labels[key] ?? options?.defaultValue ?? key;
     },
   }),
@@ -212,6 +235,30 @@ describe("VMDetailPage", () => {
           },
           instance: "01",
           ticket_id: "ticket-1",
+          provisioning: {
+            phase: "ImportInProgress",
+            progress: "75.0%",
+            claim_name: "root-dv",
+            pvc_phase: "Bound",
+            clone_type: "copy",
+            clone_fallback_reason: "StorageProfile did not allow smart clone",
+            conditions: [
+              {
+                type: "DataVolumeReady",
+                status: "False",
+                reason: "Importing",
+                message: "Importing root disk",
+              },
+            ],
+            recent_events: [
+              {
+                type: "Normal",
+                reason: "ImportScheduled",
+                message: "Importer pod scheduled",
+                count: 1,
+              },
+            ],
+          },
           created_at: "2026-03-17T00:00:00Z",
           environment: "prod",
         },
@@ -252,6 +299,9 @@ describe("VMDetailPage", () => {
     expect(screen.getByText("Preferred: Serial")).toBeVisible();
     expect(screen.getByText("Console request approved")).toBeVisible();
     expect(screen.getByText("console-ticket-1")).toBeVisible();
+    expect(screen.getByTestId("vm-provisioning-panel")).toBeVisible();
+    expect(screen.getByText("Importing root disk")).toBeVisible();
+    expect(screen.getByText("StorageProfile did not allow smart clone")).toBeVisible();
     expect(screen.getByText("ticket-1")).toBeVisible();
 
     fireEvent.click(screen.getByText("Payments"));

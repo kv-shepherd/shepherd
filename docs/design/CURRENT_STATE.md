@@ -40,8 +40,8 @@ amends or supersedes the old decision.
 | External auth | Provider type discovery, login start/submit/callback, JIT user provisioning, external cohort mapping |
 | Directory sync | Provider-owned directory descriptor/preview/sync plus scheduled enrichment for existing users |
 | RBAC | Global roles, environment-scoped role bindings, resource role bindings, system membership inheritance |
-| Governance | Built-in approval provider, ticket lifecycle, approval requirement service, approval validator |
-| VM lifecycle | Request, approve, create, modify, power, delete, manifest, provisioning status |
+| Governance | Built-in approval provider, outbound webhook adapter package, ticket lifecycle, approval requirement service, approval validator |
+| VM lifecycle | Request, approve, create, modify, power, delete, manifest, provisioning status with detail-page progress telemetry |
 | Batch operations | Parent-child batch model, throttling, status polling, retry failed, cancel pending, compatibility power endpoint |
 | Notifications | Inbox APIs, unread count, mark read/all read, triggers, retention cleanup, frontend bell |
 | Console | Approval-aware VNC/serial request/status/open flow with encrypted single-use bootstrap credential |
@@ -67,11 +67,11 @@ Non-blocking production, environment, and V2 follow-ups are tracked centrally in
 | Gap | Status |
 |-----|--------|
 | Live E2E validation across a real K8s/KubeVirt cluster | Pending |
-| Batch result export UX | Pending |
+| Batch result export UX | Implemented via frontend JSON export from the canonical batch detail response |
 | VNC proxy internals, active revocation, and transport hardening validation | V2+ / hardening |
 | Reconciler beyond the ADR-0038 status sync worker | Deferred |
 | Tenant-level quota enforcement | V2+ |
-| External approval provider adapters | RFC-backed future scope |
+| External approval callback ingestion and runtime/admin wiring | RFC-backed future scope |
 | VM snapshot, full VM clone, and live migration workflows | RFC-backed future scope |
 | PostgreSQL partitioning / pg_partman | RFC-backed future scope |
 

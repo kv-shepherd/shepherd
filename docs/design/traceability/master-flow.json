@@ -136,6 +136,9 @@
       ],
       "adrs": [
         "docs/adr/ADR-0005-workflow-extensibility.md"
+      ],
+      "examples": [
+        "internal/governance/approval/webhook/provider.go"
       ]
     },
     {

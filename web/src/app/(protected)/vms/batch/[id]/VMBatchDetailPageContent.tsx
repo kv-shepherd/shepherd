@@ -2,7 +2,7 @@
 
 /**
  * /vms/batch/[id] — Batch VM Operation Detail page.
- * master-flow.md §5.4: Batch Power Operation detail.
+ * master-flow.md §5.E: Batch Operations.
  *
  * API contracts:
  *   GET    /vms/batch/{batch_id}         → VMBatchStatusResponse
@@ -17,7 +17,13 @@
  */
 import { Button, Descriptions, Space, Table, Tag, Typography } from 'antd';
 import type { DescriptionsProps } from 'antd';
-import { ArrowLeftOutlined, RedoOutlined, StopOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import {
+    ArrowLeftOutlined,
+    DownloadOutlined,
+    RedoOutlined,
+    StopOutlined,
+    ThunderboltOutlined,
+} from '@ant-design/icons';
 import type { TFunction } from 'i18next';
 import { useParams, useRouter } from 'next/navigation';
 import { useTranslation } from 'react-i18next';
@@ -28,6 +34,10 @@ import { api } from '@/lib/api/client';
 import { useMessage } from '@/lib/hooks/useMessage';
 import type { components } from '@/types/api.gen';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
+import {
+    canExportBatchResult,
+    downloadBatchResultExport,
+} from '@/features/vm-management/batchExport';
 
 const { Text } = Typography;
 
@@ -100,6 +110,14 @@ export default function VMBatchDetailPage() {
     const status = batchStatus?.status;
     const canRetry = status === 'FAILED' || status === 'PARTIAL_SUCCESS';
     const canCancel = status === 'PENDING_APPROVAL' || status === 'IN_PROGRESS';
+    const canExport = canExportBatchResult(status);
+    const handleExportResult = () => {
+        if (!batchStatus || !canExport) {
+            return;
+        }
+        downloadBatchResultExport(batchStatus);
+        void messageApi.success(t('batch.export_started', { batch_id: batchStatus.batch_id }));
+    };
     const summaryItems: DescriptionsProps['items'] = [
         {
             key: 'status',
@@ -203,6 +221,14 @@ export default function VMBatchDetailPage() {
                 <Descriptions bordered column={3} size="small" items={summaryItems} />
 
                 <Space>
+                    <Button
+                        icon={<DownloadOutlined />}
+                        data-testid="batch-export-button"
+                        disabled={!canExport}
+                        onClick={handleExportResult}
+                    >
+                        {t('batch.export_result')}
+                    </Button>
                     <Button
                         icon={<RedoOutlined />}
                         data-testid="batch-retry-button"

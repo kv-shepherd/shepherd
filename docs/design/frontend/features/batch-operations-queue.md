@@ -144,6 +144,12 @@ Use Ant Design `Table` with `rowSelection` for batch creation and action trigger
 - `Terminate` cancels only not-yet-started or pending children
 - UI must always indicate which items were actually affected
 
+### 4.4 Result Export
+
+- `Export result` downloads a JSON snapshot derived from `GET /api/v1/vms/batch/{batch_id}`
+- Export is enabled for `COMPLETED`, `PARTIAL_SUCCESS`, and `FAILED`
+- `CANCELLED` remains view-only because it does not represent an execution result set
+
 ## 5. Accessibility and Observability
 
 ### 5.1 Accessibility

@@ -16,7 +16,7 @@ vi.mock('react-i18next', () => ({
         t: (key: string, options?: { defaultValue?: string; count?: number }) => {
             const labels: Record<string, string> = {
                 'batch.list_title': 'Batch Operations',
-                'batch.list_subtitle': 'History of batch VM power operations.',
+                'batch.list_subtitle': 'History of batch VM operations.',
                 'common:button.refresh': 'Refresh',
                 'batch.summary': 'Batch',
                 'batch.id': 'Batch ID',
@@ -29,6 +29,7 @@ vi.mock('react-i18next', () => ({
                 'common:table.actions': 'Actions',
                 'batch.retry_failed': 'Retry failed children',
                 'batch.cancel_pending': 'Cancel pending children',
+                'batch.export_result': 'Export result',
                 'common:message.error': 'Error',
             };
             if (key === 'batch.request_count') {
@@ -95,11 +96,52 @@ describe('VMBatchListPage', () => {
 
         expect(screen.getByTestId('vm-batch-page')).toBeVisible();
         expect(screen.getByText('Batch Operations')).toBeVisible();
-        expect(screen.getByText('History of batch VM power operations.')).toBeVisible();
+        expect(screen.getByText('History of batch VM operations.')).toBeVisible();
         expect(screen.getByText('START')).toBeVisible();
         expect(screen.getByText('IN_PROGRESS')).toBeVisible();
         expect(screen.getByText('Batch ID: batch-12…7890')).toBeVisible();
+        expect(screen.getByTestId('batch-action-export-batch-1234567890')).toBeDisabled();
         expect(screen.getByTestId('batch-action-detail-batch-1234567890')).toBeVisible();
+    });
+
+    it('enables result export for completed, failed, and partial success batches only', () => {
+        useApiGetMock.mockReturnValue({
+            data: {
+                items: [
+                    {
+                        id: 'batch-completed',
+                        operation: 'POWER',
+                        status: 'COMPLETED',
+                        child_count: 1,
+                        success_count: 1,
+                        failed_count: 0,
+                        pending_count: 0,
+                        created_at: '2026-03-17T00:00:00Z',
+                    },
+                    {
+                        id: 'batch-cancelled',
+                        operation: 'DELETE',
+                        status: 'CANCELLED',
+                        child_count: 1,
+                        success_count: 0,
+                        failed_count: 0,
+                        pending_count: 1,
+                        created_at: '2026-03-18T00:00:00Z',
+                    },
+                ],
+            },
+            isLoading: false,
+            refetch: vi.fn(),
+        });
+        useApiMutationMock.mockReturnValue({
+            isPending: false,
+            mutate: vi.fn(),
+        });
+
+        render(<VMBatchListPage />);
+
+        expect(screen.getByTestId('batch-action-export-batch-completed')).toBeEnabled();
+        expect(screen.getByTestId('batch-action-export-batch-cancelled')).toBeDisabled();
     });
 
     it('filters batch jobs through quick search only after submit', async () => {

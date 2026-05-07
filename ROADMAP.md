@@ -31,7 +31,6 @@ versions, storage classes, auth providers, and organization models.
 - Harden deployment documentation and production upgrade guidance.
 - Continue API contract checks, generated type sync, and design-governance
   gates as blocking CI.
-- Improve UX around long-running VM provisioning and batch result export.
 
 ## V1 Focus
 

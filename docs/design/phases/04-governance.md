@@ -1503,11 +1503,11 @@ If >50% of resources detected as ghosts, halt and alert.
 | §16 Global Naming | ✅ Done | [01-contracts.md §1.1](01-contracts.md#11-naming-constraints-adr-0019) | RFC 1035 + ADR-0019 extension |
 | §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
 | §18 VNC Permissions | ⚠️ V1 Baseline | Section 6.2 (this doc) | Request/status/open + approval + audit + AES-256-GCM encrypted single-use credential implemented; proxy internals + active revocation remain V2+ |
-| §19 Batch Operations | ✅ V1 Baseline | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` + frontend queue UX implemented; export-result UX remains follow-up |
+| §19 Batch Operations | ✅ V1 Baseline | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` + frontend queue UX and JSON result export implemented |
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
 | §22 Authentication | ✅ Done | Section 8 (this doc) | Local/JWT, external provider runtime, JIT provisioning, directory sync, and cohort mapping implemented; active session revocation remains RFC-0008 |
-| External Approval Systems | ⚠️ V1 Interface | - | Built-in approval provider is implemented; external adapters remain RFC-0004 |
+| External Approval Systems | ⚠️ V1 Interface | - | Built-in approval provider and outbound webhook adapter package are implemented; callback ingestion and runtime/admin wiring remain RFC-0004 |
 
 > **Legend**: ✅ Done = Implemented in V1 | ✅ V1 Baseline = V1 product baseline implemented with optional enhancements deferred | ⚠️ V1 Interface = Core data/interface shape exists, external adapters deferred
 

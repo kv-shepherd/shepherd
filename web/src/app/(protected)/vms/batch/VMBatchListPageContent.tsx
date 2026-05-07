@@ -2,10 +2,10 @@
 
 /**
  * /vms/batch — Batch VM Operation Status list page.
- * master-flow.md §5.4: Batch Power Operations.
+ * master-flow.md §5.E: Batch Operations.
  *
  * API contracts:
- *   GET /vms/batch                  → BatchJobList
+ *   GET /vms/batch                  → VMBatchList
  *
  * E2E data-testid requirements:
  *   vm-batch-page
@@ -14,6 +14,7 @@
 import { Button, Select, Space, Table, Tag, Typography } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import {
+    DownloadOutlined,
     EyeOutlined,
     RedoOutlined,
     ReloadOutlined,
@@ -33,6 +34,11 @@ import { translateApiError } from '@/lib/api/errorMessage';
 import { useMessage } from '@/lib/hooks/useMessage';
 import { PageHeader, PageSurface } from '@/components/layouts/PageSection';
 import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
+import {
+    canExportBatchResult,
+    downloadBatchResultExport,
+    type VMBatchStatus,
+} from '@/features/vm-management/batchExport';
 
 const { Text } = Typography;
 
@@ -128,9 +134,29 @@ export default function VMBatchListPage() {
         }
     );
 
+    const [exportingBatchID, setExportingBatchID] = useState<string | null>(null);
+    const exportMutation = useApiMutation<string, VMBatchStatus>(
+        (batchId) => api.GET('/vms/batch/{batch_id}', { params: { path: { batch_id: batchId } } }),
+        {
+            onSuccess: (batch) => {
+                downloadBatchResultExport(batch);
+                void messageApi.success(t('batch.export_started', { batch_id: batch.batch_id }));
+                setExportingBatchID(null);
+            },
+            onError: (err) => {
+                void messageApi.error(translateApiError(t, err));
+                setExportingBatchID(null);
+            },
+        }
+    );
+
     const canRetry = (status: string) => status === 'FAILED' || status === 'PARTIAL_SUCCESS';
     const canCancel = (status: string) =>
         status === 'PENDING_APPROVAL' || status === 'IN_PROGRESS';
+    const handleExportResult = (batchId: string) => {
+        setExportingBatchID(batchId);
+        exportMutation.mutate(batchId);
+    };
     const batchItems = useMemo(() => data?.items ?? [], [data?.items]);
     const operationOptions = useMemo(
         () =>
@@ -261,7 +287,20 @@ export default function VMBatchListPage() {
                     <Button
                         type="text"
                         size="small"
+                        icon={<DownloadOutlined />}
+                        aria-label={t('batch.export_result')}
+                        title={t('batch.export_result')}
+                        data-testid={`batch-action-export-${record.id}`}
+                        disabled={!canExportBatchResult(record.status) || (exportMutation.isPending && exportingBatchID !== record.id)}
+                        loading={exportMutation.isPending && exportingBatchID === record.id}
+                        onClick={() => handleExportResult(record.id)}
+                    />
+                    <Button
+                        type="text"
+                        size="small"
                         icon={<EyeOutlined />}
+                        aria-label={t('common:button.view', { defaultValue: 'View' })}
+                        title={t('common:button.view', { defaultValue: 'View' })}
                         data-testid={`batch-action-detail-${record.id}`}
                         onClick={() => router.push(`/vms/batch/${record.id}`)}
                     />

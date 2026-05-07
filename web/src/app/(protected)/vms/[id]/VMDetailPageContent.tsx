@@ -49,6 +49,7 @@ import dayjs from "dayjs";
 
 import { ConsoleModeModal } from "@/features/vm-management/components/ConsoleModeModal";
 import { VMConsoleSessionPanel } from "@/features/vm-management/components/VMConsoleSessionPanel";
+import { VMProvisioningStatusPanel } from "@/features/vm-management/components/VMProvisioningStatusPanel";
 import { useApiMutation } from "@/hooks/useApiQuery";
 import { useApiGet } from "@/lib/api/useApiGet";
 import { api } from "@/lib/api/client";
@@ -71,6 +72,10 @@ import {
   formatVMOperatingSystem,
   resolveVMRemoteAccessMode,
 } from "@/features/vm-management/osInfo";
+import {
+  hasVisibleProvisioningStatus,
+  isVMProvisioningPollingActive,
+} from "@/features/vm-management/provisioning";
 import type { components } from "@/types/api.gen";
 import type {
   DeleteVMResponse,
@@ -82,6 +87,7 @@ import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
 import { useAuthStore } from "@/stores/auth";
 
 const { Text, Paragraph } = Typography;
+const PROVISIONING_POLL_INTERVAL_MS = 5_000;
 
 const formatCPU = (cpuCores: number | undefined): string => {
   if (!Number.isFinite(cpuCores) || cpuCores === undefined || cpuCores <= 0) {
@@ -124,6 +130,13 @@ export default function VMDetailPage() {
     refetch,
   } = useApiGet<VM>(["vm-detail", vmId], () =>
     api.GET("/vms/{vm_id}", { params: { path: { vm_id: vmId } } }),
+    {
+      refetchInterval: (query) =>
+        isVMProvisioningPollingActive(query.state.data)
+          ? PROVISIONING_POLL_INTERVAL_MS
+          : false,
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30_000),
+    },
   );
 
   const powerMutation = useApiMutation(
@@ -216,6 +229,8 @@ export default function VMDetailPage() {
   const remoteAccessMode = resolveVMRemoteAccessMode(vmData);
   const remoteAccessCommand = buildVMRemoteAccessCommand(vmData);
   const remoteAccessDescription = describeVMRemoteAccess(t, vmData);
+  const provisioningVisible = hasVisibleProvisioningStatus(vmData?.provisioning);
+  const provisioningPollingActive = isVMProvisioningPollingActive(vmData);
   const {
     data: consoleStatus,
     refetch: refetchConsoleStatus,
@@ -598,6 +613,15 @@ export default function VMDetailPage() {
       <PageSurface loading={isLoading}>
         <Descriptions bordered column={2} items={detailItems} />
       </PageSurface>
+
+      {provisioningVisible && vmData?.provisioning ? (
+        <PageSurface title={t("provisioning.title")}>
+          <VMProvisioningStatusPanel
+            provisioning={vmData.provisioning}
+            pollingActive={provisioningPollingActive}
+          />
+        </PageSurface>
+      ) : null}
 
       <PageSurface title={t("common:table.actions")}>
         <Space wrap className="copy-friendly-actions">

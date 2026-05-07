@@ -11,7 +11,7 @@
  *   );
  */
 import { useQuery } from '@tanstack/react-query';
-import type { QueryKey } from '@tanstack/react-query';
+import type { QueryKey, UseQueryOptions } from '@tanstack/react-query';
 
 type ApiFetchResult<T> = Promise<{
     data?: T;
@@ -27,11 +27,10 @@ type ApiFetchResult<T> = Promise<{
 export function useApiGet<T>(
     queryKey: QueryKey,
     fetcher: () => ApiFetchResult<T>,
-    options?: {
-        enabled?: boolean;
-        staleTime?: number;
-        refetchInterval?: number;
-    },
+    options?: Pick<
+        UseQueryOptions<T | undefined>,
+        'enabled' | 'staleTime' | 'refetchInterval' | 'retry' | 'retryDelay'
+    >,
 ) {
     // queryKey is owned by the caller; this wrapper intentionally avoids
     // encoding fetcher function identity into the cache key.
@@ -45,9 +44,7 @@ export function useApiGet<T>(
             }
             return result.data;
         },
-        enabled: options?.enabled,
-        staleTime: options?.staleTime,
-        refetchInterval: options?.refetchInterval,
+        ...options,
     });
 
     return {
