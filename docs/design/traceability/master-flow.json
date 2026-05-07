@@ -215,6 +215,11 @@
       ],
       "adrs": [
         "docs/adr/ADR-0015-governance-model-v2.md"
+      ],
+      "examples": [
+        "internal/jobs/vm_delete.go",
+        "internal/jobs/vm_tombstone_cleanup.go",
+        "internal/jobs/vm_tombstone_cleanup_test.go"
       ]
     },
     {

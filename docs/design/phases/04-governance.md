@@ -869,6 +869,7 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 | OpenAPI: DeleteSystem params | ✅ Done | Added `confirm_name` query param |
 | ApprovalTicket.operation_type | ✅ Done | Enum field (`CREATE`/`DELETE`) with `CREATE` default |
 | VM delete approval ticket flow | ✅ Done | DeleteVM use case creates `operation_type=DELETE` ticket and routes through approval gateway |
+| VM tombstone cleanup policy | ✅ Done | K8s delete success hard-deletes the VM row; stale `DELETING` tombstones are retried by daily River cleanup |
 
 > **Remaining**: Batch Stage 5.E baseline is implemented end-to-end (backend + frontend queue UX + `status_url` polling + 429 cooldown + affected-child feedback + `aria-live`). Stage 6 VNC baseline, shared PostgreSQL replay marker, and AES-256-GCM token envelope are implemented; noVNC proxy internals and active revocation remain V2+ work.
 
@@ -1420,7 +1421,8 @@ DELETE /api/v1/vms/{id}?confirm_name=prod-shop-redis-01   # Prod environment
    - Mark VM as `DELETING` in database
    - Enqueue River job for K8s deletion
    - River worker deletes VirtualMachine CR
-   - Keep VM in `DELETING` tombstone state after K8s deletion (cleanup can be handled by periodic maintenance)
+   - Hard-delete VM row after K8s deletion
+   - If DB hard-delete fails after K8s deletion, keep `DELETING` tombstone and let periodic cleanup retry stale rows
 5. **Audit log** - Record deletion with actor, reason, timestamp
 
 ---

@@ -32,7 +32,7 @@ For those, see:
 
 | Class | Tables (Representative) | Lifecycle | Purge Policy |
 |------|------|------|------|
-| Primary runtime state | `systems`, `services`, `vms` | Final state uses hard delete for removed resources | No long-term tombstone in primary tables |
+| Primary runtime state | `systems`, `services`, `vms` | Final state uses hard delete for removed resources | No long-term tombstone in primary tables; stale VM `DELETING` fallback rows are retried by periodic cleanup |
 | Immutable compliance/event | `audit_logs`, `domain_events` | Append-only records; may be marked archived | Purge only by scheduled admin-controlled job with separate audit trail |
 | Workflow history | `approval_tickets`, `batch_approval_tickets` | Retained for traceability; eligible for archival (`approval_tickets.parent_ticket_id` carries child lineage) | Purge by retention window and policy class |
 | Operational transient | `notifications`, selected queue/runtime records | Time-window retention | Periodic cleanup job |

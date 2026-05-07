@@ -41,7 +41,7 @@ amends or supersedes the old decision.
 | Directory sync | Provider-owned directory descriptor/preview/sync plus scheduled enrichment for existing users |
 | RBAC | Global roles, environment-scoped role bindings, resource role bindings, system membership inheritance |
 | Governance | Built-in approval provider, external approval webhook registry/admin/runtime wiring, signed external approval callback and polling ingestion, ticket lifecycle, approval requirement service, approval validator |
-| VM lifecycle | Request, approve, create, modify, power, delete, manifest, provisioning status with detail-page progress telemetry |
+| VM lifecycle | Request, approve, create, modify, power, delete with tombstone cleanup, manifest, provisioning status with detail-page progress telemetry |
 | Batch operations | Parent-child batch model, throttling, status polling, retry failed, cancel pending, compatibility power endpoint |
 | Notifications | Inbox APIs, unread count, mark read/all read, triggers, retention cleanup, frontend bell |
 | Console | Approval-aware VNC/serial request/status/open flow with encrypted single-use bootstrap credential |

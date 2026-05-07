@@ -85,6 +85,7 @@ func (m *VMModule) RegisterWorkers(workers *river.Workers) {
 	river.AddWorker(workers, jobs.NewVMStatusSyncWorker(m.infra.EntClient, m.vmService, func() *river.Client[pgx.Tx] {
 		return m.infra.RiverClient
 	}))
+	river.AddWorker(workers, jobs.NewVMTombstoneCleanupWorker(m.infra.EntClient, jobs.DefaultVMTombstoneRetention))
 }
 
 func (m *VMModule) Shutdown(context.Context) error { return nil }

@@ -21,7 +21,7 @@
 | 5.A | VM Request Submission | ✅ 90% | Domain `PENDING` status is redundant (VM row not created until approval) | P2 |
 | 5.B | Admin Approval | ✅ 95% | Prod overcommit informational warning already surfaced in approval UI; template lifecycle follow-ups remain deferred | P3 |
 | 5.C | VM Creation Execution | ✅ 95% | Provider-side hard idempotency (AlreadyExists/object ownership check) can be further strengthened | P3 |
-| 5.D | Delete Operations | ✅ 90% | VM tombstone cleanup policy after successful K8s deletion still pending | P2 |
+| 5.D | Delete Operations | ✅ 96% | VM hard-delete plus periodic `DELETING` tombstone retry cleanup implemented | P2-done |
 | 5.E | Batch Operations | ✅ 96% | Canonical API baseline + parent-child linkage + submit throttling (pending parent + global/min + pending child + cooldown) + parent approval dispatch to independent child workers + retry/cancel + parent projection table persisted counters + admin override APIs + `/vms/batch/power` compatibility execution + frontend queue UX (`status_url` polling / `429 Retry-After` countdown / affected-child feedback / `aria-live`) implemented; export-result UX pending | P2 |
 | 5.F | Notification System | ✅ 95% | V1 inbox notification flow implemented end-to-end (API + triggers + InboxSender + NotificationBell + 90-day retention cleanup) | P3 |
 | 6 | VNC Console Access | ⚠️ 96% | Stage 6 baseline + shared PG replay marker + AES-256-GCM encrypted token envelope implemented; proxy internals + active revocation remain deferred | P2 |

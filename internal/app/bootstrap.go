@@ -117,6 +117,15 @@ func registerPeriodicJobs(infra *modules.Infrastructure) {
 	)
 	infra.RiverClient.PeriodicJobs().Add(
 		river.NewPeriodicJob(
+			river.PeriodicInterval(24*time.Hour),
+			func() (river.JobArgs, *river.InsertOpts) {
+				return jobs.VMTombstoneCleanupArgs{}, nil
+			},
+			&river.PeriodicJobOpts{RunOnStart: true},
+		),
+	)
+	infra.RiverClient.PeriodicJobs().Add(
+		river.NewPeriodicJob(
 			river.PeriodicInterval(jobs.DefaultDirectoryEnrichmentScheduleScanInterval),
 			func() (river.JobArgs, *river.InsertOpts) {
 				return jobs.DirectoryEnrichmentScheduleScanArgs{}, nil

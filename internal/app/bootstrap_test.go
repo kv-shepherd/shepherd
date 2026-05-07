@@ -88,6 +88,7 @@ func TestRegisterPeriodicJobs_WiringContract(t *testing.T) {
 	required := []string{
 		"jobs.NotificationCleanupArgs{}",
 		"jobs.DomainEventArchiveArgs{}",
+		"jobs.VMTombstoneCleanupArgs{}",
 		"jobs.DirectoryEnrichmentScheduleScanArgs{}",
 		"&river.PeriodicJobOpts{RunOnStart: true}",
 	}
