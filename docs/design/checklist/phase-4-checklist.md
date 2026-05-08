@@ -2,9 +2,9 @@
 
 > **Detailed Document**: [phases/04-governance.md](../phases/04-governance.md)
 >
-> **Implementation Status**: 🔄 Partial (~96%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system/Namespace CRUD/Batch Operations (Stage 5.E)/VNC token hardening (AES-256-GCM + shared replay marker)/Catalog Scope (ADR-0040)/Cluster Policy/VM Status Sync (ADR-0038)/Template+InstanceSize validators all completed; Reconciler + Template lifecycle management deferred
+> **Implementation Status**: 🔄 Partial (~97%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system/Namespace CRUD/Batch Operations (Stage 5.E)/VNC token hardening (AES-256-GCM + shared replay marker)/Catalog Scope (ADR-0040)/Cluster Policy/VM Status Sync (ADR-0038)/Template+InstanceSize validators all completed; full resource reconciler + template lifecycle states deferred
 >
-> **Last Audited**: 2026-03-10T21:38 (Session: VNC token hardening + audit backfill)
+> **Last Audited**: 2026-05-08 (Session: Phase 4 V1 scope alignment)
 >
 > **Gate Checklist**: [../ci/GATE_HARDENING_CHECKLIST.md](../ci/GATE_HARDENING_CHECKLIST.md)
 
@@ -22,7 +22,7 @@
 | 5.B | Admin Approval | ✅ 95% | Prod overcommit informational warning already surfaced in approval UI; template lifecycle follow-ups remain deferred | P3 |
 | 5.C | VM Creation Execution | ✅ 95% | Provider-side hard idempotency (AlreadyExists/object ownership check) can be further strengthened | P3 |
 | 5.D | Delete Operations | ✅ 96% | VM hard-delete plus periodic `DELETING` tombstone retry cleanup implemented | P2-done |
-| 5.E | Batch Operations | ✅ 96% | Canonical API baseline + parent-child linkage + submit throttling (pending parent + global/min + pending child + cooldown) + parent approval dispatch to independent child workers + retry/cancel + parent projection table persisted counters + admin override APIs + `/vms/batch/power` compatibility execution + frontend queue UX (`status_url` polling / `429 Retry-After` countdown / affected-child feedback / `aria-live`) implemented; export-result UX pending | P2 |
+| 5.E | Batch Operations | ✅ 97% | Canonical API baseline + parent-child linkage + submit throttling (pending parent + global/min + pending child + cooldown) + parent approval dispatch to independent child workers + retry/cancel + parent projection table persisted counters + admin override APIs + `/vms/batch/power` compatibility execution + frontend queue UX (`status_url` polling / `429 Retry-After` countdown / affected-child feedback / `aria-live`) and JSON result export implemented | P2-done |
 | 5.F | Notification System | ✅ 95% | V1 inbox notification flow implemented end-to-end (API + triggers + InboxSender + NotificationBell + 90-day retention cleanup) | P3 |
 | 6 | VNC Console Access | ⚠️ 96% | Stage 6 baseline + shared PG replay marker + AES-256-GCM encrypted token envelope implemented; proxy internals + active revocation remain deferred | P2 |
 | Part 4 | State Machines | ✅ 90% | ~~`FAILED`, `DELETING`, `STOPPING` states~~ added; ~~`PENDING` clarified~~ as K8s-only | P2-done |
@@ -110,12 +110,8 @@
 
 - [x] Database migration tool configured (Atlas) — *Phase 5: `migrations/atlas/atlas.hcl`*
 - [x] `atlas.hcl` configuration complete — *Phase 5: ent://ent/schema → PostgreSQL 18*
-- [ ] `vms` table migration complete
-- [ ] `vm_revisions` table migration complete
-- [ ] `audit_logs` table migration complete
-- [ ] `approval_tickets` table migration complete (Governance Core)
-- [ ] `approval_policies` table migration complete (Governance Core)
-- [ ] **Migration Rollback Test** (CI must include)
+- [x] Ent schema coverage exists for `vms`, `vm_revisions`, `audit_logs`, `approval_tickets`, and `approval_policies`
+- [ ] Live migration apply/rollback verification (environment verification)
 
 ---
 
@@ -128,7 +124,7 @@
     - [x] Contains `environment` field (test/prod) - **explicitly set by admin**
     - [x] Does NOT contain `cluster_id` field (ADR-0017)
   - [x] ❌ **No `System.environment`** - System is decoupled from environment (ADR-0015 §1)
-- [ ] **Platform RBAC**:
+- [x] **Platform RBAC**:
   - [x] `RoleBinding.allowed_environments` field
   - [x] Environment-based query filtering (`ListNamespaces`, `ListVMs`)
 - [x] **Visibility Filtering** - users see only namespaces matching their allowed_environments (includes VM read/request path guard)
@@ -138,9 +134,14 @@
 
 ## RevisionService
 
+- [x] `ent/schema/vm_revision.go` persistence model exists
 - [ ] Version number auto-increment
 - [ ] Supports diff calculation
 - [ ] YAML compressed storage
+
+> Rich revision diff/compression service behavior remains future scope; VM
+> lifecycle auditability does not depend on this service for the V1 governance
+> baseline.
 
 ---
 
@@ -150,12 +151,13 @@
 - [x] **TemplateService Implementation** (`internal/service/template_service.go`):
   - [x] `GetActiveTemplate(name)` implemented
   - [x] `GetLatestTemplate(name)` implemented
-  - [x] `CreateTemplate(name, content)` implemented
+  - [x] `CreateTemplate(...)` implemented with boot-source fields
   - [x] `ListTemplates()` implemented
-  - [ ] `ExportTemplate(name)` implemented (deferred)
+  - [x] Source-type normalization and boot transport validation implemented
+  - [x] Template/InstanceSize boundary enforcement represented by the Template schema and validator helper (`template_validator.go`)
+  - [ ] Export/import automation (deferred)
   - [ ] **Lifecycle Management** (Publish, Deprecate, Archive) (deferred)
-  - [ ] **Save Validation** (3-step: syntax, mock render, dry run) (deferred)
-- [ ] **Initial Import** from `deploy/seed/` to PostgreSQL (ADR-0018: templates stored in DB, not files)
+  - [ ] Template-save live K8s dry-run (deferred; approval-time dry-run is the V1 gate)
 
 ---
 
@@ -180,7 +182,7 @@
 - [x] **Key Constraint 2: Atomic Transaction Pattern (ADR-0012)** implemented (CreateVMUseCase)
 - [x] **Key Constraint 3: Worker Fault Tolerance** implemented (retry-safe status handling + `JobCancel` for non-retryable payload errors)
 - [x] **EventDispatcher** implemented (`internal/domain/dispatcher.go`)
-- [ ] **Event Handlers** registered (deferred — wired at composition root)
+- [x] **V1 event integration path** implemented (approval services, River workers, notification triggers); generic dispatcher handler registration is not the current execution path
 - [x] **Idempotency Guarantee** implemented (VM create event-label guard + unique River enqueue by args/queue)
 - [x] **Soft Archiving** configured (`internal/jobs/event_archive.go` + periodic bootstrap registration; marks 30d-old terminal events with `archived_at`)
 
@@ -188,26 +190,33 @@
 
 ## Reconciler
 
-- [ ] Supports dry-run mode
-- [ ] Only marks, doesn't delete
-- [ ] Circuit breaker (50% threshold)
-- [ ] Report ghost and orphan resources separately
+- [x] **V1 status convergence baseline** implemented via ADR-0038 adaptive polling (`internal/jobs/vm_status_sync.go`)
+  - [x] Polls managed VMs with ResourceVersion caching
+  - [x] Persists status, polling tier, last poll time, and ResourceVersion
+  - [x] Handles expired ResourceVersion by clearing the cache and rescheduling
+  - [x] Stops the poll chain for deleted DB bindings and `DELETING` tombstones
+- [x] **Resource adoption compensation schema** exists (`pending_adoptions`)
+- [ ] Full ghost/orphan reconciler with dry-run/mark/delete modes (deferred to [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md))
+- [ ] Full reconciler circuit-breaker UX and reports (deferred)
 
 ---
 
 ## Template Engine (ADR-0007, ADR-0011, ADR-0018)
 
-> **Updated per ADR-0018**: Templates define OS image source and cloud-init only. Go Template variables removed.
+> **Updated per ADR-0018/ADR-0046**: Templates define boot source and
+> cloud-init only. SchemaMask owns UI field visibility. Go Template variables
+> and hardware capability requirements are not part of Template persistence.
 
-- [ ] **Template Scope** (after ADR-0018):
-  - [ ] OS image source (DataVolume, ContainerDisk, PVC reference)
-  - [ ] Cloud-init YAML (SSH keys, one-time password, network config)
-  - [ ] Field visibility (`quick_fields`, `advanced_fields`, `professional_fields` for UI)
-  - [ ] ❌ No Go Template variables (removed per ADR-0018)
-  - [ ] ❌ No RequiredFeatures/Hardware (moved to InstanceSize per ADR-0018)
-- [ ] **Template Lifecycle Management** complete (draft → active → deprecated → archived)
-- [ ] **Template Save Validation** (cloud-init YAML syntax + K8s Dry-Run)
-- [ ] **SSA Resource Submission (ADR-0011)** implemented
+- [x] **Template Scope** (after ADR-0018):
+  - [x] OS image source (`containerdisk`, `cdi_image_import`, `cdi_pvc_clone`)
+  - [x] Cloud-init YAML
+  - [x] SchemaMask field visibility (`quick_fields`, `advanced_fields`, `professional_fields`) is exposed outside Template persistence
+  - [x] ❌ No Go Template variables (removed per ADR-0018)
+  - [x] ❌ No RequiredFeatures/Hardware (moved to InstanceSize per ADR-0018)
+- [x] **Template Save Validation V1 baseline** (source-type/dependent-field validation + Template schema boundary enforcement)
+- [x] **SSA Resource Submission (ADR-0011)** implemented via dynamic-client SSA
+- [ ] **Template Lifecycle Management** complete (draft → active → deprecated → archived) (deferred)
+- [ ] Template-save live K8s dry-run (deferred; approval-time dry-run remains the V1 gate)
 
 ---
 
@@ -287,7 +296,7 @@
 - [x] **Environment-Based Access**:
   - [x] test environment - no approval required
   - [x] prod environment - requires approval ticket
-- [ ] **VNC Token Security**:
+- [x] **VNC Token Security**:
   - [x] Single-use token
   - [x] Time-bounded (max 2 hours)
   - [x] User-bound (`sub` binds token to requester user ID)

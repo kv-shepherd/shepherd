@@ -169,6 +169,9 @@
         "docs/adr/ADR-0042-cluster-policy-governance-model.md",
         "docs/adr/ADR-0044-frontend-built-in-preset-catalog-boundary.md",
         "docs/adr/ADR-0046-schema-mask-field-visibility-tiers.md"
+      ],
+      "examples": [
+        "docs/design/DEFERRED_FOLLOWUPS.md"
       ]
     },
     {
@@ -302,7 +305,9 @@
         "docs/adr/ADR-0045-cluster-resolved-root-volume-provisioning.md"
       ],
       "examples": [
-        "docs/design/examples/usecase/create_vm.go"
+        "docs/design/examples/usecase/create_vm.go",
+        "docs/design/DEFERRED_FOLLOWUPS.md",
+        "internal/jobs/vm_status_sync.go"
       ]
     },
     {

@@ -406,10 +406,12 @@ func GetEffectiveSpec(ticket *ApprovalTicket) (*VMSpec, error) {
 > | Aspect | Decision | ADR Reference |
 > |--------|----------|---------------|
 > | **Storage** | PostgreSQL only | ADR-0007 |
-> | **Version control** | Database-level versioning (draft → active → deprecated → archived) | ADR-0007 |
+> | **V1 lifecycle boundary** | `enabled` + `catalog_scope`; full lifecycle states are deferred | ADR-0007, DEFERRED_FOLLOWUPS |
 > | **Git library** | ❌ **Not used** - original ADR-0002 superseded | ADR-0002 → ADR-0007 |
 
-> **Simplified per ADR-0018**: Template no longer contains Go Template variables or YAML template files. Templates define only OS image source and cloud-init configuration.
+> **Simplified per ADR-0018/ADR-0046**: Template no longer contains Go
+> Template variables or YAML template files. Templates define boot source and
+> cloud-init configuration; UI field visibility is served through SchemaMask.
 
 ### Template Scope (After ADR-0018)
 
@@ -417,11 +419,17 @@ func GetEffectiveSpec(ticket *ApprovalTicket) (*VMSpec, error) {
 |----------|-------------|
 | OS image source | DataVolume, ContainerDisk, PVC reference |
 | Cloud-init YAML | SSH keys, one-time password, network config |
-| Field visibility | `quick_fields`, `advanced_fields`, `professional_fields` for UI |
+| Field visibility | `quick_fields`, `advanced_fields`, `professional_fields` via SchemaMask, not Template persistence |
 | ❌ ~~Go Template variables~~ | **REMOVED** - Too complex, error-prone |
 | ❌ ~~RequiredFeatures/Hardware~~ | **MOVED** to InstanceSize per ADR-0018 |
 
-### Template Lifecycle
+### Template Lifecycle Boundary
+
+V1 persists a compact catalog model: `enabled` determines whether a template is
+requestable, and `catalog_scope` controls test/prod/all catalog visibility.
+Full lifecycle states remain useful, but they need a contract-first design that
+covers API behavior, UI transitions, import/export, and approval-time snapshot
+compatibility.
 
 ```
 draft → active → deprecated → archived
@@ -434,8 +442,10 @@ draft → active → deprecated → archived
 | deprecated | No new VMs, existing VMs OK |
 | archived | Hidden from all UIs |
 
-> ⚠️ **ADR-0007 Constraint**: Only **one active template per name** is allowed.
-> Creating a new version automatically deprecates the previous active version.
+> **Deferred**: Full lifecycle management is tracked in
+> [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md). The V1 governance baseline
+> uses `enabled`, `catalog_scope`, source validation, delete guards, and immutable
+> approval snapshots.
 
 ### Template Validation (Before Save)
 
@@ -1427,17 +1437,28 @@ DELETE /api/v1/vms/{id}?confirm_name=prod-shop-redis-01   # Prod environment
 
 ---
 
-## 12. Reconciler
+## 12. Reconciler / Status Convergence Boundary
 
-| Mode | Behavior |
-|------|----------|
-| dry-run | Report only, no changes |
-| mark | Mark ghost/orphan resources |
-| delete | Actually delete (not implemented) |
+V1 does not implement a generic Kubernetes controller-style reconciler. The
+current status-convergence baseline is ADR-0038 adaptive polling via
+`internal/jobs/vm_status_sync.go`, backed by River scheduling and cached
+ResourceVersion values.
 
-### Circuit Breaker
+| Capability | V1 Status |
+|------------|-----------|
+| Managed VM status convergence | ✅ ADR-0038 adaptive polling worker |
+| ResourceVersion cache reset on 410/Gone | ✅ Clear cached RV and reschedule |
+| Missing managed VM handling | ✅ Persist reconciled status and continue polling at the derived tier |
+| Resource adoption compensation | ✅ `pending_adoptions` schema only |
+| Generic ghost/orphan dry-run report | Deferred |
+| Mark-only reconciler mode | Deferred |
+| Delete reconciler mode | Deferred |
+| Circuit breaker and operator UX | Deferred |
 
-If >50% of resources detected as ghosts, halt and alert.
+Full resource reconciliation is tracked in
+[DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md). It should be designed as a
+separate RFC/ADR-backed workflow before introducing mark/delete behavior against
+cluster resources.
 
 ---
 
@@ -1448,6 +1469,7 @@ If >50% of resources detected as ghosts, halt and alert.
 - [x] Approval workflow functional for create, delete, modify, power, VNC, and batch parent/child paths
 - [x] Event and ticket status updates are wired through approval services and workers
 - [x] Template CRUD/source validation/catalog-scope baseline works; full lifecycle states are deferred to [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md)
+- [x] ADR-0038 VM status convergence baseline works; full resource reconciliation is deferred to [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md)
 - [x] Audit logs are written for core governance and VM lifecycle actions
 - [x] Environment isolation enforced via Cluster environment, namespace compatibility, and RoleBinding `allowed_environments`
 - [x] Delete confirmation mechanism works (tiered by entity/environment)

@@ -41,7 +41,10 @@ future-scoped by RFC/ADR.
 | External approval decision ingestion and native provider connectors | RFC / V2 scope | [RFC-0004](../rfc/RFC-0004-external-approval.md) |
 | Advanced observability / Prometheus metrics endpoint | RFC / V2 scope | [RFC-0010](../rfc/RFC-0010-observability.md) |
 | Full template lifecycle states (`draft -> active -> deprecated -> archived`) | RFC / V2 candidate | V1 uses `enabled`, `catalog_scope`, source validation, and delete guards. Add a contract-first design before introducing lifecycle states. |
+| Template import/export automation | RFC / V2 candidate | V1 keeps catalog administration in the API/UI and stores templates in PostgreSQL. Import/export automation should be designed with the lifecycle-state contract instead of treated as a Phase 4 blocker. |
+| Rich VM revision diff/compressed YAML service | RFC / V2 candidate | V1 has `vm_revisions` persistence and audit logs. Diff calculation, compressed YAML storage, and revision-service APIs need a dedicated contract before they become product workflow requirements. |
 | Resource adoption admin workflow | RFC / V2 candidate | V1 keeps the `pending_adoptions` schema as a compensation hook; admin adoption APIs and periodic scan can be designed when adoption becomes a product workflow. |
+| Full resource reconciler (`dry-run`/`mark`/`delete` + ghost/orphan reports) | RFC / V2 candidate | V1 status convergence is ADR-0038 adaptive polling, and resource adoption is a compensation hook. A full Kubernetes controller-style reconciler needs a contract-first RFC/ADR before it can mutate or mark resources. |
 | Advanced cluster degradation/circuit-breaker UX | RFC / V2 candidate | V1 uses health checks, cluster status, approval preflight degradation handling, and ADR-0038 status sync. |
 
 ## Replaced Or Removed Requirements
