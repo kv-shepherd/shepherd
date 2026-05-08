@@ -167,6 +167,9 @@ func (c *DatabaseClients) ApplyRiverMigrations(ctx context.Context) error {
 // InitRiverClient creates a River client with registered workers.
 // Called after NewDatabaseClients; workers param comes from bootstrap.
 func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.RiverConfig) error {
+	if cfg.MaxWorkers < 1 || cfg.MaxWorkers > river.QueueNumWorkersMax {
+		return fmt.Errorf("river max workers must be between 1 and %d", river.QueueNumWorkersMax)
+	}
 	riverQueues := buildRiverQueues(cfg.MaxWorkers)
 
 	riverClient, err := river.NewClient(riverpgxv5.New(c.Pool), &river.Config{
@@ -183,15 +186,11 @@ func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.Riv
 }
 
 func buildRiverQueues(maxWorkers int) map[string]river.QueueConfig {
-	vmOpsWorkers := maxWorkers
-	if vmOpsWorkers < 1 {
-		vmOpsWorkers = 1
-	}
 	return map[string]river.QueueConfig{
 		river.QueueDefault: {MaxWorkers: maxWorkers},
-		"vm_operations":    {MaxWorkers: vmOpsWorkers},
+		"vm_operations":    {MaxWorkers: maxWorkers},
 		// ADR-0038: dedicated queue for adaptive VM status sync polling jobs.
-		jobs.VMStatusSyncJobKind: {MaxWorkers: vmOpsWorkers},
+		jobs.VMStatusSyncJobKind: {MaxWorkers: maxWorkers},
 	}
 }
 

@@ -21,6 +21,8 @@ import (
 	"github.com/spf13/viper"
 )
 
+const riverMaxWorkersLimit = 10_000
+
 // Config is the root configuration structure.
 type Config struct {
 	Server   ServerConfig   `mapstructure:"server"`
@@ -108,8 +110,7 @@ type SessionConfig struct {
 
 // K8sConfig contains Kubernetes operation settings.
 type K8sConfig struct {
-	ClusterConcurrency int           `mapstructure:"cluster_concurrency"`
-	OperationTimeout   time.Duration `mapstructure:"operation_timeout"`
+	OperationTimeout time.Duration `mapstructure:"operation_timeout"`
 }
 
 // LogConfig contains logging settings.
@@ -204,6 +205,9 @@ func Load() (*Config, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("validate config: %w", err)
 	}
+	if err := validateLoadedRiverConfig(cfg.River); err != nil {
+		return nil, fmt.Errorf("validate config: %w", err)
+	}
 
 	return &cfg, nil
 }
@@ -282,10 +286,27 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("security.login_rate_limit.block_duration must be > 0")
 		}
 	}
+	if c.River.MaxWorkers != 0 {
+		if err := validateLoadedRiverConfig(c.River); err != nil {
+			return err
+		}
+	} else if c.River.CompletedJobRetentionPeriod < -1 {
+		return fmt.Errorf("river.completed_job_retention_period must be >= -1")
+	}
 	if key := strings.TrimSpace(c.Security.EncryptionKey); key != "" {
 		if _, err := c.Security.DecodeEncryptionKey(); err != nil {
 			return err
 		}
+	}
+	return nil
+}
+
+func validateLoadedRiverConfig(cfg RiverConfig) error {
+	if cfg.MaxWorkers < 1 || cfg.MaxWorkers > riverMaxWorkersLimit {
+		return fmt.Errorf("river.max_workers must be between 1 and %d", riverMaxWorkersLimit)
+	}
+	if cfg.CompletedJobRetentionPeriod < -1 {
+		return fmt.Errorf("river.completed_job_retention_period must be >= -1")
 	}
 	return nil
 }
@@ -362,7 +383,6 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("session.http_only", true)
 
 	// K8s
-	v.SetDefault("k8s.cluster_concurrency", 20)
 	v.SetDefault("k8s.operation_timeout", "5m")
 
 	// Log
@@ -422,7 +442,6 @@ func bindEnvKeys(v *viper.Viper) {
 		"session.cookie",
 		"session.secure",
 		"session.http_only",
-		"k8s.cluster_concurrency",
 		"k8s.operation_timeout",
 		"log.level",
 		"log.format",

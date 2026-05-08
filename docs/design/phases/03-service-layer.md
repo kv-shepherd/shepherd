@@ -272,15 +272,17 @@ K8s operation concurrency controlled at **River Worker layer**, not HTTP layer:
 | Location | Control | Reference |
 |----------|---------|-----------|
 | River Worker | `RIVER_MAX_WORKERS` (default: 10) | [DEPENDENCIES.md](../DEPENDENCIES.md) |
-| Per-Cluster | `K8S_CLUSTER_CONCURRENCY` (default: 20) | [DEPENDENCIES.md](../DEPENDENCIES.md) |
 | HTTP Layer | Only lightweight DB rate limiting | - |
+
+Per-cluster semaphore limits, cluster-specific fairness, and hot-reloadable
+quota updates are not part of the V1 runtime. They remain deferred in
+[RFC-0015](../../rfc/RFC-0015-per-cluster-concurrency.md).
 
 ### HPA Constraints
 
 | Formula | Limit |
 |---------|-------|
 | `HPA.maxReplicas × River.MaxWorkers` | ≤ 50 |
-| `HPA.maxReplicas × K8S_CLUSTER_CONCURRENCY` | ≤ 60 |
 
 > **Example**: With `RIVER_MAX_WORKERS=10`, your `HPA.maxReplicas` should be ≤ 5 (5 × 10 = 50).
 >
@@ -295,7 +297,7 @@ hand-written DI, blocks Wire/Redis runtime drift, and prevents service/repositor
 wiring outside `internal/app/`. The shell script remains only as historical
 reference in `docs/design/ci/README.md`.
 
-### ResizableSemaphore
+### Deferred Per-Cluster Semaphore
 
 ```go
 type ClusterSemaphoreManager struct {
@@ -363,7 +365,12 @@ func (h *VMHandler) Create(c *gin.Context) {
 > **Note**: For auto-approved operations, return `task_id` instead of `event_id`/`ticket_id`.
 > See [ADR-0006 §API Response Standards](../../adr/ADR-0006-unified-async-model.md#api-response-standards).
 
-### Degradation Protection
+### Deferred Cache Rebuild UX
+
+The cache-specific `CLUSTER_REBUILDING` handler gate is not part of the V1
+runtime. V1 degradation handling is covered by approval preflight checks,
+capability detection, and River worker retry behavior. Keep this pattern as
+future-scope guidance with the deferred follow-up tracker.
 
 ```go
 func (h *VMHandler) checkDegradation(c *gin.Context, cluster string) bool {
@@ -409,6 +416,7 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, spec *domain.VMSpec) e
 - [x] `check_manual_di.sh` passes
 - [x] UseCase layer owns transaction orchestration for write paths
 - [x] Handlers return `202 Accepted` for async VM writes and batch/console request paths
+- [x] River worker concurrency is configured through queue-specific `MaxWorkers`
 - [x] Cluster/runtime degradation handling exists in approval preflight, capability detection, and worker retry paths
 - [x] HPA constraints documented in [DEPENDENCIES.md §HPA Concurrency Constraints Required](../DEPENDENCIES.md#hpa-concurrency-constraints-required)
 

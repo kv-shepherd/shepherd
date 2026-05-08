@@ -188,8 +188,13 @@
         "docs/adr/ADR-0017-vm-request-flow-clarification.md"
       ],
       "examples": [
+        "config/config.yaml.example",
+        "docs/design/DEPENDENCIES.md",
         "docs/design/ci/README.md",
         "docs/design/ci/scripts/check_sqlc_usage.sh",
+        "docs/rfc/RFC-0015-per-cluster-concurrency.md",
+        "internal/config/config.go",
+        "internal/infrastructure/database.go",
         "tools/shepherd-linter/analyzer/manualdi/analyzer.go"
       ]
     },

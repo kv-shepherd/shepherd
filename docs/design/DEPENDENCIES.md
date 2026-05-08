@@ -176,7 +176,6 @@ Defaults are defined in `internal/config/config.go` and shown in
 
 | Parameter | Default | Environment variable |
 |-----------|---------|----------------------|
-| `k8s.cluster_concurrency` | `20` | `K8S_CLUSTER_CONCURRENCY` |
 | `k8s.operation_timeout` | `5m` | `K8S_OPERATION_TIMEOUT` |
 | `river.max_workers` | `10` | `RIVER_MAX_WORKERS` |
 | `worker.general_pool_size` | `100` | `WORKER_GENERAL_POOL_SIZE` |
@@ -185,12 +184,13 @@ Defaults are defined in `internal/config/config.go` and shown in
 ## HPA Concurrency Constraints Required
 
 River coordinates jobs globally through PostgreSQL row locking, but worker
-counts are configured per process. K8s semaphores are also per process.
+counts are configured per process. V1 K8s write execution is bounded by River
+queue `MaxWorkers`; per-cluster semaphores and hot reload remain deferred to
+[RFC-0015](../rfc/RFC-0015-per-cluster-concurrency.md).
 
 | Formula | Recommended upper limit | Reason |
 |---------|--------------------------|--------|
 | `HPA.maxReplicas * RIVER_MAX_WORKERS` | `<= 50` | Avoid exhausting PostgreSQL connections during job execution |
-| `HPA.maxReplicas * K8S_CLUSTER_CONCURRENCY` | `<= 60` | Avoid excessive per-cluster API pressure |
 
 Tune these values conservatively for production. If a deployment uses PgBouncer
 or different PostgreSQL pool sizing, document the local calculation in the

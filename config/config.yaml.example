@@ -51,7 +51,6 @@ session:
   http_only: true
 
 k8s:
-  cluster_concurrency: 20
   operation_timeout: "5m"
 
 log:

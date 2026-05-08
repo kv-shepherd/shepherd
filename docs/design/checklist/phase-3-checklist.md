@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/03-service-layer.md](../phases/03-service-layer.md)
 >
-> **Implementation Status**: 🔄 Partial (~84%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates done; concurrency/degradation deferred
+> **Implementation Status**: 🔄 Partial (~86%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates done; River worker concurrency and V1 degradation baseline done; per-cluster semaphore/degradation UX deferred
 
 ---
 
@@ -72,12 +72,13 @@
 
 ## Concurrency Control
 
-- [ ] **River Worker Concurrency Control** configured
-- [ ] **ResizableSemaphore Implementation** complete
-- [ ] **ClusterSemaphoreManager** implemented
-- [ ] **Hot-Reload Integration** working
-- [ ] **HPA Constraint Verification** passed
-- [ ] Middleware correctly registered to routes
+- [x] **River Worker Concurrency Control** configured (`river.max_workers` + queue-specific `MaxWorkers`)
+- [x] `river.max_workers` validation rejects invalid queue worker counts before River client startup
+- [x] **HPA Constraint Verification** documented in [DEPENDENCIES.md](../DEPENDENCIES.md#hpa-concurrency-constraints-required)
+- [ ] **ResizableSemaphore Implementation** deferred ([RFC-0015](../../rfc/RFC-0015-per-cluster-concurrency.md))
+- [ ] **ClusterSemaphoreManager** deferred ([RFC-0015](../../rfc/RFC-0015-per-cluster-concurrency.md))
+- [ ] **Hot-Reload Integration** deferred with per-cluster concurrency quotas
+- [x] HTTP middleware-level K8s concurrency gate is not a V1 runtime control; K8s writes are bounded at the River worker layer
 
 ---
 
@@ -93,10 +94,10 @@
 
 ## Handler Layer Degradation Protection
 
-- [ ] VMHandler injects CacheService
-- [ ] `checkClusterDegradation()` method implemented
-- [ ] **Strong Consistency Operations Block** implemented
-- [ ] Degradation returns clear error code: `CLUSTER_REBUILDING`
+- [x] Approval preflight returns clear placement/degradation errors before enqueue
+- [x] Capability detection degrades gracefully when optional cluster feature probes fail
+- [x] Worker retry paths preserve transient K8s/runtime failures for River retry
+- [ ] CacheService-based `CLUSTER_REBUILDING` UX deferred to [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md)
 
 ---
 

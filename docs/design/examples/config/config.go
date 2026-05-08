@@ -70,8 +70,7 @@ type SessionConfig struct {
 
 // K8sConfig contains Kubernetes operation settings
 type K8sConfig struct {
-	ClusterConcurrency int           `mapstructure:"cluster_concurrency"`
-	OperationTimeout   time.Duration `mapstructure:"operation_timeout"`
+	OperationTimeout time.Duration `mapstructure:"operation_timeout"`
 }
 
 // LogConfig contains logging settings
@@ -143,7 +142,6 @@ func setDefaults() {
 	viper.SetDefault("session.http_only", true)
 
 	// K8s
-	viper.SetDefault("k8s.cluster_concurrency", 20)
 	viper.SetDefault("k8s.operation_timeout", "5m")
 
 	// Log

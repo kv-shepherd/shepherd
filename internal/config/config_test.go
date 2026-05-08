@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -60,11 +61,6 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.Database.AutoApplyVersionedMigrations {
 		t.Errorf("Database.AutoApplyVersionedMigrations = %v, want false", cfg.Database.AutoApplyVersionedMigrations)
-	}
-
-	// K8s defaults
-	if cfg.K8s.ClusterConcurrency != 20 {
-		t.Errorf("K8s.ClusterConcurrency = %d, want 20", cfg.K8s.ClusterConcurrency)
 	}
 
 	// Log defaults
@@ -228,6 +224,56 @@ func TestLoad_RiverConsumeJobsFromEnv(t *testing.T) {
 
 	if cfg.River.ConsumeJobs {
 		t.Fatalf("River.ConsumeJobs = %v, want false", cfg.River.ConsumeJobs)
+	}
+}
+
+func TestLoad_RiverMaxWorkersFromEnv(t *testing.T) {
+	t.Setenv("RIVER_MAX_WORKERS", "3")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	if cfg.River.MaxWorkers != 3 {
+		t.Fatalf("River.MaxWorkers = %d, want 3", cfg.River.MaxWorkers)
+	}
+}
+
+func TestLoad_InvalidRiverMaxWorkers(t *testing.T) {
+	for _, value := range []string{"0", "-1", "10001"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("RIVER_MAX_WORKERS", value)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatalf("Load() error = nil, want invalid river.max_workers error")
+			}
+			if !strings.Contains(err.Error(), "river.max_workers must be between 1 and 10000") {
+				t.Fatalf("Load() error = %v, want river.max_workers validation error", err)
+			}
+		})
+	}
+}
+
+func TestValidate_InvalidRiverCompletedJobRetentionPeriod(t *testing.T) {
+	cfg := &Config{
+		River: RiverConfig{
+			MaxWorkers:                  1,
+			CompletedJobRetentionPeriod: -2,
+		},
+		Server: ServerConfig{
+			ReadHeaderTimeout: 10 * time.Second,
+			IdleTimeout:       time.Minute,
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatalf("Validate() error = nil, want invalid retention period error")
+	}
+	if !strings.Contains(err.Error(), "river.completed_job_retention_period must be >= -1") {
+		t.Fatalf("Validate() error = %v, want retention period validation error", err)
 	}
 }
 
