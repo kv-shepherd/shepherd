@@ -2,7 +2,7 @@
 # Stage 1: Build
 # Pin the builder to the host platform so multi-arch builds cross-compile
 # instead of running the Go toolchain under QEMU emulation.
-FROM --platform=$BUILDPLATFORM golang:1.25.9-bookworm AS builder
+FROM --platform=$BUILDPLATFORM golang:1.25.10-bookworm AS builder
 
 WORKDIR /build
 

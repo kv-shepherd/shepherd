@@ -12,7 +12,7 @@ versions.
 
 | Item | Version | Source |
 |------|---------|--------|
-| Go toolchain | `1.25.10` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION` |
+| Go toolchain | `1.25.10` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION`, `Dockerfile`, `deploy/prod/deploy-prod.sh` |
 
 ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
 `1.25.10`.

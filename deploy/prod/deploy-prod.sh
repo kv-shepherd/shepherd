@@ -182,7 +182,7 @@ build_experience_seed_binary() {
             -e CGO_ENABLED=0 \
             -v "${ROOT_DIR}:/workspace" \
             -w /workspace \
-            golang:1.25.9-bookworm \
+            golang:1.25.10-bookworm \
             /usr/local/go/bin/go build -ldflags="-s -w" -o build/bin/e2e-seed ./cmd/e2e-seed/...
     fi
     printf "%s" "${binary_path}"
