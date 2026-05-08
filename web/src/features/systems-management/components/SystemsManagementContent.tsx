@@ -45,6 +45,7 @@ import { PageSearchToolbar } from '@/components/ui/PageSearchToolbar';
 import { WorkbenchDetailModal } from '@/components/workbench/WorkbenchDetailModal';
 import { useApiGet } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
+import { createRfc1035NameRule } from '@/lib/validation/rfc1035Name';
 import {
     buildDashboardSetupResumeHref,
     resolveNextSetupAction,
@@ -53,7 +54,7 @@ import { SetupGuideCard } from '@/features/setup-guide/components/SetupGuideCard
 import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
 import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useSystemsManagementController } from '../hooks/useSystemsManagementController';
-import { RFC1035_PATTERN, type System, type SystemMemberList } from '../types';
+import type { System, SystemMemberList } from '../types';
 import { SystemMembersModal } from './SystemMembersModal';
 import type { components } from '@/types/api.gen';
 
@@ -174,6 +175,16 @@ export function SystemsManagementContent() {
 
     const [createPreviewMode, setCreatePreviewMode] = useState(false);
     const [editPreviewMode, setEditPreviewMode] = useState(false);
+    const systemNameRules = useMemo(() => [
+        createRfc1035NameRule(
+            {
+                required: t('systems.validation.name_required'),
+                max: t('systems.validation.name_max'),
+                format: t('systems.validation.name_format'),
+            },
+            { maxLength: 15 },
+        ),
+    ], [t]);
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailSystem, setDetailSystem] = useState<System | null>(null);
     const [dismissedQueryDetailSystemId, setDismissedQueryDetailSystemId] = useState<string | null>(null);
@@ -623,14 +634,7 @@ export function SystemsManagementContent() {
                     <Form.Item
                         name="name"
                         label={t('table.name')}
-                        rules={[
-                            { required: true, message: t('systems.validation.name_required') },
-                            { max: 15, message: t('systems.validation.name_max') },
-                            {
-                                pattern: RFC1035_PATTERN,
-                                message: t('systems.validation.name_format'),
-                            },
-                        ]}
+                        rules={systemNameRules}
                     >
                         <Input placeholder={t('systems.name_placeholder')} maxLength={15} />
                     </Form.Item>

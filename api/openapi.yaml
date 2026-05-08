@@ -8019,11 +8019,11 @@ components:
       properties:
         name:
           x-oapi-codegen-extra-tags:
-            validate: "required,max=15"
+            validate: "required,max=15,shepherd_rfc1035_name"
           type: string
           maxLength: 15
-          pattern: '^[a-z]([a-z0-9-]*[a-z0-9])?$'
-          description: RFC 1035 compliant name (ADR-0019)
+          pattern: '^[a-z](?:[a-z0-9]|-[a-z0-9])*$'
+          description: RFC 1035 compliant name with no consecutive hyphens (ADR-0019)
           example: example-resourc
         description:
           type: string
@@ -8180,10 +8180,11 @@ components:
       properties:
         name:
           x-oapi-codegen-extra-tags:
-            validate: "required,max=15"
+            validate: "required,max=15,shepherd_rfc1035_name"
           type: string
           maxLength: 15
-          pattern: '^[a-z]([a-z0-9-]*[a-z0-9])?$'
+          pattern: '^[a-z](?:[a-z0-9]|-[a-z0-9])*$'
+          description: RFC 1035 compliant name with no consecutive hyphens (ADR-0019)
           example: example-resourc
         description:
           type: string
@@ -14093,10 +14094,10 @@ components:
       properties:
         name:
           x-oapi-codegen-extra-tags:
-            validate: "required,max=63"
+            validate: "required,max=63,shepherd_rfc1035_name"
           type: string
           maxLength: 63
-          description: Must follow RFC 1035 naming (ADR-0019)
+          description: Must follow RFC 1035 naming with no consecutive hyphens (ADR-0019)
           example: example-resource
         environment:
           x-oapi-codegen-extra-tags:

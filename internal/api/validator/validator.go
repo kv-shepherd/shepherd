@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"strings"
 	"sync"
 
@@ -16,6 +17,8 @@ var (
 	validateOnce sync.Once
 	validateInst *govalidator.Validate
 )
+
+var shepherdRFC1035NamePattern = regexp.MustCompile(`^[a-z](?:[a-z0-9]|-[a-z0-9])*$`)
 
 // ValidateStruct validates a request struct using a singleton validator engine.
 // It returns AppError with field-level details for request validation failures.
@@ -69,10 +72,21 @@ func getValidator() *govalidator.Validate {
 			}
 			return tagName
 		})
+		if err := v.RegisterValidation("shepherd_rfc1035_name", validateShepherdRFC1035Name); err != nil {
+			panic(fmt.Sprintf("register shepherd_rfc1035_name validation: %v", err))
+		}
 		validateInst = v
 	})
 
 	return validateInst
+}
+
+func validateShepherdRFC1035Name(fe govalidator.FieldLevel) bool {
+	field := fe.Field()
+	if field.Kind() != reflect.String {
+		return false
+	}
+	return shepherdRFC1035NamePattern.MatchString(field.String())
 }
 
 func validationCode(tag string) string {
@@ -94,6 +108,8 @@ func validationMessage(fe govalidator.FieldError) string {
 		return fmt.Sprintf("must be <= %s", fe.Param())
 	case "oneof":
 		return fmt.Sprintf("must be one of [%s]", fe.Param())
+	case "shepherd_rfc1035_name":
+		return "must start with a lowercase letter, contain only lowercase letters, digits, or single hyphens, and end with a letter or digit"
 	default:
 		if p := strings.TrimSpace(fe.Param()); p != "" {
 			return fmt.Sprintf("failed validation '%s=%s'", fe.Tag(), p)

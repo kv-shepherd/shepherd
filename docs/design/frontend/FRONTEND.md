@@ -16,7 +16,7 @@
 | State Management | Zustand | 5.x | Lightweight state |
 | Data Fetching | TanStack Query | 5.x | Server state management |
 | i18n | react-i18next | 16.x | Internationalization |
-| Form Validation | Zod | 4.x | Schema validation |
+| Form Validation | Zod | 4.x | Schema validation with Ant Design rule adapters |
 | Styling | Tailwind CSS | 4.x | Utility-first CSS |
 
 > **Version Source**: Always refer to [DEPENDENCIES.md](../DEPENDENCIES.md) for pinned versions.
@@ -186,6 +186,18 @@ Frontend translates using these codes:
   "APPROVAL_REQUIRED": "This action requires approval"
 }
 ```
+
+### Form Validation
+
+Frontend forms use Zod 4 schemas for reusable field validation and adapt them to
+Ant Design `Form.Item` rules with async validators. Field-specific messages
+come from `react-i18next` instead of global Zod locale state, so each form can
+render validation errors in the active UI language.
+
+Governance name fields (System, Service, Namespace) share the same RFC
+1035-based schema: lowercase letters, digits, and single hyphens; start with a
+letter; end with a letter or digit; no consecutive hyphens. Length limits remain
+field-specific and are passed into the shared schema.
 
 ### Usage in Components
 

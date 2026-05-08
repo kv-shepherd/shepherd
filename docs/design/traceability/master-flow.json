@@ -39,6 +39,9 @@
         "docs/adr/ADR-0032-master-flow-traceability-manifest.md",
         "docs/adr/ADR-0034-master-flow-spec-driven-test-first.md",
         "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
+      ],
+      "examples": [
+        "docs/design/frontend/FRONTEND.md"
       ]
     },
     {

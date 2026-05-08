@@ -2210,7 +2210,7 @@ export interface components {
          */
         SystemCreateRequest: {
             /**
-             * @description RFC 1035 compliant name (ADR-0019)
+             * @description RFC 1035 compliant name with no consecutive hyphens (ADR-0019)
              * @example example-resourc
              */
             name: string;
@@ -2373,7 +2373,10 @@ export interface components {
          *     }
          */
         ServiceCreateRequest: {
-            /** @example example-resourc */
+            /**
+             * @description RFC 1035 compliant name with no consecutive hyphens (ADR-0019)
+             * @example example-resourc
+             */
             name: string;
             /**
              * @description Markdown supported
@@ -7805,7 +7808,7 @@ export interface components {
          */
         NamespaceCreateRequest: {
             /**
-             * @description Must follow RFC 1035 naming (ADR-0019)
+             * @description Must follow RFC 1035 naming with no consecutive hyphens (ADR-0019)
              * @example example-resource
              */
             name: string;

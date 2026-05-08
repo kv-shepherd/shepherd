@@ -22,7 +22,7 @@ import {
     PlusOutlined,
     ReloadOutlined,
 } from '@ant-design/icons';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useRouter } from 'next/navigation';
 
@@ -43,6 +43,7 @@ import {
 } from '@/features/setup-guide/flow';
 import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
 import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
+import { createRfc1035NameRule } from '@/lib/validation/rfc1035Name';
 import { useAdminNamespacesController } from '../hooks/useAdminNamespacesController';
 import { ENV_MAP, ENV_OPTIONS, type NamespaceRegistry } from '../types';
 
@@ -57,6 +58,16 @@ export function AdminNamespacesContent() {
     const [enabledFilterDraft, setEnabledFilterDraft] = useState<'' | 'enabled' | 'disabled'>('');
     const setupGuide = useSetupGuide();
     const canManageNamespaces = setupGuide.canManageNamespaces;
+    const namespaceNameRules = useMemo(() => [
+        createRfc1035NameRule(
+            {
+                required: t('namespaces.validation.name_required'),
+                max: t('namespaces.validation.name_max'),
+                format: t('namespaces.validation.name_format'),
+            },
+            { maxLength: 63 },
+        ),
+    ], [t]);
     const namespaces = useAdminNamespacesController({
         t,
         onCreateSuccess: (_namespace, context) => {
@@ -394,17 +405,10 @@ export function AdminNamespacesContent() {
                             <Form.Item
                                 name="name"
                                 label={t('common:table.name')}
-                                rules={[
-                                    { required: true, message: t('namespaces.validation.name_required') },
-                                    { max: 63, message: t('namespaces.validation.name_max') },
-                                    {
-                                        pattern: /^[a-z][a-z0-9-]*$/,
-                                        message: t('namespaces.validation.name_format'),
-                                    },
-                                ]}
+                                rules={namespaceNameRules}
                                 extra={t('namespaces.name_hint')}
                             >
-                                <Input placeholder="e.g. prod-shop, dev-analytics" />
+                                <Input placeholder="e.g. prod-shop, dev-analytics" maxLength={63} />
                             </Form.Item>
                             <Form.Item
                                 name="environment"

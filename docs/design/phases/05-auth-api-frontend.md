@@ -160,7 +160,7 @@ Phase 5 bridges the backend to a usable product by implementing:
 - **UI Components**: Ant Design 5.x + @ant-design/pro-components 2.x
 - **State Management**: Zustand 5.x + TanStack Query 5.x
 - **Styling**: Tailwind CSS 4.x
-- **Form Validation**: Zod 4.x
+- **Form Validation**: Zod 4.x with Ant Design rule adapters for localized field validation
 - **Internationalization**: react-i18next 16.x
 - **API Client**: Generated from OpenAPI via `openapi-typescript` + `openapi-fetch`
 

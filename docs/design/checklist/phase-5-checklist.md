@@ -111,7 +111,7 @@
 - [x] **UI Components**: Ant Design 5.x + @ant-design/pro-components 2.x
 - [x] **State Management**: Zustand 5.x + TanStack Query 5.x
 - [x] **Styling**: Tailwind CSS 4.x
-- [ ] **Form Validation**: Zod 4.x (i18n validation messages pending)
+- [x] **Form Validation**: Zod 4.x with localized Ant Design rule adapters for governance name fields
 - [x] **Internationalization**: react-i18next 16.x (en + zh-CN, 6 namespaces)
 - [x] **API Client**: openapi-typescript + openapi-fetch (type-safe from contract)
 - [x] **Pages feature-complete** for current scope (29 App Router page files exist, including compatibility/alias routes):

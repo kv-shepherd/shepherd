@@ -48,6 +48,7 @@ import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenInten
 import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useApiGet } from '@/hooks/useApiQuery';
 import { api } from '@/lib/api/client';
+import { createRfc1035NameRule } from '@/lib/validation/rfc1035Name';
 import { approvalSummaryMeta, approvalSummaryTitle, formatApprovalRecordID } from '@/features/approval-shared/summary';
 import { ALL_SYSTEMS_FILTER, useServicesManagementController } from '../hooks/useServicesManagementController';
 import type { Ticket, Service, ServiceWorkspaceContext, VM } from '../types';
@@ -89,6 +90,16 @@ export function ServicesManagementContent() {
     const [editPreviewMode, setEditPreviewMode] = useState(false);
     const [detailOpen, setDetailOpen] = useState(false);
     const [detailService, setDetailService] = useState<Service | null>(null);
+    const serviceNameRules = useMemo(() => [
+        createRfc1035NameRule(
+            {
+                required: t('services.validation.name_required'),
+                max: t('services.validation.name_max'),
+                format: t('services.validation.name_format'),
+            },
+            { maxLength: 15 },
+        ),
+    ], [t]);
     const [dismissedQueryDetailServiceId, setDismissedQueryDetailServiceId] = useState<string | null>(null);
     const [quickSearchDraft, setQuickSearchDraft] = useState(() => services.filters.search);
     const [systemFilterDraft, setSystemFilterDraft] = useState(() => services.filters.systemId);
@@ -584,10 +595,7 @@ export function ServicesManagementContent() {
                     <Form.Item
                         name="name"
                         label={t('table.name')}
-                        rules={[
-                            { required: true, message: t('services.validation.name_required') },
-                            { max: 15, message: t('services.validation.name_max') },
-                        ]}
+                        rules={serviceNameRules}
                     >
                         <Input placeholder={t('services.name_placeholder')} maxLength={15} />
                     </Form.Item>

@@ -169,7 +169,7 @@ System → Service → VM Instance
 **Validation Regex**:
 ```go
 // RFC 1035 + no consecutive hyphens (ADR-0019)
-var validNameRegex = regexp.MustCompile(`^[a-z]([a-z0-9-]*[a-z0-9])?$`)
+var validNameRegex = regexp.MustCompile(`^[a-z](?:[a-z0-9]|-[a-z0-9])*$`)
 
 func ValidateName(name string) error {
     if len(name) > 15 {
@@ -177,9 +177,6 @@ func ValidateName(name string) error {
     }
     if !validNameRegex.MatchString(name) {
         return errors.New("name must follow RFC 1035 rules")
-    }
-    if strings.Contains(name, "--") {
-        return errors.New("consecutive hyphens are not allowed")
     }
     return nil
 }

@@ -6,6 +6,7 @@ import (
 	"sort"
 	"testing"
 
+	"kv-shepherd.io/shepherd/internal/api/generated"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 )
 
@@ -64,6 +65,67 @@ func TestValidateStruct_FieldErrors(t *testing.T) {
 	}
 	if got := codesByField["cpu_cores"]; len(got) == 0 {
 		t.Fatalf("missing validation errors for field 'cpu_cores': %+v", appErr.FieldErrors)
+	}
+}
+
+func TestValidateStruct_GovernanceNamePolicy(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		payload any
+		wantErr bool
+	}{
+		{
+			name: "system accepts conservative rfc1035 name",
+			payload: generated.SystemCreateRequest{
+				Name: "shop-1",
+			},
+		},
+		{
+			name: "service rejects consecutive hyphens",
+			payload: generated.ServiceCreateRequest{
+				Name: "shop--api",
+			},
+			wantErr: true,
+		},
+		{
+			name: "namespace rejects trailing hyphen",
+			payload: generated.NamespaceCreateRequest{
+				Name:        "team-prod-",
+				Environment: generated.NamespaceCreateRequestEnvironmentProd,
+			},
+			wantErr: true,
+		},
+		{
+			name: "namespace accepts current public length contract",
+			payload: generated.NamespaceCreateRequest{
+				Name:        "team-prod-advisory",
+				Environment: generated.NamespaceCreateRequestEnvironmentProd,
+			},
+		},
+		{
+			name: "system rejects digit prefix",
+			payload: generated.SystemCreateRequest{
+				Name: "1shop",
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := ValidateStruct(tt.payload)
+			if tt.wantErr && err == nil {
+				t.Fatal("expected validation error, got nil")
+			}
+			if !tt.wantErr && err != nil {
+				t.Fatalf("expected nil error, got %v", err)
+			}
+		})
 	}
 }
 
