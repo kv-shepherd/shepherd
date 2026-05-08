@@ -21,7 +21,7 @@ amends or supersedes the old decision.
 
 | Area | Current state |
 |------|---------------|
-| Go baseline | Go `1.25.9` |
+| Go baseline | Go `1.25.10` |
 | Backend stack | Gin, Ent, sqlc, pgx, River, zap |
 | Database | PostgreSQL 18 baseline; Ent, sqlc, and River share one pgx pool |
 | OpenAPI | `api/openapi.yaml` is OpenAPI `3.1.0` with 132 `operationId`s |

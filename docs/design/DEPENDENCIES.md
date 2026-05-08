@@ -12,10 +12,10 @@ versions.
 
 | Item | Version | Source |
 |------|---------|--------|
-| Go toolchain | `1.25.9` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION` |
+| Go toolchain | `1.25.10` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION` |
 
 ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
-`1.25.9`.
+`1.25.10`.
 
 ## Core Dependencies
 
@@ -99,7 +99,7 @@ artifact when 3.1 features require it.
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `github.com/golang-jwt/jwt/v5` | `v5.3.1` | Shepherd JWTs |
-| `golang.org/x/crypto` | `v0.49.0` | bcrypt and crypto utilities |
+| `golang.org/x/crypto` | `v0.50.0` | bcrypt and crypto utilities |
 | `github.com/go-ldap/ldap/v3` | `v3.4.13` | LDAP auth provider |
 | `github.com/gorilla/websocket` | `v1.5.4-0.20250319132907-e064f32e3674` | Console websocket handling |
 
@@ -204,7 +204,7 @@ runtime-sensitive dependency families that must stay aligned:
 ```go
 module kv-shepherd.io/shepherd
 
-go 1.25.9
+go 1.25.10
 
 require (
     entgo.io/ent v0.14.6

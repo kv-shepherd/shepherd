@@ -4,7 +4,7 @@
 .PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
 
 # Go parameters
-GO_TOOLCHAIN_VERSION?=go1.25.9
+GO_TOOLCHAIN_VERSION?=go1.25.10
 export GOTOOLCHAIN=$(GO_TOOLCHAIN_VERSION)
 GOCMD=go
 

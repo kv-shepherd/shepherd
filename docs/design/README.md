@@ -48,7 +48,7 @@ Current implementation facts:
 | Area | Current state |
 |------|---------------|
 | Backend module | `kv-shepherd.io/shepherd` |
-| Go baseline | Go `1.25.9` |
+| Go baseline | Go `1.25.10` |
 | Database | PostgreSQL 18, shared pgx pool for Ent + sqlc + River |
 | HTTP contract | OpenAPI `3.1.0`, 132 operationIds |
 | Ent schemas | 33 schema files |
@@ -117,7 +117,7 @@ docs/design/
 
 | Component | Technology |
 |-----------|------------|
-| Language | Go 1.25.9 |
+| Language | Go 1.25.10 |
 | HTTP | Gin |
 | Database | PostgreSQL 18 |
 | ORM | Ent |
