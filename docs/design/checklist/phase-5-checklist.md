@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/05-auth-api-frontend.md](../phases/05-auth-api-frontend.md)
 >
-> **Implementation Status**: 🔄 In Progress (~97%, 2026-05-07) — Backend + frontend feature-complete for current scope (132 endpoints, 29 App Router page files including compatibility/alias routes), E2E verification pending
+> **Implementation Status**: 🔄 In Progress (~98%, 2026-05-08) — Backend + frontend feature-complete for current scope (132 endpoints, 29 App Router page files including compatibility/alias routes), login/protected API mock E2E verified
 >
 > **Gate Checklist**: [../ci/GATE_HARDENING_CHECKLIST.md](../ci/GATE_HARDENING_CHECKLIST.md)
 
@@ -154,5 +154,5 @@
 - [x] `go build ./...` passes
 - [x] Frontend `npm run build` passes (16/16 routes, zero type errors)
 - [x] API contract types match between Go server and TS client
-- [ ] Login → JWT → Protected API flow works end-to-end
+- [x] Login → JWT → Protected API flow works end-to-end (`web/tests/e2e/login-smoke.spec.ts`)
 - [ ] All CRUD operations testable via UI

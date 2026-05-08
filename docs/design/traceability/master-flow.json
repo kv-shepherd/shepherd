@@ -41,7 +41,8 @@
         "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
       ],
       "examples": [
-        "docs/design/frontend/FRONTEND.md"
+        "docs/design/frontend/FRONTEND.md",
+        "web/tests/e2e/login-smoke.spec.ts"
       ]
     },
     {

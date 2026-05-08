@@ -20,7 +20,7 @@
 | openapi-typescript | `web/src/types/api.gen.ts` | ✅ | Auto-generated from OpenAPI spec |
 | Seed Command | `cmd/seed/main.go` | ✅ | 6 roles + default admin |
 | Bootstrap | `internal/app/bootstrap.go` | ✅ | 127 file lines; `Bootstrap()` function is 57 lines and remains orchestration-only (see ADR-0043 design note) |
-| Frontend: Login | `web/src/app/(auth)/login/page.tsx` | ✅ | Force password change flow |
+| Frontend: Login | `web/src/app/(auth)/login/page.tsx` | ✅ | Force password change flow + login-to-dashboard smoke E2E |
 | Frontend: Dashboard | `web/src/app/(protected)/dashboard/page.tsx` | ✅ | System overview + health stats |
 | Frontend: Systems | `web/src/app/(protected)/systems/page.tsx` | ✅ | CRUD + DELETE with RFC 1035 validation |
 | Frontend: Services | `web/src/app/(protected)/services/page.tsx` | ✅ | CRUD + DELETE with cascade constraint |
