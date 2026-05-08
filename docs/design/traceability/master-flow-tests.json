@@ -131,6 +131,7 @@
         "internal/governance/approval/provider_router_test.go",
         "internal/governance/ticketing/service_behavior_test.go",
         "web/src/features/admin-approvals/hooks/useAdminApprovalsController.test.tsx",
+        "web/tests/e2e/admin-crud-smoke.spec.ts",
         "web/tests/e2e/master-flow-live.spec.ts"
       ],
       "live_step_markers": [
@@ -148,6 +149,7 @@
         "internal/api/handlers/permission_enforcement_test.go",
         "web/src/features/admin-templates/hooks/useAdminTemplatesController.test.tsx",
         "web/src/features/admin-instance-sizes/hooks/useAdminInstanceSizesController.test.tsx",
+        "web/tests/e2e/admin-crud-smoke.spec.ts",
         "web/tests/e2e/admin-flow-live.spec.ts",
         "web/tests/e2e/master-flow-live.spec.ts"
       ],

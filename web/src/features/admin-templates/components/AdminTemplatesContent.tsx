@@ -958,7 +958,16 @@ export function AdminTemplatesContent() {
                             );
                         }}
                     </Form.Item>
-                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.source_type !== cur.source_type}>
+                    <Form.Item
+                        noStyle
+                        shouldUpdate={(prev, cur) =>
+                            prev.source_type !== cur.source_type ||
+                            prev.os_family !== cur.os_family ||
+                            prev.image_url !== cur.image_url ||
+                            prev.pvc_name !== cur.pvc_name ||
+                            prev.pvc_namespace !== cur.pvc_namespace
+                        }
+                    >
                         {({ getFieldValue }) =>
                             getFieldValue('source_type') === 'cdi_pvc_clone' ? (
                                 <>
@@ -1189,7 +1198,16 @@ export function AdminTemplatesContent() {
                             );
                         }}
                     </Form.Item>
-                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.source_type !== cur.source_type}>
+                    <Form.Item
+                        noStyle
+                        shouldUpdate={(prev, cur) =>
+                            prev.source_type !== cur.source_type ||
+                            prev.os_family !== cur.os_family ||
+                            prev.image_url !== cur.image_url ||
+                            prev.pvc_name !== cur.pvc_name ||
+                            prev.pvc_namespace !== cur.pvc_namespace
+                        }
+                    >
                         {({ getFieldValue }) =>
                             getFieldValue('source_type') === 'cdi_pvc_clone' ? (
                                 <>

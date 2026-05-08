@@ -52,7 +52,7 @@ Define core contracts and types:
 | Provider interfaces | `internal/provider/`, `internal/provider/*contract/` | ✅ | Capability-composed runtime/admin/directory/notification contracts |
 | Domain models | `internal/domain/` | ✅ | [examples/README.md §Directory Structure](../examples/README.md#directory-structure) |
 | Error system | `internal/pkg/errors/{errors.go,codes.go}` | ✅ | Structured `AppError` and canonical codes |
-| **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ✅ | OpenAPI 3.1.0, 132 operationIds |
+| **OpenAPI Spec (Canonical)** | `api/openapi.yaml` | ✅ | OpenAPI 3.1.0, 135 operationIds |
 | **OpenAPI Spec (Compat)** | `api/openapi.compat.yaml` | ✅ | Required because canonical spec uses OpenAPI 3.1 nullable union types |
 | **Go API Generated Types** | `internal/api/generated/` | ✅ | `make api-generate` |
 | **TS API Generated Types** | `web/src/types/api.gen.ts` | ✅ | `make api-generate` |

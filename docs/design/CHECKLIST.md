@@ -28,7 +28,7 @@
 | Phase 2 | [checklist/phase-2-checklist.md](./checklist/phase-2-checklist.md) | [phases/02-providers.md](./phases/02-providers.md) | 🔄 Partial (~65%) — Basic CRUD + SSAApplier + VMRenderer + AuthProvider Admin ✅, Snapshot/Clone/Migration deferred; V1 status sync uses ADR-0038 polling baseline |
 | Phase 3 | [checklist/phase-3-checklist.md](./checklist/phase-3-checklist.md) | [phases/03-service-layer.md](./phases/03-service-layer.md) | 🔄 Partial (~86%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates ✅, River worker concurrency + V1 degradation baseline ✅, per-cluster semaphore/degradation UX deferred |
 | Phase 4 | [checklist/phase-4-checklist.md](./checklist/phase-4-checklist.md) | [phases/04-governance.md](./phases/04-governance.md) | 🔄 Partial (~97%) — Approval/Audit/Atomic enqueue/Delete/Namespace CRUD/Notification system ✅, environment scheduling + visibility filtering ✅, Stage 5.E batch + queue UX ✅, Stage 6 VNC token hardening ✅, Catalog Scope + Cluster Policy + VM Status Sync (ADR-0038) + Template/InstanceSize validators ✅; full resource reconciler + template lifecycle states deferred |
-| Phase 5 | [checklist/phase-5-checklist.md](./checklist/phase-5-checklist.md) | [phases/05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | 🔄 In Progress (~97%) — Backend Auth ✅ (JWT hardening + bcrypt cost 12 + log redaction), 132 endpoints (ADR-0028 omitzero) ✅, 29 App Router page files (including compatibility/alias routes), E2E pending |
+| Phase 5 | [checklist/phase-5-checklist.md](./checklist/phase-5-checklist.md) | [phases/05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | ✅ Complete for current scope (2026-05-08) — Backend Auth ✅ (JWT hardening + bcrypt cost 12 + log redaction), 135 endpoints (ADR-0028 omitzero) ✅, 29 App Router page files (including compatibility/alias routes), login/protected API and admin CRUD mock E2E verified |
 
 ---
 
@@ -183,7 +183,7 @@ The following items are moved to [RFC directory](../rfc/):
 | Phase 2 | 🔄 Partial (~65%) | - | Basic VM CRUD + SSAApplier + VMRenderer + AuthProvider Admin done; Snapshot/Clone/Migration deferred; ResourceWatcher docs superseded in V1 by ADR-0038 polling baseline |
 | Phase 3 | 🔄 Partial (~86%) | - | Core DI/UseCase + ADR-0012 atomic approval + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates done; River worker concurrency + V1 degradation baseline done; per-cluster semaphore/degradation UX deferred |
 | Phase 4 | 🔄 Partial (~97%) | - | Approval/Audit/Delete/Notification/Batch/VNC hardening/Catalog Scope/Cluster Policy/VM Status Sync (ADR-0038)/Template+InstanceSize validators done; full resource reconciler and template lifecycle states deferred |
-| Phase 5 | 🔄 In Progress (~97%) | - | Backend auth ✅, API gen 132 endpoints (ADR-0028 omitzero) ✅, 29 App Router page files (incl. AuthProvider/RateLimit/Batch/Profile/VNC routes), E2E pending |
+| Phase 5 | ✅ Complete for current scope | 2026-05-08 | Backend auth ✅, API gen 135 endpoints (ADR-0028 omitzero) ✅, 29 App Router page files (incl. AuthProvider/RateLimit/Batch/Profile/VNC routes), login/protected API and admin CRUD mock E2E verified |
 
 ---
 

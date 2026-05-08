@@ -1,13 +1,13 @@
 # Phase 5: Authentication, API Completion & Frontend
 
-> **Status**: In Progress (~97%)
+> **Status**: Complete for current scope
 > **Started**: 2026-02-09
 > **Dependencies**: Phase 0-4 completed
-> **Last Audited**: 2026-04-24 (code-vs-doc alignment audit)
+> **Last Audited**: 2026-05-08 (code-vs-doc alignment audit)
 
 ## Deliverables
 
-> **Last Updated**: 2026-04-24
+> **Last Updated**: 2026-05-08
 
 | Deliverable | File Path | Status | Notes |
 |-------------|-----------|--------|-------|
@@ -16,7 +16,7 @@
 | RBAC Middleware | `internal/api/middleware/rbac.go` | ✅ | RequirePermission + RequireResourceAccess |
 | Member Handler | `internal/api/handlers/member.go` | ✅ | ResourceRoleBinding CRUD + audit |
 | oapi-codegen config | `api/oapi-codegen.yaml` | ✅ | v2 format, gin-server + models |
-| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 132 endpoints (ADR-0028 omitzero value types), all model types |
+| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 135 endpoints (ADR-0028 omitzero value types), all model types |
 | openapi-typescript | `web/src/types/api.gen.ts` | ✅ | Auto-generated from OpenAPI spec |
 | Seed Command | `cmd/seed/main.go` | ✅ | 6 roles + default admin |
 | Bootstrap | `internal/app/bootstrap.go` | ✅ | 127 file lines; `Bootstrap()` function is 57 lines and remains orchestration-only (see ADR-0043 design note) |
@@ -29,7 +29,7 @@
 | Frontend: Audit Logs | `web/src/app/(protected)/admin/audit/page.tsx` and `web/src/app/(protected)/admin/audit-logs/page.tsx` | ✅ | Filtering + pagination plus compatibility route |
 | Frontend: Clusters | `web/src/app/(protected)/admin/clusters/page.tsx` | ✅ | GET/POST with kubeconfig |
 | Frontend: Namespaces | `web/src/app/(protected)/admin/namespaces/page.tsx` and `[id]/page.tsx` | ✅ | CRUD + confirm_name delete (ADR-0015 §13) |
-| Frontend: Templates | `web/src/app/(protected)/admin/templates/page.tsx` | ✅ | CRUD + column filters + deferred search + JSON spec editor |
+| Frontend: Templates | `web/src/app/(protected)/admin/templates/page.tsx` | ✅ | CRUD + column filters + deferred search + preset-driven image source/cloud-init editor |
 | Frontend: Instance Sizes | `web/src/app/(protected)/admin/instance-sizes/page.tsx` | ✅ | CRUD + capability filters + sort + JSON spec_overrides editor |
 | Frontend: Users | `web/src/app/(protected)/admin/users/page.tsx` | ✅ | User directory + system member management |
 | Frontend: Auth Providers | `web/src/app/(protected)/admin/auth-providers/page.tsx` | ✅ | Schema-driven provider CRUD + test connection + sample fields + directory preview/sync + external cohort mappings |
@@ -63,8 +63,8 @@ Phase 5 bridges the backend to a usable product by implementing:
 
 ## Current Runtime Alignment
 
-- `api/openapi.yaml` currently exposes 127 `operationId`s.
-- `web/src/app` currently contains 28 `page.tsx` files, including the root route and compatibility/alias pages.
+- `api/openapi.yaml` currently exposes 135 `operationId`s.
+- `web/src/app` currently contains 29 `page.tsx` files, including the root route and compatibility/alias pages.
 - Auth middleware lives under `internal/api/middleware/`; there is no standalone `internal/middleware` package.
 - Route registration is OpenAPI-generated and centralized through `internal/app/router.go`.
 

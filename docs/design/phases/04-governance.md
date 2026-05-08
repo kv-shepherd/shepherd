@@ -96,7 +96,7 @@ The following features are **explicitly out of scope** for V1:
 | Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead; triggers/sender integrated; retention cleanup scheduled |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes CRUD + UpdateClusterEnvironment (omitzero adapted) |
 | SSAApplier | `internal/provider/ssa_applier.go` | ✅ | SSA apply + dry-run implementation present |
-| OpenAPI Spec | `api/openapi.yaml` | ✅ | 132 operationIds; includes Namespace/Notification/Batch/VNC/AuthProvider/ClusterPolicy/ExternalApproval scope |
+| OpenAPI Spec | `api/openapi.yaml` | ✅ | 135 operationIds; includes Namespace/Notification/Batch/VNC/AuthProvider/ClusterPolicy/ExternalApproval scope |
 
 ---
 

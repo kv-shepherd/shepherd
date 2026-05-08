@@ -150,7 +150,8 @@
         "internal/governance/approval/registry/service.go",
         "internal/governance/approval/webhook/provider.go",
         "internal/app/router.go",
-        "web/src/features/admin-external-approval-systems/components/AdminExternalApprovalSystemsContent.tsx"
+        "web/src/features/admin-external-approval-systems/components/AdminExternalApprovalSystemsContent.tsx",
+        "web/tests/e2e/admin-crud-smoke.spec.ts"
       ]
     },
     {
@@ -175,7 +176,10 @@
         "docs/adr/ADR-0046-schema-mask-field-visibility-tiers.md"
       ],
       "examples": [
-        "docs/design/DEFERRED_FOLLOWUPS.md"
+        "docs/design/DEFERRED_FOLLOWUPS.md",
+        "web/src/features/admin-templates/components/AdminTemplatesContent.tsx",
+        "web/src/features/admin-instance-sizes/components/AdminInstanceSizesContent.tsx",
+        "web/tests/e2e/admin-crud-smoke.spec.ts"
       ]
     },
     {

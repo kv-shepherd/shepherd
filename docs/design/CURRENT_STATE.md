@@ -1,6 +1,6 @@
 # Current Implementation State
 
-> **Last audited**: 2026-05-07
+> **Last audited**: 2026-05-08
 > **Scope**: Code-vs-design alignment snapshot for `public/kubevirt-shepherd`.
 
 This document records the current implementation shape without changing any
@@ -24,7 +24,7 @@ amends or supersedes the old decision.
 | Go baseline | Go `1.25.10` |
 | Backend stack | Gin, Ent, sqlc, pgx, River, zap |
 | Database | PostgreSQL 18 baseline; Ent, sqlc, and River share one pgx pool |
-| OpenAPI | `api/openapi.yaml` is OpenAPI `3.1.0` with 132 `operationId`s |
+| OpenAPI | `api/openapi.yaml` is OpenAPI `3.1.0` with 135 `operationId`s |
 | Ent schema count | 33 schema files under `ent/schema/` |
 | KubeVirt baseline | `kubevirt.io/api` and `kubevirt.io/client-go` `v1.8.1` |
 | Kubernetes baseline | `k8s.io/*` `v0.34.3` |
@@ -57,7 +57,7 @@ amends or supersedes the old decision.
 | `ResourceWatcher` is the canonical VM status path | `internal/jobs/vm_status_sync.go` is the authoritative ResourceVersion-aware polling path. | Keep polling as canonical per ADR-0038. Watch/informer work remains optional acceleration under RFC-0020. |
 | SSA requires `controller-runtime` | SSA is implemented with `dynamic.Interface`, `types.ApplyPatchType`, and `FieldManager` in `internal/provider/ssa_applier.go`. | Keep the current dynamic-client implementation. It satisfies ADR-0011 without adding `controller-runtime` as a runtime dependency. |
 | Server-side browser sessions via `scs` | The product uses Shepherd-issued JWTs, DB-bootstrapped signing/encryption secrets, and PostgreSQL replay markers for console bootstrap credentials. | Keep the current JWT model. If active token revocation or server-side user session state becomes a requirement, that should be introduced by a new ADR/RFC. |
-| API and frontend counts from March docs | Current OpenAPI exposes 132 operationIds; frontend has 29 App Router page files. | Update summary docs and checklists. Counts are implementation facts, not ADR decisions. |
+| API and frontend counts from March docs | Current OpenAPI exposes 135 operationIds; frontend has 29 App Router page files. | Update summary docs and checklists. Counts are implementation facts, not ADR decisions. |
 
 ## Remaining Gaps
 

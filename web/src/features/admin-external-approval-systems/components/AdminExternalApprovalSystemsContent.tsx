@@ -304,6 +304,7 @@ export function AdminExternalApprovalSystemsContent() {
                             aria-label={t('common:button.edit')}
                             icon={<EditOutlined />}
                             onClick={() => openEditModal(system)}
+                            data-testid={`external-approval-system-action-edit-${system.id}`}
                         />
                     </Tooltip>
                     <Popconfirm
@@ -319,6 +320,7 @@ export function AdminExternalApprovalSystemsContent() {
                                 aria-label={t('common:button.delete')}
                                 icon={<DeleteOutlined />}
                                 loading={deleteMutation.isPending}
+                                data-testid={`external-approval-system-action-delete-${system.id}`}
                             />
                         </Tooltip>
                     </Popconfirm>
@@ -328,7 +330,7 @@ export function AdminExternalApprovalSystemsContent() {
     ];
 
     return (
-        <div className="external-approval-systems-page copy-friendly-actions">
+        <div className="external-approval-systems-page copy-friendly-actions" data-testid="external-approval-systems-page">
             <PageHeader
                 title={t('externalApprovalSystems.title')}
                 subtitle={t('externalApprovalSystems.subtitle')}
@@ -342,7 +344,12 @@ export function AdminExternalApprovalSystemsContent() {
                                 loading={systemsQuery.isFetching}
                             />
                         </Tooltip>
-                        <Button type="primary" icon={<PlusOutlined />} onClick={openCreateModal}>
+                        <Button
+                            type="primary"
+                            icon={<PlusOutlined />}
+                            onClick={openCreateModal}
+                            data-testid="external-approval-system-create-button"
+                        >
                             {t('externalApprovalSystems.action.create')}
                         </Button>
                     </Space>
@@ -437,6 +444,7 @@ export function AdminExternalApprovalSystemsContent() {
                 confirmLoading={createMutation.isPending || updateMutation.isPending}
                 destroyOnHidden={true}
                 width={720}
+                data-testid={editingSystem ? 'external-approval-system-edit-modal' : 'external-approval-system-create-modal'}
             >
                 <Form
                     form={form}

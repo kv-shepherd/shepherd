@@ -50,7 +50,7 @@ Current implementation facts:
 | Backend module | `kv-shepherd.io/shepherd` |
 | Go baseline | Go `1.25.10` |
 | Database | PostgreSQL 18, shared pgx pool for Ent + sqlc + River |
-| HTTP contract | OpenAPI `3.1.0`, 132 operationIds |
+| HTTP contract | OpenAPI `3.1.0`, 135 operationIds |
 | Ent schemas | 33 schema files |
 | KubeVirt baseline | `kubevirt.io/client-go` `v1.8.1` |
 | Frontend | React 19.2 + Next.js 16.2 + Ant Design 5 |
@@ -102,7 +102,7 @@ docs/design/
 | Phase 2 | [02-providers.md](./phases/02-providers.md) | Runtime provider baseline complete for V1. Snapshot/full clone/live migration remain RFC-backed future scope |
 | Phase 3 | [03-service-layer.md](./phases/03-service-layer.md) | Core services, use cases, manual DI, and transaction boundaries implemented |
 | Phase 4 | [04-governance.md](./phases/04-governance.md) | Governance baseline implemented: approval, audit, notifications, batch, VNC, cluster policy, status sync |
-| Phase 5 | [05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | Product surface implemented: auth, external auth, generated API, frontend routes; live E2E remains the main gap |
+| Phase 5 | [05-auth-api-frontend.md](./phases/05-auth-api-frontend.md) | Product surface implemented for current scope: auth, external auth, generated API, frontend routes, and mock E2E coverage |
 
 ## Drift Decisions
 
