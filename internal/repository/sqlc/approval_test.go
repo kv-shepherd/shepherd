@@ -3,6 +3,7 @@ package sqlc
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestQueries_AllocateServiceInstance(t *testing.T) {
 
 	systemID := "sys-allocate"
 	serviceID := "svc-allocate"
-	seedSystemAndService(ctx, t, pool, systemID, serviceID, 1)
+	seedSystemAndService(ctx, t, pool, systemID, serviceID)
 
 	row, err := q.AllocateServiceInstance(ctx, serviceID)
 	require.NoError(t, err)
@@ -33,6 +34,44 @@ func TestQueries_AllocateServiceInstance(t *testing.T) {
 	var nextIndex int32
 	require.NoError(t, pool.QueryRow(ctx, `SELECT next_instance_index FROM services WHERE id=$1`, serviceID).Scan(&nextIndex))
 	require.EqualValues(t, 2, nextIndex)
+}
+
+func TestQueries_AllocateServiceInstanceConcurrent(t *testing.T) {
+	ctx := context.Background()
+	q, pool := newSQLCTestQueries(t, "allocate_service_instance_concurrent")
+
+	systemID := "sys-allocate-concurrent"
+	serviceID := "svc-allocate-concurrent"
+	seedSystemAndService(ctx, t, pool, systemID, serviceID)
+
+	const allocations = 16
+	results := make(chan int32, allocations)
+
+	t.Cleanup(func() {
+		close(results)
+
+		seen := make(map[int32]struct{}, allocations)
+		for idx := range results {
+			seen[idx] = struct{}{}
+		}
+		require.Len(t, seen, allocations)
+		for idx := int32(1); idx <= allocations; idx++ {
+			require.Contains(t, seen, idx)
+		}
+
+		var nextIndex int32
+		require.NoError(t, pool.QueryRow(ctx, `SELECT next_instance_index FROM services WHERE id=$1`, serviceID).Scan(&nextIndex))
+		require.EqualValues(t, allocations+1, nextIndex)
+	})
+
+	for idx := range allocations {
+		t.Run(fmt.Sprintf("allocation_%02d", idx), func(t *testing.T) {
+			t.Parallel()
+			row, err := q.AllocateServiceInstance(ctx, serviceID)
+			require.NoError(t, err)
+			results <- row.AllocatedIndex
+		})
+	}
 }
 
 func TestQueries_ApproveCreateTicket(t *testing.T) {
@@ -197,7 +236,7 @@ func TestQueries_InsertVM(t *testing.T) {
 
 	systemID := "sys-insert-vm"
 	serviceID := "svc-insert-vm"
-	seedSystemAndService(ctx, t, pool, systemID, serviceID, 1)
+	seedSystemAndService(ctx, t, pool, systemID, serviceID)
 
 	vmID := "vm-insert-1"
 	err := q.InsertVM(ctx, InsertVMParams{
@@ -257,7 +296,7 @@ func TestQueries_SetVMStatus(t *testing.T) {
 
 	systemID := "sys-set-vm-status"
 	serviceID := "svc-set-vm-status"
-	seedSystemAndService(ctx, t, pool, systemID, serviceID, 1)
+	seedSystemAndService(ctx, t, pool, systemID, serviceID)
 	seedVM(ctx, t, pool, "vm-status-1", serviceID, "CREATING")
 
 	rows, err := q.SetVMStatus(ctx, SetVMStatusParams{
@@ -317,7 +356,7 @@ func newSQLCTestQueries(t *testing.T, prefix string) (*Queries, *pgxpool.Pool) {
 	return New(testPool), testPool
 }
 
-func seedSystemAndService(ctx context.Context, t *testing.T, pool *pgxpool.Pool, systemID, serviceID string, nextIndex int32) {
+func seedSystemAndService(ctx context.Context, t *testing.T, pool *pgxpool.Pool, systemID, serviceID string) {
 	t.Helper()
 	_, err := pool.Exec(
 		ctx,
@@ -333,7 +372,7 @@ func seedSystemAndService(ctx context.Context, t *testing.T, pool *pgxpool.Pool,
          VALUES ($1, NOW(), NOW(), $2, '', $3, $4)`,
 		serviceID,
 		"service-"+serviceID,
-		nextIndex,
+		1,
 		systemID,
 	)
 	require.NoError(t, err)

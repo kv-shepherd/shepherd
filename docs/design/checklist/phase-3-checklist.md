@@ -66,7 +66,7 @@
 - [x] **DatabaseClients Shared Pool** implemented
 - [x] **CreateVMAtomicUseCase Implementation** complete (`internal/usecase/approval_atomic.go`)
 - [x] **CI Block: sqlc Usage Scope Check** active (`check_sqlc_usage.sh`)
-- [ ] **Lock Key Standardization** implemented
+- [x] **Instance allocation concurrency** implemented — VM instance numbers are allocated through sqlc `AllocateServiceInstance` (`UPDATE services ... RETURNING`) inside the approval transaction, avoiding an application-side lock-key helper.
 
 ---
 

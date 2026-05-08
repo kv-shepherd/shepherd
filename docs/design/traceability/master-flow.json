@@ -206,6 +206,9 @@
         "docs/rfc/RFC-0015-per-cluster-concurrency.md",
         "internal/config/config.go",
         "internal/infrastructure/database.go",
+        "internal/repository/sqlc/approval_test.go",
+        "internal/repository/sqlc/queries/ticket.sql",
+        "internal/usecase/approval_atomic.go",
         "tools/shepherd-linter/analyzer/manualdi/analyzer.go"
       ]
     },

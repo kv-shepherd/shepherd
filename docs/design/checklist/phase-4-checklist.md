@@ -84,7 +84,7 @@
 | ApprovalGateway | `internal/governance/approval/provider_router.go`, `internal/governance/ticketing/service.go` | full | ✅ Router seam + ticket execution service with ADR-0012 atomic writer integration |
 | ApprovalValidator | `internal/service/approval_validator.go` | 27-220 | ✅ Dedicated CPU + capability matching complete |
 | ApprovalAtomicWriter | `internal/usecase/approval_atomic.go` | full | ✅ `sqlc + InsertTx` atomic commit |
-| VM Naming | `internal/service/vm_naming.go` | 29-50 | ⚠️ Legacy helper (gateway no longer depends on it) |
+| VM Instance Allocation | `internal/repository/sqlc/queries/ticket.sql`, `internal/usecase/approval_atomic.go` | full | ✅ Transaction-local `UPDATE ... RETURNING`; legacy naming helper removed |
 | VMCreateWorker | `internal/jobs/vm_create.go` | full | ✅ Retry-safe idempotency guard added |
 | VMDeleteWorker | `internal/jobs/vm_delete.go` | full | ✅ Aligned |
 | VMPowerWorker | `internal/jobs/vm_power.go` | full | ✅ Aligned |

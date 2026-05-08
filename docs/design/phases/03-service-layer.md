@@ -233,6 +233,25 @@ DatabaseClients{
 }
 ```
 
+### Service Instance Allocation
+
+VM instance numbers are allocated by `sqlc` in the same `pgx.Tx` that approves
+the ticket, marks the domain event processing, inserts the VM row, and enqueues
+the River job. The canonical query is `AllocateServiceInstance` in
+`internal/repository/sqlc/queries/ticket.sql`:
+
+```sql
+UPDATE services AS s
+SET next_instance_index = s.next_instance_index + 1
+WHERE s.id = $1
+RETURNING s.next_instance_index - 1 AS allocated_index;
+```
+
+This replaces the legacy application-side VM naming helper. PostgreSQL row-level
+write locking serializes concurrent updates to the same service row, and
+`RETURNING` gives the transaction the allocated value without a separate read.
+The behavior is covered by `TestQueries_AllocateServiceInstanceConcurrent`.
+
 ---
 
 ## 4. Governance Model Operations
@@ -415,6 +434,7 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, spec *domain.VMSpec) e
 - [x] Manual DI in `bootstrap.go` and `internal/app/modules/`
 - [x] `check_manual_di.sh` passes
 - [x] UseCase layer owns transaction orchestration for write paths
+- [x] VM service instance allocation uses transaction-local SQL `UPDATE ... RETURNING`
 - [x] Handlers return `202 Accepted` for async VM writes and batch/console request paths
 - [x] River worker concurrency is configured through queue-specific `MaxWorkers`
 - [x] Cluster/runtime degradation handling exists in approval preflight, capability detection, and worker retry paths
