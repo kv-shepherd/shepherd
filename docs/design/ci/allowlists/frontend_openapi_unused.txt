@@ -1,12 +1,4 @@
-# OpenAPI operations intentionally not consumed by frontend yet.
+# Temporary REST-client OpenAPI operations intentionally not consumed by frontend yet.
 # Format: METHOD /path
-GET /auth/providers/{provider_id}/callback
-POST /auth/providers/{provider_id}/callback
-# External approval callbacks and polling endpoints are server-to-server calls.
-GET /external-approval/pending
-POST /external-approval/tickets/{ticket_id}/decision
-POST /webhooks/approval-callback
-# Console websocket endpoints are negotiated via POST /vms/{vm_id}/console/request
-# and opened with the browser WebSocket API instead of api.get().
-GET /vms/{vm_id}/serial
-GET /vms/{vm_id}/vnc
+# Keep this file comment-only for full-completion readiness.
+# Non-REST-client operations must declare x-frontend-consumption in api/openapi.yaml.

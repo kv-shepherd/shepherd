@@ -14,17 +14,31 @@ import (
 )
 
 const (
-	openAPIPath              = "api/openapi.yaml"
-	frontendSrcDir           = "web/src"
-	allowlistPath            = "docs/design/ci/allowlists/frontend_openapi_unused.txt"
-	frontendASTScannerScript = "docs/design/ci/scripts/frontend_api_ast_scan.mjs"
+	openAPIPath                            = "api/openapi.yaml"
+	frontendSrcDir                         = "web/src"
+	allowlistPath                          = "docs/design/ci/allowlists/frontend_openapi_unused.txt"
+	frontendASTScannerScript               = "docs/design/ci/scripts/frontend_api_ast_scan.mjs"
+	frontendConsumptionExtension           = "x-frontend-consumption"
+	frontendConsumptionModeRestClient      = "rest_client"
+	frontendConsumptionModeBrowserSession  = "browser_session"
+	frontendConsumptionModeBrowserCallback = "browser_callback"
+	frontendConsumptionModeServerToServer  = "server_to_server"
 )
 
 var supportedMethods = []string{"get", "post", "put", "patch", "delete"}
 
+var supportedFrontendConsumptionModes = map[string]struct{}{
+	frontendConsumptionModeRestClient:      {},
+	frontendConsumptionModeBrowserSession:  {},
+	frontendConsumptionModeBrowserCallback: {},
+	frontendConsumptionModeServerToServer:  {},
+}
+
 type operation struct {
-	Method string
-	Path   string
+	Method                  string
+	Path                    string
+	FrontendConsumptionMode string
+	FrontendReason          string
 }
 
 type frontendASTScanResult struct {
@@ -35,6 +49,10 @@ type frontendASTScanResult struct {
 
 func (o operation) key() string {
 	return o.Method + " " + o.Path
+}
+
+func (o operation) requiresFrontendRESTClientCaller() bool {
+	return o.FrontendConsumptionMode == "" || o.FrontendConsumptionMode == frontendConsumptionModeRestClient
 }
 
 func main() {
@@ -61,10 +79,15 @@ func main() {
 	var violations []string
 	opIndex := make(map[string]operation, len(ops))
 	usedCount := 0
+	nonRESTClientCount := 0
 
 	for _, op := range ops {
 		key := op.key()
 		opIndex[key] = op
+		if !op.requiresFrontendRESTClientCaller() {
+			nonRESTClientCount++
+			continue
+		}
 		if usage[key] {
 			usedCount++
 			continue
@@ -82,6 +105,18 @@ func main() {
 		}
 		if usage[key] {
 			violations = append(violations, fmt.Sprintf("stale allowlist entry (already used in frontend): %s", key))
+			continue
+		}
+		if !opIndex[key].requiresFrontendRESTClientCaller() {
+			violations = append(
+				violations,
+				fmt.Sprintf(
+					"stale allowlist entry (operation declares %s.mode=%s): %s",
+					frontendConsumptionExtension,
+					opIndex[key].FrontendConsumptionMode,
+					key,
+				),
+			)
 		}
 	}
 
@@ -98,15 +133,19 @@ func main() {
 		for _, v := range violations {
 			fmt.Printf(" - %s\n", v)
 		}
-		fmt.Println("Rule: each OpenAPI operation must be consumed by frontend or be explicitly deferred in allowlist.")
+		fmt.Printf(
+			"Rule: each REST-client OpenAPI operation must be consumed by frontend or be explicitly deferred in allowlist; non-REST-client operations must declare %s with supported mode and reason.\n",
+			frontendConsumptionExtension,
+		)
 		fmt.Println("Rule: system delete UI must send confirm_name query parameter (ADR-0015 §13).")
 		os.Exit(1)
 	}
 
 	fmt.Printf(
-		"OK: frontend/OpenAPI usage check passed (operations=%d used=%d allowlisted=%d systemDelete=%s)\n",
+		"OK: frontend/OpenAPI usage check passed (operations=%d used=%d nonRESTClient=%d allowlisted=%d systemDelete=%s)\n",
 		len(ops),
 		usedCount,
+		nonRESTClientCount,
 		len(allowlist),
 		confirmSource(scan.SystemDeleteSourceFile),
 	)
@@ -134,12 +173,19 @@ func collectOpenAPIOperations(path string) ([]operation, error) {
 		pathKey := paths.Content[i]
 		pathNode := paths.Content[i+1]
 		for _, method := range supportedMethods {
-			if _, ok := mapValue(pathNode, method); !ok {
+			opNode, ok := mapValue(pathNode, method)
+			if !ok {
 				continue
 			}
+			mode, reason, err := parseFrontendConsumption(opNode, strings.TrimSpace(pathKey.Value), strings.ToUpper(method))
+			if err != nil {
+				return nil, err
+			}
 			ops = append(ops, operation{
-				Method: strings.ToUpper(method),
-				Path:   strings.TrimSpace(pathKey.Value),
+				Method:                  strings.ToUpper(method),
+				Path:                    strings.TrimSpace(pathKey.Value),
+				FrontendConsumptionMode: mode,
+				FrontendReason:          reason,
 			})
 		}
 	}
@@ -151,6 +197,39 @@ func collectOpenAPIOperations(path string) ([]operation, error) {
 		return ops[i].Path < ops[j].Path
 	})
 	return ops, nil
+}
+
+func parseFrontendConsumption(opNode *yaml.Node, path, method string) (string, string, error) {
+	extensionNode, ok := mapValue(opNode, frontendConsumptionExtension)
+	if !ok {
+		return frontendConsumptionModeRestClient, "", nil
+	}
+	if extensionNode.Kind != yaml.MappingNode {
+		return "", "", fmt.Errorf("%s %s: %s must be a mapping", method, path, frontendConsumptionExtension)
+	}
+
+	modeNode, ok := mapValue(extensionNode, "mode")
+	if !ok || modeNode.Kind != yaml.ScalarNode || strings.TrimSpace(modeNode.Value) == "" {
+		return "", "", fmt.Errorf("%s %s: %s.mode is required", method, path, frontendConsumptionExtension)
+	}
+	mode := strings.TrimSpace(modeNode.Value)
+	if _, ok := supportedFrontendConsumptionModes[mode]; !ok {
+		return "", "", fmt.Errorf("%s %s: unsupported %s.mode %q", method, path, frontendConsumptionExtension, mode)
+	}
+
+	reasonNode, ok := mapValue(extensionNode, "reason")
+	reason := ""
+	if ok {
+		if reasonNode.Kind != yaml.ScalarNode {
+			return "", "", fmt.Errorf("%s %s: %s.reason must be a scalar", method, path, frontendConsumptionExtension)
+		}
+		reason = strings.TrimSpace(reasonNode.Value)
+	}
+	if mode != frontendConsumptionModeRestClient && reason == "" {
+		return "", "", fmt.Errorf("%s %s: %s.reason is required for mode %s", method, path, frontendConsumptionExtension, mode)
+	}
+
+	return mode, reason, nil
 }
 
 func runFrontendASTScan(root string) (frontendASTScanResult, error) {

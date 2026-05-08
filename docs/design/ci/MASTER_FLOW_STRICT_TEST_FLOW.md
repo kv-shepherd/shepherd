@@ -45,7 +45,7 @@ Claiming "**master-flow fully completed**" additionally requires:
 
 1. No deferred API entries.
 2. No deferred stage-test entries.
-3. No frontend/OpenAPI unused allowlist debt.
+3. No frontend/OpenAPI REST-client unused allowlist debt; non-REST-client operations are explicitly tagged in OpenAPI.
 4. No strict-gate exemption debt.
 
 Run:

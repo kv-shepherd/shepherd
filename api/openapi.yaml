@@ -2537,6 +2537,9 @@ paths:
         Clients MUST NOT pass bearer credentials via URI query.
         V1 returns session bootstrap metadata; proxy internals are implementation-defined.
       operationId: openVMVNC
+      x-frontend-consumption:
+        mode: browser_session
+        reason: Browser console sessions are opened after POST /vms/{vm_id}/console/request using the bootstrap session handoff.
       security:
       - VNCBootstrapCookie: []
       x-rbac:
@@ -2584,6 +2587,9 @@ paths:
         Clients MUST NOT pass bearer credentials via URI query.
         V1 returns session bootstrap metadata; proxy internals are implementation-defined.
       operationId: openVMSerial
+      x-frontend-consumption:
+        mode: browser_session
+        reason: Browser console sessions are opened after POST /vms/{vm_id}/console/request using the bootstrap session handoff.
       security:
       - VNCBootstrapCookie: []
       x-rbac:
@@ -2914,6 +2920,9 @@ paths:
         timestamp`, where `path` is the request path sent by the client and
         `raw_query` preserves the exact query string.
       operationId: listExternalApprovalPendingTickets
+      x-frontend-consumption:
+        mode: server_to_server
+        reason: Registered external approval systems call this signed polling endpoint directly.
       security: []
       x-rbac:
         authentication: public
@@ -2991,6 +3000,9 @@ paths:
         `X-External-Approval-System-ID`. The body `ticket_id` must match the
         path `ticket_id`.
       operationId: receiveExternalApprovalTicketDecision
+      x-frontend-consumption:
+        mode: server_to_server
+        reason: Registered external approval systems call this signed decision endpoint directly.
       security: []
       x-rbac:
         authentication: public
@@ -3077,6 +3089,9 @@ paths:
         the configured signing key, and the raw JSON request body must verify
         against the `X-Signature-256` HMAC-SHA256 signature.
       operationId: receiveExternalApprovalDecision
+      x-frontend-consumption:
+        mode: server_to_server
+        reason: Registered external approval systems call this signed callback endpoint directly.
       security: []
       x-rbac:
         authentication: public
@@ -6275,6 +6290,9 @@ paths:
       tags: [auth, auth-providers]
       summary: Complete external auth-provider login callback
       operationId: completeLoginAuthProviderGet
+      x-frontend-consumption:
+        mode: browser_callback
+        reason: External auth providers redirect browsers to this HTML bridge endpoint.
       security: []
       x-rbac:
         authentication: public
@@ -6312,6 +6330,9 @@ paths:
       tags: [auth, auth-providers]
       summary: Complete form-post external auth-provider login callback
       operationId: completeLoginAuthProviderPost
+      x-frontend-consumption:
+        mode: browser_callback
+        reason: External auth providers post browsers to this HTML bridge endpoint.
       security: []
       x-rbac:
         authentication: public

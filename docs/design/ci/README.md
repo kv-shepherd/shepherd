@@ -45,7 +45,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_live_e2e_no_mock.sh](./scripts/check_live_e2e_no_mock.sh) | Block network route-mocking patterns in strict live e2e spec (`master-flow-live.spec.ts`) | Required | ✅ Yes |
 | `shepherd-arch/rbacguards` (Analyzer) | Enforce route-level/platform-admin RBAC invariants and explicit fail-closed guards for high-risk handlers | Required | ✅ Yes |
 | [check_auth_provider_plugin_boundary.go](./scripts/check_auth_provider_plugin_boundary.go) | Enforce auth-provider runtime/frontend/OpenAPI stay plugin-standard (no OIDC/LDAP hardcoded branches, no enterprise-private naming on public auth/directory surfaces, narrow contract packages stay split from root re-export files) | Required | ✅ Yes |
-| [check_frontend_openapi_usage.go](./scripts/check_frontend_openapi_usage.go) | Enforce each OpenAPI operation is consumed by frontend or explicitly deferred; guard system delete `confirm_name` flow | Required | ✅ Yes |
+| [check_frontend_openapi_usage.go](./scripts/check_frontend_openapi_usage.go) | Enforce each REST-client OpenAPI operation is consumed by frontend or explicitly deferred; require `x-frontend-consumption` metadata for non-REST-client operations; guard system delete `confirm_name` flow | Required | ✅ Yes |
 | [check_frontend_no_non_english_literals.go](./scripts/check_frontend_no_non_english_literals.go) | Block non-English hardcoded literals in frontend source (except `i18n/locales`) | Required | ✅ Yes |
 | [check_frontend_no_placeholder_pages.go](./scripts/check_frontend_no_placeholder_pages.go) | Block placeholder/stub markers in frontend route pages (`app/**/page.tsx`) | Required | ✅ Yes |
 | [check_frontend_route_shell_architecture.go](./scripts/check_frontend_route_shell_architecture.go) | Enforce route-shell thresholds for `app/**/page.tsx` (page size + write API call count), with explicit legacy allowlist + lock to prevent allowlist expansion | Required | ✅ Yes |
@@ -161,6 +161,12 @@ make test-backend-docker-pg
 make master-flow-completion
 ```
 
+Frontend/OpenAPI usage rule:
+
+- REST-client operations in `api/openapi.yaml` must be observed by the frontend AST scanner or listed as a temporary deferment in `docs/design/ci/allowlists/frontend_openapi_unused.txt`.
+- Operations that are intentionally not invoked through the generated frontend REST client must declare operation-level `x-frontend-consumption` metadata with a supported `mode` and `reason`.
+- The deferment allowlist must remain comment-only for a full-completion claim.
+
 Docs governance check:
 
 ```bash
@@ -263,7 +269,7 @@ ci/
 ├── allowlists/
 │   ├── master_flow_api_deferred.txt # Explicit deferred API paths from master-flow
 │   ├── master_flow_test_deferred.txt # Explicit deferred required stage test coverage (strict profile expects empty)
-│   ├── frontend_openapi_unused.txt   # Explicit backend operations intentionally not wired in frontend yet
+│   ├── frontend_openapi_unused.txt   # Temporary REST-client operation deferments; comment-only for completion claim
 │   ├── frontend_route_shell_legacy.txt # Temporary legacy route-shell threshold exceptions
 │   ├── test_delta_guard_exempt.txt   # Temporary exemptions for strict changed-code-has-tests gate
 │   └── module_noop_hooks.txt      # Explicit allowlist for noop module hook methods

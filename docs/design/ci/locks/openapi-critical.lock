@@ -14,5 +14,5 @@ paths./notifications/unread-count.get=c04cd857f43bb46651979b95210c08ee8ea78c7b80
 paths./notifications/{notification_id}/read.patch=e2a6432cd84833938fadc225681faafdc84208b7632a6856505121f51477e4d3
 paths./vms/{vm_id}/console/request.post=acfc24cd399059434a0d7efc8c6f0234d012ff46c3df13e60cf2f0c982253a60
 paths./vms/{vm_id}/console/status.get=964a8e695432aa045bce75ac56fb8be8013f21a9d2ba8ea63893ea0aee6cef64
-paths./vms/{vm_id}/vnc.get=ee3daed584445adb96fc4d12c16e20f67a6205cca65328e60b5c9811e1ceecfe
+paths./vms/{vm_id}/vnc.get=952482f8e884b3a41f392712b5929d0f92501859c1df61b1bd8f6afd14fc7ded
 root.security=638c48606e47eec56f1f80b05982e5a0120e7b08c18f0ec2635b407da113521a
