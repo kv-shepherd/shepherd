@@ -64,6 +64,7 @@ echo "Preparing local PR CI workspace..."
 prep_started="$(date +%s)"
 (cd "${PROJECT_ROOT}" && make ci-prep)
 (cd "${PROJECT_ROOT}" && make ci-api-sync-local)
+(cd "${PROJECT_ROOT}" && make ci-ent-generated-sync)
 echo "Local PR CI preflight passed in $(format_duration "$(( $(date +%s) - prep_started ))")."
 
 failures=0
@@ -85,7 +86,7 @@ wait_lane() {
 
 run_lane backend bash -lc "cd '${PROJECT_ROOT}' && make ci-backend"
 backend_pid="${RUN_LANE_PID}"
-run_lane governance bash -lc "cd '${PROJECT_ROOT}' && make ci-governance"
+run_lane governance bash -lc "cd '${PROJECT_ROOT}' && SKIP_ENT_CODEGEN_CHECK=1 make ci-governance"
 governance_pid="${RUN_LANE_PID}"
 
 wait_lane backend "${backend_pid}"

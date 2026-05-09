@@ -32,10 +32,12 @@
       ],
       "checklists": [
         "docs/design/checklist/phase-0-checklist.md",
+        "docs/design/checklist/phase-1-checklist.md",
         "docs/design/checklist/phase-5-checklist.md",
         "docs/design/checklist/phase-5-checklist.md#current-runtime-alignment"
       ],
       "adrs": [
+        "docs/adr/ADR-0003-database-orm.md",
         "docs/adr/ADR-0025-secret-bootstrap.md",
         "docs/adr/ADR-0028-oapi-codegen-optional-field-strategy.md",
         "docs/adr/ADR-0032-master-flow-traceability-manifest.md",
@@ -43,6 +45,7 @@
         "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
       ],
       "ci": [
+        "docs/design/ci/scripts/check_ent_codegen.go",
         "docs/design/ci/scripts/check_openapi_critical_contract.go"
       ],
       "examples": [
@@ -50,6 +53,8 @@
         "config/config.yaml.example",
         "docs/design/database/migrations.md#startup-migration-modes",
         "docs/design/frontend/FRONTEND.md",
+        "ent/generate.go",
+        "go.mod",
         "web/tests/e2e/login-smoke.spec.ts"
       ]
     },

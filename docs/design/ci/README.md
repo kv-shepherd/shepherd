@@ -86,7 +86,7 @@ Enforcement is blocking:
 | [check_no_legacy_batch1_invocations.sh](./scripts/check_no_legacy_batch1_invocations.sh) | Block CI entrypoints from invoking migrated Batch1 legacy scripts | Required | ✅ Yes |
 | [check_no_chinese_chars.sh](./scripts/check_no_chinese_chars.sh) | Block Chinese characters in repository content except approved i18n paths (`docs/i18n/zh-CN/design/interaction-flows/master-flow.md`, `web/src/i18n/locales/zh-CN/**`) | Required | ✅ Yes |
 | [check_module_noop_hooks.go](./scripts/check_module_noop_hooks.go) | Block silent noop `ContributeServerDeps` / `RegisterWorkers` hooks unless allowlisted | Required | ✅ Yes |
-| [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check helper; not wired in current required CI entrypoints | Advisory | ❌ No |
+| [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check (`go generate ./ent` + dirty tree detection); Ent generator tool dependency is pinned in `go.mod` | Required | ✅ Yes |
 | `shepherd-arch/manualdi` (Analyzer) | **Strict Manual DI convention** (centralized hand-written DI, no Wire/Redis drift) | Required | ✅ Yes |
 | [check_sqlc_usage.sh](./scripts/check_sqlc_usage.sh) | **sqlc usage scope** (ADR-0012 whitelist enforcement) | Required | ✅ Yes |
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |
@@ -225,10 +225,15 @@ Current split (2026-05-09 optimization):
 - `ci-frontend-unit-local`: local `make pr` frontend unit lane. It runs the same lint/typecheck/test/build quality dimensions, but uses Vitest `--shard` on sufficiently parallel local machines to reduce wall time without skipping test files. Set `FRONTEND_LOCAL_TEST_SHARDS=1` to force the canonical single-process local test run, or a higher positive integer to override the automatic shard count.
 - `ci-api-sync`: required API contract lane (`api lint`, `api breaking`, generated-code sync with frontend typecheck, `api-contract-test`).
 - `ci-api-sync-local`: local `make pr` API lane. It runs the same API lint/breaking/generated/contract checks, but skips the generated-sync frontend typecheck because `ci-frontend-unit` runs that exact frontend gate in the same local PR bundle.
+- `ci-ent-generated-sync`: Ent generated-code sync gate. Required CI runs it through
+  `ci-governance`; local `make pr` runs it once before parallel Go lanes and skips
+  the duplicate governance invocation to avoid concurrent `go generate ./ent` package
+  loading races.
 - `ci-e2e-smoke`: local once-only Playwright mock smoke lane.
 - `pr` / `pr-ci`: top-level local mirror for required GitHub Actions jobs. Runs the local
-  lanes in parallel after `ci-prep` and `ci-api-sync-local`, so every quality gate still runs
-  at least once while duplicate local typecheck work is avoided.
+  lanes in parallel after `ci-prep`, `ci-api-sync-local`, and `ci-ent-generated-sync`, so
+  every quality gate still runs at least once while duplicate local typecheck and Ent
+  generation work is avoided.
 - `pr-sequential`: serial fallback with the same gate coverage, useful when debugging failures.
 - GitHub Actions required jobs must call repository-owned `make` targets
   (`ci-go-lint`, `ci-go-build`, `ci-go-test`, `ci-governance`,
@@ -341,7 +346,7 @@ ci/
     ├── check_no_legacy_batch1_invocations.sh # Prevent invoking migrated Batch1 legacy scripts in CI entrypoints
     ├── check_no_chinese_chars.sh # Enforce English-only content (except approved i18n paths)
     ├── check_module_noop_hooks.go     # Noop module hook allowlist enforcement
-    ├── check_ent_codegen.go           # Advisory Ent code generation sync helper; not wired in required CI
+    ├── check_ent_codegen.go           # Ent code generation sync check
     ├── check_manual_di.sh             # Legacy reference; superseded by shepherd-arch/manualdi
     ├── check_repository_tests.go      # Repository test coverage check
     ├── check_dead_tests.go            # Dead test detection

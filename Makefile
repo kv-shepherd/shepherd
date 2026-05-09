@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.10
@@ -139,6 +139,10 @@ clean:
 docker:
 	docker build -t kubevirt-shepherd:latest .
 
+## ci-ent-generated-sync: Verify Ent generated code is in sync with schemas.
+ci-ent-generated-sync:
+	@go run docs/design/ci/scripts/check_ent_codegen.go
+
 ## ci-governance: Run canonical governance/static CI check scripts wired in GitHub Actions.
 ## shepherd-arch project scanning runs in ci-go-lint via custom-gcl; this target keeps
 ## analyzer unit tests plus non-linter governance gates to avoid duplicate scans.
@@ -153,6 +157,11 @@ ci-governance:
 	@go run docs/design/ci/scripts/check_no_runtime_placeholders.go
 	@go run docs/design/ci/scripts/check_provider_wiring.go
 	@bash docs/design/ci/scripts/check_sqlc_usage.sh
+	@if [ "$${SKIP_ENT_CODEGEN_CHECK:-0}" = "1" ]; then \
+		echo "Skipping Ent generated-code sync; already run in local PR preflight."; \
+	else \
+		$(MAKE) ci-ent-generated-sync; \
+	fi
 	@go run docs/design/ci/scripts/check_validate_spec.go
 	@go run docs/design/ci/scripts/check_openapi_critical_contract.go
 	@go run docs/design/ci/scripts/check_openapi_critical_fingerprint.go

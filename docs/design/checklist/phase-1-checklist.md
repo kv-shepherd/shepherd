@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/01-contracts.md](../phases/01-contracts.md)
 >
-> **Implementation Status**: 🔄 Partial (~96%) — 33 Ent schemas complete, Go/TS API types, frontend testing toolchain, cluster credential runtime, and provider-plugin config boundary are complete; generated-type review, Ent standards, and deferred V2 schemas remain
+> **Implementation Status**: 🔄 Partial (~98%) — 33 Ent schemas complete, Ent codegen sync gate, Go/TS API types, ADR-0028 generated-type gate, frontend testing toolchain, cluster credential runtime, and provider-plugin config boundary are complete; remaining work is Ent standards and deferred V2 schemas
 
 ---
 
@@ -81,7 +81,7 @@
 ## Ent Usage Standards (CI Enforcement)
 
 - [ ] **Schema Definition Standards** followed
-- [ ] **Code Generation Sync** (CI detection)
+- [x] **Code Generation Sync** (CI detection) — `check_ent_codegen.go` runs in `make ci-governance`; `go.mod` pins the Ent generator tool so `go generate ./ent` is reproducible without `go.sum` churn
 - [ ] **Dynamic Queries Must Be Type-Safe**
 - [ ] **Transaction Management** per ADR-0012
 - [ ] **Test Infrastructure** (PostgreSQL via testcontainers-go)
