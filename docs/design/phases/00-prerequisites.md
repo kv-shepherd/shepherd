@@ -436,10 +436,11 @@ Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING
 | Built-in roles | PlatformAdmin, ApprovalAdmin, DevelopmentEngineer, TestEngineer, SystemOperator, Viewer | ✅ reconciled at seed time |
 | Default quota | Tenant quota template | ✅ `ON CONFLICT DO NOTHING` |
 
-### Manual Migration (Development/CI)
+### Migration Verification (Development/CI)
 
-For explicit control outside the production compose wrapper, prefer the same
-startup path used in production:
+Production users should start the released Go runtime archive or Docker image;
+they should not run separate migration scripts. Development and CI checks should
+verify the same startup path used in production:
 
 ```bash
 # Server startup prepares the business schema and River tables before readiness.
@@ -448,9 +449,8 @@ DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS=true go run cmd/server/main.go
 
 Raw `atlas migrate apply` is not a fresh-database bootstrap command for this
 repository. The checked-in Atlas files are incremental migrations and expect the
-base business schema to exist. Use manual Atlas apply only for an existing
-schema or an Atlas-managed database, then run River migrations before starting
-the server.
+base business schema to exist. Use manual Atlas apply only for local diagnostics
+or emergency repair on an existing schema or Atlas-managed database.
 
 ---
 

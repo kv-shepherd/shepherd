@@ -137,9 +137,10 @@ cluster, export `E2E_KUBECONFIG_PATH=/path/to/kubeconfig` (or
 
 ### Schema Migration Behavior
 
-The production compose template defaults to
-`DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS=true`. On startup, the server inspects
-the database before opening readiness:
+Released Docker images and Go runtime archives are built to run startup
+migrations automatically. `DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS` defaults to
+`true`; production compose files keep that default. On startup, the server
+inspects the database before opening readiness:
 
 - Fresh database: the server creates the current Ent schema, records the latest
   Atlas migration as the baseline, and applies River queue migrations.
@@ -148,9 +149,10 @@ the database before opening readiness:
 - Atlas-managed schema: the server applies pending Atlas migrations normally,
   then applies River queue migrations.
 
-Do not run raw `atlas migrate apply` against an empty production database before
-the first server startup. The checked-in Atlas files are incremental migrations;
-fresh installs should use the server startup path above.
+Do not run raw `atlas migrate apply` against production databases before the
+server starts. The checked-in Atlas files are incremental migrations and the
+release artifacts already include the Atlas executable plus migration directory
+needed by the server startup path.
 
 See [`deploy/prod/.env.prod.example`](../deploy/prod/.env.prod.example) for the
 complete variable reference. Production security checklist:

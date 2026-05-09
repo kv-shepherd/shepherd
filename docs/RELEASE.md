@@ -75,7 +75,8 @@ The release process is fully automated via [release-please](https://github.com/g
    - To promote a mature line to a stable release such as `v0.1.2`, use one intentional `Release-As: 0.1.2` override or the workflow dispatch input with `release_as=0.1.2`
 
 5. **Artifact build is dispatched automatically** (`.github/workflows/release.yml`):
-   - Go binaries (linux/amd64, linux/arm64) → GitHub Release assets
+   - Go runtime archives (linux/amd64, linux/arm64) → GitHub Release assets
+     with `shepherd`, `seed`, `atlas`, and bundled Atlas migrations
    - Docker images → `ghcr.io/kv-shepherd/shepherd-server`, `shepherd-web`
    - Cosign keyless signatures for all container images
    - SHA-256 checksums
@@ -101,7 +102,7 @@ For critical security or bug fixes:
 
 | Artifact | Location | Description |
 |----------|----------|-------------|
-| Go Binaries | GitHub Release assets | `shepherd` + `seed` for linux/amd64, linux/arm64 |
+| Go Runtime Archives | GitHub Release assets | `shepherd` + `seed` + `atlas` + bundled migrations for linux/amd64, linux/arm64 |
 | Server Image | `ghcr.io/kv-shepherd/shepherd-server:vX.Y.Z` | Go backend (distroless, multi-arch) |
 | Web Image | `ghcr.io/kv-shepherd/shepherd-web:vX.Y.Z` | Next.js frontend (node:22-alpine, multi-arch) |
 | Cosign Signatures | Stored in ghcr.io | Keyless OIDC signatures for all container images |

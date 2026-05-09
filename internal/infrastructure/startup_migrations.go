@@ -211,13 +211,8 @@ func setAtlasVersion(ctx context.Context, atlasExecPath, migrationDir, dsn, vers
 }
 
 func resolveAtlasExecPath() (string, error) {
-	candidates := []string{
-		strings.TrimSpace(os.Getenv(atlasExecPathEnv)),
-		bundledAtlasExecPath,
-	}
-	if exePath, err := os.Executable(); err == nil {
-		candidates = append(candidates, filepath.Join(filepath.Dir(exePath), "atlas"))
-	}
+	exePath, _ := os.Executable()
+	candidates := atlasExecPathCandidates(os.Getenv(atlasExecPathEnv), exePath)
 	for _, candidate := range candidates {
 		if candidate == "" {
 			continue
@@ -227,24 +222,24 @@ func resolveAtlasExecPath() (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("atlas executable not found; set %s or bundle atlas with the runtime image", atlasExecPathEnv)
+	return "", fmt.Errorf("atlas executable not found; set %s or bundle atlas with the runtime artifact", atlasExecPathEnv)
+}
+
+func atlasExecPathCandidates(envPath, exePath string) []string {
+	candidates := []string{
+		strings.TrimSpace(envPath),
+		bundledAtlasExecPath,
+	}
+	if strings.TrimSpace(exePath) != "" {
+		candidates = append(candidates, filepath.Join(filepath.Dir(exePath), "atlas"))
+	}
+	return candidates
 }
 
 func resolveAtlasMigrationDir() (string, error) {
-	candidates := []string{
-		strings.TrimSpace(os.Getenv(atlasMigrationDirEnv)),
-		bundledAtlasMigrations,
-	}
-	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates, filepath.Join(cwd, "migrations", "atlas"))
-	}
-	if exePath, err := os.Executable(); err == nil {
-		exeDir := filepath.Dir(exePath)
-		candidates = append(candidates,
-			filepath.Join(exeDir, "..", "share", "shepherd", "migrations", "atlas"),
-			filepath.Join(exeDir, "..", "..", "migrations", "atlas"),
-		)
-	}
+	cwd, _ := os.Getwd()
+	exePath, _ := os.Executable()
+	candidates := atlasMigrationDirCandidates(os.Getenv(atlasMigrationDirEnv), cwd, exePath)
 	for _, candidate := range candidates {
 		if candidate == "" {
 			continue
@@ -254,7 +249,26 @@ func resolveAtlasMigrationDir() (string, error) {
 			return candidate, nil
 		}
 	}
-	return "", fmt.Errorf("atlas migration directory not found; set %s or bundle migrations with the runtime image", atlasMigrationDirEnv)
+	return "", fmt.Errorf("atlas migration directory not found; set %s or bundle migrations with the runtime artifact", atlasMigrationDirEnv)
+}
+
+func atlasMigrationDirCandidates(envPath, cwd, exePath string) []string {
+	candidates := []string{
+		strings.TrimSpace(envPath),
+		bundledAtlasMigrations,
+	}
+	if strings.TrimSpace(cwd) != "" {
+		candidates = append(candidates, filepath.Join(cwd, "migrations", "atlas"))
+	}
+	if strings.TrimSpace(exePath) != "" {
+		exeDir := filepath.Dir(exePath)
+		candidates = append(candidates,
+			filepath.Join(exeDir, "share", "shepherd", "migrations", "atlas"),
+			filepath.Join(exeDir, "..", "share", "shepherd", "migrations", "atlas"),
+			filepath.Join(exeDir, "..", "..", "migrations", "atlas"),
+		)
+	}
+	return candidates
 }
 
 func isAtlasMigrationDir(path string) bool {

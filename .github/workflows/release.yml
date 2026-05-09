@@ -1,6 +1,6 @@
 # KubeVirt Shepherd — Artifact Build Pipeline
 # Triggered by tag push (v*) from release-please. Produces:
-#   - Go binaries (linux/amd64, linux/arm64) → attached to GitHub Release
+#   - Go runtime archives (binaries + migration assets) → attached to GitHub Release
 #   - Docker images → ghcr.io with cosign keyless signatures
 #
 # Flow: release-please creates tag → this workflow builds artifacts
@@ -53,7 +53,7 @@ jobs:
           fi
           echo "::notice ::Tag=${TAG} Version=${VERSION}"
 
-  # ── Go Binaries (matrix: amd64, arm64) ──
+  # ── Go Runtime Archives (matrix: amd64, arm64) ──
   build-go:
     name: Build Go (${{ matrix.arch }})
     runs-on: ubuntu-24.04
@@ -71,7 +71,7 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
         with:
-          go-version: "1.25.10"
+          go-version-file: go.mod
 
       - name: Build binaries
         env:
@@ -82,13 +82,26 @@ jobs:
           VERSION="${{ needs.preflight.outputs.version }}"
           COMMIT="$(git rev-parse --short=8 HEAD)"
           LDFLAGS="-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          ATLAS_VERSION="$(go list -m -f '{{ .Version }}' ariga.io/atlas)"
+          ATLAS_IMAGE="arigaio/atlas:${ATLAS_VERSION#v}"
 
           mkdir -p dist
           go build -ldflags="${LDFLAGS}" -o dist/shepherd   ./cmd/server
           go build -ldflags="${LDFLAGS}" -o dist/seed       ./cmd/seed
+          atlas_container="atlas-${{ matrix.arch }}-${{ github.run_id }}-${{ github.run_attempt }}"
+          docker rm -f "${atlas_container}" >/dev/null 2>&1 || true
+          docker create \
+            --platform "linux/${{ matrix.arch }}" \
+            --name "${atlas_container}" \
+            "${ATLAS_IMAGE}"
+          docker cp "${atlas_container}:/atlas" dist/atlas
+          docker rm -f "${atlas_container}" >/dev/null
+          chmod +x dist/atlas
+          mkdir -p dist/share/shepherd/migrations
+          cp -R migrations/atlas dist/share/shepherd/migrations/atlas
 
           tar czf "shepherd-v${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
-            -C dist shepherd seed
+            -C dist shepherd seed atlas share
           sha256sum "shepherd-v${VERSION}-linux-${{ matrix.arch }}.tar.gz" \
             > "shepherd-v${VERSION}-linux-${{ matrix.arch }}.tar.gz.sha256"
 
@@ -148,6 +161,16 @@ jobs:
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.preflight.outputs.version }}
             type=raw,value=latest,enable=${{ needs.preflight.outputs.is_prerelease == 'false' }}
 
+      - name: Build metadata
+        id: build_meta
+        run: |
+          atlas_version="$(awk '$1 == "ariga.io/atlas" { print $2; exit }' go.mod)"
+          if [[ -z "${atlas_version}" ]]; then
+            echo "ariga.io/atlas dependency not found in go.mod" >&2
+            exit 1
+          fi
+          echo "atlas_image=arigaio/atlas:${atlas_version#v}" >> "$GITHUB_OUTPUT"
+
       - name: Build & Push
         id: build
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f # v7.1.0
@@ -159,6 +182,7 @@ jobs:
           platforms: linux/amd64,linux/arm64
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: ${{ matrix.image == 'server' && format('ATLAS_IMAGE={0}', steps.build_meta.outputs.atlas_image) || '' }}
           cache-from: type=gha,scope=${{ matrix.image }}
           cache-to: type=gha,mode=max,scope=${{ matrix.image }}
 

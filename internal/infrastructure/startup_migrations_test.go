@@ -95,3 +95,36 @@ func TestLatestMigrationVersion(t *testing.T) {
 		t.Fatalf("latestMigrationVersion() = %q, want %q", got, "20260427000100")
 	}
 }
+
+func TestAtlasExecPathCandidatesIncludeReleaseLayout(t *testing.T) {
+	t.Parallel()
+
+	exePath := filepath.Join(string(filepath.Separator), "opt", "shepherd", "shepherd")
+	got := atlasExecPathCandidates("", exePath)
+	want := filepath.Join(string(filepath.Separator), "opt", "shepherd", "atlas")
+
+	if !containsPath(got, want) {
+		t.Fatalf("atlasExecPathCandidates() = %#v, want %q", got, want)
+	}
+}
+
+func TestAtlasMigrationDirCandidatesIncludeReleaseLayout(t *testing.T) {
+	t.Parallel()
+
+	exePath := filepath.Join(string(filepath.Separator), "opt", "shepherd", "shepherd")
+	got := atlasMigrationDirCandidates("", "", exePath)
+	want := filepath.Join(string(filepath.Separator), "opt", "shepherd", "share", "shepherd", "migrations", "atlas")
+
+	if !containsPath(got, want) {
+		t.Fatalf("atlasMigrationDirCandidates() = %#v, want %q", got, want)
+	}
+}
+
+func containsPath(paths []string, want string) bool {
+	for _, path := range paths {
+		if path == want {
+			return true
+		}
+	}
+	return false
+}

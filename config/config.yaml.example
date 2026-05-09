@@ -41,7 +41,8 @@ database:
   max_conn_lifetime: "1h"
   max_conn_idle_time: "10m"
   auto_migrate: false
-  auto_apply_versioned_migrations: false
+  # Production default: server startup applies bundled Atlas migrations before readiness.
+  auto_apply_versioned_migrations: true
 
 session:
   lifetime: "24h"

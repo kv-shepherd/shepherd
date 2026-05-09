@@ -81,7 +81,7 @@ The following features are **explicitly out of scope** for V1:
 
 | Deliverable | File Path | Status | Notes |
 |-------------|-----------|--------|-------|
-| Atlas config | `atlas.hcl` | ✅ | Config present; migration execution remains environment-dependent |
+| Atlas config | `atlas.hcl` | ✅ | Production execution is owned by server startup; authoring commands remain development-only |
 | River Jobs | `internal/jobs/vm_create.go`, `vm_delete.go`, `vm_power.go` | ✅ | VMCreate/Delete/Power workers with retry + idempotency guard + audit |
 | EventDispatcher | `internal/domain/dispatcher.go` | ✅ | - |
 | Domain Event Payloads | `internal/domain/event.go` | ✅ | VMCreationPayload, VMDeletePayload, VMPowerPayload |
@@ -113,18 +113,22 @@ env "local" {
 }
 ```
 
-### Migration Commands
+### Development Migration Authoring
 
 ```bash
 # Generate migration
 atlas migrate diff --env local
 
-# Apply migration
+# Apply migration in a local development database
 atlas migrate apply --env local
 
-# Rollback test (CI required)
+# Rollback test in a local development database
 atlas migrate apply → atlas migrate down → atlas migrate apply
 ```
+
+Production users run the released Go runtime archive or Docker image. Startup
+applies bundled versioned migrations automatically before server readiness; do
+not require production operators to run these commands separately.
 
 ---
 

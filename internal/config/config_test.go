@@ -59,8 +59,8 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Database.MinConns != 5 {
 		t.Errorf("Database.MinConns = %d, want 5", cfg.Database.MinConns)
 	}
-	if cfg.Database.AutoApplyVersionedMigrations {
-		t.Errorf("Database.AutoApplyVersionedMigrations = %v, want false", cfg.Database.AutoApplyVersionedMigrations)
+	if !cfg.Database.AutoApplyVersionedMigrations {
+		t.Errorf("Database.AutoApplyVersionedMigrations = %v, want true", cfg.Database.AutoApplyVersionedMigrations)
 	}
 
 	// Log defaults
@@ -277,15 +277,15 @@ func TestValidate_InvalidRiverCompletedJobRetentionPeriod(t *testing.T) {
 	}
 }
 
-func TestLoad_DatabaseAutoApplyVersionedMigrationsFromEnv(t *testing.T) {
-	t.Setenv("DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS", "true")
+func TestLoad_DatabaseAutoApplyVersionedMigrationsCanBeDisabledFromEnv(t *testing.T) {
+	t.Setenv("DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS", "false")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load() error = %v", err)
 	}
-	if !cfg.Database.AutoApplyVersionedMigrations {
-		t.Fatalf("Database.AutoApplyVersionedMigrations = %v, want true", cfg.Database.AutoApplyVersionedMigrations)
+	if cfg.Database.AutoApplyVersionedMigrations {
+		t.Fatalf("Database.AutoApplyVersionedMigrations = %v, want false", cfg.Database.AutoApplyVersionedMigrations)
 	}
 }
 

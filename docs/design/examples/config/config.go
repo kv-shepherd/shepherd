@@ -132,7 +132,7 @@ func setDefaults() {
 	viper.SetDefault("database.max_conn_lifetime", "1h")
 	viper.SetDefault("database.max_conn_idle_time", "10m")
 	viper.SetDefault("database.auto_migrate", false)
-	viper.SetDefault("database.auto_apply_versioned_migrations", false)
+	viper.SetDefault("database.auto_apply_versioned_migrations", true)
 
 	// Session (PostgreSQL-based, replaces Redis)
 	viper.SetDefault("session.lifetime", "24h")

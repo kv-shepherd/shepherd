@@ -42,6 +42,8 @@
         "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
       ],
       "examples": [
+        ".github/workflows/release.yml",
+        "config/config.yaml.example",
         "docs/design/database/migrations.md#startup-migration-modes",
         "docs/design/frontend/FRONTEND.md",
         "web/tests/e2e/login-smoke.spec.ts"
