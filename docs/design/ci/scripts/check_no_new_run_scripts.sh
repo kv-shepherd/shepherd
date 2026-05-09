@@ -2,8 +2,9 @@
 # check_no_new_run_scripts.sh — ADR-0039 §6 CI Gate
 #
 # Prevents new .go scripts from being added to docs/design/ci/scripts/.
-# All new Go-based CI gates MUST be written as go/analysis.Analyzer entries
-# in tools/shepherd-linter/ instead.
+# New Go-source architecture gates MUST be written as go/analysis.Analyzer
+# entries in tools/shepherd-linter/ instead. Cross-artifact checks should
+# extend an existing gate or explicitly update the ADR-0039 policy first.
 #
 # Usage:
 #   bash docs/design/ci/scripts/check_no_new_run_scripts.sh
@@ -85,8 +86,10 @@ for file in "$SCRIPTS_DIR"/*.go; do
   basename=$(basename "$file")
   if [ -z "${known_set[$basename]+_}" ]; then
     echo "ERROR (ADR-0039): New .go script detected in $SCRIPTS_DIR: $basename"
-    echo "  → New Go-based CI gates MUST be written as go/analysis.Analyzer"
-    echo "    entries in tools/shepherd-linter/ (see ADR-0039 §6)."
+    echo "  -> Go-source architecture gates MUST be go/analysis.Analyzer entries"
+    echo "     in tools/shepherd-linter/analyzer/<name>/ and wired through plugin.go."
+    echo "  -> Cross-artifact gates should extend an existing script/checker, or first"
+    echo "     update ADR-0039/design CI policy with the exception rationale."
     violations=$((violations + 1))
   fi
 done
@@ -94,7 +97,7 @@ done
 if [ "$violations" -gt 0 ]; then
   echo ""
   echo "FAIL: $violations new .go script(s) found in $SCRIPTS_DIR."
-  echo "Move them to tools/shepherd-linter/analyzer/<name>/ as go/analysis Analyzers."
+  echo "Move Go-source checks to tools/shepherd-linter/analyzer/<name>/ as go/analysis Analyzers."
   exit 1
 fi
 

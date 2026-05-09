@@ -139,10 +139,11 @@ clean:
 docker:
 	docker build -t kubevirt-shepherd:latest .
 
-## ci-governance: Run canonical governance/static CI check scripts wired in GitHub Actions
+## ci-governance: Run canonical governance/static CI check scripts wired in GitHub Actions.
+## shepherd-arch project scanning runs in ci-go-lint via custom-gcl; this target keeps
+## analyzer unit tests plus non-linter governance gates to avoid duplicate scans.
 ci-governance:
 	@echo "Running CI checks..."
-	@$(MAKE) lint-arch
 	@$(MAKE) test-shepherd-linter
 	@bash docs/design/ci/scripts/check_no_new_run_scripts.sh
 	@bash docs/design/ci/scripts/check_no_legacy_batch1_invocations.sh

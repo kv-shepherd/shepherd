@@ -20,6 +20,38 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 
 ---
 
+## ADR-0039 Gate Authoring Policy
+
+ADR-0039 does not ban Go implementations for every governance check. It bans
+adding new standalone `go run docs/design/ci/scripts/*.go` gates for Go-source
+architecture rules.
+
+- New checks that inspect Go source architecture, imports, call patterns, layer
+  boundaries, or runtime-code AST must be implemented as `go/analysis.Analyzer`
+  packages under `tools/shepherd-linter/analyzer/<name>/`, covered by
+  `analysistest`, and wired through `tools/shepherd-linter/plugin.go`.
+- Cross-artifact consistency checks that read OpenAPI YAML, Markdown, JSON
+  manifests, frontend source, allowlists, locks, or generated-code snapshots may
+  remain in the governance script layer. Prefer extending an existing checker
+  over adding a new runner; new standalone Go scripts require an explicit
+  ADR-0039/design-policy update.
+- Shell scripts remain valid for repository glue, diff checks, generated-code
+  commands, and non-Go artifacts.
+
+Enforcement is blocking:
+
+- `check_no_new_run_scripts.sh` fails CI when a new `.go` file appears under
+  `docs/design/ci/scripts/` without being grandfathered.
+- `check_no_legacy_batch1_invocations.sh` fails CI if migrated legacy checks are
+  invoked directly instead of through `shepherd-arch`.
+- `ci-go-lint` is the canonical project scan for `shepherd-arch` via the
+  `custom-gcl` golangci-lint module plugin.
+- `ci-governance` runs shepherd-linter unit tests plus the non-linter governance
+  gates; it intentionally does not run a second project-wide `shepherd-arch`
+  scan.
+
+---
+
 ## Script Summary
 
 | Script | Check Content | Level | Blocks CI |
@@ -50,11 +82,11 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | [check_frontend_no_placeholder_pages.go](./scripts/check_frontend_no_placeholder_pages.go) | Block placeholder/stub markers in frontend route pages (`app/**/page.tsx`) | Required | ✅ Yes |
 | [check_frontend_route_shell_architecture.go](./scripts/check_frontend_route_shell_architecture.go) | Enforce route-shell thresholds for `app/**/page.tsx` (page size + write API call count), with explicit legacy allowlist + lock to prevent allowlist expansion | Required | ✅ Yes |
 | [check_changed_code_has_tests.sh](./scripts/check_changed_code_has_tests.sh) | Enforce strict test-first delta: runtime code changes must include corresponding test changes | Required | ✅ Yes |
-| [check_no_new_run_scripts.sh](./scripts/check_no_new_run_scripts.sh) | Block adding new Go-based CI scripts in `docs/design/ci/scripts/` (must use `shepherd-linter`) | Required | ✅ Yes |
+| [check_no_new_run_scripts.sh](./scripts/check_no_new_run_scripts.sh) | Block adding new standalone Go scripts in `docs/design/ci/scripts/`; Go-source architecture gates must use `shepherd-linter` | Required | ✅ Yes |
 | [check_no_legacy_batch1_invocations.sh](./scripts/check_no_legacy_batch1_invocations.sh) | Block CI entrypoints from invoking migrated Batch1 legacy scripts | Required | ✅ Yes |
 | [check_no_chinese_chars.sh](./scripts/check_no_chinese_chars.sh) | Block Chinese characters in repository content except approved i18n paths (`docs/i18n/zh-CN/design/interaction-flows/master-flow.md`, `web/src/i18n/locales/zh-CN/**`) | Required | ✅ Yes |
 | [check_module_noop_hooks.go](./scripts/check_module_noop_hooks.go) | Block silent noop `ContributeServerDeps` / `RegisterWorkers` hooks unless allowlisted | Required | ✅ Yes |
-| [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check | Required | ✅ Yes |
+| [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check helper; not wired in current required CI entrypoints | Advisory | ❌ No |
 | `shepherd-arch/manualdi` (Analyzer) | **Strict Manual DI convention** (centralized hand-written DI, no Wire/Redis drift) | Required | ✅ Yes |
 | [check_sqlc_usage.sh](./scripts/check_sqlc_usage.sh) | **sqlc usage scope** (ADR-0012 whitelist enforcement) | Required | ✅ Yes |
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |
@@ -177,14 +209,16 @@ bash docs/design/ci/scripts/check_design_doc_governance.sh
 
 See the build job in `.github/workflows/ci.yml`.
 
-Current split (2026-04-27 optimization):
+Current split (2026-05-09 optimization):
 
 - `ci-checks` / `ci-governance`: canonical static governance and strict script gates only.
-  Frontend typecheck/unit and API generated-code sync no longer duplicate here.
+  Frontend typecheck/unit, API generated-code sync, and project-wide `shepherd-arch`
+  scans no longer duplicate here.
 - `ci-prep`: shared local dependency preflight (`npm ci`) before parallel lanes.
 - `master-flow-strict`: PostgreSQL behavior suites + optional live e2e (`ENABLE_LIVE_E2E=true`).
 - `lint`: top-level blocking lint bundle. Runs `govulncheck`, frontend dead-code/dependency
-  hygiene (`knip`), and the Go lint stack together.
+  hygiene (`knip`), and the Go lint stack together. The Go lint stack includes
+  `shepherd-arch` through the `custom-gcl` golangci-lint module plugin.
 - `ci-backend`: local once-only Go lane (`govulncheck`, Go lint, race test, build).
 - `ci-frontend`: local once-only frontend lane (`npm audit` high-severity gate, `knip`, `lint`, `typecheck`, sharded local `vitest`, `build`).
 - `ci-frontend-unit`: required GitHub Actions frontend unit job target. It keeps the canonical single-process `npm run test:run` behavior for predictable remote CI.
@@ -307,7 +341,7 @@ ci/
     ├── check_no_legacy_batch1_invocations.sh # Prevent invoking migrated Batch1 legacy scripts in CI entrypoints
     ├── check_no_chinese_chars.sh # Enforce English-only content (except approved i18n paths)
     ├── check_module_noop_hooks.go     # Noop module hook allowlist enforcement
-    ├── check_ent_codegen.go           # Ent code generation sync check
+    ├── check_ent_codegen.go           # Advisory Ent code generation sync helper; not wired in required CI
     ├── check_manual_di.sh             # Legacy reference; superseded by shepherd-arch/manualdi
     ├── check_repository_tests.go      # Repository test coverage check
     ├── check_dead_tests.go            # Dead test detection
