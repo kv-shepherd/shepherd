@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"io"
@@ -87,12 +89,18 @@ func (s *Server) receiveExternalApprovalDecision(c *gin.Context, systemID, signa
 		return
 	}
 
+	timestampHeader, ok := validateExternalApprovalSignatureTimestamp(c)
+	if !ok {
+		return
+	}
+
 	_, signingKey, err := s.externalApprovalRegistry.CallbackSigningKey(ctx, systemID)
 	if err != nil {
 		writeExternalApprovalCallbackRegistryError(c, err, systemID)
 		return
 	}
-	if !approvalwebhook.VerifySignature(rawBody, []byte(signingKey), signature) {
+	signaturePayload := externalApprovalDecisionSignaturePayload(c, timestampHeader, rawBody)
+	if !approvalwebhook.VerifySignature(signaturePayload, []byte(signingKey), signature) {
 		logger.Warn("external approval callback signature verification failed",
 			zap.String("external_approval_system_id", systemID),
 			zap.String("ticket_id", firstNonEmptyString(headerTicketID, pathTicketID)),
@@ -141,19 +149,8 @@ func (s *Server) verifyExternalApprovalPollingSignature(c *gin.Context, systemID
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
 		return false
 	}
-	timestampHeader := strings.TrimSpace(c.GetHeader(externalApprovalTimestampHeader))
-	if timestampHeader == "" {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
-		return false
-	}
-	timestamp, err := time.Parse(time.RFC3339Nano, timestampHeader)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
-		return false
-	}
-	age := time.Since(timestamp)
-	if age > externalApprovalSignatureTolerance || age < -externalApprovalSignatureTolerance {
-		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+	timestampHeader, ok := validateExternalApprovalSignatureTimestamp(c)
+	if !ok {
 		return false
 	}
 
@@ -171,6 +168,25 @@ func (s *Server) verifyExternalApprovalPollingSignature(c *gin.Context, systemID
 		return false
 	}
 	return true
+}
+
+func validateExternalApprovalSignatureTimestamp(c *gin.Context) (string, bool) {
+	timestampHeader := strings.TrimSpace(c.GetHeader(externalApprovalTimestampHeader))
+	if timestampHeader == "" {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+		return "", false
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, timestampHeader)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
+		return "", false
+	}
+	age := time.Since(timestamp)
+	if age > externalApprovalSignatureTolerance || age < -externalApprovalSignatureTolerance {
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+		return "", false
+	}
+	return timestampHeader, true
 }
 
 func externalApprovalPollingSignaturePayload(c *gin.Context, timestampHeader string) []byte {
@@ -192,6 +208,30 @@ func externalApprovalPollingSignaturePayload(c *gin.Context, timestampHeader str
 		path,
 		rawQuery,
 		strings.TrimSpace(timestampHeader),
+	}, "\n"))
+}
+
+func externalApprovalDecisionSignaturePayload(c *gin.Context, timestampHeader string, rawBody []byte) []byte {
+	bodyHash := sha256.Sum256(rawBody)
+	method := ""
+	path := ""
+	rawQuery := ""
+	if c != nil && c.Request != nil {
+		method = c.Request.Method
+		if c.Request.URL != nil {
+			path = c.Request.URL.EscapedPath()
+			if path == "" {
+				path = c.Request.URL.Path
+			}
+			rawQuery = c.Request.URL.RawQuery
+		}
+	}
+	return []byte(strings.Join([]string{
+		strings.ToUpper(method),
+		path,
+		rawQuery,
+		strings.TrimSpace(timestampHeader),
+		hex.EncodeToString(bodyHash[:]),
 	}, "\n"))
 }
 

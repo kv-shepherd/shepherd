@@ -815,7 +815,7 @@ func (s *Server) upgradeConsoleWebSocket(c *gin.Context, consolePath string) (*w
 func (s *Server) consoleOriginAllowed(r *http.Request) bool {
 	origin := strings.TrimSpace(r.Header.Get("Origin"))
 	if origin == "" {
-		return true
+		return false
 	}
 	requestOrigin := requestOriginForConsole(r)
 	if requestOrigin != "" && sameExternalAuthOrigin(origin, requestOrigin) {

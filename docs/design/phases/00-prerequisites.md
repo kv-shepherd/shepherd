@@ -121,7 +121,7 @@ kubevirt-shepherd-go/
 | Viper for config | Standard Go config library, supports file + env |
 | Standard env vars | ADR-0018: `DATABASE_URL`, `SERVER_PORT`, `LOG_LEVEL` (no prefix) |
 | Shared connection pool | ADR-0012: Ent + River + sqlc share same pgxpool |
-| JWT auth with PostgreSQL-backed bootstrap secrets | Redis removed; signing/encryption secrets are generated and persisted in PostgreSQL when absent |
+| JWT auth with explicit release-mode secrets | Redis removed; production signing/encryption secrets must be provided explicitly, while non-release environments can use PostgreSQL-backed bootstrap secrets when absent |
 
 ### Configuration Classification
 

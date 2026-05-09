@@ -807,8 +807,11 @@ export interface paths {
         /**
          * Receive an external approval decision for a polled ticket
          * @description Public server-to-server decision endpoint for polling-mode external
-         *     approval systems. The raw JSON body must verify against
-         *     `X-Signature-256` using the signing key selected by
+         *     approval systems. The request must include
+         *     `X-External-Approval-System-ID`, `X-Shepherd-Timestamp`, and
+         *     `X-Signature-256`. The signature is HMAC-SHA256 over `METHOD + "\n" +
+         *     path + "\n" + raw_query + "\n" + timestamp + "\n" +
+         *     lowercase_hex_sha256(raw_body)`, using the signing key selected by
          *     `X-External-Approval-System-ID`. The body `ticket_id` must match the
          *     path `ticket_id`.
          */
@@ -830,9 +833,12 @@ export interface paths {
         put?: never;
         /**
          * Receive an external approval decision callback
-         * @description Public server-to-server callback endpoint. The external system id selects
-         *     the configured signing key, and the raw JSON request body must verify
-         *     against the `X-Signature-256` HMAC-SHA256 signature.
+         * @description Public server-to-server callback endpoint. The request must include
+         *     `X-External-Approval-System-ID`, `X-Shepherd-Timestamp`, and
+         *     `X-Signature-256`. The signature is HMAC-SHA256 over `METHOD + "\n" +
+         *     path + "\n" + raw_query + "\n" + timestamp + "\n" +
+         *     lowercase_hex_sha256(raw_body)`, using the signing key selected by
+         *     `X-External-Approval-System-ID`.
          */
         post: operations["receiveExternalApprovalDecision"];
         delete?: never;
@@ -11066,7 +11072,12 @@ export interface operations {
                  */
                 "X-External-Approval-System-ID": string;
                 /**
-                 * @description HMAC-SHA256 signature over the raw JSON request body, formatted as `sha256=<hex>`.
+                 * @description RFC3339 timestamp included in the decision request signature.
+                 * @example 2026-01-01T00:00:00Z
+                 */
+                "X-Shepherd-Timestamp": string;
+                /**
+                 * @description HMAC-SHA256 signature over the canonical decision request, formatted as `sha256=<hex>`.
                  * @example sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
                  */
                 "X-Signature-256": string;
@@ -11143,7 +11154,12 @@ export interface operations {
                  */
                 "X-External-Approval-System-ID": string;
                 /**
-                 * @description HMAC-SHA256 signature over the raw JSON request body, formatted as `sha256=<hex>`.
+                 * @description RFC3339 timestamp included in the callback request signature.
+                 * @example 2026-01-01T00:00:00Z
+                 */
+                "X-Shepherd-Timestamp": string;
+                /**
+                 * @description HMAC-SHA256 signature over the canonical callback request, formatted as `sha256=<hex>`.
                  * @example sha256=4d967c9f1f0f6e5b2e9d39c78f1a9e6b5f4e3d2c1b0a99887766554433221100
                  */
                 "X-Signature-256": string;

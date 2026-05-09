@@ -122,6 +122,9 @@ needs_generated_secret() {
         POSTGRES_PASSWORD|DEV_ADMIN_PASSWORD)
             [[ ${#value} -lt 16 ]] && return 0
             ;;
+        SECURITY_SESSION_SECRET)
+            [[ ${#value} -lt 32 ]] && return 0
+            ;;
     esac
 
     return 1
@@ -318,6 +321,8 @@ prepare_runtime_values() {
     if should_prepare_bundled_postgres_values; then
         ensure_generated_secret POSTGRES_PASSWORD 16
     fi
+    ensure_generated_secret SECURITY_SESSION_SECRET 32
+    ensure_generated_secret SECURITY_ENCRYPTION_KEY 32
     ensure_generated_secret DEV_ADMIN_PASSWORD 16
     sync_bundled_database_url
 }
@@ -434,11 +439,13 @@ if [[ "${BUNDLED_POSTGRES}" == "1" ]]; then
     fi
 fi
 
-if [[ -z "${SECURITY_SESSION_SECRET:-}" ]]; then
-    echo "INFO: SECURITY_SESSION_SECRET is empty; the server will load or generate a PostgreSQL-backed bootstrap secret."
+if [[ ${#SECURITY_SESSION_SECRET} -lt 32 ]]; then
+    echo "ERROR: SECURITY_SESSION_SECRET must be at least 32 characters in ${ENV_FILE}"
+    exit 1
 fi
-if [[ -z "${SECURITY_ENCRYPTION_KEY:-}" ]]; then
-    echo "INFO: SECURITY_ENCRYPTION_KEY is empty; the server will load or generate a PostgreSQL-backed bootstrap secret."
+if [[ ! "${SECURITY_ENCRYPTION_KEY}" =~ ^[0-9A-Fa-f]{64}$ ]]; then
+    echo "ERROR: SECURITY_ENCRYPTION_KEY must be a 64-character hex-encoded AES-256 key in ${ENV_FILE}"
+    exit 1
 fi
 
 # Check TLS certificate

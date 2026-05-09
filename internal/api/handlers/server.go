@@ -167,7 +167,7 @@ func NewServer(deps ServerDeps) *Server {
 		sessionCfg:           deps.SessionConfig,
 		passwordPolicy:       deps.PasswordPolicy,
 		loginRateLimitCfg:    normalizeLoginRateLimitConfig(deps.LoginRateLimitConfig),
-		loginRateLimiter:     newLoginAttemptLimiter(deps.LoginRateLimitConfig),
+		loginRateLimiter:     newLoginAttemptLimiterWithStore(deps.LoginRateLimitConfig, newPostgresLoginAttemptStore(deps.Pool)),
 		refreshClusterHealth: deps.RefreshClusterHealth,
 		riverClient:          deps.RiverClient,
 		notifier:             deps.Notifier,

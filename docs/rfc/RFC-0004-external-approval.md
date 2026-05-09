@@ -148,7 +148,8 @@ GET /api/v1/external-approval/pending?page=1&per_page=20
 → Signature: HMAC-SHA256 over METHOD, path, raw query, and timestamp
 
 POST /api/v1/external-approval/tickets/{ticket_id}/decision
-→ Submit decision with signature verification
+→ Headers: X-External-Approval-System-ID, X-Shepherd-Timestamp, X-Signature-256
+→ Signature: HMAC-SHA256 over METHOD, path, raw query, timestamp, and SHA-256 body hash
 → Body ticket_id must match the path ticket_id
 ```
 
@@ -160,7 +161,7 @@ POST /api/v1/external-approval/tickets/{ticket_id}/decision
 |-------------|---------------|
 | **Transport Security** | TLS 1.2+ mandatory for all webhook traffic |
 | **Request Signing** | HMAC-SHA256 signature in `X-Signature-256` header |
-| **Callback Verification** | HMAC-SHA256 verification of the raw callback body; `X-External-Approval-System-ID` selects the encrypted signing key |
+| **Callback Verification** | Timestamped HMAC-SHA256 verification over the canonical callback request; `X-External-Approval-System-ID` selects the encrypted signing key |
 | **Polling Verification** | Timestamped HMAC-SHA256 verification over the canonical polling request; stale timestamps are rejected |
 | **Secret Storage** | AES-256-GCM encryption at rest |
 | **Audit Logging** | All external calls logged (redact secrets per ADR-0019) |

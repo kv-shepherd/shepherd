@@ -2506,7 +2506,8 @@ Key persisted data (schema authority remains in phase/database docs):
 // POST https://shepherd.company.com/api/v1/webhooks/approval-callback
 // Headers:
 //   X-External-Approval-System-ID: external-approval-001
-//   X-Signature-256: sha256=<hex HMAC-SHA256 signature of raw body>
+//   X-Shepherd-Timestamp: 2026-01-26T11:30:00Z
+//   X-Signature-256: sha256=<hex HMAC-SHA256 signature of canonical request>
 //   X-Ticket-ID: ticket-001
 //   Content-Type: application/json
 {

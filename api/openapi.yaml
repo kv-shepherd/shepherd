@@ -2995,8 +2995,11 @@ paths:
       summary: Receive an external approval decision for a polled ticket
       description: |
         Public server-to-server decision endpoint for polling-mode external
-        approval systems. The raw JSON body must verify against
-        `X-Signature-256` using the signing key selected by
+        approval systems. The request must include
+        `X-External-Approval-System-ID`, `X-Shepherd-Timestamp`, and
+        `X-Signature-256`. The signature is HMAC-SHA256 over `METHOD + "\n" +
+        path + "\n" + raw_query + "\n" + timestamp + "\n" +
+        lowercase_hex_sha256(raw_body)`, using the signing key selected by
         `X-External-Approval-System-ID`. The body `ticket_id` must match the
         path `ticket_id`.
       operationId: receiveExternalApprovalTicketDecision
@@ -3017,9 +3020,18 @@ paths:
           type: string
           example: external-approval-001
         example: external-approval-001
+      - name: X-Shepherd-Timestamp
+        in: header
+        description: RFC3339 timestamp included in the decision request signature.
+        required: true
+        schema:
+          type: string
+          format: date-time
+          example: '2026-01-01T00:00:00Z'
+        example: '2026-01-01T00:00:00Z'
       - name: X-Signature-256
         in: header
-        description: HMAC-SHA256 signature over the raw JSON request body, formatted as `sha256=<hex>`.
+        description: HMAC-SHA256 signature over the canonical decision request, formatted as `sha256=<hex>`.
         required: true
         schema:
           type: string
@@ -3085,9 +3097,12 @@ paths:
       tags: [external-approval]
       summary: Receive an external approval decision callback
       description: |
-        Public server-to-server callback endpoint. The external system id selects
-        the configured signing key, and the raw JSON request body must verify
-        against the `X-Signature-256` HMAC-SHA256 signature.
+        Public server-to-server callback endpoint. The request must include
+        `X-External-Approval-System-ID`, `X-Shepherd-Timestamp`, and
+        `X-Signature-256`. The signature is HMAC-SHA256 over `METHOD + "\n" +
+        path + "\n" + raw_query + "\n" + timestamp + "\n" +
+        lowercase_hex_sha256(raw_body)`, using the signing key selected by
+        `X-External-Approval-System-ID`.
       operationId: receiveExternalApprovalDecision
       x-frontend-consumption:
         mode: server_to_server
@@ -3105,9 +3120,18 @@ paths:
           type: string
           example: external-approval-001
         example: external-approval-001
+      - name: X-Shepherd-Timestamp
+        in: header
+        description: RFC3339 timestamp included in the callback request signature.
+        required: true
+        schema:
+          type: string
+          format: date-time
+          example: '2026-01-01T00:00:00Z'
+        example: '2026-01-01T00:00:00Z'
       - name: X-Signature-256
         in: header
-        description: HMAC-SHA256 signature over the raw JSON request body, formatted as `sha256=<hex>`.
+        description: HMAC-SHA256 signature over the canonical callback request, formatted as `sha256=<hex>`.
         required: true
         schema:
           type: string

@@ -9,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
 func TestLoginAttemptLimiterBlocksAndExpires(t *testing.T) {
@@ -23,23 +24,23 @@ func TestLoginAttemptLimiterBlocksAndExpires(t *testing.T) {
 	now := time.Date(2026, 4, 28, 9, 0, 0, 0, time.UTC)
 	limiter.now = func() time.Time { return now }
 
-	if allowed, _ := limiter.allow("alice", "203.0.113.10"); !allowed {
-		t.Fatal("unexpected initial block")
+	if allowed, _, err := limiter.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || !allowed {
+		t.Fatalf("initial allow allowed=%v err=%v, want allowed", allowed, err)
 	}
 
 	limiter.recordFailure("alice", "203.0.113.10")
-	if allowed, _ := limiter.allow("alice", "203.0.113.10"); !allowed {
-		t.Fatal("unexpected block after one failure")
+	if allowed, _, err := limiter.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || !allowed {
+		t.Fatalf("allow after one failure allowed=%v err=%v, want allowed", allowed, err)
 	}
 
 	limiter.recordFailure("alice", "203.0.113.10")
-	if allowed, retryAfter := limiter.allow("alice", "203.0.113.10"); allowed || retryAfter <= 0 {
-		t.Fatalf("expected block after repeated failures, allowed=%v retry_after=%v", allowed, retryAfter)
+	if allowed, retryAfter, err := limiter.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || allowed || retryAfter <= 0 {
+		t.Fatalf("expected block after repeated failures, allowed=%v retry_after=%v err=%v", allowed, retryAfter, err)
 	}
 
 	now = now.Add(2 * time.Minute)
-	if allowed, _ := limiter.allow("alice", "203.0.113.10"); !allowed {
-		t.Fatal("expected block to expire")
+	if allowed, _, err := limiter.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || !allowed {
+		t.Fatalf("allow after expiry allowed=%v err=%v, want allowed", allowed, err)
 	}
 }
 
@@ -56,8 +57,47 @@ func TestLoginAttemptLimiterSuccessClearsBuckets(t *testing.T) {
 	limiter.recordFailure("alice", "203.0.113.10")
 	limiter.recordSuccess("alice", "203.0.113.10")
 
-	if allowed, _ := limiter.allow("alice", "203.0.113.10"); !allowed {
-		t.Fatal("expected success to clear prior failure state")
+	if allowed, _, err := limiter.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || !allowed {
+		t.Fatalf("allow after success allowed=%v err=%v, want allowed", allowed, err)
+	}
+}
+
+func TestPostgresLoginAttemptStoreSharesBucketsAcrossLimiters(t *testing.T) {
+	t.Parallel()
+
+	pool := testutil.OpenPGXPool(t, "login_rate_limit")
+	cfg := config.LoginRateLimit{
+		Enabled:       true,
+		MaxFailures:   2,
+		Window:        time.Minute,
+		BlockDuration: 2 * time.Minute,
+	}
+	now := time.Date(2026, 5, 9, 12, 0, 0, 0, time.UTC)
+
+	limiterA := newLoginAttemptLimiterWithStore(cfg, newPostgresLoginAttemptStore(pool))
+	limiterA.now = func() time.Time { return now }
+	limiterB := newLoginAttemptLimiterWithStore(cfg, newPostgresLoginAttemptStore(pool))
+	limiterB.now = func() time.Time { return now }
+
+	if err := limiterA.recordFailureContext(t.Context(), "alice", "203.0.113.10"); err != nil {
+		t.Fatalf("record first failure: %v", err)
+	}
+	if allowed, _, err := limiterB.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || !allowed {
+		t.Fatalf("allow after one shared failure allowed=%v err=%v, want allowed", allowed, err)
+	}
+
+	if err := limiterB.recordFailureContext(t.Context(), "alice", "203.0.113.10"); err != nil {
+		t.Fatalf("record second failure: %v", err)
+	}
+	if allowed, retryAfter, err := limiterA.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || allowed || retryAfter <= 0 {
+		t.Fatalf("expected shared block, allowed=%v retry_after=%v err=%v", allowed, retryAfter, err)
+	}
+
+	if err := limiterA.recordSuccessContext(t.Context(), "alice", "203.0.113.10"); err != nil {
+		t.Fatalf("record success: %v", err)
+	}
+	if allowed, _, err := limiterB.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || !allowed {
+		t.Fatalf("allow after shared success clear allowed=%v err=%v, want allowed", allowed, err)
 	}
 }
 

@@ -163,6 +163,7 @@
         "internal/governance/approval/registry/service.go",
         "internal/governance/approval/webhook/provider.go",
         "internal/app/router.go",
+        "docs/rfc/RFC-0004-external-approval.md",
         "web/src/features/admin-external-approval-systems/components/AdminExternalApprovalSystemsContent.tsx",
         "web/tests/e2e/admin-crud-smoke.spec.ts"
       ]

@@ -16,6 +16,8 @@ COMPAT_SPEC := api/openapi.compat.yaml
 SPECEMBED_SPEC := internal/api/specembed/openapi.yaml
 VACUUM_CONFIG := api/.vacuum.yaml
 VACUUM_IGNORE_FILE := api/.vacuum-ignore.yaml
+OASDIFF_ERR_IGNORE := api/oasdiff.err-ignore.txt
+OASDIFF_ERR_IGNORE_ARG := $(if $(wildcard $(OASDIFF_ERR_IGNORE)),--err-ignore $(OASDIFF_ERR_IGNORE),)
 GO_GENERATED_DIR := internal/api/generated
 TS_GENERATED_FILE := web/src/types/api.gen.ts
 OAPI_CODEGEN_CONFIG := api/oapi-codegen.yaml
@@ -90,7 +92,7 @@ api-breaking: ## Detect breaking changes vs main branch
 	@echo "🔍 Checking for breaking changes..."
 	@git fetch origin $(BASE_REF) --quiet 2>/dev/null || true
 	@if git show origin/$(BASE_REF):$(OPENAPI_SPEC) > /tmp/openapi-base.yaml 2>/dev/null; then \
-		$(OASDIFF_CMD) breaking /tmp/openapi-base.yaml $(OPENAPI_SPEC) --fail-on ERR; \
+		$(OASDIFF_CMD) breaking /tmp/openapi-base.yaml $(OPENAPI_SPEC) $(OASDIFF_ERR_IGNORE_ARG) --fail-on ERR; \
 	else \
 		echo "⚠️  No base spec found on $(BASE_REF) branch (new API?)"; \
 	fi

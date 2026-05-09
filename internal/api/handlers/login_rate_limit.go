@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"math"
 	"strconv"
 	"strings"
@@ -8,9 +9,11 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
 const (
@@ -23,8 +26,15 @@ const (
 type loginAttemptLimiter struct {
 	cfg     config.LoginRateLimit
 	now     func() time.Time
+	store   loginAttemptStore
 	mu      sync.Mutex
 	buckets map[string]*loginAttemptBucket
+}
+
+type loginAttemptStore interface {
+	Allow(ctx context.Context, keys []string, now time.Time, window time.Duration) (time.Duration, error)
+	RecordFailure(ctx context.Context, keys []string, now time.Time, window, blockDuration time.Duration, maxFailures int) error
+	RecordSuccess(ctx context.Context, keys []string) error
 }
 
 type loginAttemptBucket struct {
@@ -33,6 +43,10 @@ type loginAttemptBucket struct {
 }
 
 func newLoginAttemptLimiter(cfg config.LoginRateLimit) *loginAttemptLimiter {
+	return newLoginAttemptLimiterWithStore(cfg, nil)
+}
+
+func newLoginAttemptLimiterWithStore(cfg config.LoginRateLimit, store loginAttemptStore) *loginAttemptLimiter {
 	normalized := normalizeLoginRateLimitConfig(cfg)
 	if !normalized.Enabled {
 		return nil
@@ -40,6 +54,7 @@ func newLoginAttemptLimiter(cfg config.LoginRateLimit) *loginAttemptLimiter {
 	return &loginAttemptLimiter{
 		cfg:     normalized,
 		now:     time.Now,
+		store:   store,
 		buckets: make(map[string]*loginAttemptBucket),
 	}
 }
@@ -65,13 +80,23 @@ func normalizeLoginRateLimitConfig(cfg config.LoginRateLimit) config.LoginRateLi
 	return cfg
 }
 
-func (l *loginAttemptLimiter) allow(username, clientID string) (bool, time.Duration) {
+func (l *loginAttemptLimiter) allowContext(ctx context.Context, username, clientID string) (bool, time.Duration, error) {
 	if l == nil {
-		return true, 0
+		return true, 0, nil
 	}
 
 	keys := loginAttemptLimiterKeys(username, clientID)
 	now := l.now()
+	if l.store != nil {
+		retryAfter, err := l.store.Allow(ctx, keys, now, l.cfg.Window)
+		if err != nil {
+			return false, 0, err
+		}
+		if retryAfter > 0 {
+			return false, retryAfter, nil
+		}
+		return true, 0, nil
+	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -92,18 +117,25 @@ func (l *loginAttemptLimiter) allow(username, clientID string) (bool, time.Durat
 	}
 
 	if retryAfter > 0 {
-		return false, retryAfter
+		return false, retryAfter, nil
 	}
-	return true, 0
+	return true, 0, nil
 }
 
 func (l *loginAttemptLimiter) recordFailure(username, clientID string) {
+	_ = l.recordFailureContext(context.Background(), username, clientID)
+}
+
+func (l *loginAttemptLimiter) recordFailureContext(ctx context.Context, username, clientID string) error {
 	if l == nil {
-		return
+		return nil
 	}
 
 	keys := loginAttemptLimiterKeys(username, clientID)
 	now := l.now()
+	if l.store != nil {
+		return l.store.RecordFailure(ctx, keys, now, l.cfg.Window, l.cfg.BlockDuration, l.cfg.MaxFailures)
+	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -116,19 +148,30 @@ func (l *loginAttemptLimiter) recordFailure(username, clientID string) {
 			bucket.blockedUntil = now.Add(l.cfg.BlockDuration)
 		}
 	}
+	return nil
 }
 
 func (l *loginAttemptLimiter) recordSuccess(username, clientID string) {
+	_ = l.recordSuccessContext(context.Background(), username, clientID)
+}
+
+func (l *loginAttemptLimiter) recordSuccessContext(ctx context.Context, username, clientID string) error {
 	if l == nil {
-		return
+		return nil
+	}
+
+	keys := loginAttemptLimiterKeys(username, clientID)
+	if l.store != nil {
+		return l.store.RecordSuccess(ctx, keys)
 	}
 
 	l.mu.Lock()
 	defer l.mu.Unlock()
 
-	for _, key := range loginAttemptLimiterKeys(username, clientID) {
+	for _, key := range keys {
 		delete(l.buckets, key)
 	}
+	return nil
 }
 
 func (l *loginAttemptLimiter) bucketLocked(key string) *loginAttemptBucket {
@@ -218,7 +261,14 @@ func loginAttemptClientIdentity(c *gin.Context) string {
 }
 
 func (s *Server) enforceLoginRateLimit(c *gin.Context, username string) bool {
-	allowed, retryAfter := s.loginRateLimiter.allow(username, loginAttemptClientIdentity(c))
+	allowed, retryAfter, err := s.loginRateLimiter.allowContext(c.Request.Context(), username, loginAttemptClientIdentity(c))
+	if err != nil {
+		c.JSON(500, generated.Error{
+			Code:    "INTERNAL_ERROR",
+			Message: "login rate limit is unavailable",
+		})
+		return false
+	}
 	if allowed {
 		return true
 	}
@@ -239,12 +289,18 @@ func (s *Server) recordLoginFailure(c *gin.Context, username string) {
 	if s == nil || s.loginRateLimiter == nil {
 		return
 	}
-	s.loginRateLimiter.recordFailure(username, loginAttemptClientIdentity(c))
+	if err := s.loginRateLimiter.recordFailureContext(c.Request.Context(), username, loginAttemptClientIdentity(c)); err != nil {
+		logger.Warn("failed to record login rate limit failure", zap.Error(err))
+		return
+	}
 }
 
 func (s *Server) recordLoginSuccess(c *gin.Context, username string) {
 	if s == nil || s.loginRateLimiter == nil {
 		return
 	}
-	s.loginRateLimiter.recordSuccess(username, loginAttemptClientIdentity(c))
+	if err := s.loginRateLimiter.recordSuccessContext(c.Request.Context(), username, loginAttemptClientIdentity(c)); err != nil {
+		logger.Warn("failed to clear login rate limit state", zap.Error(err))
+		return
+	}
 }

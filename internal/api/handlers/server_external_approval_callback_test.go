@@ -40,7 +40,7 @@ func TestReceiveExternalApprovalDecisionRoutesSignedApproval(t *testing.T) {
 	})
 	c, w := newPublicGinContext(t, http.MethodPost, "/webhooks/approval-callback", body)
 
-	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(system.ID, "ticket-1", body))
+	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(t, c, system.ID, "ticket-1", body, time.Now()))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("callback status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
@@ -80,12 +80,63 @@ func TestReceiveExternalApprovalDecisionRejectsInvalidSignature(t *testing.T) {
 		Approver: "external.approver@example.com",
 	})
 	c, w := newPublicGinContext(t, http.MethodPost, "/webhooks/approval-callback", body)
+	timestamp := time.Now()
+	c.Request.Header.Set(externalApprovalTimestampHeader, timestamp.UTC().Format(time.RFC3339))
 
 	srv.ReceiveExternalApprovalDecision(c, generated.ReceiveExternalApprovalDecisionParams{
 		XExternalApprovalSystemID: system.ID,
+		XShepherdTimestamp:        timestamp.UTC(),
 		XSignature256:             "sha256=deadbeef",
 		XTicketID:                 "ticket-1",
 	})
+
+	if w.Code != http.StatusUnauthorized {
+		t.Fatalf("callback status = %d, want %d body=%s", w.Code, http.StatusUnauthorized, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "UNAUTHORIZED")
+	if capture.processCalled != 0 {
+		t.Fatalf("processCalled = %d, want 0", capture.processCalled)
+	}
+}
+
+func TestReceiveExternalApprovalDecisionRequiresTimestamp(t *testing.T) {
+	t.Parallel()
+
+	srv, system, capture := newExternalApprovalCallbackTestServer(t, true)
+	body := mustJSON(t, generated.ExternalApprovalDecisionRequest{
+		TicketId: "ticket-1",
+		Approved: true,
+		Approver: "external.approver@example.com",
+	})
+	c, w := newPublicGinContext(t, http.MethodPost, "/webhooks/approval-callback", body)
+
+	srv.ReceiveExternalApprovalDecision(c, generated.ReceiveExternalApprovalDecisionParams{
+		XExternalApprovalSystemID: system.ID,
+		XSignature256:             approvalwebhook.SignPayload([]byte(body), []byte("callback-secret")),
+		XTicketID:                 "ticket-1",
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("callback status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+	if capture.processCalled != 0 {
+		t.Fatalf("processCalled = %d, want 0", capture.processCalled)
+	}
+}
+
+func TestReceiveExternalApprovalDecisionRejectsStaleTimestamp(t *testing.T) {
+	t.Parallel()
+
+	srv, system, capture := newExternalApprovalCallbackTestServer(t, true)
+	body := mustJSON(t, generated.ExternalApprovalDecisionRequest{
+		TicketId: "ticket-1",
+		Approved: true,
+		Approver: "external.approver@example.com",
+	})
+	c, w := newPublicGinContext(t, http.MethodPost, "/webhooks/approval-callback", body)
+
+	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(t, c, system.ID, "ticket-1", body, time.Now().Add(-10*time.Minute)))
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("callback status = %d, want %d body=%s", w.Code, http.StatusUnauthorized, w.Body.String())
@@ -107,7 +158,7 @@ func TestReceiveExternalApprovalDecisionRequiresRejectReason(t *testing.T) {
 	})
 	c, w := newPublicGinContext(t, http.MethodPost, "/webhooks/approval-callback", body)
 
-	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(system.ID, "ticket-2", body))
+	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(t, c, system.ID, "ticket-2", body, time.Now()))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("callback status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
@@ -125,7 +176,7 @@ func TestReceiveExternalApprovalDecisionRequiresApprovedField(t *testing.T) {
 	body := `{"ticket_id":"ticket-2","approver":"external.approver@example.com","reject_reason":"policy mismatch"}`
 	c, w := newPublicGinContext(t, http.MethodPost, "/webhooks/approval-callback", body)
 
-	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(system.ID, "ticket-2", body))
+	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(t, c, system.ID, "ticket-2", body, time.Now()))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("callback status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
@@ -147,7 +198,7 @@ func TestReceiveExternalApprovalDecisionRejectsDisabledSystem(t *testing.T) {
 	})
 	c, w := newPublicGinContext(t, http.MethodPost, "/webhooks/approval-callback", body)
 
-	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(system.ID, "ticket-3", body))
+	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(t, c, system.ID, "ticket-3", body, time.Now()))
 
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("callback status = %d, want %d body=%s", w.Code, http.StatusUnauthorized, w.Body.String())
@@ -169,7 +220,7 @@ func TestReceiveExternalApprovalDecisionRejectsTicketHeaderMismatch(t *testing.T
 	})
 	c, w := newPublicGinContext(t, http.MethodPost, "/webhooks/approval-callback", body)
 
-	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(system.ID, "different-ticket", body))
+	srv.ReceiveExternalApprovalDecision(c, signedCallbackParams(t, c, system.ID, "different-ticket", body, time.Now()))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("callback status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
@@ -240,7 +291,7 @@ func TestReceiveExternalApprovalTicketDecisionRoutesSignedApproval(t *testing.T)
 	})
 	c, w := newPublicGinContext(t, http.MethodPost, "/external-approval/tickets/ticket-5/decision", body)
 
-	srv.ReceiveExternalApprovalTicketDecision(c, "ticket-5", signedTicketDecisionParams(system.ID, body))
+	srv.ReceiveExternalApprovalTicketDecision(c, "ticket-5", signedTicketDecisionParams(t, c, system.ID, body, time.Now()))
 
 	if w.Code != http.StatusOK {
 		t.Fatalf("decision status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
@@ -266,7 +317,7 @@ func TestReceiveExternalApprovalTicketDecisionRejectsPathMismatch(t *testing.T) 
 	})
 	c, w := newPublicGinContext(t, http.MethodPost, "/external-approval/tickets/different-ticket/decision", body)
 
-	srv.ReceiveExternalApprovalTicketDecision(c, "different-ticket", signedTicketDecisionParams(system.ID, body))
+	srv.ReceiveExternalApprovalTicketDecision(c, "different-ticket", signedTicketDecisionParams(t, c, system.ID, body, time.Now()))
 
 	if w.Code != http.StatusBadRequest {
 		t.Fatalf("decision status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
@@ -308,18 +359,47 @@ func newExternalApprovalCallbackTestServerWithClient(t *testing.T, enabled bool)
 	return srv, client, system, capture
 }
 
-func signedCallbackParams(systemID, ticketID, body string) generated.ReceiveExternalApprovalDecisionParams {
+func signedCallbackParams(
+	t *testing.T,
+	c *gin.Context,
+	systemID string,
+	ticketID string,
+	body string,
+	timestamp time.Time,
+) generated.ReceiveExternalApprovalDecisionParams {
+	t.Helper()
+
+	timestampHeader := timestamp.UTC().Format(time.RFC3339)
+	c.Request.Header.Set(externalApprovalTimestampHeader, timestampHeader)
 	return generated.ReceiveExternalApprovalDecisionParams{
 		XExternalApprovalSystemID: systemID,
-		XSignature256:             approvalwebhook.SignPayload([]byte(body), []byte("callback-secret")),
-		XTicketID:                 ticketID,
+		XShepherdTimestamp:        timestamp.UTC(),
+		XSignature256: approvalwebhook.SignPayload(
+			externalApprovalDecisionSignaturePayload(c, timestampHeader, []byte(body)),
+			[]byte("callback-secret"),
+		),
+		XTicketID: ticketID,
 	}
 }
 
-func signedTicketDecisionParams(systemID, body string) generated.ReceiveExternalApprovalTicketDecisionParams {
+func signedTicketDecisionParams(
+	t *testing.T,
+	c *gin.Context,
+	systemID string,
+	body string,
+	timestamp time.Time,
+) generated.ReceiveExternalApprovalTicketDecisionParams {
+	t.Helper()
+
+	timestampHeader := timestamp.UTC().Format(time.RFC3339)
+	c.Request.Header.Set(externalApprovalTimestampHeader, timestampHeader)
 	return generated.ReceiveExternalApprovalTicketDecisionParams{
 		XExternalApprovalSystemID: systemID,
-		XSignature256:             approvalwebhook.SignPayload([]byte(body), []byte("callback-secret")),
+		XShepherdTimestamp:        timestamp.UTC(),
+		XSignature256: approvalwebhook.SignPayload(
+			externalApprovalDecisionSignaturePayload(c, timestampHeader, []byte(body)),
+			[]byte("callback-secret"),
+		),
 	}
 }
 

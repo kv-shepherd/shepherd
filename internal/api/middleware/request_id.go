@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -13,6 +14,8 @@ const (
 	// RequestIDHeader is the HTTP header for request tracing.
 	RequestIDHeader = "X-Request-ID"
 
+	maxRequestIDLength = 128
+
 	ctxKeyRequestID contextKey = "request_id"
 	ctxKeyUserID    contextKey = "user_id"
 	ctxKeyUsername  contextKey = "username"
@@ -22,11 +25,7 @@ const (
 // RequestID injects a unique request ID into the context and response header.
 func RequestID() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		rid := c.GetHeader(RequestIDHeader)
-		if rid == "" {
-			id, _ := uuid.NewV7()
-			rid = id.String()
-		}
+		rid := validOrNewRequestID(c.GetHeader(RequestIDHeader))
 		c.Set(string(ctxKeyRequestID), rid)
 		c.Writer.Header().Set(RequestIDHeader, rid)
 		c.Request = c.Request.WithContext(
@@ -34,6 +33,32 @@ func RequestID() gin.HandlerFunc {
 		)
 		c.Next()
 	}
+}
+
+func validOrNewRequestID(raw string) string {
+	rid := strings.TrimSpace(raw)
+	if validRequestID(rid) {
+		return rid
+	}
+	id, _ := uuid.NewV7()
+	return id.String()
+}
+
+func validRequestID(rid string) bool {
+	if rid == "" || len(rid) > maxRequestIDLength {
+		return false
+	}
+	for _, r := range rid {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= 'A' && r <= 'Z':
+		case r >= '0' && r <= '9':
+		case r == '-' || r == '_' || r == '.' || r == ':':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // GetRequestID extracts request ID from context.

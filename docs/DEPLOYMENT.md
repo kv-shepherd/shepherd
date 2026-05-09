@@ -41,10 +41,9 @@ On the default bundled PostgreSQL path, `deploy-prod.sh` will automatically:
 
 - generate `POSTGRES_PASSWORD` if it is empty and persist it back to `.env.prod`
 - generate `DEV_ADMIN_PASSWORD` if it is empty and persist it back to `.env.prod`
+- generate `SECURITY_SESSION_SECRET` and `SECURITY_ENCRYPTION_KEY` if they are
+  empty and persist them back to `.env.prod`
 - build `DATABASE_URL` for the bundled `db` service when it is empty
-- leave `SECURITY_SESSION_SECRET` and `SECURITY_ENCRYPTION_KEY` empty so the
-  server can load existing bootstrap secrets from PostgreSQL, or generate and
-  persist them inside PostgreSQL on first startup
 - generate a self-signed TLS certificate when `deploy/prod/tls/cert.pem` and
   `deploy/prod/tls/key.pem` are missing
 
@@ -128,8 +127,8 @@ cluster, export `E2E_KUBECONFIG_PATH=/path/to/kubeconfig` (or
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string |
 | `DEPLOY_BUNDLED_POSTGRES` | `auto`, `true`, or `false` to control bundled vs external PostgreSQL topology |
-| `SECURITY_SESSION_SECRET` | Optional explicit session-signing override; leave blank to use the PostgreSQL-backed bootstrap secret flow |
-| `SECURITY_ENCRYPTION_KEY` | Optional explicit data-encryption override; leave blank to use the PostgreSQL-backed bootstrap secret flow |
+| `SECURITY_SESSION_SECRET` | Session-signing secret; `deploy-prod.sh` generates and persists one when blank |
+| `SECURITY_ENCRYPTION_KEY` | Hex-encoded AES-256 data-encryption key; `deploy-prod.sh` generates and persists one when blank |
 | `SERVER_PUBLIC_BASE_URL` | External URL (e.g. `https://shepherd.example.com`) |
 | `SERVER_ALLOWED_ORIGINS` | CORS origins (comma-separated) |
 | `DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS` | Apply reviewed Atlas migrations before the server starts (`true` / `false`) |
@@ -164,21 +163,22 @@ complete variable reference. Production security checklist:
 
 ## Generated Credentials and Recovery
 
-The production template deliberately keeps some values empty so the bootstrap
-path is simpler and safer.
+The production template deliberately keeps some values empty so the deploy
+script can generate strong first-run credentials and persist them before
+release-mode services start.
 
 | Value | How it is created | What it is used for | If you forget or lose it |
 |-------|-------------------|---------------------|---------------------------|
 | `POSTGRES_PASSWORD` | `deploy-prod.sh` can generate it and write it to `.env.prod` | Authenticates the bundled `postgres:18` service and the app's bundled-DB `DATABASE_URL` | The app cannot reconnect to the bundled database after restart until you restore the password or reset the PostgreSQL password and update `.env.prod` |
 | `DEV_ADMIN_PASSWORD` | `deploy-prod.sh` can generate it and write it to `.env.prod` | Used only by `deploy-prod.sh` to rotate the seeded `admin` account away from the default `admin / admin` password during bootstrap | You lose the initial admin login password until it is reset through another platform admin session or direct recovery access |
-| `SECURITY_SESSION_SECRET` | Leave blank to let the server load an existing value from PostgreSQL, or generate and persist one there on first startup | Signs login/session tokens | If you set an explicit override and later change or lose it, all existing sessions become invalid and users must sign in again. If you leave it blank and keep the database, Shepherd can recover it automatically |
-| `SECURITY_ENCRYPTION_KEY` | Leave blank to let the server load an existing value from PostgreSQL, or generate and persist one there on first startup | Encrypts sensitive data at rest, including stored infrastructure credentials | If you set an explicit override and later change or lose it, encrypted data can become unreadable until the original key is restored or the secrets are re-entered. If you leave it blank and keep the database, Shepherd can recover it automatically |
+| `SECURITY_SESSION_SECRET` | `deploy-prod.sh` can generate it and write it to `.env.prod` | Signs login/session tokens | Existing sessions become invalid until users sign in again if the value is changed or lost |
+| `SECURITY_ENCRYPTION_KEY` | `deploy-prod.sh` can generate it and write it to `.env.prod` | Encrypts sensitive data at rest, including stored infrastructure credentials | Encrypted data can become unreadable until the original key is restored or the secrets are re-entered if the value is changed or lost |
 
 Practical guidance:
 
-- Back up `.env.prod` because it contains the generated bundled PostgreSQL and initial admin credentials.
-- Back up PostgreSQL because it stores the auto-managed bootstrap security secrets when `SECURITY_*` is left blank.
-- Prefer leaving `SECURITY_SESSION_SECRET` and `SECURITY_ENCRYPTION_KEY` empty unless you already have an external secret-management process and a rotation plan.
+- Back up `.env.prod` because it contains the generated bundled PostgreSQL password, initial admin credential, and production security secrets.
+- Back up PostgreSQL because it stores application data encrypted with `SECURITY_ENCRYPTION_KEY`.
+- Use an external secret-management process only if it can preserve and restore the same `SECURITY_SESSION_SECRET` and `SECURITY_ENCRYPTION_KEY` values during redeployments.
 
 ## Management
 

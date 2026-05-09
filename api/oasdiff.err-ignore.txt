@@ -1,0 +1,2 @@
+2026-05-09 security hardening: POST /external-approval/tickets/{ticket_id}/decision added the new required 'header' request parameter 'X-Shepherd-Timestamp'
+2026-05-09 security hardening: POST /webhooks/approval-callback added the new required 'header' request parameter 'X-Shepherd-Timestamp'

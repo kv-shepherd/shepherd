@@ -722,6 +722,41 @@ func TestVMConsole_OpenVNC_PreviewDoesNotEagerlyDialNativeStream(t *testing.T) {
 	}
 }
 
+func TestConsoleOriginAllowedRequiresOriginHeader(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{allowedOrigins: []string{"https://console.example.com"}}
+	req := httptest.NewRequest(http.MethodGet, "https://console.example.com/api/v1/vms/vm-1/vnc", http.NoBody)
+
+	if srv.consoleOriginAllowed(req) {
+		t.Fatal("consoleOriginAllowed() = true, want false for missing Origin")
+	}
+}
+
+func TestConsoleOriginAllowedAcceptsSameOrigin(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{allowedOrigins: []string{"https://other.example.com"}}
+	req := httptest.NewRequest(http.MethodGet, "https://console.example.com/api/v1/vms/vm-1/vnc", http.NoBody)
+	req.Header.Set("Origin", "https://console.example.com")
+
+	if !srv.consoleOriginAllowed(req) {
+		t.Fatal("consoleOriginAllowed() = false, want true for same Origin")
+	}
+}
+
+func TestConsoleOriginAllowedAcceptsConfiguredOrigin(t *testing.T) {
+	t.Parallel()
+
+	srv := &Server{allowedOrigins: []string{"https://console.example.com"}}
+	req := httptest.NewRequest(http.MethodGet, "https://internal.example.com/api/v1/vms/vm-1/vnc", http.NoBody)
+	req.Header.Set("Origin", "https://console.example.com")
+
+	if !srv.consoleOriginAllowed(req) {
+		t.Fatal("consoleOriginAllowed() = false, want true for configured Origin")
+	}
+}
+
 func newVMConsoleBehaviorTestServer(t *testing.T) (*Server, *ent.Client, *provider.MockProvider) {
 	t.Helper()
 	_ = logger.Init("error", "json")
