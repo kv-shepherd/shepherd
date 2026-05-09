@@ -24,7 +24,7 @@
 | Phase | Checklist | Specification | Status |
 |-------|-----------|---------------|--------|
 | Phase 0 | [checklist/phase-0-checklist.md](./checklist/phase-0-checklist.md) | [phases/00-prerequisites.md](./phases/00-prerequisites.md) | ✅ Complete (2026-02-09) |
-| Phase 1 | [checklist/phase-1-checklist.md](./checklist/phase-1-checklist.md) | [phases/01-contracts.md](./phases/01-contracts.md) | 🔄 Partial (~96%) — 33 Ent schemas + TS/Go API types + frontend testing toolchain + cluster credential runtime + provider plugin config boundary ✅, remaining work is generated-type review, Ent standards, and deferred V2 schemas |
+| Phase 1 | [checklist/phase-1-checklist.md](./checklist/phase-1-checklist.md) | [phases/01-contracts.md](./phases/01-contracts.md) | 🔄 Partial (~97%) — 33 Ent schemas + TS/Go API types + ADR-0028 generated-type gate + frontend testing toolchain + cluster credential runtime + provider plugin config boundary ✅, remaining work is Ent standards and deferred V2 schemas |
 | Phase 2 | [checklist/phase-2-checklist.md](./checklist/phase-2-checklist.md) | [phases/02-providers.md](./phases/02-providers.md) | 🔄 Partial (~65%) — Basic CRUD + SSAApplier + VMRenderer + AuthProvider Admin ✅, Snapshot/Clone/Migration deferred; V1 status sync uses ADR-0038 polling baseline |
 | Phase 3 | [checklist/phase-3-checklist.md](./checklist/phase-3-checklist.md) | [phases/03-service-layer.md](./phases/03-service-layer.md) | 🔄 Partial (~86%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates ✅, River worker concurrency + V1 degradation baseline ✅, per-cluster semaphore/degradation UX deferred |
 | Phase 4 | [checklist/phase-4-checklist.md](./checklist/phase-4-checklist.md) | [phases/04-governance.md](./phases/04-governance.md) | 🔄 Partial (~97%) — Approval/Audit/Atomic enqueue/Delete/Namespace CRUD/Notification system ✅, environment scheduling + visibility filtering ✅, Stage 5.E batch + queue UX ✅, Stage 6 VNC token hardening ✅, Catalog Scope + Cluster Policy + VM Status Sync (ADR-0038) + Template/InstanceSize validators ✅; full resource reconciler + template lifecycle states deferred |
@@ -98,7 +98,7 @@
 |------------|-----|---------------------|
 | `Bootstrap()` stays orchestration-only and concise | ADR-0022 + pending ADR-0043 note | Manual review |
 | Provider interfaces use embedding | ADR-0024 | Verify `KubeVirtProvider` embeds capability interfaces |
-| Optional fields use `omitzero` | ADR-0028 | Verify generated types (when ADR accepted) |
+| Optional fields use `omitzero` | ADR-0028 | CI: `check_openapi_critical_contract.go` verifies oapi-codegen options and generated Go tags |
 | Service layer uses narrow interfaces | ADR-0024 | No dependency on full `KubeVirtProvider` when subset suffices |
 
 ### Documentation Sync
@@ -149,7 +149,7 @@
 | [ADR-0019](../adr/ADR-0019-governance-security-baseline-controls.md) | RFC 1035 naming, least privilege RBAC, audit log redaction | All platform-managed names | Code Review |
 | [ADR-0021](../adr/ADR-0021-api-contract-first.md) | OpenAPI spec is single source of truth | All HTTP APIs | CI: `make api-check` |
 | [ADR-0025](../adr/ADR-0025-secret-bootstrap.md) | Auto-generate secrets on first boot; priority: env vars > DB-generated | Bootstrap flow | Code Review |
-| [ADR-0028](../adr/ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen with `omitzero`; Go 1.25+ required | API code generation | CI: `make generate` |
+| [ADR-0028](../adr/ADR-0028-oapi-codegen-optional-field-strategy.md) | oapi-codegen with `omitzero`; Go 1.25+ required | API code generation | CI: `make api-check` + `check_openapi_critical_contract.go` |
 | [ADR-0029](../adr/ADR-0029-openapi-toolchain-governance.md) | Vacuum for linting, libopenapi-validator | API toolchain | CI: `make api-lint` |
 | [ADR-0031](../adr/ADR-0031-concurrency-and-worker-pool-standard.md) | No naked `go` statements; worker pool with context propagation; semaphore Acquire/Release leak-safe | In-process concurrency | CI: `shepherd-arch/nakedgoroutine`, `shepherd-arch/semaphoreusage` |
 | [ADR-0034](../adr/ADR-0034-master-flow-spec-driven-test-first.md) | Required master-flow stages must have executable tests or explicit deferred debt; runtime code diffs must carry test diffs | Cross-layer interaction delivery | CI: `check_master_flow_test_matrix.go`, `check_changed_code_has_tests.sh` |
@@ -179,7 +179,7 @@ The following items are moved to [RFC directory](../rfc/):
 | Phase | Status | Completion Date | Verified By |
 |-------|--------|-----------------|-------------|
 | Phase 0 | ✅ Complete | 2026-02-09 | CI green (go vet/build/test) |
-| Phase 1 | 🔄 Partial (~96%) | - | 33 Ent schemas + Go/TS API types + frontend testing toolchain + cluster credential runtime + provider plugin config boundary done; generated-type review, Ent standards, and deferred V2 schemas remain |
+| Phase 1 | 🔄 Partial (~97%) | - | 33 Ent schemas + Go/TS API types + ADR-0028 generated-type gate + frontend testing toolchain + cluster credential runtime + provider plugin config boundary done; Ent standards and deferred V2 schemas remain |
 | Phase 2 | 🔄 Partial (~65%) | - | Basic VM CRUD + SSAApplier + VMRenderer + AuthProvider Admin done; Snapshot/Clone/Migration deferred; ResourceWatcher docs superseded in V1 by ADR-0038 polling baseline |
 | Phase 3 | 🔄 Partial (~86%) | - | Core DI/UseCase + ADR-0012 atomic approval + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates done; River worker concurrency + V1 degradation baseline done; per-cluster semaphore/degradation UX deferred |
 | Phase 4 | 🔄 Partial (~97%) | - | Approval/Audit/Delete/Notification/Batch/VNC hardening/Catalog Scope/Cluster Policy/VM Status Sync (ADR-0038)/Template+InstanceSize validators done; full resource reconciler and template lifecycle states deferred |

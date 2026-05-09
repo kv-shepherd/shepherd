@@ -83,6 +83,16 @@ api/openapi.yaml → Code Generation → Implementation
 - The downgrade is implemented by `cmd/openapi-compat-gen/main.go` and verified
   by `REQUIRE_OPENAPI_COMPAT=1 make api-compat`.
 
+**Generated Go optional fields (ADR-0028)**:
+- `api/oapi-codegen.yaml` keeps `prefer-skip-optional-pointer` and
+  `prefer-skip-optional-pointer-with-omitzero` enabled.
+- Optional value fields in `internal/api/generated/server.gen.go` must carry
+  `json:",omitempty,omitzero"`.
+- Pointer-style optional fields are reserved for explicit codegen overrides or
+  nullable semantics and must not carry `omitzero`.
+- `check_openapi_critical_contract.go` enforces the configuration and generated
+  tag invariants in CI.
+
 ### Directory Structure
 
 ```

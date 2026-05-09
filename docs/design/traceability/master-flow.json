@@ -37,9 +37,13 @@
       ],
       "adrs": [
         "docs/adr/ADR-0025-secret-bootstrap.md",
+        "docs/adr/ADR-0028-oapi-codegen-optional-field-strategy.md",
         "docs/adr/ADR-0032-master-flow-traceability-manifest.md",
         "docs/adr/ADR-0034-master-flow-spec-driven-test-first.md",
         "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
+      ],
+      "ci": [
+        "docs/design/ci/scripts/check_openapi_critical_contract.go"
       ],
       "examples": [
         ".github/workflows/release.yml",

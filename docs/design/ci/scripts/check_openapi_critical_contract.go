@@ -4,13 +4,21 @@ package main
 
 import (
 	"fmt"
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"os"
+	"reflect"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-const specPath = "api/openapi.yaml"
+const (
+	specPath              = "api/openapi.yaml"
+	oapiCodegenConfigPath = "api/oapi-codegen.yaml"
+	generatedServerPath   = "internal/api/generated/server.gen.go"
+)
 
 type requiredPathContract struct {
 	path             string
@@ -52,6 +60,7 @@ func main() {
 	checkGlobalSecurity(root, &violations)
 	checkPathContracts(root, &violations)
 	checkSchemaContracts(root, &violations)
+	checkOapiCodegenOptionalFieldStrategy(&violations)
 
 	if len(violations) > 0 {
 		fmt.Println("FAIL: OpenAPI critical contract check failed")
@@ -410,6 +419,124 @@ func checkSchemaContracts(root *yaml.Node, violations *[]string) {
 	}
 	if schema, ok := mapValue(schemas, "UnreadCount"); ok {
 		checkUnreadCountSchema(schema, violations)
+	}
+}
+
+func checkOapiCodegenOptionalFieldStrategy(violations *[]string) {
+	cfgBytes, err := os.ReadFile(oapiCodegenConfigPath)
+	if err != nil {
+		*violations = append(*violations, fmt.Sprintf("read %s: %v", oapiCodegenConfigPath, err))
+		return
+	}
+
+	var cfgDoc yaml.Node
+	if err := yaml.Unmarshal(cfgBytes, &cfgDoc); err != nil {
+		*violations = append(*violations, fmt.Sprintf("parse %s: %v", oapiCodegenConfigPath, err))
+		return
+	}
+	cfgRoot := documentRoot(&cfgDoc)
+	outputOptions, ok := mapValue(cfgRoot, "output-options")
+	if !ok {
+		*violations = append(*violations, "api/oapi-codegen.yaml must define output-options")
+		return
+	}
+	if v, ok := scalarValueByKey(outputOptions, "prefer-skip-optional-pointer"); !ok || v != "true" {
+		*violations = append(*violations, "api/oapi-codegen.yaml output-options.prefer-skip-optional-pointer must be true")
+	}
+	if v, ok := scalarValueByKey(outputOptions, "prefer-skip-optional-pointer-with-omitzero"); !ok || v != "true" {
+		*violations = append(*violations, "api/oapi-codegen.yaml output-options.prefer-skip-optional-pointer-with-omitzero must be true")
+	}
+	if v, ok := scalarValueByKey(outputOptions, "nullable-type"); ok && v == "true" {
+		*violations = append(*violations, "api/oapi-codegen.yaml output-options.nullable-type must stay disabled under ADR-0028 pointer-based nullable semantics")
+	}
+
+	generatedFile, err := parser.ParseFile(token.NewFileSet(), generatedServerPath, nil, parser.ParseComments)
+	if err != nil {
+		*violations = append(*violations, fmt.Sprintf("parse %s: %v", generatedServerPath, err))
+		return
+	}
+
+	ast.Inspect(generatedFile, func(node ast.Node) bool {
+		typeSpec, ok := node.(*ast.TypeSpec)
+		if !ok {
+			return true
+		}
+		structType, ok := typeSpec.Type.(*ast.StructType)
+		if !ok {
+			return false
+		}
+		for _, field := range structType.Fields.List {
+			if field.Tag == nil {
+				continue
+			}
+			jsonTag := reflect.StructTag(strings.Trim(field.Tag.Value, "`")).Get("json")
+			if jsonTag == "" || jsonTag == "-" {
+				continue
+			}
+			jsonName, jsonOptions := parseJSONTag(jsonTag)
+			if jsonName == "" || jsonName == "-" {
+				continue
+			}
+			hasOmitEmpty := jsonOptions["omitempty"]
+			hasOmitZero := jsonOptions["omitzero"]
+			if !hasOmitEmpty && !hasOmitZero {
+				continue
+			}
+
+			fieldName := "<anonymous>"
+			if len(field.Names) > 0 {
+				fieldName = field.Names[0].Name
+			}
+			label := fmt.Sprintf("%s.%s json:%q", typeSpec.Name.Name, fieldName, jsonName)
+			isPointer := isPointerExpr(field.Type)
+
+			if hasOmitZero && isPointer {
+				*violations = append(*violations, fmt.Sprintf("%s must not combine pointer type with omitzero", label))
+			}
+			if hasOmitEmpty && !hasOmitZero && !isPointer {
+				*violations = append(*violations, fmt.Sprintf("%s is optional value field but lacks omitzero", label))
+			}
+			if hasOmitEmpty && !hasOmitZero && isPointerToBuiltinScalar(field.Type) {
+				*violations = append(*violations, fmt.Sprintf("%s must not use an unnecessary pointer to a builtin scalar", label))
+			}
+		}
+		return false
+	})
+}
+
+func parseJSONTag(tag string) (string, map[string]bool) {
+	parts := strings.Split(tag, ",")
+	name := parts[0]
+	options := make(map[string]bool, len(parts))
+	for _, opt := range parts[1:] {
+		if opt != "" {
+			options[opt] = true
+		}
+	}
+	return name, options
+}
+
+func isPointerExpr(expr ast.Expr) bool {
+	_, ok := expr.(*ast.StarExpr)
+	return ok
+}
+
+func isPointerToBuiltinScalar(expr ast.Expr) bool {
+	star, ok := expr.(*ast.StarExpr)
+	if !ok {
+		return false
+	}
+	ident, ok := star.X.(*ast.Ident)
+	if !ok {
+		return false
+	}
+	switch ident.Name {
+	case "string", "bool", "int", "int8", "int16", "int32", "int64",
+		"uint", "uint8", "uint16", "uint32", "uint64",
+		"float32", "float64":
+		return true
+	default:
+		return false
 	}
 }
 

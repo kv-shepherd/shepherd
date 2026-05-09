@@ -27,7 +27,7 @@ Do not place CI toolchain policy details in `master-flow.md`; keep those details
 | `shepherd-arch` (golangci-lint module plugin) | Batch1/2 architecture gates: forbidden imports, manual DI, explicit RBAC, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check, auth-provider core/edge/provider layering | Required | ✅ Yes |
 | `shepherd-arch/k8sintransaction` (Analyzer) | No K8s API calls inside transactions | Required | ✅ Yes |
 | [check_validate_spec.go](./scripts/check_validate_spec.go) | No ValidateSpec calls inside transactions | Required | ✅ Yes |
-| [check_openapi_critical_contract.go](./scripts/check_openapi_critical_contract.go) | Enforce stage-critical OpenAPI contracts (auth/vm/approval/audit/notification + global BearerAuth) | Required | ✅ Yes |
+| [check_openapi_critical_contract.go](./scripts/check_openapi_critical_contract.go) | Enforce stage-critical OpenAPI contracts (auth/vm/approval/audit/notification + global BearerAuth) and ADR-0028 oapi-codegen optional-field/tag strategy | Required | ✅ Yes |
 | [check_openapi_critical_fingerprint.go](./scripts/check_openapi_critical_fingerprint.go) | Lock SHA256 fingerprints for critical OpenAPI nodes (intentional-change only) | Required | ✅ Yes |
 | [check_no_runtime_placeholders.go](./scripts/check_no_runtime_placeholders.go) | Block TODO/FIXME/placeholder/stub markers in runtime code | Required | ✅ Yes |
 | [check_provider_wiring.go](./scripts/check_provider_wiring.go) | Enforce runtime wiring path uses real `NewKubeVirtProvider()` and VM module rejects `mock` provider | Required | ✅ Yes |

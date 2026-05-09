@@ -127,10 +127,10 @@
 - [x] `go.mod` requires Go 1.25+ (enables `omitzero` support) — *Go 1.25.10*
 - [x] `api/oapi-codegen.yaml` contains:
   - [x] `output-options.prefer-skip-optional-pointer-with-omitzero: true`
-- [ ] **Generated types verification** (Code Review enforcement):
-  - [ ] Optional-only fields use value types with `json:",omitzero"` tag
-  - [ ] `nullable: true` fields use pointer types with `json:",omitempty"` tag
-  - [ ] No unnecessary `*string`, `*int` for non-nullable optional fields
+- [x] **Generated types verification** (CI enforcement via `check_openapi_critical_contract.go`):
+  - [x] Optional value fields use `json:",omitempty,omitzero"` tags
+  - [x] Pointer-style optional fields are limited to explicit codegen overrides / nullable semantics and must not carry `omitzero`
+  - [x] No unnecessary optional `*string`, `*int`, `*bool`, or numeric scalar pointers
 - [ ] Business logic does not contain excessive `if ptr != nil` checks for optional fields
 
 ---

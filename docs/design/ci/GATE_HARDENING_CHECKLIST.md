@@ -29,6 +29,7 @@
 | D-013 | Stage coverage drift | Stage 3 admin catalog (templates/instance sizes) lacked frontend live e2e proof and dedicated baseline freeze; risked regressions to placeholder/no-op UX | `internal/api/handlers/server_admin_catalog.go`, `web/tests/e2e/master-flow-live.spec.ts`, `docs/design/traceability/master-flow-tests.json` | ✅ Resolved (2026-02-15): live e2e CRUD + frontend hook tests added and bound to `check_stage3_admin_catalog_baseline.go` |
 | D-014 | Stage coverage drift | Stage 4 hierarchy (system/service/member) lacked dedicated baseline freeze for create/update behavior and frontend live proof; risked behavior drift while delete tests remained green | `internal/api/handlers/server_system.go`, `internal/api/handlers/member.go`, `web/tests/e2e/master-flow-live.spec.ts` | ✅ Resolved (2026-02-15): Stage 4 baseline gate added + live e2e success path (create/update/delete) added and wired |
 | D-015 | Doc vs Impl | Phase 1 checklist still described placeholder/file-backed cluster credential work and a closed `ProviderConfig` discriminated union after the implementation moved to encrypted DB-backed kubeconfig bytes and plugin-owned schema config maps | `docs/design/checklist/phase-1-checklist.md`, `internal/provider/kubeconfigcodec/codec.go`, `internal/provider/kubecli_adapter.go`, `internal/api/handlers/server_admin.go` | ✅ Resolved (2026-05-09): checklist/design docs synced to current implementation and `check_doc_claims_consistency.go` now freezes cluster kubeconfig security evidence plus stale provider-config claim removal |
+| D-016 | Contract Tooling | ADR-0028 generated-type verification remained a manual review item even though `api/oapi-codegen.yaml` and generated Go tags are deterministic artifacts | `docs/design/checklist/phase-1-checklist.md`, `api/oapi-codegen.yaml`, `internal/api/generated/server.gen.go` | ✅ Resolved (2026-05-09): `check_openapi_critical_contract.go` now verifies oapi-codegen optional-pointer options and generated `omitempty,omitzero` tag semantics |
 
 ## 3. Gate Hardening Queue (Do First)
 
@@ -56,6 +57,7 @@
 | GH-020 | P1 | Upgrade Stage 5.E baseline to include frontend queue UX hard requirements (`status_url`, 429 cooldown, affected-child feedback, aria-live) | `check_stage5e_batch_baseline.go` frontend fragment assertions + controller tests | ✅ Done (2026-02-15) |
 | GH-021 | P1 | Freeze Stage 6 replay-store baseline to prevent regression to process-local token replay semantics | `check_stage6_vnc_baseline.go` + PG replay store + cross-instance token tests | ✅ Done (2026-02-15) |
 | GH-022 | P1 | Freeze Phase 1 cluster credential runtime baseline and remove stale provider-config design claims | `check_doc_claims_consistency.go` cluster kubeconfig evidence + Phase 1 checklist/design sync | ✅ Done (2026-05-09) |
+| GH-023 | P1 | Freeze ADR-0028 generated optional-field semantics | `check_openapi_critical_contract.go` oapi-codegen config + generated Go tag checks | ✅ Done (2026-05-09) |
 
 ## 4. Deferred API Scope (Explicitly Tracked)
 
