@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/01-contracts.md](../phases/01-contracts.md)
 >
-> **Implementation Status**: 🔄 Partial (~94%) — 33 Ent schemas complete, Go/TS API types + frontend testing toolchain completed, contract CI hardening gaps and deferred V2 schemas remain
+> **Implementation Status**: 🔄 Partial (~96%) — 33 Ent schemas complete, Go/TS API types, frontend testing toolchain, cluster credential runtime, and provider-plugin config boundary are complete; generated-type review, Ent standards, and deferred V2 schemas remain
 
 ---
 
@@ -69,11 +69,12 @@
 ## Multi-cluster Credential Management
 
 - [x] **Cluster Schema Fields** complete
-- [ ] **Encryption Service** (`internal/pkg/crypto/cluster_crypto.go`) implemented (deferred to Phase 4+)
+- [x] **Cluster kubeconfig protection** implemented — `internal/provider/kubeconfigcodec/codec.go` validates, sanitizes, and AES-256-GCM protects stored kubeconfig bytes
 - [x] **CredentialProvider Interface** (Strategy Pattern) defined
-- [ ] **ClusterRepository** methods implemented (deferred to Phase 2+)
-- [ ] **Admin API** for dynamic cluster management (deferred to Phase 3+)
-- [ ] **File-based Approach Forbidden** (CI detection)
+- [x] **Cluster persistence/admin workflow** implemented through Ent-backed admin handlers and `ClusterPolicyService`; no separate `ClusterRepository` is required under the current manual-DI/narrow-service architecture
+- [x] **Admin API** for dynamic cluster management implemented (`/admin/clusters`, `/admin/clusters/{cluster_id}`, environment update, and policy endpoints)
+- [x] **File-based kubeconfig approach forbidden** — sanitizer rejects CA/token/client-cert file references, exec/auth-provider plugins, proxy URLs, and unsafe TLS settings; runtime client loading uses stored bytes via `clientcmd.RESTConfigFromKubeConfig`
+- [x] **Cluster kubeconfig security baseline gate** is frozen in `check_doc_claims_consistency.go`
 
 ---
 
@@ -123,7 +124,7 @@
 > **Purpose**: Ensure generated Go types use `omitzero` tag to eliminate pointer hell.    
 > **Status**: ADR-0028 **Accepted** ✅. See [ADR-0028](../../adr/ADR-0028-oapi-codegen-optional-field-strategy.md).
 
-- [x] `go.mod` requires Go 1.25+ (enables `omitzero` support) — *Go 1.25.7*
+- [x] `go.mod` requires Go 1.25+ (enables `omitzero` support) — *Go 1.25.10*
 - [x] `api/oapi-codegen.yaml` contains:
   - [x] `output-options.prefer-skip-optional-pointer-with-omitzero: true`
 - [ ] **Generated types verification** (Code Review enforcement):
@@ -186,9 +187,12 @@
 
 ## Provider Configuration Type Safety
 
-- [ ] `ProviderConfig` uses interface type (not `map[string]interface{}`)
-- [ ] `ParseProviderConfig()` implements Discriminated Union logic
-- [ ] Validation using `go-playground/validator`
+- [x] **Replaced by accepted provider-plugin boundary** — ADR-0035/ADR-0048/ADR-0049/ADR-0050 standardize provider config as schema-described JSON at the plugin edge, not a closed discriminated union in core
+- [x] Admin adapters expose `ConfigSchema` and `ValidateConfig(config map[string]interface{})`
+- [x] Runtime/directory provider contracts keep provider-owned request/config maps at the boundary and normalize only canonical results into core DTOs
+- [x] `AuthProviderConfigCodec` encrypts sensitive provider config fields for storage, decrypts for runtime use, masks API reads, and preserves protected fields on update
+- [x] Frontend admin flow uses provider type discovery plus `SchemaConfigForm`; provider types are not hardcoded
+- [x] `check_auth_provider_plugin_boundary.go` and `authproviderplugin-sdk-smoke` freeze the public SDK / no-internal-import boundary
 
 ---
 

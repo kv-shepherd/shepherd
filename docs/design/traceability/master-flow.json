@@ -180,6 +180,7 @@
         "docs/adr/ADR-0046-schema-mask-field-visibility-tiers.md"
       ],
       "examples": [
+        "docs/design/CURRENT_STATE.md#implemented-capabilities",
         "docs/design/DEFERRED_FOLLOWUPS.md",
         "web/src/features/admin-templates/components/AdminTemplatesContent.tsx",
         "web/src/features/admin-instance-sizes/components/AdminInstanceSizesContent.tsx",

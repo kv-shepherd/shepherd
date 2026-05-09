@@ -47,6 +47,7 @@ amends or supersedes the old decision.
 | Console | Approval-aware VNC/serial request/status/open flow with encrypted single-use bootstrap credential |
 | Catalogs | Admin and user-facing templates and instance sizes with catalog scope and capability hints |
 | Cluster policy | Explicit cluster policy controls for clone, image import, host devices, storage classes, and namespace scope |
+| Cluster credentials | DB-backed sanitized kubeconfig bytes protected with AES-256-GCM; upload/update rejects local file references, exec/auth-provider plugins, proxy URLs, and unsafe TLS settings |
 | VM status convergence | ADR-0038 adaptive polling with ResourceVersion caching and River scheduling |
 
 ## Design Drift Decisions
@@ -58,6 +59,7 @@ amends or supersedes the old decision.
 | SSA requires `controller-runtime` | SSA is implemented with `dynamic.Interface`, `types.ApplyPatchType`, and `FieldManager` in `internal/provider/ssa_applier.go`. | Keep the current dynamic-client implementation. It satisfies ADR-0011 without adding `controller-runtime` as a runtime dependency. |
 | Server-side browser sessions via `scs` | The product uses Shepherd-issued JWTs, DB-bootstrapped signing/encryption secrets, and PostgreSQL replay markers for console bootstrap credentials. | Keep the current JWT model. If active token revocation or server-side user session state becomes a requirement, that should be introduced by a new ADR/RFC. |
 | API and frontend counts from March docs | Current OpenAPI exposes 135 operationIds; frontend has 29 App Router page files. | Update summary docs and checklists. Counts are implementation facts, not ADR decisions. |
+| Phase 1 cluster credentials expected a future `ClusterRepository`/file-backed credential provider shape | Current runtime uses Ent-backed admin handlers, `ClusterPolicyService`, `ClusterKubeconfigCodec`, and byte-based client-go loading from persisted kubeconfig bytes. | Keep the implemented DB-backed credential boundary. It better matches artifact-owned runtime operation and avoids production dependence on local kubeconfig paths. |
 
 ## Remaining Gaps
 

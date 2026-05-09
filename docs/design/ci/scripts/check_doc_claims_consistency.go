@@ -11,6 +11,7 @@ import (
 )
 
 const (
+	phase1Checklist         = "docs/design/checklist/phase-1-checklist.md"
 	phase4Checklist         = "docs/design/checklist/phase-4-checklist.md"
 	phase5Checklist         = "docs/design/checklist/phase-5-checklist.md"
 	phase5DesignDoc         = "docs/design/phases/05-auth-api-frontend.md"
@@ -21,6 +22,11 @@ const (
 	openAPIFile             = "api/openapi.yaml"
 	approvalHandler         = "internal/api/handlers/server_approval.go"
 	rbacMiddleware          = "internal/api/middleware/rbac.go"
+	clusterSchema           = "ent/schema/cluster.go"
+	kubeconfigCodec         = "internal/provider/kubeconfigcodec/codec.go"
+	kubecliAdapter          = "internal/provider/kubecli_adapter.go"
+	adminHandler            = "internal/api/handlers/server_admin.go"
+	adminClusterTests       = "internal/api/handlers/server_admin_cluster_test.go"
 	vmHandler               = "internal/api/handlers/server_vm.go"
 	namespaceHandler        = "internal/api/handlers/server_namespace.go"
 	envVisibility           = "internal/api/handlers/environment_visibility.go"
@@ -45,10 +51,12 @@ func main() {
 				"// ExternalApprovalProvider defines the contract for external approval systems",
 				"type ExternalApprovalProvider interface {",
 			},
-			"docs/design/checklist/phase-1-checklist.md": {
+			phase1Checklist: {
 				"**AuthProvider Interface** defined (`internal/provider/auth.go`)",
 				"**ApprovalProvider Interface** defined (`internal/provider/auth.go`)",
 				"**NotificationProvider Interface** defined (`internal/provider/auth.go`)",
+				"`ProviderConfig` uses interface type (not `map[string]interface{}`)",
+				"`ParseProviderConfig()` implements Discriminated Union logic",
 			},
 			"docs/design/checklist/phase-2-checklist.md": {
 				"Interface definitions (`ApprovalProvider` in `internal/provider/auth.go`)",
@@ -190,6 +198,16 @@ func main() {
 	if !hasBootstrapSecretsEvidence {
 		violations = append(violations,
 			fmt.Sprintf("%s: accepted ADR still claims persisted bootstrap secrets, but runtime DB-backed bootstrap evidence is missing", adr0025))
+	}
+
+	hasClusterKubeconfigEvidence, err := hasClusterKubeconfigSecurityEvidence()
+	if err != nil {
+		fmt.Printf("FAIL: inspect cluster kubeconfig security evidence: %v\n", err)
+		os.Exit(1)
+	}
+	if !hasClusterKubeconfigEvidence {
+		violations = append(violations,
+			"cluster kubeconfig security baseline is missing: expected DB-backed encrypted kubeconfig storage, sanitizer rejection of file/exec references, byte-based client-go loading, admin handler wiring, and plaintext-leak regression tests")
 	}
 
 	if len(violations) > 0 {
@@ -375,4 +393,82 @@ func hasBootstrapSecretPersistenceEvidence() (bool, error) {
 	return strings.Contains(resolverText, "ResolveBootstrapSecuritySecrets(") &&
 		strings.Contains(resolverText, "system_secrets") &&
 		strings.Contains(modulesText, "ValidateResolvedSecuritySecrets("), nil
+}
+
+func hasClusterKubeconfigSecurityEvidence() (bool, error) {
+	checks := []struct {
+		path      string
+		fragments []string
+	}{
+		{
+			path: clusterSchema,
+			fragments: []string{
+				`field.Bytes("encrypted_kubeconfig")`,
+				"Sensitive().Comment(\"AES-256-GCM protected cluster kubeconfig bytes\")",
+				`field.String("encryption_key_id")`,
+			},
+		},
+		{
+			path: kubeconfigCodec,
+			fragments: []string{
+				"func (c *ClusterKubeconfigCodec) PrepareForStorage(",
+				"func (c *ClusterKubeconfigCodec) LoadForRuntime(",
+				"func SanitizeClusterKubeconfig(",
+				"clientcmd.Load(raw)",
+				"certificate-authority file paths are not supported",
+				"exec credential plugins are not supported",
+				"tokenFile references are not supported",
+				"client certificate/key file paths are not supported",
+			},
+		},
+		{
+			path: kubecliAdapter,
+			fragments: []string{
+				"clientcmd.RESTConfigFromKubeConfig(kubeconfig)",
+				"load kubeconfig for cluster",
+				"kubeconfigHash := sha256.Sum256(kubeconfig)",
+			},
+		},
+		{
+			path: adminHandler,
+			fragments: []string{
+				"func (s *Server) CreateCluster(",
+				"func (s *Server) UpdateCluster(",
+				"s.prepareClusterKubeconfigForStorage(",
+				"SetEncryptedKubeconfig(storedKubeconfig)",
+				"SetEncryptionKeyID(encryptionKeyID)",
+			},
+		},
+		{
+			path: adminClusterTests,
+			fragments: []string{
+				"stored.EncryptedKubeconfig",
+				"stored kubeconfig leaked plaintext token",
+				"TestCreateCluster_RejectsUnsafeKubeconfigExecPlugin",
+				"TestUpdateCluster_ReplacesKubeconfigAndRefreshesHealth",
+			},
+		},
+	}
+
+	for _, check := range checks {
+		ok, err := fileContainsAll(check.path, check.fragments...)
+		if err != nil || !ok {
+			return ok, err
+		}
+	}
+	return true, nil
+}
+
+func fileContainsAll(path string, fragments ...string) (bool, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false, err
+	}
+	text := string(b)
+	for _, fragment := range fragments {
+		if !strings.Contains(text, fragment) {
+			return false, nil
+		}
+	}
+	return true, nil
 }

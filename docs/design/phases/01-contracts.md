@@ -472,6 +472,13 @@ func (p *KubeVirtProvider) GetVM(...) (*kubevirtv1.VirtualMachine, error)
 - No file-based configuration
 - Dynamic hot-loading (no restart required)
 
+> Implementation sync (2026-05-09): V1 stores sanitized kubeconfig bytes in
+> PostgreSQL via `ClusterKubeconfigCodec`, rejects local file/exec credential
+> references at upload/update time, and builds runtime clients from persisted
+> bytes with client-go. This replaces the older placeholder idea of a separate
+> `internal/pkg/crypto/cluster_crypto.go` service or file-backed
+> `KubeconfigProvider`.
+
 ### Cluster Schema Fields
 
 | Field | Type | Purpose |
@@ -487,11 +494,11 @@ func (p *KubeVirtProvider) GetVM(...) (*kubevirtv1.VirtualMachine, error)
 
 ```go
 type CredentialProvider interface {
-    GetRESTConfig(ctx context.Context, clusterName string) (*rest.Config, error)
+    GetRESTConfig(ctx context.Context, clusterName string) (interface{}, error)
     Type() string
 }
 
-// Phase 1: KubeconfigProvider (from database)
+// Phase 1: DB-backed sanitized kubeconfig bytes + KubeconfigLoader.
 // Future: VaultProvider, ExternalSecretProvider
 ```
 
