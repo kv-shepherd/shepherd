@@ -24,6 +24,7 @@
       "id": "stage-1-5",
       "phases": [
         "docs/design/phases/00-prerequisites.md#ci-enforcement",
+        "docs/design/phases/00-prerequisites.md#8-data-initialization-adr-0018",
         "docs/design/phases/01-contracts.md",
         "docs/design/phases/01-contracts.md#ent-usage-standards-ci-enforcement",
         "docs/design/phases/05-auth-api-frontend.md",
@@ -41,6 +42,7 @@
         "docs/adr/ADR-0053-prelaunch-rbac-baseline-cleanup.md"
       ],
       "examples": [
+        "docs/design/database/migrations.md#startup-migration-modes",
         "docs/design/frontend/FRONTEND.md",
         "web/tests/e2e/login-smoke.spec.ts"
       ]

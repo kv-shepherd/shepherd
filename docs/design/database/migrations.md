@@ -26,12 +26,33 @@ Rationale:
 
 ---
 
+## Startup Migration Modes
+
+Production startup owns the default migration flow. When
+`DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS=true`, the server inspects database
+state before accepting traffic:
+
+| Database state | Startup behavior |
+|------|------|
+| Fresh database, no core tables, no `atlas_schema_revisions` | Bootstrap the current Ent schema, record the latest Atlas migration version as the baseline, then apply River migrations. |
+| Existing schema without `atlas_schema_revisions` | Adopt the schema with Atlas versioned migrations using the dirty-database allowance, then apply River migrations. |
+| Atlas-managed schema with `atlas_schema_revisions` | Apply pending Atlas migrations normally, then apply River migrations. |
+
+Do not run raw `atlas migrate apply` against a fresh database as the first
+operation. The Atlas directory contains reviewed incremental migrations, not a
+full base-schema dump. Fresh deployments should use the server startup path so
+the base schema and Atlas revision baseline are established together.
+
+---
+
 ## Migration Rules
 
 - Backward compatibility first: avoid breaking running workers/controllers mid-rollout.
 - For destructive schema evolution, use staged rollout (expand -> migrate -> contract).
 - Keep DDL and code changes in the same PR/changeset when tightly coupled.
 - Regenerate code artifacts after schema changes (Ent/sqlc as applicable).
+- Manual Atlas apply is reserved for operator-controlled upgrades where the
+  database already has the base business schema or an Atlas revision table.
 
 ---
 

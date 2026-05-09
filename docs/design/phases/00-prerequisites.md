@@ -398,8 +398,8 @@ ORDER BY dead_ratio DESC;
 
 Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING`):
 
-1. **Run Atlas migrations** - Schema changes
-2. **Run River migrations** - Job queue tables
+1. **Prepare business schema** - startup migration path handles fresh, existing, and Atlas-managed databases
+2. **Run River migrations** - job queue tables
 3. **Seed built-in roles** - Complete role set (see below)
 4. **Seed default admin** - `admin/admin` with `force_password_change=true`
 
@@ -438,18 +438,19 @@ Application performs these steps on startup (idempotent, `ON CONFLICT DO NOTHING
 
 ### Manual Migration (Development/CI)
 
-For explicit control outside auto-init:
+For explicit control outside the production compose wrapper, prefer the same
+startup path used in production:
 
 ```bash
-# 1. Atlas migration (business tables)
-atlas migrate apply --dir file://migrations/atlas --url $DATABASE_URL
-
-# 2. River migration (job queue tables)
-river migrate-up --database-url $DATABASE_URL
-
-# 3. Application auto-seeds on first startup
-go run cmd/server/main.go
+# Server startup prepares the business schema and River tables before readiness.
+DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS=true go run cmd/server/main.go
 ```
+
+Raw `atlas migrate apply` is not a fresh-database bootstrap command for this
+repository. The checked-in Atlas files are incremental migrations and expect the
+base business schema to exist. Use manual Atlas apply only for an existing
+schema or an Atlas-managed database, then run River migrations before starting
+the server.
 
 ---
 
