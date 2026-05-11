@@ -31,6 +31,7 @@
 | D-015 | Doc vs Impl | Phase 1 checklist still described placeholder/file-backed cluster credential work and a closed `ProviderConfig` discriminated union after the implementation moved to encrypted DB-backed kubeconfig bytes and plugin-owned schema config maps | `docs/design/checklist/phase-1-checklist.md`, `internal/provider/kubeconfigcodec/codec.go`, `internal/provider/kubecli_adapter.go`, `internal/api/handlers/server_admin.go` | ✅ Resolved (2026-05-09): checklist/design docs synced to current implementation and `check_doc_claims_consistency.go` now freezes cluster kubeconfig security evidence plus stale provider-config claim removal |
 | D-016 | Contract Tooling | ADR-0028 generated-type verification remained a manual review item even though `api/oapi-codegen.yaml` and generated Go tags are deterministic artifacts | `docs/design/checklist/phase-1-checklist.md`, `api/oapi-codegen.yaml`, `internal/api/generated/server.gen.go` | ✅ Resolved (2026-05-09): `check_openapi_critical_contract.go` now verifies oapi-codegen optional-pointer options and generated `omitempty,omitzero` tag semantics |
 | D-017 | Ent Tooling | Ent generated-code sync existed only as an advisory helper and was not wired into required governance checks, leaving schema/code drift to review discipline | `docs/design/ci/scripts/check_ent_codegen.go`, `ent/generate.go`, `go.mod` | ✅ Resolved (2026-05-09): `check_ent_codegen.go` runs in `make ci-governance`; `go.mod` pins the Ent generator as a tool dependency |
+| D-018 | Ent Query Safety | Runtime handlers had legitimate JSONB dynamic predicates but imported raw `ent/dialect/sql` directly, leaving no boundary against future type-unsafe dynamic-query expansion | `internal/api/handlers/member.go`, `internal/api/handlers/server_approval.go`, `internal/api/handlers/server_admin.go`, `tools/shepherd-linter` | ✅ Resolved (2026-05-09): custom JSONB predicates moved into reviewed `*_ent_predicates.go` helpers and `shepherd-arch/entquerysafety` blocks raw Ent SQL imports elsewhere |
 
 ## 3. Gate Hardening Queue (Do First)
 
@@ -60,6 +61,7 @@
 | GH-022 | P1 | Freeze Phase 1 cluster credential runtime baseline and remove stale provider-config design claims | `check_doc_claims_consistency.go` cluster kubeconfig evidence + Phase 1 checklist/design sync | ✅ Done (2026-05-09) |
 | GH-023 | P1 | Freeze ADR-0028 generated optional-field semantics | `check_openapi_critical_contract.go` oapi-codegen config + generated Go tag checks | ✅ Done (2026-05-09) |
 | GH-024 | P1 | Promote Ent code generation sync from advisory helper to required governance gate | `check_ent_codegen.go` + `go.mod` tool pin + Phase 1 checklist sync | ✅ Done (2026-05-09) |
+| GH-025 | P1 | Freeze Ent dynamic-query safety boundary in shepherd-linter | `entquerysafety` analyzer + reviewed `*_ent_predicates.go` helpers + Phase 1 checklist sync | ✅ Done (2026-05-09) |
 
 ## 4. Deferred API Scope (Explicitly Tracked)
 

@@ -11,8 +11,6 @@ import (
 	"strings"
 	"unicode"
 
-	"entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -23,7 +21,6 @@ import (
 	entrole "kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	entuser "kv-shepherd.io/shepherd/ent/user"
-	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -777,40 +774,6 @@ func buildUserSearchPredicate(
 		predicates = append(predicates, userProfileAttributeContains(field, term.Value))
 	}
 	return entuser.Or(predicates...)
-}
-
-func impossibleUserSearchPredicate() predicate.User {
-	return predicate.User(func(s *sql.Selector) {
-		s.Where(sql.P(func(builder *sql.Builder) {
-			builder.WriteString("1 = 0")
-		}))
-	})
-}
-
-func userProfileAttributeContains(field, value string) predicate.User {
-	field = strings.TrimSpace(field)
-	value = strings.TrimSpace(value)
-	return entuser.HasDirectoryProfileWith(predicate.UserDirectoryProfile(func(s *sql.Selector) {
-		s.Where(sql.P(func(builder *sql.Builder) {
-			builder.WriteString("LOWER(")
-			builder.Join(sqljson.ValuePath(userdirectoryprofile.FieldAttributes, sqljson.Path(field), sqljson.Unquote(true)))
-			builder.WriteString(") LIKE ")
-			builder.Arg("%" + strings.ToLower(value) + "%")
-		}))
-	}))
-}
-
-func userProfileAttributeEqualFold(field, value string) predicate.User {
-	field = strings.TrimSpace(field)
-	value = strings.TrimSpace(value)
-	return entuser.HasDirectoryProfileWith(predicate.UserDirectoryProfile(func(s *sql.Selector) {
-		s.Where(sql.P(func(builder *sql.Builder) {
-			builder.WriteString("LOWER(")
-			builder.Join(sqljson.ValuePath(userdirectoryprofile.FieldAttributes, sqljson.Path(field), sqljson.Unquote(true)))
-			builder.WriteString(") = ")
-			builder.Arg(strings.ToLower(value))
-		}))
-	}))
 }
 
 func userHasRoleNameContainsFold(value string) predicate.User {

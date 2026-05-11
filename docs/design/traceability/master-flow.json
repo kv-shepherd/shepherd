@@ -46,7 +46,8 @@
       ],
       "ci": [
         "docs/design/ci/scripts/check_ent_codegen.go",
-        "docs/design/ci/scripts/check_openapi_critical_contract.go"
+        "docs/design/ci/scripts/check_openapi_critical_contract.go",
+        "tools/shepherd-linter/analyzer/entquerysafety/analyzer.go"
       ],
       "examples": [
         ".github/workflows/release.yml",

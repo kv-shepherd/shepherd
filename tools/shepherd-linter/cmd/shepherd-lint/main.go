@@ -14,6 +14,7 @@
 //
 //	nakedgoroutine   - ADR-0031: no naked `go` statements in internal code
 //	forbiddenimports - Detects fake clients, GORM, outbox imports, hardcoded paths
+//	entquerysafety   - ADR-0003: keep raw Ent SQL predicates in reviewed helpers
 //	riverbypass      - ADR-0006: UseCase layer must use River Queue for protected entity writes
 //	runtimemock      - Detects runtime wiring of MockProvider (test-only construct)
 //	semaphoreusage   - ADR-0031: Acquire() must have paired defer Release()

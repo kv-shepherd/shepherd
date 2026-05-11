@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strings"
 
-	entsql "entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"go.uber.org/zap"
@@ -912,33 +910,19 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	if decision := strings.TrimSpace(params.ApprovalDecision); decision != "" {
 		query = query.Where(
 			auditlog.ResourceTypeEQ("ticket"),
-			predicate.AuditLog(func(s *entsql.Selector) {
-				s.Where(sqljson.ValueEQ(auditlog.FieldDetails, decision, sqljson.Path("decision")))
-			}),
+			auditDetailsDecisionEquals(decision),
 		)
 	}
 	if reasonCode := strings.TrimSpace(params.PlacementReasonCode); reasonCode != "" {
 		query = query.Where(
 			auditlog.ResourceTypeEQ("ticket"),
-			predicate.AuditLog(func(s *entsql.Selector) {
-				s.Where(sqljson.ValueEQ(
-					auditlog.FieldDetails,
-					reasonCode,
-					sqljson.Path("placement_evaluation", "reason_code"),
-				))
-			}),
+			auditDetailsPlacementReasonCodeEquals(reasonCode),
 		)
 	}
 	if advisoryCode := strings.TrimSpace(params.PlacementAdvisoryCode); advisoryCode != "" {
 		query = query.Where(
 			auditlog.ResourceTypeEQ("ticket"),
-			predicate.AuditLog(func(s *entsql.Selector) {
-				s.Where(sqljson.ValueEQ(
-					auditlog.FieldDetails,
-					advisoryCode,
-					sqljson.Path("placement_evaluation", "advisory_code"),
-				))
-			}),
+			auditDetailsPlacementAdvisoryCodeEquals(advisoryCode),
 		)
 	}
 

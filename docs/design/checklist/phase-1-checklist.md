@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/01-contracts.md](../phases/01-contracts.md)
 >
-> **Implementation Status**: 🔄 Partial (~98%) — 33 Ent schemas complete, Ent codegen sync gate, Go/TS API types, ADR-0028 generated-type gate, frontend testing toolchain, cluster credential runtime, and provider-plugin config boundary are complete; remaining work is Ent standards and deferred V2 schemas
+> **Implementation Status**: 🔄 Partial (~98%) — 33 Ent schemas complete, Ent codegen sync gate, Ent dynamic-query safety gate, Go/TS API types, ADR-0028 generated-type gate, frontend testing toolchain, cluster credential runtime, and provider-plugin config boundary are complete; remaining work is Ent schema/transaction/test standards and deferred V2 schemas
 
 ---
 
@@ -82,7 +82,7 @@
 
 - [ ] **Schema Definition Standards** followed
 - [x] **Code Generation Sync** (CI detection) — `check_ent_codegen.go` runs in `make ci-governance`; `go.mod` pins the Ent generator tool so `go generate ./ent` is reproducible without `go.sum` churn
-- [ ] **Dynamic Queries Must Be Type-Safe**
+- [x] **Dynamic Queries Must Be Type-Safe** — `shepherd-arch/entquerysafety` requires generated Ent predicates by default and limits raw `ent/dialect/sql` / `sqljson` imports to reviewed `*_ent_predicates.go` helpers plus database/test integration
 - [ ] **Transaction Management** per ADR-0012
 - [ ] **Test Infrastructure** (PostgreSQL via testcontainers-go)
 - [ ] **Test Coverage** (CI enforcement)

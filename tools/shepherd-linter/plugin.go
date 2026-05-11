@@ -13,6 +13,7 @@ import (
 	"golang.org/x/tools/go/analysis"
 
 	"kv-shepherd.io/shepherd-linter/analyzer/authproviderlayering"
+	"kv-shepherd.io/shepherd-linter/analyzer/entquerysafety"
 	"kv-shepherd.io/shepherd-linter/analyzer/forbiddenimports"
 	"kv-shepherd.io/shepherd-linter/analyzer/k8sintransaction"
 	"kv-shepherd.io/shepherd-linter/analyzer/k8spollingrv"
@@ -38,6 +39,7 @@ func init() {
 var AllAnalyzers = []*analysis.Analyzer{
 	nakedgoroutine.Analyzer,
 	forbiddenimports.Analyzer,
+	entquerysafety.Analyzer,
 	manualdi.Analyzer,
 	openapirbaccontract.Analyzer,
 	authproviderlayering.Analyzer,

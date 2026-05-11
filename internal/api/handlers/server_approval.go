@@ -8,8 +8,6 @@ import (
 	"strings"
 	"time"
 
-	entsql "entgo.io/ent/dialect/sql"
-	"entgo.io/ent/dialect/sql/sqljson"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
@@ -19,7 +17,6 @@ import (
 	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
 	"kv-shepherd.io/shepherd/ent/domainevent"
 	entinstancesize "kv-shepherd.io/shepherd/ent/instancesize"
-	"kv-shepherd.io/shepherd/ent/predicate"
 	entservice "kv-shepherd.io/shepherd/ent/service"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
@@ -123,13 +120,7 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 				entticket.ReasonContainsFold(search),
 				entticket.RejectReasonContainsFold(search),
 				entticket.SelectedClusterIDContainsFold(search),
-				predicate.Ticket(func(s *entsql.Selector) {
-					s.Where(sqljson.StringContains(
-						entticket.FieldPlacementEvaluation,
-						search,
-						sqljson.Path("selected_cluster_name"),
-					))
-				}),
+				ticketPlacementSelectedClusterNameContains(search),
 			),
 		)
 	}
@@ -172,15 +163,7 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 		query = query.Where(entticket.SelectedClusterIDEQ(options.selectedClusterID))
 	}
 	if options.placementAdvisoryCode != "" {
-		query = query.Where(
-			predicate.Ticket(func(s *entsql.Selector) {
-				s.Where(sqljson.ValueEQ(
-					entticket.FieldPlacementEvaluation,
-					options.placementAdvisoryCode,
-					sqljson.Path("advisory_code"),
-				))
-			}),
-		)
+		query = query.Where(ticketPlacementAdvisoryCodeEquals(options.placementAdvisoryCode))
 	}
 	switch options.placementSnapshot {
 	case "":

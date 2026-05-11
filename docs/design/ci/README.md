@@ -56,7 +56,7 @@ Enforcement is blocking:
 
 | Script | Check Content | Level | Blocks CI |
 |--------|---------------|-------|-----------|
-| `shepherd-arch` (golangci-lint module plugin) | Batch1/2 architecture gates: forbidden imports, manual DI, explicit RBAC, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check, auth-provider core/edge/provider layering | Required | ✅ Yes |
+| `shepherd-arch` (golangci-lint module plugin) | Batch1/2 architecture gates: forbidden imports, Ent query-safety boundary, manual DI, explicit RBAC, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check, auth-provider core/edge/provider layering | Required | ✅ Yes |
 | `shepherd-arch/k8sintransaction` (Analyzer) | No K8s API calls inside transactions | Required | ✅ Yes |
 | [check_validate_spec.go](./scripts/check_validate_spec.go) | No ValidateSpec calls inside transactions | Required | ✅ Yes |
 | [check_openapi_critical_contract.go](./scripts/check_openapi_critical_contract.go) | Enforce stage-critical OpenAPI contracts (auth/vm/approval/audit/notification + global BearerAuth) and ADR-0028 oapi-codegen optional-field/tag strategy | Required | ✅ Yes |
@@ -87,6 +87,7 @@ Enforcement is blocking:
 | [check_no_chinese_chars.sh](./scripts/check_no_chinese_chars.sh) | Block Chinese characters in repository content except approved i18n paths (`docs/i18n/zh-CN/design/interaction-flows/master-flow.md`, `web/src/i18n/locales/zh-CN/**`) | Required | ✅ Yes |
 | [check_module_noop_hooks.go](./scripts/check_module_noop_hooks.go) | Block silent noop `ContributeServerDeps` / `RegisterWorkers` hooks unless allowlisted | Required | ✅ Yes |
 | [check_ent_codegen.go](./scripts/check_ent_codegen.go) | Ent code generation sync check (`go generate ./ent` + dirty tree detection); Ent generator tool dependency is pinned in `go.mod` | Required | ✅ Yes |
+| `shepherd-arch/entquerysafety` (Analyzer) | Enforce generated Ent predicates as the default dynamic-query path; raw `ent/dialect/sql` / `sqljson` imports are limited to reviewed `*_ent_predicates.go` helpers plus database/test integration | Required | ✅ Yes |
 | `shepherd-arch/manualdi` (Analyzer) | **Strict Manual DI convention** (centralized hand-written DI, no Wire/Redis drift) | Required | ✅ Yes |
 | [check_sqlc_usage.sh](./scripts/check_sqlc_usage.sh) | **sqlc usage scope** (ADR-0012 whitelist enforcement) | Required | ✅ Yes |
 | [check_repository_tests.go](./scripts/check_repository_tests.go) | Repository methods must have tests | Required | ✅ Yes |

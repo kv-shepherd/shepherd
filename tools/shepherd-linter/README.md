@@ -97,6 +97,7 @@ Context7 best practices applied: `pass.Files` for comment scanning (not `os.Read
 | Analyzer | Enforces | Original script |
 |----------|----------|-----------------|
 | `openapirbaccontract` | Explicit `x-rbac` semantics, auth scheme alignment, and `401/403` response coverage on every OpenAPI operation | New analyzer-only enforcement |
+| `entquerysafety` | Raw `ent/dialect/sql` / `sqljson` usage is limited to reviewed `*_ent_predicates.go` helpers plus database/test integration | New analyzer-only enforcement |
 
 **`ssacompliance` rules:**
 - Forbidden struct literals: `kubevirtv1.VirtualMachine{...}`, `kubevirtv1.VirtualMachineSpec{...}`, etc.
