@@ -134,8 +134,8 @@ func TestListLoginAuthProviders_ListsEnabledRuntimeProviders(t *testing.T) {
 	}
 	if _, err := client.AuthProvider.Create().
 		SetID("admin-only").
-		SetName("Admin Only").
-		SetAuthType("oidc").
+		SetName("Missing Runtime").
+		SetAuthType("missing-provider").
 		SetConfig(map[string]interface{}{"issuer_url": "https://issuer.example.com"}).
 		SetEnabled(true).
 		SetCreatedBy("admin-1").

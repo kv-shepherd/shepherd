@@ -9,6 +9,10 @@ import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
 import { translateApiError } from "@/lib/api/errorMessage";
 import {
+  filterCompatibleInstanceSizes,
+  templateInstanceSizeCompatible,
+} from "@/features/catalog/systemLabels";
+import {
   clearStoredActiveBatchState,
   readStoredActiveBatchState,
   saveStoredActiveBatchState,
@@ -354,33 +358,6 @@ export function useVMManagementController({
   );
   const trimmedNamespaceValue =
     typeof namespaceValue === "string" ? namespaceValue.trim() : "";
-  const placementHintQuery = useApiGet<VMRequestContext>(
-    [
-      "vm-request-context",
-      "placement-hint",
-      trimmedNamespaceValue,
-      selectedTemplateId,
-      selectedSizeId,
-    ],
-    () =>
-      api.GET("/vms/request-context", {
-        params: {
-          query: {
-            namespace: trimmedNamespaceValue,
-            template_id: selectedTemplateId,
-            instance_size_id: selectedSizeId,
-          },
-        },
-      }),
-    {
-      enabled:
-        wizardOpen &&
-        !requestContextQuery.isError &&
-        Boolean(trimmedNamespaceValue) &&
-        Boolean(selectedTemplateId) &&
-        Boolean(selectedSizeId),
-    },
-  );
 
   // Backward-compatible fallback for environments where request-context is unavailable.
   const templatesFallbackQuery = useApiGet<TemplateList>(
@@ -470,12 +447,68 @@ export function useVMManagementController({
     return templatesFallbackQuery.data;
   }, [requestContextQuery.data, templatesFallbackQuery.data]);
 
-  const sizesData = useMemo<InstanceSizeList | undefined>(() => {
+  const allSizesData = useMemo<InstanceSizeList | undefined>(() => {
     if (requestContextQuery.data) {
       return { items: requestContextQuery.data.instance_sizes ?? [] };
     }
     return instanceSizesFallbackQuery.data;
   }, [requestContextQuery.data, instanceSizesFallbackQuery.data]);
+
+  const selectedSizeIsCompatible =
+    !selectedTemplate ||
+    !selectedSize ||
+    templateInstanceSizeCompatible(
+      selectedTemplate.system_labels,
+      selectedSize.system_labels,
+    );
+
+  const sizesData = useMemo<InstanceSizeList | undefined>(() => {
+    if (!allSizesData) {
+      return undefined;
+    }
+    return {
+      ...allSizesData,
+      items: filterCompatibleInstanceSizes(
+        allSizesData.items ?? [],
+        selectedTemplate,
+      ),
+    };
+  }, [allSizesData, selectedTemplate]);
+
+  const placementHintQuery = useApiGet<VMRequestContext>(
+    [
+      "vm-request-context",
+      "placement-hint",
+      trimmedNamespaceValue,
+      selectedTemplateId,
+      selectedSizeId,
+    ],
+    () =>
+      api.GET("/vms/request-context", {
+        params: {
+          query: {
+            namespace: trimmedNamespaceValue,
+            template_id: selectedTemplateId,
+            instance_size_id: selectedSizeId,
+          },
+        },
+      }),
+    {
+      enabled:
+        wizardOpen &&
+        !requestContextQuery.isError &&
+        selectedSizeIsCompatible &&
+        Boolean(trimmedNamespaceValue) &&
+        Boolean(selectedTemplateId) &&
+        Boolean(selectedSizeId),
+    },
+  );
+
+  useEffect(() => {
+    if (selectedTemplate && selectedSize && !selectedSizeIsCompatible) {
+      form.setFieldValue("instance_size_id", undefined);
+    }
+  }, [form, selectedSize, selectedSizeIsCompatible, selectedTemplate]);
 
   const resolvedActiveBatchKind = useMemo<ActiveBatchKind | "">(
     () =>

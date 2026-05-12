@@ -654,7 +654,7 @@ func TestPermissionEnforcement_CreateAuthProvider_RequiresAuthProviderConfigure(
 		t,
 		http.MethodPost,
 		"/admin/auth-providers",
-		`{"name":"corp-sso","auth_type":"generic","config":{"issuer":"https://idp.example.com"}}`,
+		`{"name":"corp-ldap","auth_type":"ldap","config":{"server_url":"ldaps://ldap.example.com:636","bind_dn":"cn=admin,dc=example,dc=com","base_dn":"dc=example,dc=com"}}`,
 		"user-a",
 		[]string{"auth_provider:read"},
 	)

@@ -294,7 +294,7 @@ describe("useAdminAuthProvidersController", () => {
           data: {
             items: [
               {
-                type: "generic",
+                type: "custom-directory",
                 display_name: "Corp SSO",
                 built_in: false,
                 config_schema: {
@@ -335,7 +335,7 @@ describe("useAdminAuthProvidersController", () => {
       result.current.openEditModal({
         id: "provider-1",
         name: "corp-sso",
-        auth_type: "generic",
+        auth_type: "custom-directory",
         enabled: true,
         sort_order: 10,
         config: {
@@ -399,7 +399,7 @@ describe("useAdminAuthProvidersController", () => {
       result.current.openMappingModal({
         id: "provider-1",
         name: "corp-directory-enrichment",
-        auth_type: "generic",
+        auth_type: "custom-directory",
         enabled: true,
       } as never);
     });
@@ -464,7 +464,7 @@ describe("useAdminAuthProvidersController", () => {
       result.current.openMappingModal({
         id: "provider-1",
         name: "corp-directory-enrichment",
-        auth_type: "generic",
+        auth_type: "custom-directory",
         enabled: true,
       } as never);
     });
@@ -502,7 +502,7 @@ describe("useAdminAuthProvidersController", () => {
       result.current.openMappingModal({
         id: "provider-1",
         name: "corp-sso",
-        auth_type: "generic",
+        auth_type: "custom-directory",
         enabled: true,
       } as never);
     });

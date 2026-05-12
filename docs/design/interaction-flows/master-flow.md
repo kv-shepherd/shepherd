@@ -567,10 +567,9 @@ Establish authentication, authorization, and initial security defaults required 
 │  │  ┌────────────────────────────────────────────────────────────────────────────────┐   │   │
 │  │  │  Provider type:                                                                   │   │   │
 │  │  │                                                                                  │   │   │
-│  │  │  ◉ OIDC (plugin) - Azure AD, Okta, Keycloak, Google Workspace                    │   │   │
-│  │  │  ○ LDAP (plugin) - Active Directory, OpenLDAP                                    │   │   │
-│  │  │  ○ SSO (plugin)  - Enterprise SSO adapter                                        │   │   │
-│  │  │  ○ Generic (plugin contract) - custom provider implementing standard fields       │   │   │
+│  │  │  ◉ OIDC - Azure AD, Okta, Keycloak, Google Workspace                             │   │   │
+│  │  │  ○ LDAP - Active Directory, OpenLDAP                                             │   │   │
+│  │  │  ○ WeCom - Enterprise WeCom QR and in-app login                                  │   │   │
 │  │  │                                                                                  │   │   │
 │  │  │  [Next →]                                                                         │   │   │
 │  │  └────────────────────────────────────────────────────────────────────────────────┘   │   │

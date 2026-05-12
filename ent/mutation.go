@@ -12088,6 +12088,8 @@ type InstanceSizeMutation struct {
 	dv_access_modes       *[]string
 	appenddv_access_modes []string
 	dv_volume_mode        *string
+	system_labels         *[]string
+	appendsystem_labels   []string
 	catalog_scope         *instancesize.CatalogScope
 	sort_order            *int
 	addsort_order         *int
@@ -13087,6 +13089,71 @@ func (m *InstanceSizeMutation) ResetDvVolumeMode() {
 	delete(m.clearedFields, instancesize.FieldDvVolumeMode)
 }
 
+// SetSystemLabels sets the "system_labels" field.
+func (m *InstanceSizeMutation) SetSystemLabels(s []string) {
+	m.system_labels = &s
+	m.appendsystem_labels = nil
+}
+
+// SystemLabels returns the value of the "system_labels" field in the mutation.
+func (m *InstanceSizeMutation) SystemLabels() (r []string, exists bool) {
+	v := m.system_labels
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSystemLabels returns the old "system_labels" field's value of the InstanceSize entity.
+// If the InstanceSize object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *InstanceSizeMutation) OldSystemLabels(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSystemLabels is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSystemLabels requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSystemLabels: %w", err)
+	}
+	return oldValue.SystemLabels, nil
+}
+
+// AppendSystemLabels adds s to the "system_labels" field.
+func (m *InstanceSizeMutation) AppendSystemLabels(s []string) {
+	m.appendsystem_labels = append(m.appendsystem_labels, s...)
+}
+
+// AppendedSystemLabels returns the list of values that were appended to the "system_labels" field in this mutation.
+func (m *InstanceSizeMutation) AppendedSystemLabels() ([]string, bool) {
+	if len(m.appendsystem_labels) == 0 {
+		return nil, false
+	}
+	return m.appendsystem_labels, true
+}
+
+// ClearSystemLabels clears the value of the "system_labels" field.
+func (m *InstanceSizeMutation) ClearSystemLabels() {
+	m.system_labels = nil
+	m.appendsystem_labels = nil
+	m.clearedFields[instancesize.FieldSystemLabels] = struct{}{}
+}
+
+// SystemLabelsCleared returns if the "system_labels" field was cleared in this mutation.
+func (m *InstanceSizeMutation) SystemLabelsCleared() bool {
+	_, ok := m.clearedFields[instancesize.FieldSystemLabels]
+	return ok
+}
+
+// ResetSystemLabels resets all changes to the "system_labels" field.
+func (m *InstanceSizeMutation) ResetSystemLabels() {
+	m.system_labels = nil
+	m.appendsystem_labels = nil
+	delete(m.clearedFields, instancesize.FieldSystemLabels)
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (m *InstanceSizeMutation) SetCatalogScope(is instancesize.CatalogScope) {
 	m.catalog_scope = &is
@@ -13285,7 +13352,7 @@ func (m *InstanceSizeMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *InstanceSizeMutation) Fields() []string {
-	fields := make([]string, 0, 22)
+	fields := make([]string, 0, 23)
 	if m.created_at != nil {
 		fields = append(fields, instancesize.FieldCreatedAt)
 	}
@@ -13339,6 +13406,9 @@ func (m *InstanceSizeMutation) Fields() []string {
 	}
 	if m.dv_volume_mode != nil {
 		fields = append(fields, instancesize.FieldDvVolumeMode)
+	}
+	if m.system_labels != nil {
+		fields = append(fields, instancesize.FieldSystemLabels)
 	}
 	if m.catalog_scope != nil {
 		fields = append(fields, instancesize.FieldCatalogScope)
@@ -13396,6 +13466,8 @@ func (m *InstanceSizeMutation) Field(name string) (ent.Value, bool) {
 		return m.DvAccessModes()
 	case instancesize.FieldDvVolumeMode:
 		return m.DvVolumeMode()
+	case instancesize.FieldSystemLabels:
+		return m.SystemLabels()
 	case instancesize.FieldCatalogScope:
 		return m.CatalogScope()
 	case instancesize.FieldSortOrder:
@@ -13449,6 +13521,8 @@ func (m *InstanceSizeMutation) OldField(ctx context.Context, name string) (ent.V
 		return m.OldDvAccessModes(ctx)
 	case instancesize.FieldDvVolumeMode:
 		return m.OldDvVolumeMode(ctx)
+	case instancesize.FieldSystemLabels:
+		return m.OldSystemLabels(ctx)
 	case instancesize.FieldCatalogScope:
 		return m.OldCatalogScope(ctx)
 	case instancesize.FieldSortOrder:
@@ -13591,6 +13665,13 @@ func (m *InstanceSizeMutation) SetField(name string, value ent.Value) error {
 			return fmt.Errorf("unexpected type %T for field %s", value, name)
 		}
 		m.SetDvVolumeMode(v)
+		return nil
+	case instancesize.FieldSystemLabels:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSystemLabels(v)
 		return nil
 	case instancesize.FieldCatalogScope:
 		v, ok := value.(instancesize.CatalogScope)
@@ -13752,6 +13833,9 @@ func (m *InstanceSizeMutation) ClearedFields() []string {
 	if m.FieldCleared(instancesize.FieldDvVolumeMode) {
 		fields = append(fields, instancesize.FieldDvVolumeMode)
 	}
+	if m.FieldCleared(instancesize.FieldSystemLabels) {
+		fields = append(fields, instancesize.FieldSystemLabels)
+	}
 	return fields
 }
 
@@ -13792,6 +13876,9 @@ func (m *InstanceSizeMutation) ClearField(name string) error {
 		return nil
 	case instancesize.FieldDvVolumeMode:
 		m.ClearDvVolumeMode()
+		return nil
+	case instancesize.FieldSystemLabels:
+		m.ClearSystemLabels()
 		return nil
 	}
 	return fmt.Errorf("unknown InstanceSize nullable field %s", name)
@@ -13854,6 +13941,9 @@ func (m *InstanceSizeMutation) ResetField(name string) error {
 		return nil
 	case instancesize.FieldDvVolumeMode:
 		m.ResetDvVolumeMode()
+		return nil
+	case instancesize.FieldSystemLabels:
+		m.ResetSystemLabels()
 		return nil
 	case instancesize.FieldCatalogScope:
 		m.ResetCatalogScope()
@@ -22884,28 +22974,30 @@ func (m *SystemSecretMutation) ResetEdge(name string) error {
 // TemplateMutation represents an operation that mutates the Template nodes in the graph.
 type TemplateMutation struct {
 	config
-	op            Op
-	typ           string
-	id            *string
-	created_at    *time.Time
-	updated_at    *time.Time
-	name          *string
-	display_name  *string
-	description   *string
-	source_type   *string
-	image_url     *string
-	pvc_name      *string
-	pvc_namespace *string
-	cloud_init    *string
-	os_family     *string
-	os_version    *string
-	catalog_scope *template.CatalogScope
-	enabled       *bool
-	created_by    *string
-	clearedFields map[string]struct{}
-	done          bool
-	oldValue      func(context.Context) (*Template, error)
-	predicates    []predicate.Template
+	op                  Op
+	typ                 string
+	id                  *string
+	created_at          *time.Time
+	updated_at          *time.Time
+	name                *string
+	display_name        *string
+	description         *string
+	source_type         *string
+	image_url           *string
+	pvc_name            *string
+	pvc_namespace       *string
+	cloud_init          *string
+	os_family           *string
+	os_version          *string
+	system_labels       *[]string
+	appendsystem_labels []string
+	catalog_scope       *template.CatalogScope
+	enabled             *bool
+	created_by          *string
+	clearedFields       map[string]struct{}
+	done                bool
+	oldValue            func(context.Context) (*Template, error)
+	predicates          []predicate.Template
 }
 
 var _ ent.Mutation = (*TemplateMutation)(nil)
@@ -23561,6 +23653,71 @@ func (m *TemplateMutation) ResetOsVersion() {
 	delete(m.clearedFields, template.FieldOsVersion)
 }
 
+// SetSystemLabels sets the "system_labels" field.
+func (m *TemplateMutation) SetSystemLabels(s []string) {
+	m.system_labels = &s
+	m.appendsystem_labels = nil
+}
+
+// SystemLabels returns the value of the "system_labels" field in the mutation.
+func (m *TemplateMutation) SystemLabels() (r []string, exists bool) {
+	v := m.system_labels
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldSystemLabels returns the old "system_labels" field's value of the Template entity.
+// If the Template object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TemplateMutation) OldSystemLabels(ctx context.Context) (v []string, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldSystemLabels is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldSystemLabels requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldSystemLabels: %w", err)
+	}
+	return oldValue.SystemLabels, nil
+}
+
+// AppendSystemLabels adds s to the "system_labels" field.
+func (m *TemplateMutation) AppendSystemLabels(s []string) {
+	m.appendsystem_labels = append(m.appendsystem_labels, s...)
+}
+
+// AppendedSystemLabels returns the list of values that were appended to the "system_labels" field in this mutation.
+func (m *TemplateMutation) AppendedSystemLabels() ([]string, bool) {
+	if len(m.appendsystem_labels) == 0 {
+		return nil, false
+	}
+	return m.appendsystem_labels, true
+}
+
+// ClearSystemLabels clears the value of the "system_labels" field.
+func (m *TemplateMutation) ClearSystemLabels() {
+	m.system_labels = nil
+	m.appendsystem_labels = nil
+	m.clearedFields[template.FieldSystemLabels] = struct{}{}
+}
+
+// SystemLabelsCleared returns if the "system_labels" field was cleared in this mutation.
+func (m *TemplateMutation) SystemLabelsCleared() bool {
+	_, ok := m.clearedFields[template.FieldSystemLabels]
+	return ok
+}
+
+// ResetSystemLabels resets all changes to the "system_labels" field.
+func (m *TemplateMutation) ResetSystemLabels() {
+	m.system_labels = nil
+	m.appendsystem_labels = nil
+	delete(m.clearedFields, template.FieldSystemLabels)
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (m *TemplateMutation) SetCatalogScope(ts template.CatalogScope) {
 	m.catalog_scope = &ts
@@ -23703,7 +23860,7 @@ func (m *TemplateMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TemplateMutation) Fields() []string {
-	fields := make([]string, 0, 15)
+	fields := make([]string, 0, 16)
 	if m.created_at != nil {
 		fields = append(fields, template.FieldCreatedAt)
 	}
@@ -23739,6 +23896,9 @@ func (m *TemplateMutation) Fields() []string {
 	}
 	if m.os_version != nil {
 		fields = append(fields, template.FieldOsVersion)
+	}
+	if m.system_labels != nil {
+		fields = append(fields, template.FieldSystemLabels)
 	}
 	if m.catalog_scope != nil {
 		fields = append(fields, template.FieldCatalogScope)
@@ -23781,6 +23941,8 @@ func (m *TemplateMutation) Field(name string) (ent.Value, bool) {
 		return m.OsFamily()
 	case template.FieldOsVersion:
 		return m.OsVersion()
+	case template.FieldSystemLabels:
+		return m.SystemLabels()
 	case template.FieldCatalogScope:
 		return m.CatalogScope()
 	case template.FieldEnabled:
@@ -23820,6 +23982,8 @@ func (m *TemplateMutation) OldField(ctx context.Context, name string) (ent.Value
 		return m.OldOsFamily(ctx)
 	case template.FieldOsVersion:
 		return m.OldOsVersion(ctx)
+	case template.FieldSystemLabels:
+		return m.OldSystemLabels(ctx)
 	case template.FieldCatalogScope:
 		return m.OldCatalogScope(ctx)
 	case template.FieldEnabled:
@@ -23919,6 +24083,13 @@ func (m *TemplateMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetOsVersion(v)
 		return nil
+	case template.FieldSystemLabels:
+		v, ok := value.([]string)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetSystemLabels(v)
+		return nil
 	case template.FieldCatalogScope:
 		v, ok := value.(template.CatalogScope)
 		if !ok {
@@ -23997,6 +24168,9 @@ func (m *TemplateMutation) ClearedFields() []string {
 	if m.FieldCleared(template.FieldOsVersion) {
 		fields = append(fields, template.FieldOsVersion)
 	}
+	if m.FieldCleared(template.FieldSystemLabels) {
+		fields = append(fields, template.FieldSystemLabels)
+	}
 	return fields
 }
 
@@ -24037,6 +24211,9 @@ func (m *TemplateMutation) ClearField(name string) error {
 		return nil
 	case template.FieldOsVersion:
 		m.ClearOsVersion()
+		return nil
+	case template.FieldSystemLabels:
+		m.ClearSystemLabels()
 		return nil
 	}
 	return fmt.Errorf("unknown Template nullable field %s", name)
@@ -24081,6 +24258,9 @@ func (m *TemplateMutation) ResetField(name string) error {
 		return nil
 	case template.FieldOsVersion:
 		m.ResetOsVersion()
+		return nil
+	case template.FieldSystemLabels:
+		m.ResetSystemLabels()
 		return nil
 	case template.FieldCatalogScope:
 		m.ResetCatalogScope()

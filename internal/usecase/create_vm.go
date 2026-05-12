@@ -110,6 +110,15 @@ func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*C
 	if !size.Enabled {
 		return nil, apperrors.BadRequest("INSTANCE_SIZE_DISABLED", "selected instance size is disabled")
 	}
+	if !service.TemplateInstanceSizeCompatible(tpl.SystemLabels, size.SystemLabels) {
+		return nil, apperrors.BadRequest(
+			"TEMPLATE_INSTANCE_SIZE_LABEL_MISMATCH",
+			"selected instance size is not compatible with selected template system labels",
+		).WithParams(map[string]interface{}{
+			"template_system_labels":      service.NormalizeSystemLabelsForRead(tpl.SystemLabels),
+			"instance_size_system_labels": service.NormalizeSystemLabelsForRead(size.SystemLabels),
+		})
+	}
 	requestedTargets := service.VMRequestTargets{
 		TargetCPUCores: input.TargetCPUCores,
 		TargetMemoryGi: input.TargetMemoryGi,

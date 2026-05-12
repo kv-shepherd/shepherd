@@ -3,6 +3,7 @@
 package ent
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -41,6 +42,8 @@ type Template struct {
 	OsFamily string `json:"os_family,omitempty"`
 	// OsVersion holds the value of the "os_version" field.
 	OsVersion string `json:"os_version,omitempty"`
+	// Platform-defined compatibility labels. Empty/NULL means os:any.
+	SystemLabels []string `json:"system_labels,omitempty"`
 	// Catalog visibility scope only. Not scheduling environment.
 	CatalogScope template.CatalogScope `json:"catalog_scope,omitempty"`
 	// Enabled holds the value of the "enabled" field.
@@ -55,6 +58,8 @@ func (*Template) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
+		case template.FieldSystemLabels:
+			values[i] = new([]byte)
 		case template.FieldEnabled:
 			values[i] = new(sql.NullBool)
 		case template.FieldID, template.FieldName, template.FieldDisplayName, template.FieldDescription, template.FieldSourceType, template.FieldImageURL, template.FieldPvcName, template.FieldPvcNamespace, template.FieldCloudInit, template.FieldOsFamily, template.FieldOsVersion, template.FieldCatalogScope, template.FieldCreatedBy:
@@ -154,6 +159,14 @@ func (_m *Template) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.OsVersion = value.String
 			}
+		case template.FieldSystemLabels:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field system_labels", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SystemLabels); err != nil {
+					return fmt.Errorf("unmarshal field system_labels: %w", err)
+				}
+			}
 		case template.FieldCatalogScope:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field catalog_scope", values[i])
@@ -243,6 +256,9 @@ func (_m *Template) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("os_version=")
 	builder.WriteString(_m.OsVersion)
+	builder.WriteString(", ")
+	builder.WriteString("system_labels=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SystemLabels))
 	builder.WriteString(", ")
 	builder.WriteString("catalog_scope=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CatalogScope))

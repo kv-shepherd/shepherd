@@ -50,6 +50,8 @@ const (
 	FieldDvAccessModes = "dv_access_modes"
 	// FieldDvVolumeMode holds the string denoting the dv_volume_mode field in the database.
 	FieldDvVolumeMode = "dv_volume_mode"
+	// FieldSystemLabels holds the string denoting the system_labels field in the database.
+	FieldSystemLabels = "system_labels"
 	// FieldCatalogScope holds the string denoting the catalog_scope field in the database.
 	FieldCatalogScope = "catalog_scope"
 	// FieldSortOrder holds the string denoting the sort_order field in the database.
@@ -83,6 +85,7 @@ var Columns = []string{
 	FieldSpecOverrides,
 	FieldDvAccessModes,
 	FieldDvVolumeMode,
+	FieldSystemLabels,
 	FieldCatalogScope,
 	FieldSortOrder,
 	FieldEnabled,

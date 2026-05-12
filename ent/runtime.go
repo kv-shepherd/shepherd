@@ -560,15 +560,15 @@ func init() {
 	// instancesize.DefaultDvVolumeMode holds the default value on creation for the dv_volume_mode field.
 	instancesize.DefaultDvVolumeMode = instancesizeDescDvVolumeMode.Default.(string)
 	// instancesizeDescSortOrder is the schema descriptor for sort_order field.
-	instancesizeDescSortOrder := instancesizeFields[18].Descriptor()
+	instancesizeDescSortOrder := instancesizeFields[19].Descriptor()
 	// instancesize.DefaultSortOrder holds the default value on creation for the sort_order field.
 	instancesize.DefaultSortOrder = instancesizeDescSortOrder.Default.(int)
 	// instancesizeDescEnabled is the schema descriptor for enabled field.
-	instancesizeDescEnabled := instancesizeFields[19].Descriptor()
+	instancesizeDescEnabled := instancesizeFields[20].Descriptor()
 	// instancesize.DefaultEnabled holds the default value on creation for the enabled field.
 	instancesize.DefaultEnabled = instancesizeDescEnabled.Default.(bool)
 	// instancesizeDescCreatedBy is the schema descriptor for created_by field.
-	instancesizeDescCreatedBy := instancesizeFields[20].Descriptor()
+	instancesizeDescCreatedBy := instancesizeFields[21].Descriptor()
 	// instancesize.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	instancesize.CreatedByValidator = instancesizeDescCreatedBy.Validators[0].(func(string) error)
 	namespaceregistryMixin := schema.NamespaceRegistry{}.Mixin()
@@ -985,11 +985,11 @@ func init() {
 	// template.DefaultSourceType holds the default value on creation for the source_type field.
 	template.DefaultSourceType = templateDescSourceType.Default.(string)
 	// templateDescEnabled is the schema descriptor for enabled field.
-	templateDescEnabled := templateFields[12].Descriptor()
+	templateDescEnabled := templateFields[13].Descriptor()
 	// template.DefaultEnabled holds the default value on creation for the enabled field.
 	template.DefaultEnabled = templateDescEnabled.Default.(bool)
 	// templateDescCreatedBy is the schema descriptor for created_by field.
-	templateDescCreatedBy := templateFields[13].Descriptor()
+	templateDescCreatedBy := templateFields[14].Descriptor()
 	// template.CreatedByValidator is a validator for the "created_by" field. It is called by the builders before save.
 	template.CreatedByValidator = templateDescCreatedBy.Validators[0].(func(string) error)
 	ticketMixin := schema.Ticket{}.Mixin()

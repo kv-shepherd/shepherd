@@ -76,6 +76,9 @@ func (InstanceSize) Fields() []ent.Field {
 			Optional().
 			Default("").
 			Comment("DataVolume PVC volumeMode: Block or Filesystem. Empty = CDI default."),
+		field.JSON("system_labels", []string{}).
+			Optional().
+			Comment("Platform-defined compatibility labels. Empty/NULL means os:any."),
 		field.Enum("catalog_scope").
 			Values("unclassified", "test", "prod", "all").
 			Default("unclassified").

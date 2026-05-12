@@ -4698,6 +4698,13 @@ export interface components {
             os_family?: string;
             /** @example example */
             os_version?: string;
+            /**
+             * @description Platform-defined compatibility labels. `os:any` means the template does not restrict operating-system-specific instance sizes. Concrete values currently include `os:linux` and `os:windows`.
+             * @example [
+             *       "os:linux"
+             *     ]
+             */
+            system_labels?: ("os:any" | "os:linux" | "os:windows")[];
             /** @example true */
             enabled?: boolean;
             /**
@@ -4757,6 +4764,13 @@ export interface components {
             os_family?: string;
             /** @example example */
             os_version?: string;
+            /**
+             * @description Platform-defined compatibility labels. Omit or send an empty array for the generic `os:any` default. Templates may require only one concrete OS label.
+             * @example [
+             *       "os:linux"
+             *     ]
+             */
+            system_labels?: ("os:any" | "os:linux" | "os:windows")[];
             /** @example true */
             enabled?: boolean;
         };
@@ -4798,6 +4812,13 @@ export interface components {
             os_family?: string;
             /** @example example */
             os_version?: string;
+            /**
+             * @description Platform-defined compatibility labels. Omit or send an empty array for the generic `os:any` default. Templates may require only one concrete OS label.
+             * @example [
+             *       "os:linux"
+             *     ]
+             */
+            system_labels?: ("os:any" | "os:linux" | "os:windows")[];
             /** @example true */
             enabled?: boolean;
         };
@@ -4902,6 +4923,14 @@ export interface components {
              */
             dv_volume_mode?: "Block" | "Filesystem";
             /**
+             * @description Platform-defined compatibility labels. `os:any` means this size is generic. Sizes may also support multiple concrete OS labels, for example both `os:linux` and `os:windows`.
+             * @example [
+             *       "os:linux",
+             *       "os:windows"
+             *     ]
+             */
+            system_labels?: ("os:any" | "os:linux" | "os:windows")[];
+            /**
              * @description KubeVirt spec path overrides (admin-only). Only populated in admin catalog endpoints; omitted from user-facing responses.
              * @example {}
              */
@@ -4971,6 +5000,14 @@ export interface components {
              * @enum {string}
              */
             dv_volume_mode?: "Block" | "Filesystem";
+            /**
+             * @description Platform-defined compatibility labels. Omit or send an empty array for the generic `os:any` default. Sizes may support multiple concrete OS labels.
+             * @example [
+             *       "os:linux",
+             *       "os:windows"
+             *     ]
+             */
+            system_labels?: ("os:any" | "os:linux" | "os:windows")[];
             /** @example {} */
             spec_overrides?: {
                 [key: string]: unknown;
@@ -5037,6 +5074,14 @@ export interface components {
              * @enum {string}
              */
             dv_volume_mode?: "Block" | "Filesystem";
+            /**
+             * @description Platform-defined compatibility labels. Send an empty array to reset to the generic `os:any` default. Sizes may support multiple concrete OS labels.
+             * @example [
+             *       "os:linux",
+             *       "os:windows"
+             *     ]
+             */
+            system_labels?: ("os:any" | "os:linux" | "os:windows")[];
             /** @example {} */
             spec_overrides?: {
                 [key: string]: unknown;

@@ -77,7 +77,7 @@ async function getAdminAuthHeaders(request: APIRequestContext): Promise<{ Author
     return { Authorization: `Bearer ${auth.token}` };
 }
 
-async function createGenericAuthProvider(
+async function createOIDCAuthProvider(
     request: APIRequestContext,
     headers: { Authorization: string },
     overrides?: {
@@ -90,10 +90,13 @@ async function createGenericAuthProvider(
         headers,
         data: {
             name,
-            auth_type: 'generic',
+            auth_type: 'oidc',
             enabled: true,
             config: {
-                test_endpoint: 'https://idp.example.com/healthz',
+                issuer_url: 'https://idp.example.com',
+                client_id: 'shepherd-e2e',
+                client_secret: 'secret',
+                scopes: ['openid', 'profile', 'email'],
                 sample_users: [
                     {
                         external_id: 'e2e-alice',
@@ -207,17 +210,19 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
             const typeResp = await request.get('/api/v1/admin/auth-provider-types', { headers });
             expect(typeResp.status(), 'GET /api/v1/admin/auth-provider-types must return 200 in setup').toBe(200);
             const typeData = await validateApiResponse('AuthProviderTypeList', typeResp) as ApiList<{ type?: string }>;
-            const authType =
-                typeData.items?.find((item) => item.type === 'oidc')?.type ??
-                typeData.items?.find((item) => item.type === 'generic')?.type ??
-                typeData.items?.[0]?.type ??
-                'generic';
+            const authType = typeData.items?.find((item) => item.type === 'oidc')?.type;
+            expect(authType, 'OIDC provider type must be available in setup').toBeTruthy();
             const createAuthResp = await request.post('/api/v1/admin/auth-providers', {
                 headers,
                 data: {
                     name: `setup-auth-${Date.now().toString(36).slice(-5)}`,
                     auth_type: authType,
-                    config: { test_endpoint: 'https://idp.example.com/healthz' },
+                    config: {
+                        issuer_url: 'https://idp.example.com',
+                        client_id: 'shepherd-e2e',
+                        client_secret: 'secret',
+                        scopes: ['openid', 'profile', 'email'],
+                    },
                     enabled: true,
                 },
             });
@@ -550,7 +555,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('updateAuthProvider – PATCH /admin/auth-providers/{id} conforms to AuthProvider schema', async ({ page }) => {
         // operationId: updateAuthProvider
         const headers = await getAdminAuthHeaders(page.request);
-        const provider = await createGenericAuthProvider(page.request, headers);
+        const provider = await createOIDCAuthProvider(page.request, headers);
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
 
@@ -562,7 +567,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         const editModal = getAntModal(page, 'auth-provider-edit-modal');
         await expect(editModal).toBeVisible();
         await editModal.getByLabel(/\*?\s*name/i).fill(`upd-auth-${Date.now().toString(36).slice(-5)}`);
-        await editModal.getByLabel(/test endpoint/i).fill('https://idp.example.com/readyz');
+        await editModal.getByLabel(/issuer url/i).fill('https://idp.example.com');
         await editModal.getByRole('button', { name: 'OK' }).click();
 
         await expectSchema(updateRespPromise, 'AuthProvider', 200);
@@ -572,7 +577,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('testAuthProviderConnection – POST /admin/auth-providers/{id}/test-connection conforms to AuthProviderConnectionTestResult schema', async ({ page }) => {
         // operationId: testAuthProviderConnection
         const headers = await getAdminAuthHeaders(page.request);
-        const provider = await createGenericAuthProvider(page.request, headers);
+        const provider = await createOIDCAuthProvider(page.request, headers);
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
 
@@ -585,53 +590,16 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await deleteAuthProviderIfPresent(page.request, headers, provider.id);
     });
 
-    test('getAuthProviderDirectoryDescriptor + previewAuthProviderDirectory + triggerAuthProviderDirectorySync', async ({ request }) => {
-        // operationId: getAuthProviderDirectoryDescriptor, previewAuthProviderDirectory, triggerAuthProviderDirectorySync,
-        //              listAuthProviderDirectorySyncJobs, getAuthProviderDirectorySyncJob
+    test('getAuthProviderDirectoryDescriptor returns unsupported for non-directory providers', async ({ request }) => {
+        // operationId: getAuthProviderDirectoryDescriptor
         const headers = await getAdminAuthHeaders(request);
-        const provider = await createGenericAuthProvider(request, headers);
+        const provider = await createOIDCAuthProvider(request, headers);
 
         const descriptorResp = await request.get(`/api/v1/admin/auth-providers/${provider.id}/directory/descriptor`, {
             headers,
         });
-        expect(descriptorResp.status(), `GET /directory/descriptor returned ${descriptorResp.status()}`).toBe(200);
-        await validateApiResponse('DirectorySyncDescriptor', descriptorResp);
-
-        const previewResp = await request.post(`/api/v1/admin/auth-providers/${provider.id}/directory/preview`, {
-            headers,
-            data: {
-                provider_request: {
-                    usernames: ['alice'],
-                },
-            },
-        });
-        expect(previewResp.status(), `POST /directory/preview returned ${previewResp.status()}`).toBe(200);
-        await validateApiResponse('DirectorySyncPreview', previewResp);
-
-        const triggerResp = await request.post(`/api/v1/admin/auth-providers/${provider.id}/directory/sync`, {
-            headers,
-            data: {
-                provider_request: {
-                    usernames: ['alice'],
-                },
-            },
-        });
-        expect(triggerResp.status(), `POST /directory/sync returned ${triggerResp.status()}`).toBe(202);
-        const triggerBody = await validateApiResponse('DirectorySyncTriggerResponse', triggerResp) as { job_id?: string };
-        const jobID = triggerBody.job_id ?? '';
-        expect(jobID, 'Directory sync trigger response must include job_id').toBeTruthy();
-
-        const jobsResp = await request.get(`/api/v1/admin/auth-providers/${provider.id}/directory/sync-jobs`, {
-            headers,
-        });
-        expect(jobsResp.status(), `GET /directory/sync-jobs returned ${jobsResp.status()}`).toBe(200);
-        await validateApiResponse('DirectorySyncJobList', jobsResp);
-
-        const jobResp = await request.get(`/api/v1/admin/auth-providers/${provider.id}/directory/sync-jobs/${jobID}`, {
-            headers,
-        });
-        expect(jobResp.status(), `GET /directory/sync-jobs/{job_id} returned ${jobResp.status()}`).toBe(200);
-        await validateApiResponse('DirectorySyncJob', jobResp);
+        expect(descriptorResp.status(), `GET /directory/descriptor returned ${descriptorResp.status()}`).toBe(501);
+        await validateApiResponse('Error', descriptorResp);
 
         await deleteAuthProviderIfPresent(request, headers, provider.id);
     });
@@ -639,7 +607,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('getAuthProviderSample – GET /admin/auth-providers/{id}/sample returns 200', async ({ page }) => {
         // operationId: getAuthProviderSample
         const headers = await getAdminAuthHeaders(page.request);
-        const provider = await createGenericAuthProvider(page.request, headers);
+        const provider = await createOIDCAuthProvider(page.request, headers);
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
 
@@ -663,7 +631,7 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('createAuthProviderCohortMapping + updateAuthProviderCohortMapping + deleteAuthProviderCohortMapping', async ({ page }) => {
         // operationId: createAuthProviderCohortMapping, updateAuthProviderCohortMapping, deleteAuthProviderCohortMapping
         const headers = await getAdminAuthHeaders(page.request);
-        const provider = await createGenericAuthProvider(page.request, headers);
+        const provider = await createOIDCAuthProvider(page.request, headers);
         await page.goto('/admin/auth-providers');
         await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
 

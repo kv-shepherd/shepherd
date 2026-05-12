@@ -585,6 +585,11 @@ func (s *Server) GetVMRequestContext(c *gin.Context, params generated.GetVMReque
 			return
 		}
 	}
+	if params.TemplateId != uuid.Nil {
+		if selectedTemplate := visibleTemplateByID(templates, params.TemplateId.String()); selectedTemplate != nil {
+			sizes = filterInstanceSizesCompatibleWithTemplate(sizes, selectedTemplate)
+		}
+	}
 
 	templateItems := make([]generated.Template, 0, len(templates))
 	for _, t := range templates {
@@ -821,12 +826,16 @@ func normalizeUserPlacementAdvisory(rawCode, rawMessage string) generated.VMPlac
 }
 
 func hasVisibleTemplate(items []*ent.Template, templateID string) bool {
+	return visibleTemplateByID(items, templateID) != nil
+}
+
+func visibleTemplateByID(items []*ent.Template, templateID string) *ent.Template {
 	for _, item := range items {
 		if item != nil && item.ID == templateID {
-			return true
+			return item
 		}
 	}
-	return false
+	return nil
 }
 
 func hasVisibleInstanceSize(items []*ent.InstanceSize, sizeID string) bool {
@@ -836,6 +845,22 @@ func hasVisibleInstanceSize(items []*ent.InstanceSize, sizeID string) bool {
 		}
 	}
 	return false
+}
+
+func filterInstanceSizesCompatibleWithTemplate(items []*ent.InstanceSize, tpl *ent.Template) []*ent.InstanceSize {
+	if tpl == nil || len(items) == 0 {
+		return items
+	}
+	filtered := make([]*ent.InstanceSize, 0, len(items))
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		if service.TemplateInstanceSizeCompatible(tpl.SystemLabels, item.SystemLabels) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func stringSliceContains(items []string, candidate string) bool {

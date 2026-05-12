@@ -44,7 +44,7 @@ Runtime and frontend had drift risk from provider-specific assumptions
 * ✅ Good, because core only depends on standard adapter interface.
 * ✅ Good, because frontend reads provider types from API, not hardcoded lists.
 * ✅ Good, because unknown/non-registered provider types are rejected explicitly.
-* 🟡 Neutral, because built-in compatibility types (`oidc`, `ldap`, `sso`, `generic`) remain pre-registered.
+* 🟡 Neutral, because only production-capable built-in providers (`oidc`, `ldap`, `wecom`) remain pre-registered.
 * ❌ Bad, because plugin developers must register type metadata before usage.
 
 ### Confirmation

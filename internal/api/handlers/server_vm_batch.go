@@ -1442,6 +1442,9 @@ func (s *Server) prepareBatchChildren(
 					},
 				}
 			}
+			if labelErr := s.validateBatchCreateCatalogLabels(ctx, templateID, instanceSizeID); labelErr != nil {
+				return nil, labelErr
+			}
 			targetCPU := normalizeOptionalTargetFloat64(float64(item.TargetCpuCores))
 			targetMemory := normalizeOptionalTargetFloat64(float64(item.TargetMemoryGi))
 			targetDisk := normalizeOptionalTargetInt(item.TargetDiskGb)
@@ -1659,6 +1662,55 @@ func (s *Server) prepareBatchChildren(
 	}
 
 	return children, nil
+}
+
+func (s *Server) validateBatchCreateCatalogLabels(ctx context.Context, templateID, instanceSizeID string) *batchValidationError {
+	tpl, err := s.client.Template.Get(ctx, templateID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return &batchValidationError{
+				status: http.StatusBadRequest,
+				body: generated.Error{
+					Code:    "TEMPLATE_NOT_FOUND",
+					Message: "template not found",
+				},
+			}
+		}
+		return &batchValidationError{
+			status: http.StatusInternalServerError,
+			body:   generated.Error{Code: "INTERNAL_ERROR"},
+		}
+	}
+	size, err := s.client.InstanceSize.Get(ctx, instanceSizeID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return &batchValidationError{
+				status: http.StatusBadRequest,
+				body: generated.Error{
+					Code:    "INSTANCE_SIZE_NOT_FOUND",
+					Message: "instance size not found",
+				},
+			}
+		}
+		return &batchValidationError{
+			status: http.StatusInternalServerError,
+			body:   generated.Error{Code: "INTERNAL_ERROR"},
+		}
+	}
+	if service.TemplateInstanceSizeCompatible(tpl.SystemLabels, size.SystemLabels) {
+		return nil
+	}
+	return &batchValidationError{
+		status: http.StatusBadRequest,
+		body: generated.Error{
+			Code:    "TEMPLATE_INSTANCE_SIZE_LABEL_MISMATCH",
+			Message: "selected instance size is not compatible with selected template system labels",
+			Params: map[string]interface{}{
+				"template_system_labels":      service.NormalizeSystemLabelsForRead(tpl.SystemLabels),
+				"instance_size_system_labels": service.NormalizeSystemLabelsForRead(size.SystemLabels),
+			},
+		},
+	}
 }
 
 func normalizeBatchOperation(op generated.VMBatchOperation) (string, domain.EventType, error) {

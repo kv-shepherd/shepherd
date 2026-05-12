@@ -180,6 +180,12 @@ func (_c *TemplateCreate) SetNillableOsVersion(v *string) *TemplateCreate {
 	return _c
 }
 
+// SetSystemLabels sets the "system_labels" field.
+func (_c *TemplateCreate) SetSystemLabels(v []string) *TemplateCreate {
+	_c.mutation.SetSystemLabels(v)
+	return _c
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_c *TemplateCreate) SetCatalogScope(v template.CatalogScope) *TemplateCreate {
 	_c.mutation.SetCatalogScope(v)
@@ -394,6 +400,10 @@ func (_c *TemplateCreate) createSpec() (*Template, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.OsVersion(); ok {
 		_spec.SetField(template.FieldOsVersion, field.TypeString, value)
 		_node.OsVersion = value
+	}
+	if value, ok := _c.mutation.SystemLabels(); ok {
+		_spec.SetField(template.FieldSystemLabels, field.TypeJSON, value)
+		_node.SystemLabels = value
 	}
 	if value, ok := _c.mutation.CatalogScope(); ok {
 		_spec.SetField(template.FieldCatalogScope, field.TypeEnum, value)

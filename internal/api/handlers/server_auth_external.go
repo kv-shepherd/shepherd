@@ -257,10 +257,11 @@ func (s *Server) StartLoginAuthProvider(c *gin.Context, providerID generated.Pro
 
 func (s *Server) CompleteLoginAuthProviderGet(c *gin.Context, providerID generated.ProviderID, params generated.CompleteLoginAuthProviderGetParams) {
 	callbackReq := runtimecontract.AuthCallbackRequest{
-		Method:     c.Request.Method,
-		Query:      map[string][]string(c.Request.URL.Query()),
-		Header:     sanitizedAuthCallbackHeaders(c.Request.Header),
-		RemoteAddr: strings.TrimSpace(c.Request.RemoteAddr),
+		Method:      c.Request.Method,
+		Query:       map[string][]string(c.Request.URL.Query()),
+		Header:      sanitizedAuthCallbackHeaders(c.Request.Header),
+		RemoteAddr:  strings.TrimSpace(c.Request.RemoteAddr),
+		CallbackURL: s.externalAuthCallbackURL(providerID),
 	}
 	if strings.TrimSpace(params.Code) != "" || strings.TrimSpace(params.State) != "" {
 		callbackReq.Query["code"] = []string{params.Code}
@@ -275,11 +276,12 @@ func (s *Server) CompleteLoginAuthProviderPost(c *gin.Context, providerID genera
 		form = map[string][]string(c.Request.PostForm)
 	}
 	callbackReq := runtimecontract.AuthCallbackRequest{
-		Method:     c.Request.Method,
-		Query:      map[string][]string(c.Request.URL.Query()),
-		Form:       form,
-		Header:     sanitizedAuthCallbackHeaders(c.Request.Header),
-		RemoteAddr: strings.TrimSpace(c.Request.RemoteAddr),
+		Method:      c.Request.Method,
+		Query:       map[string][]string(c.Request.URL.Query()),
+		Form:        form,
+		Header:      sanitizedAuthCallbackHeaders(c.Request.Header),
+		RemoteAddr:  strings.TrimSpace(c.Request.RemoteAddr),
+		CallbackURL: s.externalAuthCallbackURL(providerID),
 	}
 	s.completeExternalAuthLogin(c, providerID, callbackReq)
 }

@@ -318,7 +318,7 @@ Adapters MUST normalize all external providers into a common output payload:
 | Field | Type | Description |
 |-------|------|-------------|
 | `provider_id` | string | `auth_providers.id` |
-| `auth_type` | string | `oidc` / `ldap` / `sso` / `wecom` / `feishu` / `dingtalk` |
+| `auth_type` | string | Registered provider type, built-ins: `oidc` / `ldap` / `wecom` |
 | `external_id` | string | Stable subject identifier from provider |
 | `email` | string | User email (may be empty if provider lacks) |
 | `display_name` | string | Human-readable name |

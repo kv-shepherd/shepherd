@@ -232,6 +232,12 @@ func (_c *InstanceSizeCreate) SetNillableDvVolumeMode(v *string) *InstanceSizeCr
 	return _c
 }
 
+// SetSystemLabels sets the "system_labels" field.
+func (_c *InstanceSizeCreate) SetSystemLabels(v []string) *InstanceSizeCreate {
+	_c.mutation.SetSystemLabels(v)
+	return _c
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_c *InstanceSizeCreate) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeCreate {
 	_c.mutation.SetCatalogScope(v)
@@ -550,6 +556,10 @@ func (_c *InstanceSizeCreate) createSpec() (*InstanceSize, *sqlgraph.CreateSpec)
 	if value, ok := _c.mutation.DvVolumeMode(); ok {
 		_spec.SetField(instancesize.FieldDvVolumeMode, field.TypeString, value)
 		_node.DvVolumeMode = value
+	}
+	if value, ok := _c.mutation.SystemLabels(); ok {
+		_spec.SetField(instancesize.FieldSystemLabels, field.TypeJSON, value)
+		_node.SystemLabels = value
 	}
 	if value, ok := _c.mutation.CatalogScope(); ok {
 		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)

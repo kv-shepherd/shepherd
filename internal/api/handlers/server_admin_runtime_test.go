@@ -58,14 +58,14 @@ func TestGetAuthProviderRuntimeDescriptor_ReturnsCredentialModeForLDAP(t *testin
 	}
 }
 
-func TestGetAuthProviderRuntimeDescriptor_ReturnsUnsupportedForAdminOnlyProvider(t *testing.T) {
+func TestGetAuthProviderRuntimeDescriptor_ReturnsRedirectModeForOIDC(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newAdminIdentityTestServer(t)
 
 	providerRow, err := client.AuthProvider.Create().
-		SetID("auth-provider-runtime-unsupported").
-		SetName("OIDC Admin Only").
+		SetID("auth-provider-runtime-oidc").
+		SetName("OIDC Runtime").
 		SetAuthType("oidc").
 		SetConfig(map[string]interface{}{}).
 		SetCreatedBy("admin-1").
@@ -89,13 +89,19 @@ func TestGetAuthProviderRuntimeDescriptor_ReturnsUnsupportedForAdminOnlyProvider
 
 	var resp generated.AuthProviderRuntimeDescriptor
 	mustDecodeJSON(t, reqW.Body.Bytes(), &resp)
-	if resp.Supported {
-		t.Fatalf("supported = true, want false")
+	if !resp.Supported {
+		t.Fatalf("supported = false, want true")
 	}
-	if resp.SupportsRedirect || resp.SupportsCredentials || resp.RequiresPublicBaseUrl {
-		t.Fatalf("unexpected runtime flags: %+v", resp)
+	if !resp.SupportsRedirect {
+		t.Fatalf("supports_redirect = false, want true")
 	}
-	if len(resp.LoginModes) != 0 {
-		t.Fatalf("login mode count = %d, want 0", len(resp.LoginModes))
+	if resp.SupportsCredentials {
+		t.Fatalf("supports_credentials = true, want false")
+	}
+	if !resp.RequiresPublicBaseUrl {
+		t.Fatalf("requires_public_base_url = false, want true")
+	}
+	if len(resp.LoginModes) != 1 {
+		t.Fatalf("login mode count = %d, want 1", len(resp.LoginModes))
 	}
 }

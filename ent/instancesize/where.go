@@ -894,6 +894,16 @@ func DvVolumeModeContainsFold(v string) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldContainsFold(FieldDvVolumeMode, v))
 }
 
+// SystemLabelsIsNil applies the IsNil predicate on the "system_labels" field.
+func SystemLabelsIsNil() predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldIsNull(FieldSystemLabels))
+}
+
+// SystemLabelsNotNil applies the NotNil predicate on the "system_labels" field.
+func SystemLabelsNotNil() predicate.InstanceSize {
+	return predicate.InstanceSize(sql.FieldNotNull(FieldSystemLabels))
+}
+
 // CatalogScopeEQ applies the EQ predicate on the "catalog_scope" field.
 func CatalogScopeEQ(v CatalogScope) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldCatalogScope, v))

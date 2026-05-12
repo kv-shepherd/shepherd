@@ -75,11 +75,12 @@ func NewAuthStartError(code, message string) error {
 
 // AuthCallbackRequest is the opaque callback envelope forwarded to providers.
 type AuthCallbackRequest struct {
-	Method     string              `json:"method,omitempty"`
-	Query      map[string][]string `json:"query,omitempty"`
-	Form       map[string][]string `json:"form,omitempty"`
-	Header     map[string][]string `json:"header,omitempty"`
-	RemoteAddr string              `json:"remote_addr,omitempty"`
+	Method      string              `json:"method,omitempty"`
+	Query       map[string][]string `json:"query,omitempty"`
+	Form        map[string][]string `json:"form,omitempty"`
+	Header      map[string][]string `json:"header,omitempty"`
+	RemoteAddr  string              `json:"remote_addr,omitempty"`
+	CallbackURL string              `json:"callback_url,omitempty"`
 }
 
 // AuthCredentialRequest is the opaque credential envelope forwarded to providers.

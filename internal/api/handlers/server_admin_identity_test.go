@@ -585,7 +585,7 @@ func TestListUsers_UsesObservedProfileFieldsForColumnsAndSearch(t *testing.T) {
 	providerEnt, err := client.AuthProvider.Create().
 		SetID("provider-users-profile-fields").
 		SetName("corp-directory").
-		SetAuthType("generic").
+		SetAuthType("oidc").
 		SetConfig(map[string]interface{}{}).
 		SetEnabled(true).
 		SetSortOrder(0).
@@ -871,7 +871,15 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"issuer":"https://` + r.Host + `"}`))
+		baseURL := "http://" + r.Host
+		_, _ = w.Write([]byte(`{
+			"issuer": "` + baseURL + `",
+			"authorization_endpoint": "` + baseURL + `/authorize",
+			"token_endpoint": "` + baseURL + `/token",
+			"jwks_uri": "` + baseURL + `/jwks",
+			"userinfo_endpoint": "` + baseURL + `/userinfo",
+			"id_token_signing_alg_values_supported": ["RS256"]
+		}`))
 	}))
 	defer discovery.Close()
 
@@ -1083,9 +1091,14 @@ func TestListAuthProviderTypesAndRejectUnknownType(t *testing.T) {
 	for _, item := range listResp.Items {
 		typeKeys = append(typeKeys, item.Type)
 	}
-	for _, expected := range []string{"generic", "oidc", "ldap", "sso", "wecom"} {
+	for _, expected := range []string{"oidc", "ldap", "wecom"} {
 		if !slices.Contains(typeKeys, expected) {
 			t.Fatalf("provider type list missing %q: %#v", expected, typeKeys)
+		}
+	}
+	for _, removed := range []string{"generic", "sso"} {
+		if slices.Contains(typeKeys, removed) {
+			t.Fatalf("provider type list includes removed placeholder %q: %#v", removed, typeKeys)
 		}
 	}
 

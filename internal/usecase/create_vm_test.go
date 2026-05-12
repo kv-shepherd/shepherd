@@ -293,6 +293,61 @@ func TestCreateVMUseCase_RejectsCatalogScopeMismatch(t *testing.T) {
 	}
 }
 
+func TestCreateVMUseCase_RejectsSystemLabelMismatch(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "create_vm_label_mismatch")
+	uc := NewCreateVMUseCase(
+		client,
+		nil,
+		service.NewInstanceSizeService(client),
+		service.NewTemplateService(client),
+	)
+
+	if _, err := client.Template.Create().
+		SetID("tpl-windows").
+		SetName("windows-template").
+		SetCreatedBy("seed").
+		SetCatalogScope(enttemplate.CatalogScopeAll).
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://registry.example.com/windows:2022").
+		SetSystemLabels([]string{service.SystemLabelOSWindows}).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed template: %v", err)
+	}
+	if _, err := client.InstanceSize.Create().
+		SetID("size-linux").
+		SetName("linux-size").
+		SetCPUCores(4).
+		SetMemoryGi(8).
+		SetCreatedBy("seed").
+		SetCatalogScope(instancesize.CatalogScopeAll).
+		SetSystemLabels([]string{service.SystemLabelOSLinux}).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("seed instance size: %v", err)
+	}
+
+	_, err := uc.Execute(t.Context(), CreateVMInput{
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-windows",
+		InstanceSizeID: "size-linux",
+		Namespace:      "team-prod",
+		RequestedBy:    "user-1",
+	})
+	if err == nil {
+		t.Fatal("expected system label mismatch error")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("expected AppError, got %T", err)
+	}
+	if appErr.Code != "TEMPLATE_INSTANCE_SIZE_LABEL_MISMATCH" {
+		t.Fatalf("error code = %q, want TEMPLATE_INSTANCE_SIZE_LABEL_MISMATCH", appErr.Code)
+	}
+}
+
 func TestCreateVMUseCase_AllScopeAcceptedForMatchingNamespace(t *testing.T) {
 	t.Parallel()
 

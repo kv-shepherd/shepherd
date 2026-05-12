@@ -47,6 +47,7 @@ export const OFFICIAL_INSTANCE_SIZE_PRESET_ITEMS: Array<
             memory_request_gi: undefined,
             dedicated_cpu: false,
             requires_sriov: false,
+            system_labels: ['os:linux'],
             spec_text: toSpecText(graphicsDeviceOverrideSpec),
             enabled: true,
         },
@@ -68,6 +69,7 @@ export const OFFICIAL_INSTANCE_SIZE_PRESET_ITEMS: Array<
             memory_request_gi: undefined,
             dedicated_cpu: false,
             requires_sriov: false,
+            system_labels: ['os:windows'],
             spec_text: toSpecText({
                 ...graphicsDeviceOverrideSpec,
                 spec: {

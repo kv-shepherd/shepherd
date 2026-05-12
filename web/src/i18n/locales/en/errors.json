@@ -37,6 +37,8 @@
   "INVALID_TEMPLATE_SOURCE": "The template source configuration is invalid.",
   "INVALID_TEMPLATE_SOURCE_SCOPE": "The selected template source is not allowed for this catalog scope.",
   "INVALID_CATALOG_SCOPE": "The selected catalog scope is invalid.",
+  "INVALID_SYSTEM_LABELS": "The selected compatibility labels are invalid.",
+  "TEMPLATE_INSTANCE_SIZE_LABEL_MISMATCH": "The selected instance size is not compatible with the selected template.",
   "INSTANCE_SIZE_NOT_FOUND": "Instance size not found.",
   "INSTANCE_SIZE_HAS_ACTIVE_REQUESTS": "This instance size is still referenced by {{active_request_count}} unfinished request(s).",
   "INVALID_SPEC_OVERRIDES": "The spec override JSON is invalid.",

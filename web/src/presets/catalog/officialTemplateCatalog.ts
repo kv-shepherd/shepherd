@@ -31,6 +31,7 @@ export const OFFICIAL_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Tem
         values: {
             os_family: 'linux',
             os_version: 'Fedora',
+            system_labels: ['os:linux'],
             catalog_scope: 'test',
             source_type: 'cdi_image_import',
             image_url: 'docker://quay.io/containerdisks/fedora:latest',
@@ -50,6 +51,7 @@ export const OFFICIAL_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Tem
         values: {
             os_family: 'linux',
             os_version: 'Ubuntu',
+            system_labels: ['os:linux'],
             catalog_scope: 'test',
             source_type: 'cdi_image_import',
             image_url: 'docker://quay.io/containerdisks/ubuntu:latest',
@@ -69,6 +71,7 @@ export const OFFICIAL_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Tem
         values: {
             os_family: 'linux',
             os_version: 'CentOS Stream',
+            system_labels: ['os:linux'],
             catalog_scope: 'test',
             source_type: 'cdi_image_import',
             image_url: 'docker://quay.io/containerdisks/centos-stream:latest',
@@ -88,6 +91,7 @@ export const OFFICIAL_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Tem
         values: {
             os_family: 'linux',
             os_version: 'openSUSE Leap',
+            system_labels: ['os:linux'],
             catalog_scope: 'test',
             source_type: 'cdi_image_import',
             image_url: 'docker://quay.io/containerdisks/opensuse-leap:latest',
@@ -107,6 +111,7 @@ export const OFFICIAL_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Tem
         values: {
             os_family: 'linux',
             os_version: 'Debian',
+            system_labels: ['os:linux'],
             catalog_scope: 'test',
             source_type: 'cdi_image_import',
             image_url: 'docker://quay.io/containerdisks/debian:latest',

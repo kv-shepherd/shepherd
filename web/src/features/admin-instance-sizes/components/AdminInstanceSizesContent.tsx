@@ -49,6 +49,13 @@ import {
     buildDashboardSetupResumeHref,
     resolveNextSetupAction,
 } from '@/features/setup-guide/flow';
+import {
+    SYSTEM_LABEL_OPTIONS,
+    normalizeSizeSystemLabelSelection,
+    normalizeSystemLabels,
+    systemLabelColor,
+    systemLabelText,
+} from '@/features/catalog/systemLabels';
 import { translateApiError } from '@/lib/api/errorMessage';
 import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
 import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
@@ -208,6 +215,14 @@ function getInstanceSizeCapabilityTags(
         });
     }
     return tags;
+}
+
+function renderSystemLabelTags(labels: string[] | undefined, t: ReturnType<typeof useTranslation>['t']) {
+    return normalizeSystemLabels(labels).map((label) => (
+        <Tag key={label} color={systemLabelColor(label)}>
+            {systemLabelText(label, t)}
+        </Tag>
+    ));
 }
 
 function handleInstanceSizeFormValuesChange(
@@ -450,6 +465,23 @@ function InstanceSizeFormFields({
                 tooltip={{ title: t('instanceSizes.sort_order_help'), trigger: ['hover', 'click'] }}
             >
                 <InputNumber style={{ width: '100%' }} />
+            </Form.Item>
+            <Form.Item
+                name="system_labels"
+                label={t('systemLabels.instance_size_field')}
+                extra={t('systemLabels.instance_size_help')}
+            >
+                <Select
+                    mode="multiple"
+                    allowClear
+                    options={SYSTEM_LABEL_OPTIONS.map((option) => ({
+                        label: systemLabelText(option.value, t),
+                        value: option.value,
+                    }))}
+                    onChange={(value) => {
+                        form.setFieldValue('system_labels', normalizeSizeSystemLabelSelection(value));
+                    }}
+                />
             </Form.Item>
 
             {/* ── Resource Configuration ── */}
@@ -743,6 +775,7 @@ export function applyInstanceSizePreset(
         root_volume_mode_intent: 'auto',
         dv_access_modes: undefined,
         dv_volume_mode: undefined,
+        system_labels: ['os:any'],
         requires_sriov: false,
         enabled: true,
         spec_text: '{}',
@@ -1078,6 +1111,16 @@ export function AdminInstanceSizesContent() {
                     </Space>
                 );
             },
+        },
+        {
+            title: t('systemLabels.compatibility_column', 'Compatibility'),
+            key: 'system_labels',
+            width: 180,
+            render: (_: unknown, record: InstanceSize) => (
+                <Space size={[0, 4]} wrap>
+                    {renderSystemLabelTags(record.system_labels, t)}
+                </Space>
+            ),
         },
         {
             title: t('common:table.actions'),

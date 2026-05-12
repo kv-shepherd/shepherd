@@ -21,7 +21,7 @@ Adapters normalize to:
 | Field | Type | Description |
 |-------|------|-------------|
 | `provider_id` | string | `auth_providers.id` |
-| `auth_type` | string | `oidc` / `ldap` / `sso` / `wecom` / `feishu` / `dingtalk` |
+| `auth_type` | string | Registered provider type, built-ins: `oidc` / `ldap` / `wecom` |
 | `external_id` | string | Stable subject identifier |
 | `email` | string | May be empty |
 | `display_name` | string | Human-readable name |

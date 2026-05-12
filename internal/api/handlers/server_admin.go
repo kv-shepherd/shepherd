@@ -1310,6 +1310,7 @@ func templateToAPI(t *ent.Template) generated.Template {
 		CloudInit:    t.CloudInit,
 		OsFamily:     t.OsFamily,
 		OsVersion:    t.OsVersion,
+		SystemLabels: templateSystemLabelsToAPI(t.SystemLabels),
 		Enabled:      t.Enabled,
 	}
 }
@@ -1326,6 +1327,24 @@ func filterUserRequestableTemplates(templates []*ent.Template) []*ent.Template {
 		filtered = append(filtered, tpl)
 	}
 	return filtered
+}
+
+func templateSystemLabelsToAPI(labels []string) []generated.TemplateSystemLabels {
+	normalized := service.NormalizeSystemLabelsForRead(labels)
+	out := make([]generated.TemplateSystemLabels, 0, len(normalized))
+	for _, label := range normalized {
+		out = append(out, generated.TemplateSystemLabels(label))
+	}
+	return out
+}
+
+func instanceSizeSystemLabelsToAPI(labels []string) []generated.InstanceSizeSystemLabels {
+	normalized := service.NormalizeSystemLabelsForRead(labels)
+	out := make([]generated.InstanceSizeSystemLabels, 0, len(normalized))
+	for _, label := range normalized {
+		out = append(out, generated.InstanceSizeSystemLabels(label))
+	}
+	return out
 }
 
 func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
@@ -1348,6 +1367,7 @@ func instanceSizeToAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		HugepagesSize:     hints.HugepagesSize,
 		DvAccessModes:     cloneStringSlice(sz.DvAccessModes),
 		DvVolumeMode:      generated.InstanceSizeDvVolumeMode(strings.TrimSpace(sz.DvVolumeMode)),
+		SystemLabels:      instanceSizeSystemLabelsToAPI(sz.SystemLabels),
 		SortOrder:         sz.SortOrder,
 		SpecOverrides:     sz.SpecOverrides,
 		Enabled:           sz.Enabled,
@@ -1378,6 +1398,7 @@ func instanceSizeToPublicAPI(sz *ent.InstanceSize) generated.InstanceSize {
 		HugepagesSize:     hints.HugepagesSize,
 		DvAccessModes:     cloneStringSlice(sz.DvAccessModes),
 		DvVolumeMode:      generated.InstanceSizeDvVolumeMode(strings.TrimSpace(sz.DvVolumeMode)),
+		SystemLabels:      instanceSizeSystemLabelsToAPI(sz.SystemLabels),
 		SortOrder:         sz.SortOrder,
 		// SpecOverrides intentionally omitted: admin-only internal detail.
 		Enabled: sz.Enabled,

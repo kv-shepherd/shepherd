@@ -33,8 +33,8 @@ func main() {
 				"providerregistry.ListAuthProviderAdminAdapterTypes()",
 			},
 			forbiddenRegex: []*regexp.Regexp{
-				regexp.MustCompile(`authType\s*==\s*"(oidc|ldap|sso)"`),
-				regexp.MustCompile(`case\s+"(oidc|ldap|sso)"`),
+				regexp.MustCompile(`authType\s*==\s*"(oidc|ldap|wecom)"`),
+				regexp.MustCompile(`case\s+"(oidc|ldap|wecom)"`),
 			},
 		},
 		{
@@ -63,8 +63,8 @@ func main() {
 				"providerregistry.AuthResult",
 			},
 			forbiddenRegex: []*regexp.Regexp{
-				regexp.MustCompile(`provider(ID|Type|Ent)?\s*==\s*"(oidc|ldap|sso)"`),
-				regexp.MustCompile(`case\s+"(oidc|ldap|sso)"`),
+				regexp.MustCompile(`provider(ID|Type|Ent)?\s*==\s*"(oidc|ldap|wecom)"`),
+				regexp.MustCompile(`case\s+"(oidc|ldap|wecom)"`),
 			},
 		},
 		{
@@ -86,8 +86,8 @@ func main() {
 				"provider.ExternalCohort",
 			},
 			forbiddenRegex: []*regexp.Regexp{
-				regexp.MustCompile(`authType\s*==\s*"(oidc|ldap|sso)"`),
-				regexp.MustCompile(`case\s+"(oidc|ldap|sso)"`),
+				regexp.MustCompile(`authType\s*==\s*"(oidc|ldap|wecom)"`),
+				regexp.MustCompile(`case\s+"(oidc|ldap|wecom)"`),
 			},
 		},
 		{
@@ -530,54 +530,34 @@ func main() {
 				"func List() []admincontract.AuthProviderTypeDescriptor {",
 			},
 			forbiddenText: []string{
-				"genericAuthProviderAdminAdapter{",
 				"newLDAPAuthProviderAdapter(",
 			},
 		},
 		{
 			path: "internal/provider/auth_provider_admin_builtins.go",
 			required: []string{
-				"newGenericBuiltInAuthProviderAdapter()",
 				"newOIDCBuiltInAuthProviderAdapter()",
 				"newLDAPBuiltInAuthProviderAdapter()",
-				"newSSOBuiltInAuthProviderAdapter()",
+				"newWeComBuiltInAuthProviderAdapter()",
 			},
 			forbiddenText: []string{
 				"configSchema:",
-				"genericSchema :=",
 				"oidcSchema :=",
-				"ssoSchema :=",
 				"newLDAPAuthProviderAdapter(",
-			},
-		},
-		{
-			path: "internal/provider/auth_provider_admin_generic.go",
-			required: []string{
-				"func newGenericBuiltInAuthProviderAdapter() AuthProviderAdminAdapter {",
 			},
 		},
 		{
 			path: "internal/provider/auth_provider_oidc_admin.go",
 			required: []string{
 				"func newOIDCBuiltInAuthProviderAdapter() AuthProviderAdminAdapter {",
-			},
-		},
-		{
-			path: "internal/provider/auth_provider_sso_admin.go",
-			required: []string{
-				"func newSSOBuiltInAuthProviderAdapter() AuthProviderAdminAdapter {",
+				"func (a *oidcAuthProviderAdapter) StartLogin(",
+				"func (a *oidcAuthProviderAdapter) CompleteLogin(",
 			},
 		},
 		{
 			path: "internal/provider/auth_provider_ldap.go",
 			required: []string{
 				"func newLDAPBuiltInAuthProviderAdapter() AuthProviderAdminAdapter {",
-			},
-		},
-		{
-			path: "internal/provider/auth_provider_generic_schema.go",
-			required: []string{
-				"func genericAuthProviderSchema() map[string]interface{} {",
 			},
 		},
 		{
@@ -593,9 +573,9 @@ func main() {
 			},
 		},
 		{
-			path: "internal/provider/auth_provider_sso_schema.go",
+			path: "internal/provider/auth_provider_wecom_schema.go",
 			required: []string{
-				"func ssoAuthProviderSchema() map[string]interface{} {",
+				"func weComAuthProviderSchema() map[string]interface{} {",
 			},
 		},
 		{
@@ -669,7 +649,9 @@ func main() {
 				"listAuthProviderCohortMappings",
 				"/api/v1/admin/auth-providers/${providerID}/cohorts",
 				"/api/v1/admin/auth-providers/${providerID}/cohort-mappings",
-				"getByLabel(/test endpoint/i)",
+				"getByLabel(/issuer url/i)",
+				"getByLabel(/client id/i)",
+				"getByLabel(/client secret/i)",
 			},
 			forbiddenText: []string{
 				"group-mappings",
@@ -682,15 +664,12 @@ func main() {
 		{
 			path: "web/tests/e2e/admin-extended-live.spec.ts",
 			required: []string{
-				"getAuthProviderDirectoryDescriptor",
-				"previewAuthProviderDirectory",
-				"triggerAuthProviderDirectorySync",
+				"getAuthProviderDirectoryDescriptor returns unsupported for non-directory providers",
 				"createAuthProviderCohortMapping",
 				"ExternalCohortMapping",
-				"/directory/preview",
-				"/directory/sync",
+				"toBe(501)",
 				"/cohort-mappings",
-				"getByLabel(/test endpoint/i)",
+				"getByLabel(/issuer url/i)",
 			},
 			forbiddenText: []string{
 				"group-mappings",

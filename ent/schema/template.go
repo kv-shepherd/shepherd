@@ -61,6 +61,9 @@ func (Template) Fields() []ent.Field {
 			Optional(), // e.g. "linux", "windows"
 		field.String("os_version").
 			Optional(), // e.g. "ubuntu-22.04"
+		field.JSON("system_labels", []string{}).
+			Optional().
+			Comment("Platform-defined compatibility labels. Empty/NULL means os:any."),
 		field.Enum("catalog_scope").
 			Values("unclassified", "test", "prod", "all").
 			Default("unclassified").

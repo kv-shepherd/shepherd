@@ -230,6 +230,16 @@ func (v *ApprovalValidator) ValidateApproval(
 		}
 	}
 
+	if tpl != nil && size != nil && !TemplateInstanceSizeCompatible(tpl.SystemLabels, size.SystemLabels) {
+		return apperrors.BadRequest(
+			"TEMPLATE_INSTANCE_SIZE_LABEL_MISMATCH",
+			"selected instance size is not compatible with selected template system labels",
+		).WithParams(map[string]interface{}{
+			"template_system_labels":      NormalizeSystemLabelsForRead(tpl.SystemLabels),
+			"instance_size_system_labels": NormalizeSystemLabelsForRead(size.SystemLabels),
+		})
+	}
+
 	if v.policySvc != nil && cl != nil {
 		if err := v.policySvc.ValidateCreatePlacement(ClusterPolicyValidationInput{
 			Cluster:         cl,
@@ -479,6 +489,16 @@ func (v *ApprovalValidator) resolveValidationContext(
 			return nil, err
 		}
 		resolved.requiredCaps = ExtractRequiredCapabilities(size)
+	}
+	if resolved.template != nil && resolved.instanceSize != nil &&
+		!TemplateInstanceSizeCompatible(resolved.template.SystemLabels, resolved.instanceSize.SystemLabels) {
+		return nil, apperrors.BadRequest(
+			"TEMPLATE_INSTANCE_SIZE_LABEL_MISMATCH",
+			"selected instance size is not compatible with selected template system labels",
+		).WithParams(map[string]interface{}{
+			"template_system_labels":      NormalizeSystemLabelsForRead(resolved.template.SystemLabels),
+			"instance_size_system_labels": NormalizeSystemLabelsForRead(resolved.instanceSize.SystemLabels),
+		})
 	}
 
 	return resolved, nil

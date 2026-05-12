@@ -26,7 +26,7 @@
 The codebase already includes auth-provider management foundations:
 
 - admin CRUD/type-list/test/sample/group-mapping APIs for auth providers
-- pluggable admin adapter registry with built-in `generic`, `oidc`, `ldap`, and `sso` descriptors
+- pluggable admin adapter registry with production-capable built-in `oidc`, `ldap`, and `wecom` providers
 - JWT middleware support for optional `jwt_verification_keys` during signing-key rollover
 
 This RFC should therefore be read as future work for MFA, SAML 2.0, and active

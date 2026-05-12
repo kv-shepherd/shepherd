@@ -117,6 +117,12 @@
         "docs/adr/ADR-0026-idp-config-naming.md",
         "docs/adr/ADR-0035-auth-provider-plugin-boundary.md",
         "docs/adr/ADR-0049-external-auth-runtime-jit-provisioning-and-external-cohort-rbac-mapping.md"
+      ],
+      "examples": [
+        "docs/design/ci/scripts/check_auth_provider_plugin_boundary.go",
+        "internal/provider/auth_provider_oidc_admin.go",
+        "internal/provider/auth_provider_oidc_test.go",
+        "web/tests/e2e/admin-flow-live.spec.ts"
       ]
     },
     {
@@ -193,6 +199,10 @@
       "examples": [
         "docs/design/CURRENT_STATE.md#implemented-capabilities",
         "docs/design/DEFERRED_FOLLOWUPS.md",
+        "internal/service/system_labels.go",
+        "internal/service/system_labels_test.go",
+        "migrations/atlas/20260511000100_catalog_system_labels.sql",
+        "web/src/features/catalog/systemLabels.ts",
         "web/src/features/admin-templates/components/AdminTemplatesContent.tsx",
         "web/src/features/admin-instance-sizes/components/AdminInstanceSizesContent.tsx",
         "web/tests/e2e/admin-crud-smoke.spec.ts"

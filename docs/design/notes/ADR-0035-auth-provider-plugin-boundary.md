@@ -25,7 +25,7 @@ Delivered behavior:
 * adapter registration by normalized `type` key
 * duplicate type registration rejected
 * adapter type discovery list API (`ListAuthProviderAdminAdapterTypes`)
-* built-in compatibility plugins registered: `generic`, `oidc`, `ldap`, `sso`
+* built-in production-capable providers registered: `oidc`, `ldap`, `wecom`
 
 ### 2. API Discovery Endpoint
 
@@ -57,7 +57,7 @@ Delivered behavior:
 Blocking checks:
 
 * runtime auth-provider handlers must resolve adapters via registry
-* disallow provider-specific runtime branch patterns (`oidc`/`ldap`/`sso` hardcoded branches)
+* disallow provider-specific runtime branch patterns (`oidc`/`ldap`/`wecom` hardcoded branches)
 * frontend auth-provider controller must consume discovery API
 * frontend must not reintroduce hardcoded provider-type options constant
 * OpenAPI must not regress to OIDC/LDAP-only summary wording

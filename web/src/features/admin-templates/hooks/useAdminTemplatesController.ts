@@ -8,6 +8,10 @@ import { useApiAction, useApiGet, useApiMutation } from '@/hooks/useApiQuery';
 import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys';
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
+import {
+    SYSTEM_LABEL_OS_ANY,
+    normalizeTemplateSystemLabelSelection,
+} from '@/features/catalog/systemLabels';
 
 import type { Template, TemplateCreateRequest, TemplateList, TemplateUpdateRequest } from '../types';
 
@@ -60,6 +64,7 @@ function buildEditTemplateFormValues(template: Template): TemplateUpdateRequest 
         catalog_scope: template.catalog_scope,
         os_family: template.os_family,
         os_version: template.os_version,
+        system_labels: normalizeTemplateSystemLabelSelection(template.system_labels),
         enabled: template.enabled,
         source_type: template.source_type,
         image_url: template.source_type === 'cdi_pvc_clone' ? undefined : template.image_url,
@@ -239,7 +244,10 @@ export function useAdminTemplatesController({
         }
 
         createForm.resetFields();
-        createForm.setFieldsValue(CREATE_TEMPLATE_DEFAULTS);
+        createForm.setFieldsValue({
+            ...CREATE_TEMPLATE_DEFAULTS,
+            system_labels: [SYSTEM_LABEL_OS_ANY],
+        });
     }, [createForm, createOpen]);
 
     // Ant Design Modal keeps its content memoized while closed. Hydrate after the
@@ -270,6 +278,7 @@ export function useAdminTemplatesController({
     const submitCreate = async () => {
         const values = await createForm.validateFields() as TemplateCreateRequest;
         const payload: TemplateCreateRequest = { ...values };
+        payload.system_labels = normalizeTemplateSystemLabelSelection(payload.system_labels);
         if (payload.source_type === 'cdi_pvc_clone') {
             payload.image_url = undefined;
         } else {
@@ -288,6 +297,7 @@ export function useAdminTemplatesController({
         }
         const values = await editForm.validateFields() as TemplateUpdateRequest;
         const payload: TemplateUpdateRequest = { ...values };
+        payload.system_labels = normalizeTemplateSystemLabelSelection(payload.system_labels);
         if (payload.source_type === 'cdi_pvc_clone') {
             payload.image_url = undefined;
         } else {

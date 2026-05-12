@@ -27,7 +27,6 @@ import {
   Typography,
 } from "antd";
 import {
-  ApiOutlined,
   CloudServerOutlined,
   DeleteOutlined,
   EditOutlined,
@@ -35,7 +34,6 @@ import {
   LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
-  SafetyCertificateOutlined,
   SafetyOutlined,
   SettingOutlined,
   SyncOutlined,
@@ -3223,8 +3221,6 @@ export function AdminAuthProvidersContent() {
 const providerTypeIcons: Record<string, React.ReactNode> = {
   oidc: <KeyOutlined />,
   ldap: <CloudServerOutlined />,
-  sso: <SafetyCertificateOutlined />,
-  generic: <ApiOutlined />,
 };
 
 // ── CreateProviderWizard ──────────────────────────────────────────────────

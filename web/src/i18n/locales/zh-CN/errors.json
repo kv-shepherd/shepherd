@@ -37,6 +37,8 @@
   "INVALID_TEMPLATE_SOURCE": "模板来源配置无效。",
   "INVALID_TEMPLATE_SOURCE_SCOPE": "当前目录范围不允许使用该模板来源。",
   "INVALID_CATALOG_SCOPE": "目录范围无效。",
+  "INVALID_SYSTEM_LABELS": "选择的兼容标签无效。",
+  "TEMPLATE_INSTANCE_SIZE_LABEL_MISMATCH": "所选实例规格与所选模板不兼容。",
   "INSTANCE_SIZE_NOT_FOUND": "未找到实例规格。",
   "INSTANCE_SIZE_HAS_ACTIVE_REQUESTS": "该实例规格仍被 {{active_request_count}} 个未完成申请引用。",
   "INVALID_SPEC_OVERRIDES": "规格覆写 JSON 无效。",

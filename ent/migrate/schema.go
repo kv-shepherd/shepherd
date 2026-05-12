@@ -483,6 +483,7 @@ var (
 		{Name: "spec_overrides", Type: field.TypeJSON, Nullable: true},
 		{Name: "dv_access_modes", Type: field.TypeJSON, Nullable: true},
 		{Name: "dv_volume_mode", Type: field.TypeString, Nullable: true, Default: ""},
+		{Name: "system_labels", Type: field.TypeJSON, Nullable: true},
 		{Name: "catalog_scope", Type: field.TypeEnum, Enums: []string{"unclassified", "test", "prod", "all"}, Default: "unclassified"},
 		{Name: "sort_order", Type: field.TypeInt, Default: 0},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
@@ -502,7 +503,7 @@ var (
 			{
 				Name:    "instancesize_enabled_sort_order",
 				Unique:  false,
-				Columns: []*schema.Column{InstanceSizesColumns[21], InstanceSizesColumns[20]},
+				Columns: []*schema.Column{InstanceSizesColumns[22], InstanceSizesColumns[21]},
 			},
 			{
 				Name:    "instancesize_requires_gpu",
@@ -527,7 +528,7 @@ var (
 			{
 				Name:    "instancesize_catalog_scope",
 				Unique:  false,
-				Columns: []*schema.Column{InstanceSizesColumns[19]},
+				Columns: []*schema.Column{InstanceSizesColumns[20]},
 			},
 		},
 	}
@@ -901,6 +902,7 @@ var (
 		{Name: "cloud_init", Type: field.TypeString, Nullable: true, Size: 2147483647},
 		{Name: "os_family", Type: field.TypeString, Nullable: true},
 		{Name: "os_version", Type: field.TypeString, Nullable: true},
+		{Name: "system_labels", Type: field.TypeJSON, Nullable: true},
 		{Name: "catalog_scope", Type: field.TypeEnum, Enums: []string{"unclassified", "test", "prod", "all"}, Default: "unclassified"},
 		{Name: "enabled", Type: field.TypeBool, Default: true},
 		{Name: "created_by", Type: field.TypeString},
@@ -919,7 +921,7 @@ var (
 			{
 				Name:    "template_enabled",
 				Unique:  false,
-				Columns: []*schema.Column{TemplatesColumns[14]},
+				Columns: []*schema.Column{TemplatesColumns[15]},
 			},
 			{
 				Name:    "template_source_type",
@@ -929,7 +931,7 @@ var (
 			{
 				Name:    "template_catalog_scope",
 				Unique:  false,
-				Columns: []*schema.Column{TemplatesColumns[13]},
+				Columns: []*schema.Column{TemplatesColumns[14]},
 			},
 		},
 	}

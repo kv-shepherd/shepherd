@@ -36,11 +36,11 @@ func TestBuildLoginProvider_ReturnsCredentialModeForLDAP(t *testing.T) {
 	}
 }
 
-func TestBuildLoginProvider_ReturnsUnsupportedForAdminOnlyType(t *testing.T) {
+func TestBuildLoginProvider_ReturnsUnsupportedForMissingType(t *testing.T) {
 	_, supported := BuildLoginProvider(&ent.AuthProvider{
 		ID:       "provider-2",
-		Name:     "Generic",
-		AuthType: "generic",
+		Name:     "Missing",
+		AuthType: "missing-provider",
 	})
 	if supported {
 		t.Fatal("BuildLoginProvider() supported = true, want false")

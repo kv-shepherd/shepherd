@@ -511,7 +511,7 @@ describe("AdminAuthProvidersContent", () => {
         mappingProvider: {
           id: "provider-1",
           name: "corp-directory-enrichment",
-          auth_type: "generic",
+          auth_type: "custom-directory",
           enabled: true,
         },
         directoryPreview: {

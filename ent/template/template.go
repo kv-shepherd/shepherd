@@ -38,6 +38,8 @@ const (
 	FieldOsFamily = "os_family"
 	// FieldOsVersion holds the string denoting the os_version field in the database.
 	FieldOsVersion = "os_version"
+	// FieldSystemLabels holds the string denoting the system_labels field in the database.
+	FieldSystemLabels = "system_labels"
 	// FieldCatalogScope holds the string denoting the catalog_scope field in the database.
 	FieldCatalogScope = "catalog_scope"
 	// FieldEnabled holds the string denoting the enabled field in the database.
@@ -63,6 +65,7 @@ var Columns = []string{
 	FieldCloudInit,
 	FieldOsFamily,
 	FieldOsVersion,
+	FieldSystemLabels,
 	FieldCatalogScope,
 	FieldEnabled,
 	FieldCreatedBy,

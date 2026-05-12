@@ -338,6 +338,24 @@ func (_u *InstanceSizeUpdate) ClearDvVolumeMode() *InstanceSizeUpdate {
 	return _u
 }
 
+// SetSystemLabels sets the "system_labels" field.
+func (_u *InstanceSizeUpdate) SetSystemLabels(v []string) *InstanceSizeUpdate {
+	_u.mutation.SetSystemLabels(v)
+	return _u
+}
+
+// AppendSystemLabels appends value to the "system_labels" field.
+func (_u *InstanceSizeUpdate) AppendSystemLabels(v []string) *InstanceSizeUpdate {
+	_u.mutation.AppendSystemLabels(v)
+	return _u
+}
+
+// ClearSystemLabels clears the value of the "system_labels" field.
+func (_u *InstanceSizeUpdate) ClearSystemLabels() *InstanceSizeUpdate {
+	_u.mutation.ClearSystemLabels()
+	return _u
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_u *InstanceSizeUpdate) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeUpdate {
 	_u.mutation.SetCatalogScope(v)
@@ -596,6 +614,17 @@ func (_u *InstanceSizeUpdate) sqlSave(ctx context.Context) (_node int, err error
 	}
 	if _u.mutation.DvVolumeModeCleared() {
 		_spec.ClearField(instancesize.FieldDvVolumeMode, field.TypeString)
+	}
+	if value, ok := _u.mutation.SystemLabels(); ok {
+		_spec.SetField(instancesize.FieldSystemLabels, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSystemLabels(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, instancesize.FieldSystemLabels, value)
+		})
+	}
+	if _u.mutation.SystemLabelsCleared() {
+		_spec.ClearField(instancesize.FieldSystemLabels, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CatalogScope(); ok {
 		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)
@@ -941,6 +970,24 @@ func (_u *InstanceSizeUpdateOne) ClearDvVolumeMode() *InstanceSizeUpdateOne {
 	return _u
 }
 
+// SetSystemLabels sets the "system_labels" field.
+func (_u *InstanceSizeUpdateOne) SetSystemLabels(v []string) *InstanceSizeUpdateOne {
+	_u.mutation.SetSystemLabels(v)
+	return _u
+}
+
+// AppendSystemLabels appends value to the "system_labels" field.
+func (_u *InstanceSizeUpdateOne) AppendSystemLabels(v []string) *InstanceSizeUpdateOne {
+	_u.mutation.AppendSystemLabels(v)
+	return _u
+}
+
+// ClearSystemLabels clears the value of the "system_labels" field.
+func (_u *InstanceSizeUpdateOne) ClearSystemLabels() *InstanceSizeUpdateOne {
+	_u.mutation.ClearSystemLabels()
+	return _u
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_u *InstanceSizeUpdateOne) SetCatalogScope(v instancesize.CatalogScope) *InstanceSizeUpdateOne {
 	_u.mutation.SetCatalogScope(v)
@@ -1229,6 +1276,17 @@ func (_u *InstanceSizeUpdateOne) sqlSave(ctx context.Context) (_node *InstanceSi
 	}
 	if _u.mutation.DvVolumeModeCleared() {
 		_spec.ClearField(instancesize.FieldDvVolumeMode, field.TypeString)
+	}
+	if value, ok := _u.mutation.SystemLabels(); ok {
+		_spec.SetField(instancesize.FieldSystemLabels, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSystemLabels(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, instancesize.FieldSystemLabels, value)
+		})
+	}
+	if _u.mutation.SystemLabelsCleared() {
+		_spec.ClearField(instancesize.FieldSystemLabels, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CatalogScope(); ok {
 		_spec.SetField(instancesize.FieldCatalogScope, field.TypeEnum, value)

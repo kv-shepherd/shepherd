@@ -534,7 +534,6 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
         const preferredType =
             (typesPayload.items ?? []).find((item) => item.type === 'oidc') ??
-            (typesPayload.items ?? []).find((item) => item.type === 'generic') ??
             typesPayload.items?.[0];
         expect(preferredType?.type).toBeTruthy();
         const providerTypeLabel = preferredType?.display_name ?? preferredType?.type ?? '';
@@ -557,10 +556,12 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         await expect(createModal).toBeVisible();
         await createModal.getByRole('textbox').first().fill(providerName);
         await selectAntOption(page, createModal.locator('.ant-select-selector').first(), providerTypeLabel);
-        const configInput = createModal.getByLabel(/test endpoint/i);
-        await expect(configInput).toBeVisible();
-        await configInput.fill('https://idp.example.com/healthz');
-        await createModal.getByRole('button', { name: 'OK' }).click();
+        await createModal.getByRole('button', { name: /next/i }).click();
+        await createModal.getByLabel(/issuer url/i).fill('https://idp.example.com');
+        await createModal.getByLabel(/client id/i).fill('shepherd-e2e');
+        await createModal.getByLabel(/client secret/i).fill('secret');
+        await createModal.getByRole('button', { name: /next/i }).click();
+        await createModal.getByRole('button', { name: /submit/i }).click();
 
         const { body: created } = await expectSchema(createRespPromise, 'AuthProvider', 201);
         const providerID = (created as { id?: string }).id ?? '';

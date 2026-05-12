@@ -954,6 +954,16 @@ func OsVersionContainsFold(v string) predicate.Template {
 	return predicate.Template(sql.FieldContainsFold(FieldOsVersion, v))
 }
 
+// SystemLabelsIsNil applies the IsNil predicate on the "system_labels" field.
+func SystemLabelsIsNil() predicate.Template {
+	return predicate.Template(sql.FieldIsNull(FieldSystemLabels))
+}
+
+// SystemLabelsNotNil applies the NotNil predicate on the "system_labels" field.
+func SystemLabelsNotNil() predicate.Template {
+	return predicate.Template(sql.FieldNotNull(FieldSystemLabels))
+}
+
 // CatalogScopeEQ applies the EQ predicate on the "catalog_scope" field.
 func CatalogScopeEQ(v CatalogScope) predicate.Template {
 	return predicate.Template(sql.FieldEQ(FieldCatalogScope, v))

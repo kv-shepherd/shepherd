@@ -10548,6 +10548,17 @@ components:
         os_version:
           type: string
           example: example
+        system_labels:
+          type: array
+          description: >
+            Platform-defined compatibility labels. `os:any` means the template does not restrict operating-system-specific instance sizes. Concrete values currently include `os:linux` and `os:windows`.
+
+          example:
+            - os:linux
+          items:
+            type: string
+            enum: ['os:any', 'os:linux', 'os:windows']
+            example: os:linux
         enabled:
           type: boolean
           example: true
@@ -10611,6 +10622,17 @@ components:
         os_version:
           type: string
           example: example
+        system_labels:
+          type: array
+          description: >
+            Platform-defined compatibility labels. Omit or send an empty array for the generic `os:any` default. Templates may require only one concrete OS label.
+
+          example:
+            - os:linux
+          items:
+            type: string
+            enum: ['os:any', 'os:linux', 'os:windows']
+            example: os:linux
         enabled:
           type: boolean
           example: true
@@ -10657,6 +10679,17 @@ components:
         os_version:
           type: string
           example: example
+        system_labels:
+          type: array
+          description: >
+            Platform-defined compatibility labels. Omit or send an empty array for the generic `os:any` default. Templates may require only one concrete OS label.
+
+          example:
+            - os:linux
+          items:
+            type: string
+            enum: ['os:any', 'os:linux', 'os:windows']
+            example: os:linux
         enabled:
           type: boolean
           example: true
@@ -10768,6 +10801,18 @@ components:
             Explicit CDI DataVolume PVC volumeMode for the root volume. When empty together with `dv_access_modes`, the platform treats the storage mode as approval-time auto resolution.
 
           example: Block
+        system_labels:
+          type: array
+          description: >
+            Platform-defined compatibility labels. `os:any` means this size is generic. Sizes may also support multiple concrete OS labels, for example both `os:linux` and `os:windows`.
+
+          example:
+            - os:linux
+            - os:windows
+          items:
+            type: string
+            enum: ['os:any', 'os:linux', 'os:windows']
+            example: os:linux
         spec_overrides:
           type: object
           example: {}
@@ -10873,6 +10918,18 @@ components:
           type: string
           enum: [Block, Filesystem]
           example: Block
+        system_labels:
+          type: array
+          description: >
+            Platform-defined compatibility labels. Omit or send an empty array for the generic `os:any` default. Sizes may support multiple concrete OS labels.
+
+          example:
+            - os:linux
+            - os:windows
+          items:
+            type: string
+            enum: ['os:any', 'os:linux', 'os:windows']
+            example: os:linux
         spec_overrides:
           type: object
           example: {}
@@ -10966,6 +11023,18 @@ components:
           type: string
           enum: [Block, Filesystem]
           example: Block
+        system_labels:
+          type: array
+          description: >
+            Platform-defined compatibility labels. Send an empty array to reset to the generic `os:any` default. Sizes may support multiple concrete OS labels.
+
+          example:
+            - os:linux
+            - os:windows
+          items:
+            type: string
+            enum: ['os:any', 'os:linux', 'os:windows']
+            example: os:linux
         spec_overrides:
           type: object
           example: {}

@@ -9,6 +9,10 @@ import { SETUP_GUIDE_INVALIDATION_KEYS } from '@/features/setup-guide/queryKeys'
 import { api } from '@/lib/api/client';
 import { translateApiError } from '@/lib/api/errorMessage';
 import {
+    SYSTEM_LABEL_OS_ANY,
+    normalizeSizeSystemLabelSelection,
+} from '@/features/catalog/systemLabels';
+import {
     HUGEPAGES_PAGE_SIZE_PATH,
     normalizeHugepagesPageSizeValue,
 } from '@/lib/hugepages';
@@ -74,6 +78,7 @@ interface InstanceSizeFormValues {
     root_volume_mode_intent?: 'auto' | 'explicit';
     dv_access_modes?: string[];
     dv_volume_mode?: InstanceSize['dv_volume_mode'];
+    system_labels?: string[];
     sort_order?: number;
     enabled?: boolean;
 }
@@ -91,6 +96,7 @@ const INSTANCE_SIZE_CREATE_INITIAL_VALUES: Partial<InstanceSizeFormValues> = {
     root_volume_mode_intent: 'auto',
     dv_access_modes: undefined,
     dv_volume_mode: undefined,
+    system_labels: [SYSTEM_LABEL_OS_ANY],
 };
 
 const EMPTY_INSTANCE_SIZE_SEARCH_FILTERS: InstanceSizeSearchFilters = {
@@ -211,6 +217,7 @@ export function filterAdminInstanceSizes(
                 ...getCapabilityLabels(instanceSize),
                 ...(instanceSize.dv_access_modes ?? []),
                 instanceSize.dv_volume_mode ?? '',
+                ...(instanceSize.system_labels ?? []),
             ]
                 .join(' ')
                 .toLowerCase();
@@ -296,6 +303,7 @@ function formToPayload(
         hugepages_size: hugepagesSize,
         sort_order: values.sort_order,
         enabled: values.enabled,
+        system_labels: normalizeSizeSystemLabelSelection(values.system_labels),
         spec_overrides: specOverrides,
         ...(explicitRootVolumeMode && dvAccessModes.length > 0 && dvVolumeMode
             ? {
@@ -342,6 +350,7 @@ function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormV
                 : 'auto',
         dv_access_modes: instanceSize.dv_access_modes,
         dv_volume_mode: instanceSize.dv_volume_mode,
+        system_labels: normalizeSizeSystemLabelSelection(instanceSize.system_labels),
         sort_order: hydrated.sort_order,
         spec_text: JSON.stringify(hydrateSpecOverridesForEditing(instanceSize), null, 2),
         enabled: instanceSize.enabled,

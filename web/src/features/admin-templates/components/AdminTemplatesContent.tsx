@@ -44,6 +44,14 @@ import {
     buildDashboardSetupResumeHref,
     resolveNextSetupAction,
 } from '@/features/setup-guide/flow';
+import {
+    SYSTEM_LABEL_OPTIONS,
+    normalizeSystemLabels,
+    normalizeTemplateSystemLabelSelection,
+    systemLabelColor,
+    systemLabelText,
+    systemLabelsForOSFamily,
+} from '@/features/catalog/systemLabels';
 import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
 import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useAdminTemplatesController } from '../hooks/useAdminTemplatesController';
@@ -153,6 +161,14 @@ function getTemplateOsFamilyLabel(osFamily: string | undefined, t: ReturnType<ty
     }
     const normalized = osFamily.toLowerCase();
     return t(`templates.os_family_${normalized}`, { defaultValue: osFamily });
+}
+
+function renderSystemLabelTags(labels: string[] | undefined, t: ReturnType<typeof useTranslation>['t']) {
+    return normalizeSystemLabels(labels).map((label) => (
+        <Tag key={label} color={systemLabelColor(label)}>
+            {systemLabelText(label, t)}
+        </Tag>
+    ));
 }
 
 function SuggestedValueInput({
@@ -516,6 +532,7 @@ export function AdminTemplatesContent() {
                                 {getTemplateOsFamilyLabel(family, t)}
                             </Tag>
                             {record.os_version ? <Tag>{record.os_version}</Tag> : null}
+                            {renderSystemLabelTags(record.system_labels, t)}
                         </Space>
                         <Text type="secondary" style={{ fontSize: 13 }}>
                             {record.os_version
@@ -861,10 +878,34 @@ export function AdminTemplatesContent() {
                     <Form.Item name="os_family" label={t('templates.os_family')}>
                         <Select
                             placeholder={t('templates.os_family_placeholder')}
+                            onChange={(value) => {
+                                templates.createForm.setFieldValue('system_labels', systemLabelsForOSFamily(value));
+                            }}
                             options={TEMPLATE_OS_FAMILY_OPTIONS.map((option) => ({
                                 label: t(option.labelKey),
                                 value: option.value,
                             }))}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="system_labels"
+                        label={t('systemLabels.template_field')}
+                        extra={t('systemLabels.template_help')}
+                    >
+                        <Select
+                            mode="multiple"
+                            maxCount={1}
+                            allowClear
+                            options={SYSTEM_LABEL_OPTIONS.map((option) => ({
+                                label: systemLabelText(option.value, t),
+                                value: option.value,
+                            }))}
+                            onChange={(value) => {
+                                templates.createForm.setFieldValue(
+                                    'system_labels',
+                                    normalizeTemplateSystemLabelSelection(value),
+                                );
+                            }}
                         />
                     </Form.Item>
                     <Form.Item noStyle shouldUpdate={(prev, cur) => prev.os_family !== cur.os_family}>
@@ -1102,10 +1143,34 @@ export function AdminTemplatesContent() {
                     <Form.Item name="os_family" label={t('templates.os_family')}>
                         <Select
                             placeholder={t('templates.os_family_placeholder')}
+                            onChange={(value) => {
+                                templates.editForm.setFieldValue('system_labels', systemLabelsForOSFamily(value));
+                            }}
                             options={TEMPLATE_OS_FAMILY_OPTIONS.map((option) => ({
                                 label: t(option.labelKey),
                                 value: option.value,
                             }))}
+                        />
+                    </Form.Item>
+                    <Form.Item
+                        name="system_labels"
+                        label={t('systemLabels.template_field')}
+                        extra={t('systemLabels.template_help')}
+                    >
+                        <Select
+                            mode="multiple"
+                            maxCount={1}
+                            allowClear
+                            options={SYSTEM_LABEL_OPTIONS.map((option) => ({
+                                label: systemLabelText(option.value, t),
+                                value: option.value,
+                            }))}
+                            onChange={(value) => {
+                                templates.editForm.setFieldValue(
+                                    'system_labels',
+                                    normalizeTemplateSystemLabelSelection(value),
+                                );
+                            }}
                         />
                     </Form.Item>
                     <Form.Item noStyle shouldUpdate={(prev, cur) => prev.os_family !== cur.os_family}>

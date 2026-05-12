@@ -54,6 +54,8 @@ type InstanceSize struct {
 	DvAccessModes []string `json:"dv_access_modes,omitempty"`
 	// DataVolume PVC volumeMode: Block or Filesystem. Empty = CDI default.
 	DvVolumeMode string `json:"dv_volume_mode,omitempty"`
+	// Platform-defined compatibility labels. Empty/NULL means os:any.
+	SystemLabels []string `json:"system_labels,omitempty"`
 	// Catalog visibility scope only. Not scheduling environment.
 	CatalogScope instancesize.CatalogScope `json:"catalog_scope,omitempty"`
 	// SortOrder holds the value of the "sort_order" field.
@@ -70,7 +72,7 @@ func (*InstanceSize) scanValues(columns []string) ([]any, error) {
 	values := make([]any, len(columns))
 	for i := range columns {
 		switch columns[i] {
-		case instancesize.FieldSpecOverrides, instancesize.FieldDvAccessModes:
+		case instancesize.FieldSpecOverrides, instancesize.FieldDvAccessModes, instancesize.FieldSystemLabels:
 			values[i] = new([]byte)
 		case instancesize.FieldDedicatedCPU, instancesize.FieldRequiresGpu, instancesize.FieldRequiresSriov, instancesize.FieldRequiresHugepages, instancesize.FieldEnabled:
 			values[i] = new(sql.NullBool)
@@ -215,6 +217,14 @@ func (_m *InstanceSize) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.DvVolumeMode = value.String
 			}
+		case instancesize.FieldSystemLabels:
+			if value, ok := values[i].(*[]byte); !ok {
+				return fmt.Errorf("unexpected type %T for field system_labels", values[i])
+			} else if value != nil && len(*value) > 0 {
+				if err := json.Unmarshal(*value, &_m.SystemLabels); err != nil {
+					return fmt.Errorf("unmarshal field system_labels: %w", err)
+				}
+			}
 		case instancesize.FieldCatalogScope:
 			if value, ok := values[i].(*sql.NullString); !ok {
 				return fmt.Errorf("unexpected type %T for field catalog_scope", values[i])
@@ -328,6 +338,9 @@ func (_m *InstanceSize) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("dv_volume_mode=")
 	builder.WriteString(_m.DvVolumeMode)
+	builder.WriteString(", ")
+	builder.WriteString("system_labels=")
+	builder.WriteString(fmt.Sprintf("%v", _m.SystemLabels))
 	builder.WriteString(", ")
 	builder.WriteString("catalog_scope=")
 	builder.WriteString(fmt.Sprintf("%v", _m.CatalogScope))

@@ -30,6 +30,7 @@ export interface CuratedInstanceSizePresetFormValues {
     memory_request_gi?: number;
     dedicated_cpu: boolean;
     requires_sriov: boolean;
+    system_labels: string[];
     spec_text: string;
     enabled: boolean;
 }
@@ -239,6 +240,7 @@ export const CURATED_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Temp
         values: {
             os_family: 'linux',
             os_version: 'openEuler 22.03',
+            system_labels: ['os:linux'],
             catalog_scope: 'test',
             source_type: 'cdi_pvc_clone',
             pvc_namespace: 'vm-muban',
@@ -265,6 +267,7 @@ export const CURATED_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Temp
         values: {
             os_family: 'linux',
             os_version: 'Kylin V10',
+            system_labels: ['os:linux'],
             catalog_scope: 'prod',
             source_type: 'cdi_pvc_clone',
             pvc_namespace: 'vm-muban',
@@ -291,6 +294,7 @@ export const CURATED_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Temp
         values: {
             os_family: 'windows',
             os_version: 'Windows Server 2022',
+            system_labels: ['os:windows'],
             catalog_scope: 'test',
             source_type: 'cdi_pvc_clone',
             pvc_namespace: 'vm-muban',
@@ -317,6 +321,7 @@ export const CURATED_TEMPLATE_PRESET_ITEMS: Array<TemplatePresetCatalogItem<Temp
         values: {
             os_family: 'windows',
             os_version: 'Windows Server 2022',
+            system_labels: ['os:windows'],
             catalog_scope: 'prod',
             source_type: 'cdi_pvc_clone',
             pvc_namespace: 'vm-muban',
@@ -346,6 +351,7 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
             memory_request_gi: 4,
             dedicated_cpu: false,
             requires_sriov: false,
+            system_labels: ['os:linux'],
             spec_text: toSpecText({
                 ...linuxBaseSpec,
                 spec: linuxBaseSpec.spec,
@@ -370,6 +376,7 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
             memory_request_gi: undefined,
             dedicated_cpu: true,
             requires_sriov: false,
+            system_labels: ['os:linux'],
             spec_text: toSpecText({
                 ...linuxBaseSpec,
                 spec: {
@@ -417,6 +424,7 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
             memory_request_gi: 8,
             dedicated_cpu: false,
             requires_sriov: false,
+            system_labels: ['os:windows'],
             spec_text: toSpecText({
                 ...windowsBaseSpec,
                 spec: windowsBaseSpec.spec,
@@ -441,6 +449,7 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
             memory_request_gi: undefined,
             dedicated_cpu: true,
             requires_sriov: false,
+            system_labels: ['os:windows'],
             spec_text: toSpecText({
                 ...windowsBaseSpec,
                 spec: {

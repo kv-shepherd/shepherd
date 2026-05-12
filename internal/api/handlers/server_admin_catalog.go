@@ -51,7 +51,9 @@ type templateCreateRequest struct {
 	CloudInit *string `json:"cloud_init"`
 	OsFamily  *string `json:"os_family"`
 	OsVersion *string `json:"os_version"`
-	Enabled   *bool   `json:"enabled"`
+	// SystemLabels are platform-defined compatibility labels. Empty means os:any.
+	SystemLabels []string `json:"system_labels"`
+	Enabled      *bool    `json:"enabled"`
 }
 
 type templateUpdateRequest struct {
@@ -62,11 +64,12 @@ type templateUpdateRequest struct {
 	ImageURL     *string `json:"image_url"`
 	PVCName      *string `json:"pvc_name"`
 	// PVCNamespace is the Kubernetes namespace where the PVC lives.
-	PVCNamespace *string `json:"pvc_namespace"`
-	CloudInit    *string `json:"cloud_init"`
-	OsFamily     *string `json:"os_family"`
-	OsVersion    *string `json:"os_version"`
-	Enabled      *bool   `json:"enabled"`
+	PVCNamespace *string   `json:"pvc_namespace"`
+	CloudInit    *string   `json:"cloud_init"`
+	OsFamily     *string   `json:"os_family"`
+	OsVersion    *string   `json:"os_version"`
+	SystemLabels *[]string `json:"system_labels"`
+	Enabled      *bool     `json:"enabled"`
 }
 
 type instanceSizeCreateRequest struct {
@@ -86,6 +89,7 @@ type instanceSizeCreateRequest struct {
 	HugepagesSize     *string                `json:"hugepages_size"`
 	DvAccessModes     []string               `json:"dv_access_modes"`
 	DvVolumeMode      *string                `json:"dv_volume_mode"`
+	SystemLabels      []string               `json:"system_labels"`
 	SpecOverrides     map[string]interface{} `json:"spec_overrides"`
 	SortOrder         *int                   `json:"sort_order"`
 	Enabled           *bool                  `json:"enabled"`
@@ -115,6 +119,7 @@ type instanceSizeUpdateRequest struct {
 	HugepagesSize     *string                 `json:"hugepages_size"`
 	DvAccessModes     *[]string               `json:"dv_access_modes"`
 	DvVolumeMode      *string                 `json:"dv_volume_mode"`
+	SystemLabels      *[]string               `json:"system_labels"`
 	SpecOverrides     *map[string]interface{} `json:"spec_overrides"`
 	SortOrder         *int                    `json:"sort_order"`
 	Enabled           *bool                   `json:"enabled"`
@@ -389,12 +394,18 @@ func (s *Server) CreateAdminTemplate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE_SCOPE", Message: scopeErr.Error()})
 		return
 	}
+	systemLabels, err := service.NormalizeTemplateSystemLabels(req.SystemLabels)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_SYSTEM_LABELS", Message: err.Error()})
+		return
+	}
 
 	id, _ := uuid.NewV7()
 	create := s.client.Template.Create().
 		SetID(id.String()).
 		SetName(name).
-		SetCreatedBy(actor)
+		SetCreatedBy(actor).
+		SetSystemLabels(systemLabels)
 	if req.DisplayName != nil {
 		if v := strings.TrimSpace(*req.DisplayName); v != "" {
 			create = create.SetDisplayName(v)
@@ -526,6 +537,15 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateID generated.Templa
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_TEMPLATE_SOURCE_SCOPE", Message: validateErr.Error()})
 		return
 	}
+	var systemLabels []string
+	if req.SystemLabels != nil {
+		var labelErr error
+		systemLabels, labelErr = service.NormalizeTemplateSystemLabels(*req.SystemLabels)
+		if labelErr != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_SYSTEM_LABELS", Message: labelErr.Error()})
+			return
+		}
+	}
 
 	update := s.client.Template.UpdateOneID(templateID)
 	if req.DisplayName != nil {
@@ -589,6 +609,9 @@ func (s *Server) UpdateAdminTemplate(c *gin.Context, templateID generated.Templa
 		} else {
 			update = update.SetOsVersion(v)
 		}
+	}
+	if req.SystemLabels != nil {
+		update = update.SetSystemLabels(systemLabels)
 	}
 	if req.Enabled != nil {
 		update = update.SetEnabled(*req.Enabled)
@@ -686,6 +709,11 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_CATALOG_SCOPE", Message: err.Error()})
 		return
 	}
+	systemLabels, err := service.NormalizeInstanceSizeSystemLabels(req.SystemLabels)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_SYSTEM_LABELS", Message: err.Error()})
+		return
+	}
 
 	id, _ := uuid.NewV7()
 	create := s.client.InstanceSize.Create().
@@ -693,7 +721,8 @@ func (s *Server) CreateAdminInstanceSize(c *gin.Context) {
 		SetName(strings.TrimSpace(req.Name)).
 		SetCPUCores(req.CPUCores).
 		SetMemoryGi(req.MemoryGi).
-		SetCreatedBy(actor)
+		SetCreatedBy(actor).
+		SetSystemLabels(systemLabels)
 	if req.DisplayName != nil {
 		if v := strings.TrimSpace(*req.DisplayName); v != "" {
 			create = create.SetDisplayName(v)
@@ -840,6 +869,15 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_CATALOG_SCOPE", Message: err.Error()})
 		return
 	}
+	var systemLabels []string
+	if req.SystemLabels != nil {
+		var labelErr error
+		systemLabels, labelErr = service.NormalizeInstanceSizeSystemLabels(*req.SystemLabels)
+		if labelErr != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_SYSTEM_LABELS", Message: labelErr.Error()})
+			return
+		}
+	}
 
 	update := s.client.InstanceSize.UpdateOneID(instanceSizeID)
 	if req.Name != nil {
@@ -929,6 +967,9 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 		} else {
 			update = update.SetDvVolumeMode(v)
 		}
+	}
+	if req.SystemLabels != nil {
+		update = update.SetSystemLabels(systemLabels)
 	}
 	if req.SpecOverrides != nil {
 		// ADR-0036: Validate spec_overrides paths use spec.* prefix.

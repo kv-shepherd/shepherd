@@ -10,6 +10,7 @@ import (
 
 	"entgo.io/ent/dialect/sql"
 	"entgo.io/ent/dialect/sql/sqlgraph"
+	"entgo.io/ent/dialect/sql/sqljson"
 	"entgo.io/ent/schema/field"
 	"kv-shepherd.io/shepherd/ent/predicate"
 	"kv-shepherd.io/shepherd/ent/template"
@@ -228,6 +229,24 @@ func (_u *TemplateUpdate) ClearOsVersion() *TemplateUpdate {
 	return _u
 }
 
+// SetSystemLabels sets the "system_labels" field.
+func (_u *TemplateUpdate) SetSystemLabels(v []string) *TemplateUpdate {
+	_u.mutation.SetSystemLabels(v)
+	return _u
+}
+
+// AppendSystemLabels appends value to the "system_labels" field.
+func (_u *TemplateUpdate) AppendSystemLabels(v []string) *TemplateUpdate {
+	_u.mutation.AppendSystemLabels(v)
+	return _u
+}
+
+// ClearSystemLabels clears the value of the "system_labels" field.
+func (_u *TemplateUpdate) ClearSystemLabels() *TemplateUpdate {
+	_u.mutation.ClearSystemLabels()
+	return _u
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_u *TemplateUpdate) SetCatalogScope(v template.CatalogScope) *TemplateUpdate {
 	_u.mutation.SetCatalogScope(v)
@@ -402,6 +421,17 @@ func (_u *TemplateUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.OsVersionCleared() {
 		_spec.ClearField(template.FieldOsVersion, field.TypeString)
+	}
+	if value, ok := _u.mutation.SystemLabels(); ok {
+		_spec.SetField(template.FieldSystemLabels, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSystemLabels(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, template.FieldSystemLabels, value)
+		})
+	}
+	if _u.mutation.SystemLabelsCleared() {
+		_spec.ClearField(template.FieldSystemLabels, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CatalogScope(); ok {
 		_spec.SetField(template.FieldCatalogScope, field.TypeEnum, value)
@@ -632,6 +662,24 @@ func (_u *TemplateUpdateOne) ClearOsVersion() *TemplateUpdateOne {
 	return _u
 }
 
+// SetSystemLabels sets the "system_labels" field.
+func (_u *TemplateUpdateOne) SetSystemLabels(v []string) *TemplateUpdateOne {
+	_u.mutation.SetSystemLabels(v)
+	return _u
+}
+
+// AppendSystemLabels appends value to the "system_labels" field.
+func (_u *TemplateUpdateOne) AppendSystemLabels(v []string) *TemplateUpdateOne {
+	_u.mutation.AppendSystemLabels(v)
+	return _u
+}
+
+// ClearSystemLabels clears the value of the "system_labels" field.
+func (_u *TemplateUpdateOne) ClearSystemLabels() *TemplateUpdateOne {
+	_u.mutation.ClearSystemLabels()
+	return _u
+}
+
 // SetCatalogScope sets the "catalog_scope" field.
 func (_u *TemplateUpdateOne) SetCatalogScope(v template.CatalogScope) *TemplateUpdateOne {
 	_u.mutation.SetCatalogScope(v)
@@ -836,6 +884,17 @@ func (_u *TemplateUpdateOne) sqlSave(ctx context.Context) (_node *Template, err 
 	}
 	if _u.mutation.OsVersionCleared() {
 		_spec.ClearField(template.FieldOsVersion, field.TypeString)
+	}
+	if value, ok := _u.mutation.SystemLabels(); ok {
+		_spec.SetField(template.FieldSystemLabels, field.TypeJSON, value)
+	}
+	if value, ok := _u.mutation.AppendedSystemLabels(); ok {
+		_spec.AddModifier(func(u *sql.UpdateBuilder) {
+			sqljson.Append(u, template.FieldSystemLabels, value)
+		})
+	}
+	if _u.mutation.SystemLabelsCleared() {
+		_spec.ClearField(template.FieldSystemLabels, field.TypeJSON)
 	}
 	if value, ok := _u.mutation.CatalogScope(); ok {
 		_spec.SetField(template.FieldCatalogScope, field.TypeEnum, value)

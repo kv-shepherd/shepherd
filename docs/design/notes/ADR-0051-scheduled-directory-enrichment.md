@@ -127,9 +127,9 @@ For a directory-capable provider, schedule/enrichment config may include:
 
 These are provider-local admin settings, not core identity fields.
 
-### Generic provider baseline
+### LDAP provider baseline
 
-The current generic provider exposes a minimal baseline for exercising the
+The LDAP provider exposes the minimal scheduled-enrichment baseline for the
 common contract:
 
 * `enrichment_enabled`

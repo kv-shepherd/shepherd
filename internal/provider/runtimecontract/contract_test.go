@@ -51,6 +51,30 @@ func TestAuthResultDirectoryAuthorityJSONRoundTrip(t *testing.T) {
 	}
 }
 
+func TestAuthCallbackRequestCallbackURLJSONRoundTrip(t *testing.T) {
+	t.Parallel()
+
+	payload, err := json.Marshal(AuthCallbackRequest{
+		Method:      "GET",
+		CallbackURL: "https://console.example.com/api/v1/auth/providers/oidc/callback",
+		Query: map[string][]string{
+			"code":  {"auth-code"},
+			"state": {"state-token"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("json.Marshal() error = %v", err)
+	}
+
+	var decoded AuthCallbackRequest
+	if err := json.Unmarshal(payload, &decoded); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+	if decoded.CallbackURL != "https://console.example.com/api/v1/auth/providers/oidc/callback" {
+		t.Fatalf("decoded.CallbackURL = %q", decoded.CallbackURL)
+	}
+}
+
 type testCallbackOriginDescriber struct{}
 
 func (testCallbackOriginDescriber) AllowedCallbackOrigins(config map[string]interface{}) []string {

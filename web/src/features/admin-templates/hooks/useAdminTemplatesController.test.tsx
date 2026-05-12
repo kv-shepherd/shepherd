@@ -114,6 +114,7 @@ describe('useAdminTemplatesController', () => {
       cloud_init: yamlCloudInit,
       pvc_name: undefined,
       pvc_namespace: undefined,
+      system_labels: ['os:any'],
     });
   });
 
@@ -237,6 +238,7 @@ describe('useAdminTemplatesController', () => {
       pvc_name: undefined,
       pvc_namespace: undefined,
       cloud_init: '#cloud-config\nusers:\n  - default',
+      system_labels: ['os:any'],
     });
   });
 
@@ -281,6 +283,7 @@ describe('useAdminTemplatesController', () => {
       pvc_name: 'ubuntu-golden',
       pvc_namespace: 'golden-images',
       cloud_init: '#cloud-config\nusers:\n  - default',
+      system_labels: ['os:any'],
     });
   });
 });

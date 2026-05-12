@@ -19,6 +19,11 @@ import type { ReactNode } from 'react';
 
 import type { FormInstance } from 'antd';
 
+import {
+    normalizeSystemLabels,
+    systemLabelColor,
+    systemLabelText,
+} from '@/features/catalog/systemLabels';
 import type {
     InstanceSize,
     InstanceSizeList,
@@ -41,6 +46,13 @@ const { Text } = Typography;
 
 function capabilityTags(size: InstanceSize, t: TFunction) {
     const tags: ReactNode[] = [];
+    normalizeSystemLabels(size.system_labels).forEach((label) => {
+        tags.push(
+            <Tag key={label} color={systemLabelColor(label)}>
+                {systemLabelText(label, t)}
+            </Tag>,
+        );
+    });
     if (size.requires_gpu) {
         tags.push(<Tag key="gpu" color="volcano">{t('capability.gpu')}</Tag>);
     }
@@ -168,6 +180,11 @@ export function VMRequestTemplateFields({
                             <Space>
                                 <Text strong>{template.display_name || template.name}</Text>
                                 {template.os_family && <Tag color="blue">{template.os_family} {template.os_version}</Tag>}
+                                {normalizeSystemLabels(template.system_labels).map((label) => (
+                                    <Tag key={label} color={systemLabelColor(label)}>
+                                        {systemLabelText(label, t)}
+                                    </Tag>
+                                ))}
                             </Space>
                         ),
                         value: template.id,

@@ -30,31 +30,23 @@ func oidcAuthProviderSchema() map[string]interface{} {
 				"items":       map[string]interface{}{"type": "string"},
 				"default":     []string{"openid", "profile", "email"},
 			},
-			"redirect_uri": map[string]interface{}{
-				"type":        "string",
-				"format":      "uri",
-				"title":       "Redirect URI",
-				"description": "OAuth 2.0 callback URL",
-			},
 			"claims_mapping": map[string]interface{}{
 				"type":                 "object",
 				"title":                "Claims Mapping",
-				"description":          "Map OIDC claims to Shepherd user fields (e.g. {\"email\": \"email\", \"name\": \"display_name\"})",
+				"description":          "Optional claim-to-Shepherd field mapping (e.g. {\"preferred_username\":\"username\",\"name\":\"display_name\"})",
 				"additionalProperties": map[string]interface{}{"type": "string"},
 			},
-			"test_endpoint": map[string]interface{}{
+			"groups_claim": map[string]interface{}{
 				"type":        "string",
-				"format":      "uri",
-				"title":       "Test Endpoint",
-				"description": "URL for connectivity testing",
+				"title":       "Groups Claim",
+				"description": "OIDC claim containing group/cohort values (default: groups)",
+				"default":     "groups",
 			},
-			"sample_users": map[string]interface{}{
-				"type":  "array",
-				"title": "Sample Users",
-				"items": map[string]interface{}{
-					"type":                 "object",
-					"additionalProperties": true,
-				},
+			"request_timeout_seconds": map[string]interface{}{
+				"type":        "integer",
+				"title":       "Request Timeout Seconds",
+				"description": "Network timeout used for discovery, token exchange, and userinfo",
+				"default":     10,
 			},
 		},
 	}
