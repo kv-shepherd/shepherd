@@ -9,21 +9,20 @@
 //   - k8smetav1.ListOptions{} without ResourceVersion in status-sync context
 //   - k8smetav1.GetOptions{} without ResourceVersion in status-sync context
 //
-// The analyzer uses AST inspection to find literal struct initializations
-// of ListOptions and GetOptions from k8s.io/apimachinery that do not set
-// the ResourceVersion field.
+// The analyzer uses AST inspection plus type information to find literal struct
+// initializations of metav1.ListOptions and metav1.GetOptions that do not set a
+// usable ResourceVersion field.
 //
 // Scope: only files whose name matches polling/sync/health patterns are checked.
 // Test files (_test.go) are excluded to avoid false positives from test fixtures.
-//
-// Future: upgrade from LoadModeSyntax to LoadModeTypesInfo to verify the struct
-// is actually k8s.io/apimachinery/pkg/apis/meta/v1.ListOptions by checking
-// pass.TypesInfo, not just the AST type name. This would eliminate the
-// theoretical false positive from a same-named struct in a different package.
 package k8spollingrv
 
 import (
 	"go/ast"
+	"go/constant"
+	"go/token"
+	"go/types"
+	"strconv"
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
@@ -59,8 +58,8 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		typeName := resolveTypeName(lit.Type)
-		if typeName == "" || !targetTypes[typeName] {
+		typeName := resolveMetav1OptionsType(pass, lit.Type)
+		if typeName == "" {
 			return
 		}
 
@@ -71,8 +70,18 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		// Check if ResourceVersion is set in the composite literal.
-		if hasFieldSet(lit, "ResourceVersion") {
+		rvSet, rvZero := resourceVersionStatus(pass, lit)
+		if rvZero {
+			pass.Reportf(lit.Pos(),
+				"ADR-0038: %s literal uses ResourceVersion \"0\"; "+
+					"K8s polling requests MUST use the previous response resourceVersion, "+
+					"or an empty resourceVersion only when establishing a baseline",
+				typeName,
+			)
+			return
+		}
+
+		if rvSet {
 			return
 		}
 
@@ -87,20 +96,34 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-// resolveTypeName extracts the struct type name from a composite literal's type expression.
-// Handles: SelectorExpr (pkg.Type), Ident (Type).
-func resolveTypeName(expr ast.Expr) string {
-	switch t := expr.(type) {
-	case *ast.SelectorExpr:
-		return t.Sel.Name
-	case *ast.Ident:
-		return t.Name
+// resolveMetav1OptionsType returns the K8s options type name for real
+// k8s.io/apimachinery/pkg/apis/meta/v1 ListOptions/GetOptions literals.
+func resolveMetav1OptionsType(pass *analysis.Pass, expr ast.Expr) string {
+	if pass.TypesInfo == nil {
+		return ""
 	}
-	return ""
+	typ := pass.TypesInfo.TypeOf(expr)
+	named, ok := typ.(*types.Named)
+	if !ok {
+		return ""
+	}
+	obj := named.Obj()
+	if obj == nil || obj.Pkg() == nil {
+		return ""
+	}
+	if obj.Pkg().Path() != "k8s.io/apimachinery/pkg/apis/meta/v1" {
+		return ""
+	}
+	name := obj.Name()
+	if !targetTypes[name] {
+		return ""
+	}
+	return name
 }
 
-// hasFieldSet checks if a composite literal has a field with the given name set.
-func hasFieldSet(lit *ast.CompositeLit, fieldName string) bool {
+// resourceVersionStatus returns whether ResourceVersion is present and whether
+// it is explicitly set to the forbidden Kubernetes "0" sentinel.
+func resourceVersionStatus(pass *analysis.Pass, lit *ast.CompositeLit) (bool, bool) {
 	for _, elt := range lit.Elts {
 		kv, ok := elt.(*ast.KeyValueExpr)
 		if !ok {
@@ -110,11 +133,29 @@ func hasFieldSet(lit *ast.CompositeLit, fieldName string) bool {
 		if !ok {
 			continue
 		}
-		if ident.Name == fieldName {
-			return true
+		if ident.Name != "ResourceVersion" {
+			continue
+		}
+		if isZeroResourceVersion(pass, kv.Value) {
+			return true, true
+		}
+		return true, false
+	}
+	return false, false
+}
+
+func isZeroResourceVersion(pass *analysis.Pass, expr ast.Expr) bool {
+	if pass.TypesInfo != nil {
+		if tv, ok := pass.TypesInfo.Types[expr]; ok && tv.Value != nil && tv.Value.Kind() == constant.String {
+			return constant.StringVal(tv.Value) == "0"
 		}
 	}
-	return false
+	lit, ok := expr.(*ast.BasicLit)
+	if !ok || lit.Kind != token.STRING {
+		return false
+	}
+	value, err := strconv.Unquote(lit.Value)
+	return err == nil && value == "0"
 }
 
 // isPollingRelatedFile returns true if the **filename** (not full path) suggests

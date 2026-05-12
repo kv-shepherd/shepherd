@@ -7,10 +7,19 @@ import (
 	"strings"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	openapi_types "github.com/oapi-codegen/runtime/types"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
 
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/enttest"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	enttemplate "kv-shepherd.io/shepherd/ent/template"
@@ -1063,10 +1072,51 @@ func TestBatchHandler_RetryVMBatch_RequiresReviewWhenFailedCreateBatchHasNoSelec
 	}
 }
 
-func TestBatchHandler_SubmitVMBatchPower_EnqueueFailureFallsBackToFailed(t *testing.T) {
+func TestBatchHandler_SubmitVMBatchPower_AtomicEnqueueFailureRollsBack(t *testing.T) {
 	t.Parallel()
 
 	srv, client := newBatchBehaviorTestServer(t)
+	vmID := mustCreateBatchPowerTargetVM(t, client, namespaceregistry.EnvironmentTest)
+
+	body := mustJSON(t, generated.VMBatchPowerRequest{
+		Operation: generated.VMBatchPowerAction("start"),
+		Items: []generated.VMBatchPowerItem{
+			{VmId: vmID},
+		},
+	})
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch/power", body, "owner-1", []string{"platform:admin"})
+	srv.SubmitVMBatchPower(c)
+	if w.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusInternalServerError, w.Body.String())
+	}
+
+	ticketCount, err := client.Ticket.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count tickets: %v", err)
+	}
+	if ticketCount != 0 {
+		t.Fatalf("ticket count = %d, want 0", ticketCount)
+	}
+	eventCount, err := client.DomainEvent.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count domain events: %v", err)
+	}
+	if eventCount != 0 {
+		t.Fatalf("domain event count = %d, want 0", eventCount)
+	}
+	batchCount, err := client.BatchTicket.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count batch tickets: %v", err)
+	}
+	if batchCount != 0 {
+		t.Fatalf("batch ticket count = %d, want 0", batchCount)
+	}
+}
+
+func TestBatchHandler_SubmitVMBatchPower_TestBatchAtomicallyEnqueues(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newBatchBehaviorTestServerWithRiver(t)
 	vmID := mustCreateBatchPowerTargetVM(t, client, namespaceregistry.EnvironmentTest)
 
 	body := mustJSON(t, generated.VMBatchPowerRequest{
@@ -1088,10 +1138,9 @@ func TestBatchHandler_SubmitVMBatchPower_EnqueueFailureFallsBackToFailed(t *test
 	if resp.BatchId == "" {
 		t.Fatal("batch_id is empty")
 	}
-	if resp.Status != generated.VMBatchParentStatusFAILED {
-		t.Fatalf("status = %q, want %q", resp.Status, generated.VMBatchParentStatusFAILED)
+	if resp.Status != generated.VMBatchParentStatusINPROGRESS {
+		t.Fatalf("status = %q, want %q", resp.Status, generated.VMBatchParentStatusINPROGRESS)
 	}
-
 	children, err := client.Ticket.Query().
 		Where(entticket.ParentTicketIDEQ(resp.BatchId)).
 		All(t.Context())
@@ -1101,11 +1150,8 @@ func TestBatchHandler_SubmitVMBatchPower_EnqueueFailureFallsBackToFailed(t *test
 	if len(children) != 1 {
 		t.Fatalf("child ticket count = %d, want 1", len(children))
 	}
-	if children[0].Status != entticket.StatusFAILED {
-		t.Fatalf("child status = %q, want %q", children[0].Status, entticket.StatusFAILED)
-	}
-	if !strings.Contains(children[0].RejectReason, "enqueue vm_power job failed") {
-		t.Fatalf("child reject_reason = %q, want contains %q", children[0].RejectReason, "enqueue vm_power job failed")
+	if children[0].Status != entticket.StatusEXECUTING {
+		t.Fatalf("child status = %q, want %q", children[0].Status, entticket.StatusEXECUTING)
 	}
 }
 
@@ -1173,6 +1219,42 @@ func TestBatchHandler_RetryVMBatch_PowerChildEnqueueFailure(t *testing.T) {
 	}
 }
 
+func TestBatchHandler_RetryVMBatch_PowerChildAtomicallyEnqueues(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newBatchBehaviorTestServerWithRiver(t)
+	batchID, childID := mustSeedPowerBatchForRetry(t, client, "owner-1", "start")
+
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/batch/"+batchID+"/retry", "", "owner-1", []string{"vm:operate"})
+	srv.RetryVMBatch(c, batchID)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.VMBatchActionResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.AffectedCount != 1 {
+		t.Fatalf("affected_count = %d, want 1", resp.AffectedCount)
+	}
+
+	child, err := client.Ticket.Get(t.Context(), childID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if child.Status != entticket.StatusEXECUTING {
+		t.Fatalf("child status = %q, want %q", child.Status, entticket.StatusEXECUTING)
+	}
+	event, err := client.DomainEvent.Get(t.Context(), child.EventID)
+	if err != nil {
+		t.Fatalf("query child event: %v", err)
+	}
+	if event.Status != domainevent.StatusPENDING {
+		t.Fatalf("event status = %q, want %q", event.Status, domainevent.StatusPENDING)
+	}
+}
+
 func TestBatchHandler_SubmitVMBatchPower_ProdBatchStaysPendingApproval(t *testing.T) {
 	t.Parallel()
 
@@ -1230,9 +1312,22 @@ func TestBatchHandler_SubmitVMBatchPower_ProdBatchStaysPendingApproval(t *testin
 func newBatchBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	_ = logger.Init("error", "json")
-	client := testutil.OpenEntPostgres(t, "batch_handler_behavior")
+	client, pool := newBatchBehaviorTestStore(t, "batch_handler_behavior")
 	return NewServer(ServerDeps{
 		EntClient:    client,
+		Pool:         pool,
+		ApprovalReqs: service.NewApprovalRequirementService(client),
+	}), client
+}
+
+func newBatchBehaviorTestServerWithRiver(t *testing.T) (*Server, *ent.Client) {
+	t.Helper()
+	_ = logger.Init("error", "json")
+	client, pool := newBatchBehaviorTestStore(t, "r")
+	return NewServer(ServerDeps{
+		EntClient:    client,
+		Pool:         pool,
+		RiverClient:  newBatchBehaviorTestRiverClient(t, pool),
 		ApprovalReqs: service.NewApprovalRequirementService(client),
 	}), client
 }
@@ -1240,10 +1335,11 @@ func newBatchBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
 func newBatchBehaviorTestServerWithTicketService(t *testing.T, writer *fakeDeleteAtomicWriter) (*Server, *ent.Client) {
 	t.Helper()
 	_ = logger.Init("error", "json")
-	client := testutil.OpenEntPostgres(t, "batch_handler_behavior_with_ticket_service")
+	client, pool := newBatchBehaviorTestStore(t, "batch_handler_behavior_with_ticket_service")
 	ticketService := ticketing.NewService(client, nil, writer)
 	return NewServer(ServerDeps{
 		EntClient:     client,
+		Pool:          pool,
 		ApprovalReqs:  service.NewApprovalRequirementService(client),
 		TicketService: ticketService,
 	}), client
@@ -1252,12 +1348,38 @@ func newBatchBehaviorTestServerWithTicketService(t *testing.T, writer *fakeDelet
 func newBatchBehaviorTestServerWithApprovalRouter(t *testing.T, capture *captureApprovalProvider) (*Server, *ent.Client) {
 	t.Helper()
 	_ = logger.Init("error", "json")
-	client := testutil.OpenEntPostgres(t, "batch_handler_behavior_with_provider_router")
+	client, pool := newBatchBehaviorTestStore(t, "batch_handler_behavior_with_provider_router")
 	return NewServer(ServerDeps{
 		EntClient:      client,
+		Pool:           pool,
 		ApprovalReqs:   service.NewApprovalRequirementService(client),
 		ApprovalRouter: approval.NewApprovalProviderRouter(capture),
 	}), client
+}
+
+func newBatchBehaviorTestStore(t *testing.T, prefix string) (*ent.Client, *pgxpool.Pool) {
+	t.Helper()
+	pool := testutil.OpenPGXPool(t, prefix)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	return client, pool
+}
+
+func newBatchBehaviorTestRiverClient(t *testing.T, pool *pgxpool.Pool) *river.Client[pgx.Tx] {
+	t.Helper()
+	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+	if err != nil {
+		t.Fatalf("create river migrator: %v", err)
+	}
+	if _, migrateErr := migrator.Migrate(t.Context(), rivermigrate.DirectionUp, nil); migrateErr != nil {
+		t.Fatalf("migrate river schema: %v", migrateErr)
+	}
+	riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("create river client: %v", err)
+	}
+	return riverClient
 }
 
 func newBatchModifyTestServer(t *testing.T) (*Server, *ent.Client, string) {

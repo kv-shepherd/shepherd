@@ -23,10 +23,10 @@ import (
 
 const DirectorySyncJobKind = "directory_sync"
 
-// DirectorySyncArgs carries the provider/job identifiers for a sync execution.
+// DirectorySyncArgs carries only the persisted job identifier. The provider
+// identity and request snapshot are resolved from DirectorySyncJob at runtime.
 type DirectorySyncArgs struct {
-	AuthProviderID string `json:"auth_provider_id"`
-	JobID          string `json:"job_id"`
+	JobID string `json:"job_id"`
 }
 
 func (DirectorySyncArgs) Kind() string { return DirectorySyncJobKind }
@@ -66,17 +66,13 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 		return river.JobCancel(fmt.Errorf("directory_sync: worker dependencies are not initialized"))
 	}
 
-	authProviderID := strings.TrimSpace(job.Args.AuthProviderID)
 	jobID := strings.TrimSpace(job.Args.JobID)
-	if authProviderID == "" || jobID == "" {
-		return river.JobCancel(fmt.Errorf("directory_sync: auth_provider_id and job_id are required"))
+	if jobID == "" {
+		return river.JobCancel(fmt.Errorf("directory_sync: job_id is required"))
 	}
 
 	jobRow, err := w.entClient.DirectorySyncJob.Query().
-		Where(
-			entdirectorysyncjob.IDEQ(jobID),
-			entdirectorysyncjob.AuthProviderIDEQ(authProviderID),
-		).
+		Where(entdirectorysyncjob.IDEQ(jobID)).
 		Only(ctx)
 	if err != nil {
 		if ent.IsNotFound(err) {
@@ -95,7 +91,7 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 	}
 
 	authProviderRow, err := w.entClient.AuthProvider.Query().
-		Where(authprovider.IDEQ(authProviderID)).
+		Where(authprovider.IDEQ(jobRow.AuthProviderID)).
 		Only(ctx)
 	if err != nil {
 		return w.failJob(ctx, jobRow.ID, jobRow.TriggeredBy, fmt.Errorf("load auth provider: %w", err))
@@ -132,9 +128,9 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 		)
 		switch jobRow.SyncMode {
 		case "", service.DirectoryExecutionModeManualImport:
-			result, _, applyErr = w.directorySync.ApplyRecord(ctx, authProviderID, record, jobRow.ConflictResolution)
+			result, _, applyErr = w.directorySync.ApplyRecord(ctx, jobRow.AuthProviderID, record, jobRow.ConflictResolution)
 		case service.DirectoryExecutionModeScheduledEnrichment:
-			result, applyErr = w.directorySync.ApplyEnrichmentRecord(ctx, authProviderID, directorycontract.DirectoryJoinKeyType(jobRow.JoinKeyType), record)
+			result, applyErr = w.directorySync.ApplyEnrichmentRecord(ctx, jobRow.AuthProviderID, directorycontract.DirectoryJoinKeyType(jobRow.JoinKeyType), record)
 		default:
 			applyErr = fmt.Errorf("unsupported directory sync mode %q", jobRow.SyncMode)
 		}
@@ -166,7 +162,7 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 
 	if w.auditLogger != nil {
 		if auditErr := w.auditLogger.LogAction(ctx, "auth_provider.directory_sync", "directory_sync_job", jobRow.ID, jobRow.TriggeredBy, map[string]interface{}{
-			"auth_provider_id": authProviderID,
+			"auth_provider_id": jobRow.AuthProviderID,
 			"total_entries":    len(records),
 			"create_count":     actionSummary.CreateCount,
 			"update_count":     actionSummary.UpdateCount,

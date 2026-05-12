@@ -11,18 +11,19 @@ import (
 )
 
 const (
-	openAPIPath         = "api/openapi.yaml"
-	handlerPath         = "internal/api/handlers/server_vm_batch.go"
-	adminHandlerPath    = "internal/api/handlers/server_admin_rate_limit.go"
-	gatewayPath         = "internal/governance/ticketing/service.go"
-	jobHelperPath       = "internal/jobs/helpers.go"
-	schemaPath          = "ent/schema/batch_ticket.go"
-	exemptionSchemaPath = "ent/schema/rate_limit_exemption.go"
-	overrideSchemaPath  = "ent/schema/rate_limit_user_override.go"
-	frontendVMPagePath  = "web/src/app/(protected)/vms/VMsPageContent.tsx"
-	frontendVMHookPath  = "web/src/features/vm-management/hooks/useVMManagementController.ts"
-	frontendVMHookTests = "web/src/features/vm-management/hooks/useVMManagementController.test.tsx"
-	allowlistPath       = "docs/design/ci/allowlists/master_flow_api_deferred.txt"
+	openAPIPath          = "api/openapi.yaml"
+	handlerPath          = "internal/api/handlers/server_vm_batch.go"
+	batchPowerAtomicPath = "internal/usecase/batch_power_atomic.go"
+	adminHandlerPath     = "internal/api/handlers/server_admin_rate_limit.go"
+	gatewayPath          = "internal/governance/ticketing/service.go"
+	jobHelperPath        = "internal/jobs/helpers.go"
+	schemaPath           = "ent/schema/batch_ticket.go"
+	exemptionSchemaPath  = "ent/schema/rate_limit_exemption.go"
+	overrideSchemaPath   = "ent/schema/rate_limit_user_override.go"
+	frontendVMPagePath   = "web/src/app/(protected)/vms/VMsPageContent.tsx"
+	frontendVMHookPath   = "web/src/features/vm-management/hooks/useVMManagementController.ts"
+	frontendVMHookTests  = "web/src/features/vm-management/hooks/useVMManagementController.test.tsx"
+	allowlistPath        = "docs/design/ci/allowlists/master_flow_api_deferred.txt"
 )
 
 func main() {
@@ -31,6 +32,7 @@ func main() {
 	checkOpenAPI(&violations)
 	checkSchemaFragments(&violations)
 	checkHandlerFragments(&violations)
+	checkBatchPowerAtomicFragments(&violations)
 	checkAdminRateLimitHandlerFragments(&violations)
 	checkGatewayFragments(&violations)
 	checkJobHelperFragments(&violations)
@@ -117,7 +119,9 @@ func checkHandlerFragments(violations *[]string) {
 		"func (s *Server) CancelVMBatch(",
 		"submitBatchPower(",
 		"prepareBatchPowerChildren(",
-		"enqueueBatchPowerJob(",
+		"CreateBatchPowerAndMaybeEnqueue(",
+		"RetryBatchPowerAndEnqueue(",
+		"batchPowerChildInputs(",
 		"findBatchByRequestID(",
 		"pendingBatchParentCounters(",
 		"evaluateAdditionalBatchSubmissionLimits(",
@@ -135,6 +139,17 @@ func checkHandlerFragments(violations *[]string) {
 			*violations = append(*violations, fmt.Sprintf("%s missing fragment %q", handlerPath, n))
 		}
 	}
+}
+
+func checkBatchPowerAtomicFragments(violations *[]string) {
+	checkFileContains(violations, batchPowerAtomicPath, []string{
+		"func (w *ApprovalAtomicWriter) CreateBatchPowerAndMaybeEnqueue(",
+		"func (w *ApprovalAtomicWriter) RetryBatchPowerAndEnqueue(",
+		"InsertBatchTicket(",
+		"InsertTx(ctx, tx, jobs.VMPowerArgs",
+		"ResetPowerRetryTicket(",
+		"ResetDomainEventForRetry(",
+	})
 }
 
 func checkSchemaFragments(violations *[]string) {

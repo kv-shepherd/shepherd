@@ -40,6 +40,23 @@ All write operations are driven by **Domain Events**. River Jobs carry only the 
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
+### 2026-05-12 Scope Clarification
+
+This ADR is strict for business write workflows whose source of truth is
+`DomainEvent`: River job args **must carry only `EventID`** and workers must
+resolve operation details from `DomainEvent.payload`.
+
+For non-DomainEvent workers that already have a durable owning table, the same
+claim-check principle may use a single table key such as `JobID` instead of
+duplicating business payload in River args. Example: `DirectorySyncArgs` carries
+only `JobID`; the worker loads `DirectorySyncJob` to resolve `auth_provider_id`,
+request snapshot, sync mode, and conflict resolution.
+
+River job args must not carry business payload fields such as `Operation`,
+`VMID`, `ClusterID`, `AuthProviderID`, resource specs, or request snapshots. The
+allowed shape is intentionally narrow: claim-check identifiers and correlation
+metadata only.
+
 ---
 
 ## Key Design Constraints

@@ -71,8 +71,8 @@ func (p *shepherdArchPlugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 }
 
 // GetLoadMode returns the load mode for the plugin.
-// Batch 1+2 analyzers only need syntax (AST) — no type information required.
-// If future analyzers need type info (pass.TypesInfo), change to register.LoadModeTypesInfo.
+// k8spollingrv uses pass.TypesInfo to recognize real Kubernetes metav1 option
+// types, so the plugin must request type information in golangci-lint too.
 func (p *shepherdArchPlugin) GetLoadMode() string {
-	return register.LoadModeSyntax
+	return register.LoadModeTypesInfo
 }

@@ -1,9 +1,16 @@
 package usecase
 
 import (
+	"context"
+	"os"
 	"testing"
 
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
+
 	"kv-shepherd.io/shepherd/internal/jobs"
+	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
 func TestApprovalAtomicWriterValidateCreateInput(t *testing.T) {
@@ -132,6 +139,92 @@ func TestApprovalAtomicWriterApprovePowerAndEnqueue_RequiresInitializedWriter(t 
 	err := w.ApprovePowerAndEnqueue(t.Context(), "ticket-1", "event-1", "admin-1", "start")
 	if err == nil {
 		t.Fatal("ApprovePowerAndEnqueue() expected initialization error, got nil")
+	}
+}
+
+func TestApprovalAtomicWriterCreatePowerEventAndEnqueue_RequiresInitializedWriter(t *testing.T) {
+	t.Parallel()
+
+	w := &ApprovalAtomicWriter{}
+	err := w.CreatePowerEventAndEnqueue(t.Context(), PowerEventInput{
+		EventID:       "event-1",
+		EventType:     "VM_START_REQUESTED",
+		AggregateType: "vm",
+		AggregateID:   "vm-1",
+		Payload:       []byte(`{"operation":"start"}`),
+		CreatedBy:     "user-1",
+	})
+	if err == nil {
+		t.Fatal("CreatePowerEventAndEnqueue() expected initialization error, got nil")
+	}
+}
+
+func TestApprovalAtomicWriterCreateBatchPowerAndMaybeEnqueue_CommitsRowsAndJobsAtomically(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	pool := testutil.OpenPGXPool(t, "r")
+	schemaSQL, err := os.ReadFile("../repository/sqlc/schema.sql")
+	if err != nil {
+		t.Fatalf("read sqlc schema: %v", err)
+	}
+	if _, execErr := pool.Exec(ctx, string(schemaSQL)); execErr != nil {
+		t.Fatalf("apply sqlc schema: %v", execErr)
+	}
+	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+	if err != nil {
+		t.Fatalf("create river migrator: %v", err)
+	}
+	if _, migrateErr := migrator.Migrate(ctx, rivermigrate.DirectionUp, nil); migrateErr != nil {
+		t.Fatalf("migrate river schema: %v", migrateErr)
+	}
+	riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("create river client: %v", err)
+	}
+
+	w := NewApprovalAtomicWriter(pool, riverClient)
+	err = w.CreateBatchPowerAndMaybeEnqueue(ctx, BatchPowerSubmissionInput{
+		ParentID:      "batch-atomic-1",
+		Actor:         "user-1",
+		RequestID:     "request-1",
+		Reason:        "batch power start",
+		ParentPayload: []byte(`{"operation":"POWER_START","items":[]}`),
+		Children: []BatchPowerChildInput{
+			{
+				EventType:   "VM_START_REQUESTED",
+				AggregateID: "vm-1",
+				Payload:     []byte(`{"vm_id":"vm-1","operation":"start"}`),
+				Reason:      "start vm",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("CreateBatchPowerAndMaybeEnqueue() unexpected error: %v", err)
+	}
+
+	var parentStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM tickets WHERE id=$1`, "batch-atomic-1").Scan(&parentStatus); err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentStatus != "EXECUTING" {
+		t.Fatalf("parent status = %q, want EXECUTING", parentStatus)
+	}
+
+	var childStatus string
+	if err := pool.QueryRow(ctx, `SELECT status FROM tickets WHERE parent_ticket_id=$1`, "batch-atomic-1").Scan(&childStatus); err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childStatus != "EXECUTING" {
+		t.Fatalf("child status = %q, want EXECUTING", childStatus)
+	}
+
+	var jobCount int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM river_job WHERE kind=$1`, "vm_power").Scan(&jobCount); err != nil {
+		t.Fatalf("query river jobs: %v", err)
+	}
+	if jobCount != 1 {
+		t.Fatalf("river vm_power job count = %d, want 1", jobCount)
 	}
 }
 

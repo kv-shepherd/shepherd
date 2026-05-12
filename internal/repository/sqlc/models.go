@@ -8,6 +8,21 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type BatchTicket struct {
+	ID           string             `db:"id" json:"id"`
+	CreatedAt    pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt    pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	BatchType    string             `db:"batch_type" json:"batch_type"`
+	ChildCount   int32              `db:"child_count" json:"child_count"`
+	SuccessCount int32              `db:"success_count" json:"success_count"`
+	FailedCount  int32              `db:"failed_count" json:"failed_count"`
+	PendingCount int32              `db:"pending_count" json:"pending_count"`
+	Status       string             `db:"status" json:"status"`
+	RequestID    pgtype.Text        `db:"request_id" json:"request_id"`
+	CreatedBy    string             `db:"created_by" json:"created_by"`
+	Reason       pgtype.Text        `db:"reason" json:"reason"`
+}
+
 type DomainEvent struct {
 	ID            string             `db:"id" json:"id"`
 	CreatedAt     pgtype.Timestamptz `db:"created_at" json:"created_at"`

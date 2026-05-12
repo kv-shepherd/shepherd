@@ -54,6 +54,21 @@ CREATE TABLE tickets (
     parent_ticket_id text
 );
 
+CREATE TABLE batch_tickets (
+    id text PRIMARY KEY,
+    created_at timestamptz NOT NULL,
+    updated_at timestamptz NOT NULL,
+    batch_type text NOT NULL,
+    child_count integer NOT NULL,
+    success_count integer NOT NULL DEFAULT 0,
+    failed_count integer NOT NULL DEFAULT 0,
+    pending_count integer NOT NULL,
+    status text NOT NULL,
+    request_id text,
+    created_by text NOT NULL,
+    reason text
+);
+
 CREATE TABLE vms (
     id text PRIMARY KEY,
     created_at timestamptz NOT NULL,

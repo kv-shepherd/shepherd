@@ -150,8 +150,7 @@ func TestDirectorySyncWorker_ClassifiesConflictsAndUpdatesCounters(t *testing.T)
 	worker := NewDirectorySyncWorker(client, service.NewDirectorySyncService(client), nil, []byte("0123456789abcdef0123456789abcdef"))
 	if err := worker.Work(t.Context(), &river.Job[DirectorySyncArgs]{
 		Args: DirectorySyncArgs{
-			AuthProviderID: providerID,
-			JobID:          "directory-sync-job-1",
+			JobID: "directory-sync-job-1",
 		},
 	}); err != nil {
 		t.Fatalf("worker work: %v", err)
@@ -292,8 +291,7 @@ func TestDirectorySyncWorker_ScheduledEnrichmentUpdatesExistingUsersOnly(t *test
 	worker := NewDirectorySyncWorker(client, service.NewDirectorySyncService(client), nil, []byte("0123456789abcdef0123456789abcdef"))
 	if workerErr := worker.Work(t.Context(), &river.Job[DirectorySyncArgs]{
 		Args: DirectorySyncArgs{
-			AuthProviderID: providerID,
-			JobID:          "directory-enrichment-job-1",
+			JobID: "directory-enrichment-job-1",
 		},
 	}); workerErr != nil {
 		t.Fatalf("worker work: %v", workerErr)

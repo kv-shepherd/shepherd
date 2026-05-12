@@ -6,11 +6,13 @@
 //
 // Rule enforced (ADR-0009):
 //   - River Job Args structs (names ending in "JobArgs" or "Args") must not
-//     contain direct business-entity ID fields (vm_id, ticket_id, cluster_id, etc.).
-//   - Workers must receive only an EventID and retrieve full data via DomainEvent lookup.
+//     contain business payload fields such as operation, VM identity, cluster
+//     identity, or ticket snapshots.
+//   - Workers must receive only claim-check identifiers and retrieve full data
+//     from DomainEvent or the owning job table.
 //
 // Exemptions:
-//   - Fields named EventID, BatchID, Metadata, TraceID are allowed.
+//   - Fields named EventID, JobID, BatchID, TraceID are allowed.
 //
 // Applies to: internal/usecase, internal/worker, internal/jobs packages.
 package riverjobargs
@@ -27,25 +29,17 @@ import (
 // Analyzer is the exported go/analysis.Analyzer for River Job Args claim check.
 var Analyzer = &analysis.Analyzer{
 	Name:     "riverjobargs",
-	Doc:      "Enforces ADR-0009 River Claim Check: Job Args structs must not contain direct business-entity ID fields",
+	Doc:      "Enforces ADR-0009 River Claim Check: Job Args structs must contain only claim-check identifiers",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 }
 
-// forbiddenJobArgFields are field names that violate the Claim Check pattern.
-var forbiddenJobArgFields = map[string]bool{
-	"VMID":       true,
-	"VmID":       true,
-	"VMId":       true,
-	"vm_id":      true,
-	"TicketID":   true,
-	"ticket_id":  true,
-	"ServiceID":  true,
-	"service_id": true,
-	"SystemID":   true,
-	"system_id":  true,
-	"ClusterID":  true,
-	"cluster_id": true,
+// allowedJobArgFields are claim-check identifiers, not business payload.
+var allowedJobArgFields = map[string]bool{
+	"EventID": true,
+	"JobID":   true,
+	"BatchID": true,
+	"TraceID": true,
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {
@@ -83,10 +77,11 @@ func run(pass *analysis.Pass) (interface{}, error) {
 
 		for _, field := range st.Fields.List {
 			for _, ident := range field.Names {
-				if forbiddenJobArgFields[ident.Name] {
+				if !allowedJobArgFields[ident.Name] {
 					pass.Reportf(field.Pos(),
-						"River Job Args %s contains forbidden field %q: "+
-							"use EventID only and retrieve entity data via DomainEvent lookup (ADR-0009)",
+						"River Job Args %s contains non-claim-check field %q: "+
+							"job args may only carry EventID, JobID, BatchID, or TraceID; "+
+							"retrieve business data from DomainEvent or the owning job table (ADR-0009)",
 						name, ident.Name)
 				}
 			}

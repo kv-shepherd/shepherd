@@ -290,6 +290,124 @@ func TestQueries_SetDomainEventStatus(t *testing.T) {
 	require.Equal(t, "COMPLETED", status)
 }
 
+func TestQueries_InsertDomainEvent(t *testing.T) {
+	ctx := context.Background()
+	q, pool := newSQLCTestQueries(t, "insert_domain_event")
+
+	err := q.InsertDomainEvent(ctx, InsertDomainEventParams{
+		ID:            "event-insert-1",
+		EventType:     "VM_START_REQUESTED",
+		AggregateType: "vm",
+		AggregateID:   "vm-1",
+		Payload:       []byte(`{"operation":"start"}`),
+		Status:        "PENDING",
+		CreatedBy:     "user-1",
+	})
+	require.NoError(t, err)
+
+	var (
+		eventType string
+		status    string
+		payload   []byte
+	)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT event_type, status, payload FROM domain_events WHERE id=$1`, "event-insert-1").Scan(&eventType, &status, &payload))
+	require.Equal(t, "VM_START_REQUESTED", eventType)
+	require.Equal(t, "PENDING", status)
+	require.JSONEq(t, `{"operation":"start"}`, string(payload))
+}
+
+func TestQueries_InsertTicket(t *testing.T) {
+	ctx := context.Background()
+	q, pool := newSQLCTestQueries(t, "insert_ticket")
+
+	require.NoError(t, q.InsertTicket(ctx, InsertTicketParams{
+		ID:             "ticket-parent-1",
+		EventID:        "event-parent-1",
+		OperationType:  "POWER",
+		Status:         "EXECUTING",
+		Requester:      "user-1",
+		Reason:         pgtype.Text{String: "batch power request", Valid: true},
+		ParentTicketID: pgtype.Text{},
+	}))
+	require.NoError(t, q.InsertTicket(ctx, InsertTicketParams{
+		ID:             "ticket-child-1",
+		EventID:        "event-child-1",
+		OperationType:  "POWER",
+		Status:         "EXECUTING",
+		Requester:      "user-1",
+		Reason:         pgtype.Text{String: "child power request", Valid: true},
+		ParentTicketID: pgtype.Text{String: "ticket-parent-1", Valid: true},
+	}))
+	var childStatus, parentID string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status, parent_ticket_id FROM tickets WHERE id=$1`, "ticket-child-1").Scan(&childStatus, &parentID))
+	require.Equal(t, "EXECUTING", childStatus)
+	require.Equal(t, "ticket-parent-1", parentID)
+}
+
+func TestQueries_InsertBatchTicket(t *testing.T) {
+	ctx := context.Background()
+	q, pool := newSQLCTestQueries(t, "insert_batch_ticket")
+
+	require.NoError(t, q.InsertBatchTicket(ctx, InsertBatchTicketParams{
+		ID:           "ticket-parent-1",
+		BatchType:    "BATCH_POWER",
+		ChildCount:   1,
+		PendingCount: 1,
+		Status:       "IN_PROGRESS",
+		CreatedBy:    "user-1",
+		RequestID:    pgtype.Text{String: "request-1", Valid: true},
+		Reason:       pgtype.Text{String: "batch power request", Valid: true},
+	}))
+
+	var batchType, createdBy string
+	var pendingCount int32
+	require.NoError(t, pool.QueryRow(
+		ctx,
+		`SELECT batch_type, pending_count, created_by FROM batch_tickets WHERE id=$1`,
+		"ticket-parent-1",
+	).Scan(&batchType, &pendingCount, &createdBy))
+	require.Equal(t, "BATCH_POWER", batchType)
+	require.EqualValues(t, 1, pendingCount)
+	require.Equal(t, "user-1", createdBy)
+}
+
+func TestQueries_ResetPowerRetryTicket(t *testing.T) {
+	ctx := context.Background()
+	q, pool := newSQLCTestQueries(t, "reset_power_retry_ticket")
+
+	seedTicket(ctx, t, pool, "ticket-child-retry", "event-child-retry", "POWER")
+	_, err := pool.Exec(ctx, `UPDATE tickets SET status='FAILED', reject_reason='seed failure', parent_ticket_id='ticket-parent-retry' WHERE id='ticket-child-retry'`)
+	require.NoError(t, err)
+
+	rows, err := q.ResetPowerRetryTicket(ctx, ResetPowerRetryTicketParams{
+		ID:             "ticket-child-retry",
+		ParentTicketID: pgtype.Text{String: "ticket-parent-retry", Valid: true},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
+
+	var ticketStatus string
+	var rejectReason pgtype.Text
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status, reject_reason FROM tickets WHERE id=$1`, "ticket-child-retry").Scan(&ticketStatus, &rejectReason))
+	require.Equal(t, "EXECUTING", ticketStatus)
+	require.False(t, rejectReason.Valid)
+}
+
+func TestQueries_ResetDomainEventForRetry(t *testing.T) {
+	ctx := context.Background()
+	q, pool := newSQLCTestQueries(t, "reset_domain_event_retry")
+
+	seedDomainEvent(ctx, t, pool, "event-child-retry", "FAILED")
+
+	rows, err := q.ResetDomainEventForRetry(ctx, "event-child-retry")
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
+
+	var eventStatus string
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM domain_events WHERE id=$1`, "event-child-retry").Scan(&eventStatus))
+	require.Equal(t, "PENDING", eventStatus)
+}
+
 func TestQueries_SetVMStatus(t *testing.T) {
 	ctx := context.Background()
 	q, pool := newSQLCTestQueries(t, "set_vm_status")

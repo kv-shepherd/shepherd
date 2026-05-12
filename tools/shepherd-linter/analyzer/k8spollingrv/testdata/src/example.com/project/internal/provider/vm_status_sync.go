@@ -6,6 +6,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
+type ListOptions struct {
+	Limit int64
+}
+
+type GetOptions struct{}
+
 func pollWithoutRV() {
 	_ = metav1.ListOptions{}          // want `ADR-0038: ListOptions literal missing ResourceVersion field`
 	_ = metav1.GetOptions{}           // want `ADR-0038: GetOptions literal missing ResourceVersion field`
@@ -15,8 +21,13 @@ func pollWithoutRV() {
 func pollWithRV() {
 	_ = metav1.ListOptions{ResourceVersion: "12345"} // OK: ResourceVersion set
 	_ = metav1.GetOptions{ResourceVersion: "67890"}  // OK: ResourceVersion set
-	_ = metav1.ListOptions{
+	_ = metav1.ListOptions{                          // want `ADR-0038: ListOptions literal uses ResourceVersion "0"`
 		ResourceVersion: "0",
 		Limit:           10,
-	} // OK: ResourceVersion set
+	}
+}
+
+func localOptionsAreIgnored() {
+	_ = ListOptions{}
+	_ = GetOptions{}
 }

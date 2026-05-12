@@ -238,8 +238,7 @@ func TestVMPowerWorker_UsesObservedLiveStatusAfterStop(t *testing.T) {
 	worker := NewVMPowerWorker(client, service.NewVMService(mock), nil)
 	err = worker.Work(ctx, &river.Job[VMPowerArgs]{
 		Args: VMPowerArgs{
-			EventID:   eventID,
-			Operation: powerOpStop,
+			EventID: eventID,
 		},
 	})
 	require.NoError(t, err)
@@ -274,8 +273,7 @@ func TestVMPowerWorker_SnoozesTransientClusterErrorsWithoutFailingTicket(t *test
 
 	err := worker.Work(t.Context(), &river.Job[VMPowerArgs]{
 		Args: VMPowerArgs{
-			EventID:   fixture.eventID,
-			Operation: powerOpStop,
+			EventID: fixture.eventID,
 		},
 	})
 	var snoozeErr *river.JobSnoozeError

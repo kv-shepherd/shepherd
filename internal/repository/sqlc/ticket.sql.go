@@ -188,6 +188,149 @@ func (q *Queries) ApprovePowerTicket(ctx context.Context, arg ApprovePowerTicket
 	return result.RowsAffected(), nil
 }
 
+const insertBatchTicket = `-- name: InsertBatchTicket :exec
+INSERT INTO batch_tickets (
+    id,
+    created_at,
+    updated_at,
+    batch_type,
+    child_count,
+    pending_count,
+    status,
+    request_id,
+    created_by,
+    reason
+) VALUES (
+    $1,
+    NOW(),
+    NOW(),
+    $2,
+    $3,
+    $4,
+    $5,
+    $7,
+    $6,
+    $8
+)
+`
+
+type InsertBatchTicketParams struct {
+	ID           string      `db:"id" json:"id"`
+	BatchType    string      `db:"batch_type" json:"batch_type"`
+	ChildCount   int32       `db:"child_count" json:"child_count"`
+	PendingCount int32       `db:"pending_count" json:"pending_count"`
+	Status       string      `db:"status" json:"status"`
+	CreatedBy    string      `db:"created_by" json:"created_by"`
+	RequestID    pgtype.Text `db:"request_id" json:"request_id"`
+	Reason       pgtype.Text `db:"reason" json:"reason"`
+}
+
+func (q *Queries) InsertBatchTicket(ctx context.Context, arg InsertBatchTicketParams) error {
+	_, err := q.db.Exec(ctx, insertBatchTicket,
+		arg.ID,
+		arg.BatchType,
+		arg.ChildCount,
+		arg.PendingCount,
+		arg.Status,
+		arg.CreatedBy,
+		arg.RequestID,
+		arg.Reason,
+	)
+	return err
+}
+
+const insertDomainEvent = `-- name: InsertDomainEvent :exec
+INSERT INTO domain_events (
+    id,
+    created_at,
+    event_type,
+    aggregate_type,
+    aggregate_id,
+    payload,
+    status,
+    created_by
+) VALUES (
+    $1,
+    NOW(),
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7
+)
+`
+
+type InsertDomainEventParams struct {
+	ID            string `db:"id" json:"id"`
+	EventType     string `db:"event_type" json:"event_type"`
+	AggregateType string `db:"aggregate_type" json:"aggregate_type"`
+	AggregateID   string `db:"aggregate_id" json:"aggregate_id"`
+	Payload       []byte `db:"payload" json:"payload"`
+	Status        string `db:"status" json:"status"`
+	CreatedBy     string `db:"created_by" json:"created_by"`
+}
+
+func (q *Queries) InsertDomainEvent(ctx context.Context, arg InsertDomainEventParams) error {
+	_, err := q.db.Exec(ctx, insertDomainEvent,
+		arg.ID,
+		arg.EventType,
+		arg.AggregateType,
+		arg.AggregateID,
+		arg.Payload,
+		arg.Status,
+		arg.CreatedBy,
+	)
+	return err
+}
+
+const insertTicket = `-- name: InsertTicket :exec
+INSERT INTO tickets (
+    id,
+    created_at,
+    updated_at,
+    event_id,
+    operation_type,
+    status,
+    requester,
+    reason,
+    parent_ticket_id
+) VALUES (
+    $1,
+    NOW(),
+    NOW(),
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7
+)
+`
+
+type InsertTicketParams struct {
+	ID             string      `db:"id" json:"id"`
+	EventID        string      `db:"event_id" json:"event_id"`
+	OperationType  string      `db:"operation_type" json:"operation_type"`
+	Status         string      `db:"status" json:"status"`
+	Requester      string      `db:"requester" json:"requester"`
+	Reason         pgtype.Text `db:"reason" json:"reason"`
+	ParentTicketID pgtype.Text `db:"parent_ticket_id" json:"parent_ticket_id"`
+}
+
+func (q *Queries) InsertTicket(ctx context.Context, arg InsertTicketParams) error {
+	_, err := q.db.Exec(ctx, insertTicket,
+		arg.ID,
+		arg.EventID,
+		arg.OperationType,
+		arg.Status,
+		arg.Requester,
+		arg.Reason,
+		arg.ParentTicketID,
+	)
+	return err
+}
+
 const insertVM = `-- name: InsertVM :exec
 INSERT INTO vms (
     id,
@@ -255,6 +398,45 @@ func (q *Queries) InsertVM(ctx context.Context, arg InsertVMParams) error {
 		arg.ServiceVms,
 	)
 	return err
+}
+
+const resetDomainEventForRetry = `-- name: ResetDomainEventForRetry :execrows
+UPDATE domain_events
+SET status = 'PENDING'
+WHERE id = $1
+`
+
+func (q *Queries) ResetDomainEventForRetry(ctx context.Context, id string) (int64, error) {
+	result, err := q.db.Exec(ctx, resetDomainEventForRetry, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resetPowerRetryTicket = `-- name: ResetPowerRetryTicket :execrows
+UPDATE tickets
+SET
+    status = 'EXECUTING',
+    reject_reason = NULL,
+    updated_at = NOW()
+WHERE
+    id = $1
+    AND parent_ticket_id = $2
+    AND operation_type = 'POWER'
+`
+
+type ResetPowerRetryTicketParams struct {
+	ID             string      `db:"id" json:"id"`
+	ParentTicketID pgtype.Text `db:"parent_ticket_id" json:"parent_ticket_id"`
+}
+
+func (q *Queries) ResetPowerRetryTicket(ctx context.Context, arg ResetPowerRetryTicketParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resetPowerRetryTicket, arg.ID, arg.ParentTicketID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const setDomainEventStatus = `-- name: SetDomainEventStatus :execrows

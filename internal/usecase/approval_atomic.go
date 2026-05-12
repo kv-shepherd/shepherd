@@ -28,6 +28,17 @@ type ApprovalAtomicWriter struct {
 	queries     *sqlcrepo.Queries
 }
 
+// PowerEventInput is the immutable event snapshot for a direct no-approval
+// power request. The River job receives only EventID and resolves this row.
+type PowerEventInput struct {
+	EventID       string
+	EventType     string
+	AggregateType string
+	AggregateID   string
+	Payload       []byte
+	CreatedBy     string
+}
+
 // NewApprovalAtomicWriter creates a new ADR-0012 atomic writer.
 func NewApprovalAtomicWriter(pool *pgxpool.Pool, riverClient *river.Client[pgx.Tx]) *ApprovalAtomicWriter {
 	return &ApprovalAtomicWriter{
@@ -427,14 +438,60 @@ func (w *ApprovalAtomicWriter) ApprovePowerAndEnqueue(
 	}
 
 	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMPowerArgs{
-		EventID:   eventID,
-		Operation: operation,
+		EventID: eventID,
 	}, nil); err != nil {
 		return fmt.Errorf("enqueue vm_power for event %s: %w", eventID, err)
 	}
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("commit approval power tx: %w", err)
+	}
+	return nil
+}
+
+// CreatePowerEventAndEnqueue atomically creates a no-approval power DomainEvent
+// and inserts the River job in the same pgx transaction. This mirrors River's
+// recommended InsertTx pattern so the worker can only observe a committed event.
+func (w *ApprovalAtomicWriter) CreatePowerEventAndEnqueue(ctx context.Context, input PowerEventInput) error {
+	if w.pool == nil || w.riverClient == nil || w.queries == nil {
+		return fmt.Errorf("approval atomic writer is not initialized")
+	}
+	if strings.TrimSpace(input.EventID) == "" ||
+		strings.TrimSpace(input.EventType) == "" ||
+		strings.TrimSpace(input.AggregateType) == "" ||
+		strings.TrimSpace(input.AggregateID) == "" ||
+		strings.TrimSpace(input.CreatedBy) == "" ||
+		len(input.Payload) == 0 {
+		return fmt.Errorf("power event input is incomplete")
+	}
+
+	tx, err := w.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin direct power tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	qtx := w.queries.WithTx(tx)
+	if err := qtx.InsertDomainEvent(ctx, sqlcrepo.InsertDomainEventParams{
+		ID:            input.EventID,
+		EventType:     strings.TrimSpace(input.EventType),
+		AggregateType: strings.TrimSpace(input.AggregateType),
+		AggregateID:   strings.TrimSpace(input.AggregateID),
+		Payload:       input.Payload,
+		Status:        "PENDING",
+		CreatedBy:     strings.TrimSpace(input.CreatedBy),
+	}); err != nil {
+		return fmt.Errorf("insert power domain event %s: %w", input.EventID, err)
+	}
+
+	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMPowerArgs{
+		EventID: input.EventID,
+	}, nil); err != nil {
+		return fmt.Errorf("enqueue vm_power for event %s: %w", input.EventID, err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit direct power tx: %w", err)
 	}
 	return nil
 }

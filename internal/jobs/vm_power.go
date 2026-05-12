@@ -31,10 +31,10 @@ const (
 // Job Args
 // ---------------------------------------------------------------------------
 
-// VMPowerArgs carries EventID and operation type for VM power jobs (Claim-check, ADR-0009).
+// VMPowerArgs carries only EventID. Operation and VM identity are resolved from
+// the immutable DomainEvent payload (Claim-check pattern, ADR-0009).
 type VMPowerArgs struct {
-	EventID   string `json:"event_id"`
-	Operation string `json:"operation"` // start, stop, restart
+	EventID string `json:"event_id"`
 }
 
 // Kind returns the job kind identifier for VM power operations.
@@ -78,7 +78,6 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 
 	logger.Info("Processing VM power operation",
 		zap.String("event_id", eventID),
-		zap.String("operation", job.Args.Operation),
 		zap.Int64("attempt", jobAttempt(job)),
 	)
 
@@ -102,8 +101,7 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 		return river.JobCancel(fmt.Errorf("unmarshal power payload for event %s: %w", eventID, err))
 	}
 
-	// Use operation from Args (authoritative) over payload (informational).
-	operation := job.Args.Operation
+	operation := strings.ToLower(strings.TrimSpace(payload.Operation))
 	markFailed := func(err error, cancel bool) error {
 		// K8s operation failed — persist FAILED status (best-effort).
 		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).

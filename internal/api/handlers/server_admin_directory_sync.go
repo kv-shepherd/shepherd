@@ -202,8 +202,7 @@ func (s *Server) SyncAuthProviderDirectory(c *gin.Context, providerID generated.
 	}
 
 	if _, err := s.riverClient.Insert(ctx, jobs.DirectorySyncArgs{
-		AuthProviderID: providerID,
-		JobID:          jobRow.ID,
+		JobID: jobRow.ID,
 	}, nil); err != nil {
 		logger.Error("failed to enqueue directory sync job", zap.Error(err), zap.String("provider_id", providerID), zap.String("job_id", jobRow.ID))
 		_, _ = s.client.DirectorySyncJob.UpdateOneID(jobRow.ID).

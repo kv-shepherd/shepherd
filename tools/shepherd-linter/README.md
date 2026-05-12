@@ -174,7 +174,7 @@ func (p *shepherdArchPlugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 }
 
 func (p *shepherdArchPlugin) GetLoadMode() string {
-    return register.LoadModeSyntax  // Batch 1: AST-only
+    return register.LoadModeTypesInfo  // k8spollingrv verifies real metav1 option types
 }
 ```
 

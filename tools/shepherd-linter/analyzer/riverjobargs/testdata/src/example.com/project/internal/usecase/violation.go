@@ -3,7 +3,8 @@ package usecase
 
 // BadCreateVMJobArgs violates ADR-0009: contains direct VM and Ticket IDs.
 type BadCreateVMJobArgs struct {
-	EventID  string
-	VMID     string // want `River Job Args BadCreateVMJobArgs contains forbidden field "VMID"`
-	TicketID string // want `River Job Args BadCreateVMJobArgs contains forbidden field "TicketID"`
+	EventID   string
+	VMID      string // want `River Job Args BadCreateVMJobArgs contains non-claim-check field "VMID"`
+	TicketID  string // want `River Job Args BadCreateVMJobArgs contains non-claim-check field "TicketID"`
+	Operation string // want `River Job Args BadCreateVMJobArgs contains non-claim-check field "Operation"`
 }

@@ -27,7 +27,6 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/domain"
-	"kv-shepherd.io/shepherd/internal/jobs"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
@@ -1547,34 +1546,16 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 	}
 
 	eventID, _ := uuid.NewV7()
-	_, err = s.client.DomainEvent.Create().
-		SetID(eventID.String()).
-		SetEventType(string(eventType)).
-		SetAggregateType("vm").
-		SetAggregateID(vm.ID).
-		SetPayload(payloadBytes).
-		SetStatus(domainevent.StatusPENDING).
-		SetCreatedBy(actor).
-		Save(ctx)
-	if err != nil {
-		logger.Error("failed to create power domain event", zap.Error(err), zap.String("vm_id", vm.ID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	// Enqueue River job (ADR-0006).
-	if s.riverClient == nil {
-		logger.Error("riverClient is nil — cannot enqueue VM power job (composition root misconfigured?)", zap.String("vm_id", vm.ID))
-		_, _ = s.client.DomainEvent.UpdateOneID(eventID.String()).SetStatus(domainevent.StatusFAILED).Save(ctx)
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if _, err := s.riverClient.Insert(ctx, jobs.VMPowerArgs{
-		EventID:   eventID.String(),
-		Operation: operation,
-	}, nil); err != nil {
-		logger.Error("failed to enqueue VM power job", zap.Error(err), zap.String("event_id", eventID.String()))
-		_, _ = s.client.DomainEvent.UpdateOneID(eventID.String()).SetStatus(domainevent.StatusFAILED).Save(ctx)
+	atomicWriter := usecase.NewApprovalAtomicWriter(s.pool, s.riverClient)
+	if err := atomicWriter.CreatePowerEventAndEnqueue(ctx, usecase.PowerEventInput{
+		EventID:       eventID.String(),
+		EventType:     string(eventType),
+		AggregateType: "vm",
+		AggregateID:   vm.ID,
+		Payload:       payloadBytes,
+		CreatedBy:     actor,
+	}); err != nil {
+		logger.Error("failed to create and enqueue power domain event", zap.Error(err), zap.String("vm_id", vm.ID), zap.String("event_id", eventID.String()))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}

@@ -17,10 +17,11 @@ import (
 )
 
 // DynamicSSAClient submits unstructured resources via Server-Side Apply.
-// Used for all VM write operations (CreateVM / UpdateVM / ValidateSpec).
+// Used for full-manifest VM create/update validation flows.
 //
 // ADR-0011: Backend is a "YAML porter", not a "Struct assembly factory".
-// All VM writes go through rendered YAML → Unstructured → SSA Patch.
+// Full-manifest writes go through rendered YAML -> Unstructured -> SSA Patch.
+// Targeted existing-VM mutations use typed Patch per ADR-0052.
 type DynamicSSAClient interface {
 	// ApplyYAML submits YAML bytes as an SSA Patch to Kubernetes.
 	// fieldManager is always FieldOwner ("kubevirt-shepherd").
@@ -37,8 +38,9 @@ type DynamicSSAClient interface {
 // VirtualMachineClient abstracts KubeVirt VM read operations and lifecycle commands.
 // Anti-Corruption Layer: decouples provider from kubevirt.io/client-go/kubecli.
 //
-// Create and Update are intentionally absent (ADR-0011):
-// All writes must go through DynamicSSAClient.ApplyYAML().
+// Create and typed full Update are intentionally absent: full-manifest flows
+// go through DynamicSSAClient.ApplyYAML, while targeted existing-VM mutations
+// use Patch per ADR-0052.
 type VirtualMachineClient interface {
 	// Read operations (type-safe via kubevirt.io/client-go)
 	Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*kubevirtv1.VirtualMachine, error)

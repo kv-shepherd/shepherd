@@ -156,7 +156,9 @@ Current: low-frequency
 * Code review confirms `last_k8s_rv` is persisted after every successful poll (including on 304 Not Modified responses).
 * DB schema review confirms `polling_tier`, `poll_interval_sec`, `last_k8s_rv`, `last_polled_at`, `high_tier_since` fields are added via Atlas migration.
 * Load test: with 1,000 stable VMs at 30-minute interval → ~0.5 req/s to K8s; with 100 transitional VMs at 15s interval → ~6.7 req/s. Total within acceptable bounds for governance platform scale.
-* CI gate: `k8spollingrv` analyzer verifies that polling-path K8s option structs include `ResourceVersion`.
+* CI gate: `k8spollingrv` analyzer verifies that polling-path `metav1.ListOptions`
+  and `metav1.GetOptions` struct literals include `ResourceVersion` using Go
+  type information, and rejects the explicit `"0"` sentinel in polling code.
 
 ---
 

@@ -115,9 +115,12 @@ low-frequency. This prevents zombie high-frequency loops from consuming K8s API 
 
 ### Detection Rules
 
-The `k8spollingrv` analyzer flags `metav1.ListOptions{}` and `metav1.GetOptions{}` struct
-literals that do NOT set the `ResourceVersion` field, but **only** in polling-related files
-(filename contains: `status_sync`, `polling`, `poll_`, `_poll`, `sync_status`).
+The `k8spollingrv` analyzer uses Go type information to flag real
+`k8s.io/apimachinery/pkg/apis/meta/v1.ListOptions` and `GetOptions` struct
+literals that do NOT set the `ResourceVersion` field, but **only** in
+polling-related files (filename contains: `status_sync`, `polling`, `poll_`,
+`_poll`, `sync_status`). The analyzer also rejects the explicit `"0"` sentinel
+in polling paths; first poll and 410 recovery use the empty baseline value.
 
 This conservative scope prevents false positives on non-polling code (e.g., API handlers,
 idempotency checks) while ensuring the critical polling path always uses cached ResourceVersion.

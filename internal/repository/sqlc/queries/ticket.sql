@@ -61,6 +61,91 @@ UPDATE domain_events
 SET status = $2
 WHERE id = $1;
 
+-- name: ResetPowerRetryTicket :execrows
+UPDATE tickets
+SET
+    status = 'EXECUTING',
+    reject_reason = NULL,
+    updated_at = NOW()
+WHERE
+    id = $1
+    AND parent_ticket_id = $2
+    AND operation_type = 'POWER';
+
+-- name: ResetDomainEventForRetry :execrows
+UPDATE domain_events
+SET status = 'PENDING'
+WHERE id = $1;
+
+-- name: InsertDomainEvent :exec
+INSERT INTO domain_events (
+    id,
+    created_at,
+    event_type,
+    aggregate_type,
+    aggregate_id,
+    payload,
+    status,
+    created_by
+) VALUES (
+    $1,
+    NOW(),
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7
+);
+
+-- name: InsertTicket :exec
+INSERT INTO tickets (
+    id,
+    created_at,
+    updated_at,
+    event_id,
+    operation_type,
+    status,
+    requester,
+    reason,
+    parent_ticket_id
+) VALUES (
+    $1,
+    NOW(),
+    NOW(),
+    $2,
+    $3,
+    $4,
+    $5,
+    sqlc.narg(reason),
+    sqlc.narg(parent_ticket_id)
+);
+
+-- name: InsertBatchTicket :exec
+INSERT INTO batch_tickets (
+    id,
+    created_at,
+    updated_at,
+    batch_type,
+    child_count,
+    pending_count,
+    status,
+    request_id,
+    created_by,
+    reason
+) VALUES (
+    $1,
+    NOW(),
+    NOW(),
+    $2,
+    $3,
+    $4,
+    $5,
+    sqlc.narg(request_id),
+    $6,
+    sqlc.narg(reason)
+);
+
 -- name: AllocateServiceInstance :one
 WITH allocated AS (
     UPDATE services AS s

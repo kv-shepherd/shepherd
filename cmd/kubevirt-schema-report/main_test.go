@@ -44,7 +44,7 @@ func TestAuditMaskLocaleKeysReportsMissingLocaleEntries(t *testing.T) {
 		"instanceSizes.mask.reboot_policy": "Reboot Policy",
 	}
 	zh := map[string]string{
-		"instanceSizes.mask.reboot_policy": "重启策略",
+		"instanceSizes.mask.reboot_policy": "\u91cd\u542f\u7b56\u7565",
 	}
 
 	gaps := auditMaskLocaleKeys(fields, en, zh)

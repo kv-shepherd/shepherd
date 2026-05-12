@@ -776,128 +776,21 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		return
 	}
 
-	tx, err := s.client.Tx(ctx)
-	if err != nil {
-		logger.Error("failed to begin power-batch submission tx", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	defer func() {
-		if v := recover(); v != nil {
-			_ = tx.Rollback()
-			panic(v)
-		}
-	}()
-
-	parentEventID := generateIDV7()
-	_, err = tx.DomainEvent.Create().
-		SetID(parentEventID).
-		SetEventType(string(domain.EventBatchPowerRequested)).
-		SetAggregateType("batch").
-		SetAggregateID(parentID).
-		SetPayload(parentPayloadBytes).
-		SetStatus(func() domainevent.Status {
-			if batchRequiresApproval {
-				return domainevent.StatusPENDING
-			}
-			return domainevent.StatusPROCESSING
-		}()).
-		SetCreatedBy(actor).
-		Save(ctx)
-	if err != nil {
-		_ = tx.Rollback()
-		logger.Error("failed to create power-batch parent domain event", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
 	parentReason := strings.TrimSpace(req.Reason)
 	if parentReason == "" {
 		parentReason = fmt.Sprintf("batch power %s request (%d items)", strings.ToLower(jobOperation), len(children))
 	}
-	if _, err := tx.Ticket.Create().
-		SetID(parentID).
-		SetEventID(parentEventID).
-		SetOperationType(entticket.OperationTypePOWER).
-		SetStatus(func() entticket.Status {
-			if batchRequiresApproval {
-				return entticket.StatusPENDING
-			}
-			return entticket.StatusEXECUTING
-		}()).
-		SetRequester(actor).
-		SetReason(parentReason).
-		Save(ctx); err != nil {
-		_ = tx.Rollback()
-		logger.Error("failed to create power-batch parent ticket", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	if _, err := tx.BatchTicket.Create().
-		SetID(parentID).
-		SetBatchType(entbatchticket.BatchTypeBATCH_POWER).
-		SetChildCount(len(children)).
-		SetPendingCount(len(children)).
-		SetStatus(func() entbatchticket.Status {
-			if batchRequiresApproval {
-				return entbatchticket.StatusPENDING_APPROVAL
-			}
-			return entbatchticket.StatusIN_PROGRESS
-		}()).
-		SetCreatedBy(actor).
-		SetReason(parentReason).
-		SetNillableRequestID(nillableTrimmed(req.RequestId)).
-		Save(ctx); err != nil {
-		_ = tx.Rollback()
-		logger.Error("failed to create power-batch projection row", zap.Error(err), zap.String("batch_id", parentID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	childEventIDs := make([]string, 0, len(children))
-	for _, child := range children {
-		childEventID := generateIDV7()
-		_, err := tx.DomainEvent.Create().
-			SetID(childEventID).
-			SetEventType(string(child.eventType)).
-			SetAggregateType("vm").
-			SetAggregateID(child.aggregateID).
-			SetPayload(child.payload).
-			SetStatus(domainevent.StatusPENDING).
-			SetCreatedBy(actor).
-			Save(ctx)
-		if err != nil {
-			_ = tx.Rollback()
-			logger.Error("failed to create power-batch child domain event", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-
-		if _, err := tx.Ticket.Create().
-			SetID(generateIDV7()).
-			SetEventID(childEventID).
-			SetOperationType(entticket.OperationTypePOWER).
-			SetStatus(func() entticket.Status {
-				if batchRequiresApproval {
-					return entticket.StatusPENDING
-				}
-				return entticket.StatusEXECUTING
-			}()).
-			SetRequester(actor).
-			SetReason(child.reason).
-			SetParentTicketID(parentID).
-			Save(ctx); err != nil {
-			_ = tx.Rollback()
-			logger.Error("failed to create power-batch child ticket", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-		childEventIDs = append(childEventIDs, childEventID)
-	}
-
-	if err := tx.Commit(); err != nil {
-		logger.Error("failed to commit power-batch submission tx", zap.Error(err))
+	atomicWriter := usecase.NewApprovalAtomicWriter(s.pool, s.riverClient)
+	if err := atomicWriter.CreateBatchPowerAndMaybeEnqueue(ctx, usecase.BatchPowerSubmissionInput{
+		ParentID:         parentID,
+		Actor:            actor,
+		RequestID:        strings.TrimSpace(req.RequestId),
+		Reason:           parentReason,
+		ParentPayload:    parentPayloadBytes,
+		RequiresApproval: batchRequiresApproval,
+		Children:         batchPowerChildInputs(children),
+	}); err != nil {
+		logger.Error("failed to create power-batch rows and jobs atomically", zap.Error(err), zap.String("batch_id", parentID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -917,22 +810,6 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		}
 		if s.notifier != nil {
 			s.notifier.OnTicketSubmitted(ctx, parentID, actor, "")
-		}
-	} else {
-		for _, eventID := range childEventIDs {
-			if err := s.enqueueBatchPowerJob(ctx, eventID, strings.ToLower(jobOperation)); err != nil {
-				logger.Warn("failed to enqueue power-batch child job",
-					zap.String("event_id", eventID),
-					zap.String("batch_id", parentID),
-					zap.Error(err),
-				)
-				_, _ = s.client.Ticket.Update().
-					Where(entticket.EventIDEQ(eventID)).
-					SetStatus(entticket.StatusFAILED).
-					SetRejectReason("enqueue vm_power job failed").
-					Save(ctx)
-				_, _ = s.client.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
-			}
 		}
 	}
 
@@ -1197,38 +1074,9 @@ func (s *Server) mutateBatchChildren(
 			parentTicket.SelectedClusterID = retryExecution.ClusterID
 			parentTicket.SelectedStorageClass = retryExecution.StorageClass
 		}
-		retryStatus := entticket.StatusPENDING
 		if isPowerBatch {
-			retryStatus = entticket.StatusEXECUTING
-		}
-		if _, updateTicketErr := s.client.Ticket.Update().
-			Where(entticket.IDIn(targetIDs...)).
-			SetStatus(retryStatus).
-			ClearRejectReason().
-			Save(ctx); updateTicketErr != nil {
-			if isRequestContextCanceled(updateTicketErr) {
-				logger.Debug("request canceled while resetting child tickets for retry", zap.Error(updateTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
-				return
-			}
-			logger.Error("failed to reset child tickets for retry", zap.Error(updateTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-		if _, updateEventErr := s.client.DomainEvent.Update().
-			Where(domainevent.IDIn(targetEventIDs...)).
-			SetStatus(domainevent.StatusPENDING).
-			Save(ctx); updateEventErr != nil {
-			if isRequestContextCanceled(updateEventErr) {
-				logger.Debug("request canceled while resetting child events for retry", zap.Error(updateEventErr), zap.String("batch_id", batchID), zap.String("action", action))
-				return
-			}
-			logger.Error("failed to reset child events for retry", zap.Error(updateEventErr), zap.String("batch_id", batchID), zap.String("action", action))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-
-		for _, child := range targetChildren {
-			if isPowerBatch {
+			retryChildren := make([]usecase.BatchPowerRetryChildInput, 0, len(targetChildren))
+			for _, child := range targetChildren {
 				ev, eventErr := s.client.DomainEvent.Get(ctx, child.EventID)
 				if eventErr != nil {
 					_, _ = s.client.Ticket.UpdateOneID(child.ID).
@@ -1277,61 +1125,102 @@ func (s *Server) mutateBatchChildren(
 					)
 					continue
 				}
-				if enqueueErr := s.enqueueBatchPowerJob(ctx, child.EventID, op); enqueueErr != nil {
+				retryChildren = append(retryChildren, usecase.BatchPowerRetryChildInput{
+					TicketID: child.ID,
+					EventID:  child.EventID,
+				})
+			}
+			if len(retryChildren) > 0 {
+				atomicWriter := usecase.NewApprovalAtomicWriter(s.pool, s.riverClient)
+				if retryErr := atomicWriter.RetryBatchPowerAndEnqueue(ctx, usecase.BatchPowerRetryInput{
+					ParentID: batchID,
+					Children: retryChildren,
+				}); retryErr != nil {
+					for _, child := range retryChildren {
+						_, _ = s.client.Ticket.UpdateOneID(child.TicketID).
+							SetStatus(entticket.StatusFAILED).
+							SetRejectReason("failed to enqueue vm_power job").
+							Save(ctx)
+						_, _ = s.client.DomainEvent.UpdateOneID(child.EventID).
+							SetStatus(domainevent.StatusFAILED).
+							Save(ctx)
+					}
+					logger.Warn("failed to reset and enqueue power children during batch retry",
+						zap.String("batch_id", batchID),
+						zap.Error(retryErr),
+					)
+				} else {
+					for _, child := range retryChildren {
+						affectedCount++
+						affectedTicketIDs = append(affectedTicketIDs, child.TicketID)
+					}
+				}
+			}
+		} else {
+			if _, updateTicketErr := s.client.Ticket.Update().
+				Where(entticket.IDIn(targetIDs...)).
+				SetStatus(entticket.StatusPENDING).
+				ClearRejectReason().
+				Save(ctx); updateTicketErr != nil {
+				if isRequestContextCanceled(updateTicketErr) {
+					logger.Debug("request canceled while resetting child tickets for retry", zap.Error(updateTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
+					return
+				}
+				logger.Error("failed to reset child tickets for retry", zap.Error(updateTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
+				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+				return
+			}
+			if _, updateEventErr := s.client.DomainEvent.Update().
+				Where(domainevent.IDIn(targetEventIDs...)).
+				SetStatus(domainevent.StatusPENDING).
+				Save(ctx); updateEventErr != nil {
+				if isRequestContextCanceled(updateEventErr) {
+					logger.Debug("request canceled while resetting child events for retry", zap.Error(updateEventErr), zap.String("batch_id", batchID), zap.String("action", action))
+					return
+				}
+				logger.Error("failed to reset child events for retry", zap.Error(updateEventErr), zap.String("batch_id", batchID), zap.String("action", action))
+				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+				return
+			}
+
+			for _, child := range targetChildren {
+				execution := approvalcontract.ApprovalExecutionOptions{
+					ClusterID:    strings.TrimSpace(parentTicket.SelectedClusterID),
+					StorageClass: strings.TrimSpace(parentTicket.SelectedStorageClass),
+				}
+				if isCreateBatch && useRetryReviewExecution {
+					execution = retryExecution
+				}
+				approveErr := fmt.Errorf("approval provider is not configured")
+				if s.approvalRouter != nil {
+					approveErr = s.approvalRouter.ProcessApproval(ctx, child.ID, approvalcontract.ApprovalDecision{
+						Approved:  true,
+						Approver:  actor,
+						Execution: execution,
+					})
+				}
+				if approveErr != nil {
+					message := approveErr.Error()
+					if len(message) > 512 {
+						message = message[:512]
+					}
 					_, _ = s.client.Ticket.UpdateOneID(child.ID).
 						SetStatus(entticket.StatusFAILED).
-						SetRejectReason("failed to enqueue vm_power job").
+						SetRejectReason(message).
 						Save(ctx)
 					_, _ = s.client.DomainEvent.UpdateOneID(child.EventID).
 						SetStatus(domainevent.StatusFAILED).
 						Save(ctx)
-					logger.Warn("failed to enqueue power child during batch retry",
+					logger.Warn("failed to re-approve child ticket during batch retry",
 						zap.String("ticket_id", child.ID),
 						zap.String("batch_id", batchID),
-						zap.Error(enqueueErr),
+						zap.Error(approveErr),
 					)
 					continue
 				}
 				affectedCount++
 				affectedTicketIDs = append(affectedTicketIDs, child.ID)
-				continue
 			}
-			execution := approvalcontract.ApprovalExecutionOptions{
-				ClusterID:    strings.TrimSpace(parentTicket.SelectedClusterID),
-				StorageClass: strings.TrimSpace(parentTicket.SelectedStorageClass),
-			}
-			if isCreateBatch && useRetryReviewExecution {
-				execution = retryExecution
-			}
-			approveErr := fmt.Errorf("approval provider is not configured")
-			if s.approvalRouter != nil {
-				approveErr = s.approvalRouter.ProcessApproval(ctx, child.ID, approvalcontract.ApprovalDecision{
-					Approved:  true,
-					Approver:  actor,
-					Execution: execution,
-				})
-			}
-			if approveErr != nil {
-				message := approveErr.Error()
-				if len(message) > 512 {
-					message = message[:512]
-				}
-				_, _ = s.client.Ticket.UpdateOneID(child.ID).
-					SetStatus(entticket.StatusFAILED).
-					SetRejectReason(message).
-					Save(ctx)
-				_, _ = s.client.DomainEvent.UpdateOneID(child.EventID).
-					SetStatus(domainevent.StatusFAILED).
-					Save(ctx)
-				logger.Warn("failed to re-approve child ticket during batch retry",
-					zap.String("ticket_id", child.ID),
-					zap.String("batch_id", batchID),
-					zap.Error(approveErr),
-				)
-				continue
-			}
-			affectedCount++
-			affectedTicketIDs = append(affectedTicketIDs, child.ID)
 		}
 	} else {
 		if _, cancelTicketErr := s.client.Ticket.Update().
@@ -1858,15 +1747,17 @@ func (s *Server) prepareBatchPowerChildren(
 	return children, nil
 }
 
-func (s *Server) enqueueBatchPowerJob(ctx context.Context, eventID, operation string) error {
-	if s.riverClient == nil {
-		return fmt.Errorf("river client is not configured")
+func batchPowerChildInputs(children []preparedBatchChild) []usecase.BatchPowerChildInput {
+	out := make([]usecase.BatchPowerChildInput, 0, len(children))
+	for _, child := range children {
+		out = append(out, usecase.BatchPowerChildInput{
+			EventType:   string(child.eventType),
+			AggregateID: child.aggregateID,
+			Payload:     child.payload,
+			Reason:      child.reason,
+		})
 	}
-	_, err := s.riverClient.Insert(ctx, jobs.VMPowerArgs{
-		EventID:   eventID,
-		Operation: operation,
-	}, nil)
-	return err
+	return out
 }
 
 func batchParentEventTypes() []string {

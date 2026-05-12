@@ -165,8 +165,7 @@ func (w *DirectoryEnrichmentScheduleScanWorker) enqueueScheduledEnrichmentIfDue(
 	}
 
 	if _, err := riverClient.Insert(ctx, DirectorySyncArgs{
-		AuthProviderID: authProviderRow.ID,
-		JobID:          jobRow.ID,
+		JobID: jobRow.ID,
 	}, nil); err != nil {
 		_, _ = w.entClient.DirectorySyncJob.UpdateOneID(jobRow.ID).
 			SetStatus(entdirectorysyncjob.StatusFailed).
