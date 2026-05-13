@@ -19,7 +19,7 @@ require (
 	github.com/jackc/pgx/v5 v5.9.1
 	github.com/oapi-codegen/runtime v1.4.0
 	github.com/panjf2000/ants/v2 v2.12.0
-	github.com/pb33f/libopenapi v0.36.0
+	github.com/pb33f/libopenapi v0.36.3
 	github.com/pb33f/libopenapi-validator v0.13.4
 	github.com/riverqueue/river v0.34.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.34.0
