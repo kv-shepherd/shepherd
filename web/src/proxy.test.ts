@@ -42,13 +42,12 @@ describe("proxy", () => {
     expect(response.headers.get("location")).toBeNull();
   });
 
-  it("redirects authenticated users away from the login page", () => {
+  it("allows the login page to validate a session cookie client-side", () => {
     const response = proxy(
       makeRequest("https://shepherd.example.com/login", "shepherd_session=session-token"),
     );
 
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("https://shepherd.example.com/dashboard");
+    expect(response.headers.get("location")).toBeNull();
   });
 
   it("treats the password change page as protected", () => {
@@ -65,10 +64,15 @@ describe("proxy", () => {
     const protectedResponse = proxy(makeRequest("https://shepherd.example.com/dashboard"));
     expect(protectedResponse.headers.get("location")).toBe("https://shepherd.example.com/signin");
 
+    const protectedCookieResponse = proxy(
+      makeRequest("https://shepherd.example.com/dashboard", "custom_session=session-token"),
+    );
+    expect(protectedCookieResponse.headers.get("location")).toBeNull();
+
     const loginResponse = proxy(
       makeRequest("https://shepherd.example.com/signin", "custom_session=session-token"),
     );
-    expect(loginResponse.headers.get("location")).toBe("https://shepherd.example.com/dashboard");
+    expect(loginResponse.headers.get("location")).toBeNull();
   });
 
   it("emits nonce-based CSP in production", () => {

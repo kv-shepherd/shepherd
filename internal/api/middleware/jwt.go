@@ -211,6 +211,9 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		tokenString, source, err := extractJWTToken(c.Request, cfg.CookieName)
 		if err != nil {
+			if source == tokenSourceCookie {
+				clearJWTSessionCookie(c.Writer, cfg.CookieName)
+			}
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{
 				"code":    "UNAUTHORIZED",
 				"message": err.Error(),
@@ -220,6 +223,9 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 		claims, err := cfg.ValidateToken(c.Request.Context(), tokenString)
 
 		if err != nil {
+			if source == tokenSourceCookie {
+				clearJWTSessionCookie(c.Writer, cfg.CookieName)
+			}
 			code := "UNAUTHORIZED"
 			msg := "invalid token"
 			switch {
@@ -260,6 +266,23 @@ func JWTAuthWithConfig(cfg JWTConfig) gin.HandlerFunc {
 	}
 }
 
+func clearJWTSessionCookie(w http.ResponseWriter, cookieName string) {
+	cookieName = strings.TrimSpace(cookieName)
+	if w == nil || cookieName == "" {
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     cookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		Expires:  time.Unix(0, 0).UTC(),
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+	})
+}
+
 // JWTAuth is a compatibility wrapper for legacy call sites.
 func JWTAuth(signingKey []byte) gin.HandlerFunc {
 	return JWTAuthWithConfig(JWTConfig{SigningKey: signingKey})
@@ -289,7 +312,7 @@ func extractJWTToken(r *http.Request, cookieName string) (token, source string, 
 		if err == nil {
 			token := strings.TrimSpace(cookie.Value)
 			if token == "" {
-				return "", "", fmt.Errorf("missing auth session cookie")
+				return "", tokenSourceCookie, fmt.Errorf("missing auth session cookie")
 			}
 			return token, tokenSourceCookie, nil
 		}
