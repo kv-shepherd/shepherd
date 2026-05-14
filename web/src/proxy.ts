@@ -121,10 +121,6 @@ export function proxy(request: NextRequest) {
     return applyCspToResponse(NextResponse.redirect(new URL(loginPath, request.url)), nonce);
   }
 
-  if (pathname === loginPath && hasSession) {
-    return applyCspToResponse(NextResponse.redirect(new URL("/dashboard", request.url)), nonce);
-  }
-
   const requestHeaders = buildForwardedRequestHeaders(request.headers, nonce);
 
   const response = NextResponse.next({

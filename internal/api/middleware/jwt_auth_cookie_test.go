@@ -3,6 +3,7 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -58,5 +59,78 @@ func TestJWTAuthWithConfig_BackfillsAuthorizationHeaderFromCookie(t *testing.T) 
 	}
 	if got, want := rec.Body.String(), "Bearer "+token; got != want {
 		t.Fatalf("authorization header = %q, want %q", got, want)
+	}
+}
+
+func TestJWTAuthWithConfig_ClearsCookieOnInvalidCookieToken(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	issueCfg := JWTConfig{
+		SigningKey: []byte("expired-cookie-token-signing-key-1234567890"),
+		Issuer:     "shepherd",
+		ExpiresIn:  -time.Hour,
+		CookieName: "shepherd_session",
+	}
+	token, _, err := GenerateToken(issueCfg, "u-1", "alice", nil, nil)
+	if err != nil {
+		t.Fatalf("GenerateToken() error = %v", err)
+	}
+
+	router := gin.New()
+	router.Use(JWTAuthWithConfig(JWTConfig{
+		SigningKey: issueCfg.SigningKey,
+		Issuer:     issueCfg.Issuer,
+		CookieName: issueCfg.CookieName,
+	}))
+	router.GET("/auth/me", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: "shepherd_session", Value: token})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	cookieHeader := rec.Header().Get("Set-Cookie")
+	if !strings.Contains(cookieHeader, "shepherd_session=") {
+		t.Fatalf("Set-Cookie missing session name: %s", cookieHeader)
+	}
+	if !strings.Contains(cookieHeader, "Max-Age=0") {
+		t.Fatalf("Set-Cookie should expire the session cookie: %s", cookieHeader)
+	}
+}
+
+func TestJWTAuthWithConfig_ClearsEmptyCookie(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(JWTAuthWithConfig(JWTConfig{
+		SigningKey: []byte("empty-cookie-token-signing-key-1234567890"),
+		Issuer:     "shepherd",
+		CookieName: "shepherd_session",
+	}))
+	router.GET("/auth/me", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", http.NoBody)
+	req.AddCookie(&http.Cookie{Name: "shepherd_session", Value: ""})
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+	cookieHeader := rec.Header().Get("Set-Cookie")
+	if !strings.Contains(cookieHeader, "shepherd_session=") {
+		t.Fatalf("Set-Cookie missing session name: %s", cookieHeader)
+	}
+	if !strings.Contains(cookieHeader, "Max-Age=0") {
+		t.Fatalf("Set-Cookie should expire the session cookie: %s", cookieHeader)
 	}
 }
