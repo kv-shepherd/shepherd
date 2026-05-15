@@ -2395,3 +2395,11 @@ DELETE /api/v1/systems/{id}?confirm_name=shop
 > - `professional_fields` is a presentation tier only; it must not change authorization, validation, approval, or runtime behavior.
 > - Admin UI must keep `professional_fields` hidden by default and require explicit opt-in before exposing expert-only paths.
 > - `mask.quick_fields` remains the required array in schema responses; `advanced_fields` and `professional_fields` stay optional mask lists.
+
+---
+
+## Historical Scope Note (2026-05-15)
+
+ADR-0015 is an accepted historical record from the pre-ADR-0030 governance phase. It intentionally remains broad and detailed because accepted ADRs are immutable; the project will not split or rewrite it retroactively. For current implementation review, use the amendment blocks above and later focused ADRs as the canonical source for superseded details such as VM request ownership, Template/InstanceSize boundaries, RBAC baseline roles, auth-provider naming, and schema-mask tiers.
+
+Do not treat this ADR's length or embedded implementation sketches as the current ADR authoring standard. New ADRs must follow the concise, decision-focused template and documentation layering rules introduced later in `ADR-0030` and `TEMPLATE.md`.

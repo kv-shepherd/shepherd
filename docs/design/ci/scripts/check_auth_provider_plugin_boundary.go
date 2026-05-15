@@ -281,7 +281,7 @@ func main() {
 			path: "internal/api/handlers/vm_live_status.go",
 			required: []string{
 				`"kv-shepherd.io/shepherd/internal/provider/infracontract"`,
-				"infracontract.ListOptions{}",
+				"infracontract.ListOptions{",
 			},
 			forbiddenText: []string{
 				"provider.ListOptions{}",

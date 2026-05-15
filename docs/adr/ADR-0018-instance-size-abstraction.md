@@ -2348,3 +2348,11 @@ RUNNING/STOPPED → DELETING → DELETED (terminal)
 ---
 
 _End of ADR-0018_
+
+---
+
+## Historical Scope Note (2026-05-15)
+
+ADR-0018 is an accepted historical design ADR that predates the later documentation-layering standard. Its detailed examples, UI sketches, migration checklist, and pre-written amendment blocks are intentionally preserved for auditability and will not be split after acceptance. For current review, treat later amendment blocks and focused ADRs as the canonical source where they supersede or refine sections of this document.
+
+Do not use ADR-0018's length as evidence that current ADR governance allows broad specification documents. New ADRs must remain concise and decision-focused, with implementation flows and test matrices maintained in the appropriate `docs/design/` layer.

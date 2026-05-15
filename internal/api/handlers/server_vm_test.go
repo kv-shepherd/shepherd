@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"kv-shepherd.io/shepherd/ent"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
@@ -52,6 +53,19 @@ func (p *failingVMLiveStatusProvider) ListVMs(ctx context.Context, _, namespace 
 		return nil, p.err
 	}
 	return p.MockProvider.ListVMs(ctx, "", namespace, provider.ListOptions{})
+}
+
+type resourceExpiredOnceVMProvider struct {
+	*provider.MockProvider
+	calls []provider.ListOptions
+}
+
+func (p *resourceExpiredOnceVMProvider) ListVMs(ctx context.Context, _, namespace string, opts provider.ListOptions) (*domain.VMList, error) {
+	p.calls = append(p.calls, opts)
+	if opts.ResourceVersion == "stale-rv" {
+		return nil, k8serrors.NewResourceExpired("stale resourceVersion")
+	}
+	return p.MockProvider.ListVMs(ctx, "", namespace, opts)
 }
 
 // ---- Pure unit tests for vmToAPI converter ------------------------------------------------
@@ -360,6 +374,70 @@ func TestListVMs_RefreshesStatusFromLiveCluster(t *testing.T) {
 	}
 	if stored.Status != entvm.StatusSTOPPED {
 		t.Fatalf("stored status = %q, want %q", stored.Status, entvm.StatusSTOPPED)
+	}
+}
+
+func TestListVMs_RetriesBaselineWhenCachedResourceVersionExpires(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "list_vms_live_status_rv_expired")
+	_ = logger.Init("error", "json")
+
+	clusterID := "cluster-" + uuid.NewString()
+	mustCreateClusterWithEnv(t, client, clusterID, entcluster.EnvironmentProd)
+
+	vmID := "vm-" + uuid.NewString()
+	vmName := "vm" + vmID[len(vmID)-4:]
+	mustCreateVMWithCluster(t, client, vmID, clusterID, "prod-ns")
+	_, err := client.VM.UpdateOneID(vmID).
+		SetPollingTier(entvm.PollingTierLow).
+		SetPollIntervalSec(1800).
+		SetLastK8sRv("stale-rv").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed stale resourceVersion: %v", err)
+	}
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{{
+		Name:            vmName,
+		Namespace:       "prod-ns",
+		Cluster:         clusterID,
+		Status:          domain.VMStatusStopped,
+		ResourceVersion: "rv-live-recovered",
+	}})
+	expiring := &resourceExpiredOnceVMProvider{MockProvider: mock}
+
+	srv := NewServer(ServerDeps{
+		EntClient: client,
+		VMService: service.NewVMService(expiring),
+	})
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms", "", "user-rv", []string{"vm:read", "platform:admin"})
+	srv.ListVMs(c, generated.ListVMsParams{})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+	if len(expiring.calls) < 2 {
+		t.Fatalf("ListVMs calls = %d, want at least 2", len(expiring.calls))
+	}
+	if got := expiring.calls[0].ResourceVersion; got != "stale-rv" {
+		t.Fatalf("first resourceVersion = %q, want stale-rv", got)
+	}
+	if got := expiring.calls[1].ResourceVersion; got != "" {
+		t.Fatalf("retry resourceVersion = %q, want empty baseline", got)
+	}
+
+	stored, err := client.VM.Get(t.Context(), vmID)
+	if err != nil {
+		t.Fatalf("reload vm: %v", err)
+	}
+	if stored.Status != entvm.StatusSTOPPED {
+		t.Fatalf("stored status = %q, want %q", stored.Status, entvm.StatusSTOPPED)
+	}
+	if stored.LastK8sRv == nil || *stored.LastK8sRv != "rv-live-recovered" {
+		t.Fatalf("stored last_k8s_rv = %v, want rv-live-recovered", stored.LastK8sRv)
 	}
 }
 

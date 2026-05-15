@@ -917,3 +917,15 @@ _End of ADR-0020_
 > - **Vitest**: Configure with `coverage.thresholds` at 80% lines/functions/statements, 75% branches
 > - **Playwright**: Use for Server Component testing and critical E2E paths
 > - **CI**: Coverage below thresholds will **BLOCK** PR merging
+
+### Implementation Note: Next.js 16 / React 19 Runtime Update (2026-05-15)
+
+| Original Section | Status | Amendment Details | See Also |
+|------------------|--------|-------------------|----------|
+| §Complete Technology Stack: Next.js `15.x (App Router)` | **VERSION UPDATED** | The implemented frontend now uses Next.js `16.x` with the App Router. This is a framework-version update only; the architectural choice remains React + Next.js + Ant Design. | `web/package.json`; Next.js App Router docs |
+| §Complete Technology Stack: React `19.x` | **CONFIRMED** | The implemented frontend uses React `19.x`; this remains aligned with the original decision. | `web/package.json`; Next.js App Router docs |
+
+> **Implementation Guidance**:
+> - Treat the current implemented baseline as `next@16.x`, `react@19.x`, and `react-dom@19.x`.
+> - Continue to use the App Router model under `web/src/app/`; do not introduce Pages Router routes.
+> - Keep dependency updates as version amendments unless they change the architectural stack or routing model.

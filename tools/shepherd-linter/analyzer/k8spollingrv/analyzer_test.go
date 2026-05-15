@@ -16,5 +16,6 @@ func TestAnalyzer(t *testing.T) {
 	analysistest.Run(t, testdata, k8spollingrv.Analyzer,
 		"example.com/project/internal/provider",
 		"example.com/project/internal/handlers",
+		"kv-shepherd.io/shepherd/internal/api/handlers",
 	)
 }

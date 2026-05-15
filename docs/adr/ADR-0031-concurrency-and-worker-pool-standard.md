@@ -117,6 +117,7 @@ We need a single, enforceable concurrency standard that keeps runtime behavior p
 
 * The reference Worker Pool example is maintained in `docs/design/examples/worker/pool.go`.
 * The reference CI gates live under `docs/design/ci/` and are required before coding-phase transition.
+* Entrypoint lifecycle bridges outside `internal/` may use a single bounded goroutine when the goroutine is only adapting a blocking runtime primitive into explicit shutdown/error handling. The current approved instance is `pkg/serverbootstrap.defaultServe`, which runs `http.Server.ListenAndServe`, reports at most one error through a buffered channel, and is terminated by `http.Server.Shutdown`. This is not an application-work concurrency escape hatch; new in-process work still belongs in the worker-pool or River model.
 
 ---
 

@@ -368,3 +368,9 @@ func (Namespace) Fields() []ent.Field {
 | 2026-01-26 | Added: Pre-written "Amendments by Subsequent ADRs" block for ADR-0015 (to be appended upon ADR-0017 acceptance) |
 | 2026-01-26 | Added: Namespace Schema Correction section - clarifies that `namespace_registry` should NOT have `cluster_id` field (multi-cluster governance principle) |
 | 2026-01-27 | Added: Namespace JIT Creation with permission denied handling (graceful error with actionable hints) |
+
+---
+
+## Historical Scope Note (2026-05-15)
+
+ADR-0017 is an accepted historical clarification ADR from the same early governance period as ADR-0015. It keeps amendment text and detailed migration guidance inline because accepted ADRs are immutable and must remain auditable. Do not interpret its size as the current ADR authoring standard; later ADR governance requires concise, decision-focused records with detailed flows moved to design documents where appropriate.

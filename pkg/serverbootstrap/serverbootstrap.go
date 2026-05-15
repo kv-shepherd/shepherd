@@ -123,6 +123,8 @@ func runWithConfig(
 }
 
 func defaultServe(srv *http.Server, errCh chan<- error) {
+	// ADR-0031 exception: this entrypoint-owned goroutine only bridges
+	// http.Server.ListenAndServe into shutdown-aware error handling.
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err

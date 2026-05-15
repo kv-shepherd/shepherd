@@ -179,3 +179,9 @@ import (
 > Going forward, all ADRs should follow the standard `Proposed → Accepted` lifecycle
 > with a minimum 48-hour public comment period. See Issue #14 for governance process
 > documentation.
+
+---
+
+## Historical Scope Note (2026-05-15)
+
+ADR-0016 is an early migration-phase ADR. Its expedited approval and operational setup detail are preserved for traceability, not as a model for new ADR shape or review process. New ADRs must follow the later concise, decision-focused ADR template and the standard review lifecycle unless a subsequent accepted ADR explicitly grants an exception.

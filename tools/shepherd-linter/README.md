@@ -98,6 +98,7 @@ Context7 best practices applied: `pass.Files` for comment scanning (not `os.Read
 |----------|----------|-----------------|
 | `openapirbaccontract` | Explicit `x-rbac` semantics, auth scheme alignment, and `401/403` response coverage on every OpenAPI operation | New analyzer-only enforcement |
 | `entquerysafety` | Raw `ent/dialect/sql` / `sqljson` usage is limited to reviewed `*_ent_predicates.go` helpers plus database/test integration | New analyzer-only enforcement |
+| `k8spollingrv` | ADR-0038: polling-path K8s and Shepherd provider options must carry `ResourceVersion`; rejects explicit `"0"` sentinel | New analyzer-only enforcement |
 
 **`ssacompliance` rules:**
 - Forbidden struct literals: `kubevirtv1.VirtualMachine{...}`, `kubevirtv1.VirtualMachineSpec{...}`, etc.
@@ -174,7 +175,7 @@ func (p *shepherdArchPlugin) BuildAnalyzers() ([]*analysis.Analyzer, error) {
 }
 
 func (p *shepherdArchPlugin) GetLoadMode() string {
-    return register.LoadModeTypesInfo  // k8spollingrv verifies real metav1 option types
+    return register.LoadModeTypesInfo  // k8spollingrv verifies real metav1/provider option types
 }
 ```
 
