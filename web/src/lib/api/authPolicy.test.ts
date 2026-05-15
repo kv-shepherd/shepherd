@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import {
     getRequestPath,
@@ -10,6 +10,12 @@ import {
 } from './authPolicy';
 
 describe('authPolicy', () => {
+    const originalLoginEntryPath = process.env.NEXT_PUBLIC_LOGIN_ENTRY_PATH;
+
+    afterEach(() => {
+        process.env.NEXT_PUBLIC_LOGIN_ENTRY_PATH = originalLoginEntryPath;
+    });
+
     it('treats public auth endpoints as unauthenticated request paths', () => {
         expect(isPublicAuthRequestPath('/api/v1/auth/login')).toBe(true);
         expect(isPublicAuthRequestPath('/api/v1/auth/providers')).toBe(true);
@@ -40,6 +46,14 @@ describe('authPolicy', () => {
         expect(shouldRedirectToLoginOnUnauthorized('/api/v1/auth/login', '/login')).toBe(false);
         expect(shouldRedirectToLoginOnUnauthorized('/api/v1/vms', '/login')).toBe(false);
         expect(shouldRedirectToLoginOnUnauthorized('/api/v1/vms', '/dashboard')).toBe(true);
+    });
+
+    it('keeps the standard login page local when a custom login entry is configured', () => {
+        process.env.NEXT_PUBLIC_LOGIN_ENTRY_PATH = '/custom-login';
+
+        expect(shouldRedirectToLoginOnUnauthorized('/api/v1/auth/me', '/login')).toBe(false);
+        expect(shouldRedirectToLoginOnUnauthorized('/api/v1/auth/me', '/custom-login')).toBe(false);
+        expect(shouldRedirectToLoginOnUnauthorized('/api/v1/auth/me', '/dashboard')).toBe(true);
     });
 
     it('extracts request path safely', () => {
