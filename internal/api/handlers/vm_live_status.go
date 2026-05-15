@@ -64,7 +64,14 @@ func (s *Server) refreshVMLiveStates(ctx context.Context, vms []*ent.VM) []*ent.
 	}
 
 	for key, indexes := range groups {
-		liveList, err := s.vmService.ListVMs(ctx, key.clusterID, key.namespace, infracontract.ListOptions{})
+		groupRows := make([]*ent.VM, 0, len(indexes))
+		for _, idx := range indexes {
+			if vms[idx] != nil {
+				groupRows = append(groupRows, vms[idx])
+			}
+		}
+
+		liveList, err := s.listVMLiveStateGroup(ctx, key, groupRows)
 		observedAt := time.Now()
 		if err != nil {
 			// Scenario A: K8s API call failed — cluster unreachable → UNKNOWN
@@ -130,7 +137,7 @@ func (s *Server) loadObservedLiveVMsByID(ctx context.Context, vms []*ent.VM) map
 	}
 
 	for key, group := range groups {
-		liveList, err := s.vmService.ListVMs(ctx, key.clusterID, key.namespace, infracontract.ListOptions{})
+		liveList, err := s.listVMLiveStateGroup(ctx, key, group)
 		if err != nil {
 			logger.Warn("failed to load live vm details for namespace",
 				zap.String("cluster_id", key.clusterID),
@@ -161,6 +168,41 @@ func (s *Server) loadObservedLiveVMsByID(ctx context.Context, vms []*ent.VM) map
 	}
 
 	return liveByVMID
+}
+
+func (s *Server) listVMLiveStateGroup(ctx context.Context, key vmLiveGroupKey, group []*ent.VM) (*domain.VMList, error) {
+	resourceVersion := liveStateGroupResourceVersion(group)
+	liveList, err := s.vmService.ListVMs(ctx, key.clusterID, key.namespace, infracontract.ListOptions{
+		ResourceVersion: resourceVersion,
+	})
+	if err == nil || resourceVersion == "" {
+		return liveList, err
+	}
+	if !k8serrors.IsResourceExpired(err) && !k8serrors.IsGone(err) {
+		return liveList, err
+	}
+
+	logger.Warn("cached resourceVersion expired while refreshing live vm statuses, retrying baseline",
+		zap.String("cluster_id", key.clusterID),
+		zap.String("namespace", key.namespace),
+		zap.String("stale_rv", resourceVersion),
+		zap.Error(err),
+	)
+	return s.vmService.ListVMs(ctx, key.clusterID, key.namespace, infracontract.ListOptions{
+		ResourceVersion: "",
+	})
+}
+
+func liveStateGroupResourceVersion(group []*ent.VM) string {
+	for _, vmRow := range group {
+		if vmRow == nil || vmRow.LastK8sRv == nil {
+			continue
+		}
+		if resourceVersion := strings.TrimSpace(*vmRow.LastK8sRv); resourceVersion != "" {
+			return resourceVersion
+		}
+	}
+	return ""
 }
 
 func (s *Server) applyObservedVMState(ctx context.Context, vmRow *ent.VM, liveVM *domain.VM, observedAt time.Time) *ent.VM {

@@ -5,16 +5,18 @@
 // resourceVersion from the previous API response. This routes the request
 // through the K8s watch cache instead of penetrating etcd.
 //
-// Violations detected:
-//   - k8smetav1.ListOptions{} without ResourceVersion in status-sync context
-//   - k8smetav1.GetOptions{} without ResourceVersion in status-sync context
+// Violations detected in polling contexts:
+//   - k8smetav1.ListOptions{} without ResourceVersion
+//   - k8smetav1.GetOptions{} without ResourceVersion
+//   - infracontract.ListOptions{} without ResourceVersion
 //
 // The analyzer uses AST inspection plus type information to find literal struct
-// initializations of metav1.ListOptions and metav1.GetOptions that do not set a
-// usable ResourceVersion field.
+// initializations of metav1.ListOptions, metav1.GetOptions, and Shepherd
+// provider ListOptions that do not set a usable ResourceVersion field.
 //
-// Scope: only files whose name matches polling/sync/health patterns are checked.
-// Test files (_test.go) are excluded to avoid false positives from test fixtures.
+// Scope: files or functions whose names match polling/sync/health/live-status
+// patterns are checked. Test files (_test.go) are excluded to avoid false
+// positives from test fixtures.
 package k8spollingrv
 
 import (
@@ -33,7 +35,7 @@ import (
 // Analyzer is the exported golangci-lint Analyzer for ADR-0038 ResourceVersion enforcement.
 var Analyzer = &analysis.Analyzer{
 	Name:     "k8spollingrv",
-	Doc:      "ADR-0038: enforces ResourceVersion field in K8s ListOptions/GetOptions struct literals to prevent etcd penetration",
+	Doc:      "ADR-0038: enforces ResourceVersion field in K8s and Shepherd provider ListOptions/GetOptions struct literals to prevent etcd penetration",
 	Requires: []*analysis.Analyzer{inspect.Analyzer},
 	Run:      run,
 }
@@ -45,8 +47,15 @@ var targetTypes = map[string]bool{
 	"GetOptions":  true,
 }
 
+type functionScope struct {
+	start token.Pos
+	end   token.Pos
+	name  string
+}
+
 func run(pass *analysis.Pass) (interface{}, error) {
 	insp := pass.ResultOf[inspect.Analyzer].(*inspector.Inspector)
+	scopes := collectFunctionScopes(pass.Files)
 
 	nodeFilter := []ast.Node{
 		(*ast.CompositeLit)(nil),
@@ -58,15 +67,12 @@ func run(pass *analysis.Pass) (interface{}, error) {
 			return
 		}
 
-		typeName := resolveMetav1OptionsType(pass, lit.Type)
+		typeName := resolveOptionsType(pass, lit.Type)
 		if typeName == "" {
 			return
 		}
 
-		// Check if this file is in a provider/polling/sync context.
-		// We only flag files that are clearly part of the K8s polling path.
-		fileName := pass.Fset.File(lit.Pos()).Name()
-		if !isPollingRelatedFile(fileName) {
+		if !isPollingRelatedContext(pass, scopes, lit.Pos()) {
 			return
 		}
 
@@ -96,26 +102,48 @@ func run(pass *analysis.Pass) (interface{}, error) {
 	return nil, nil
 }
 
-// resolveMetav1OptionsType returns the K8s options type name for real
-// k8s.io/apimachinery/pkg/apis/meta/v1 ListOptions/GetOptions literals.
-func resolveMetav1OptionsType(pass *analysis.Pass, expr ast.Expr) string {
+// resolveOptionsType returns the relevant options type name for real Kubernetes
+// metav1 options or Shepherd provider contract ListOptions literals.
+func resolveOptionsType(pass *analysis.Pass, expr ast.Expr) string {
 	if pass.TypesInfo == nil {
 		return ""
 	}
 	typ := pass.TypesInfo.TypeOf(expr)
-	named, ok := typ.(*types.Named)
-	if !ok {
+	return resolveOptionsTypeFromType(typ)
+}
+
+func resolveOptionsTypeFromType(typ types.Type) string {
+	switch t := typ.(type) {
+	case *types.Named:
+		return resolveOptionsTypeName(t.Obj())
+	case *types.Alias:
+		if name := resolveOptionsTypeName(t.Obj()); name != "" {
+			return name
+		}
+		return resolveOptionsTypeFromType(types.Unalias(t))
+	default:
 		return ""
 	}
-	obj := named.Obj()
+}
+
+func resolveOptionsTypeName(obj *types.TypeName) string {
 	if obj == nil || obj.Pkg() == nil {
 		return ""
 	}
-	if obj.Pkg().Path() != "k8s.io/apimachinery/pkg/apis/meta/v1" {
-		return ""
-	}
+
+	pkgPath := obj.Pkg().Path()
 	name := obj.Name()
-	if !targetTypes[name] {
+	switch pkgPath {
+	case "k8s.io/apimachinery/pkg/apis/meta/v1":
+		if !targetTypes[name] {
+			return ""
+		}
+	case "kv-shepherd.io/shepherd/internal/provider/infracontract",
+		"kv-shepherd.io/shepherd/internal/provider":
+		if name != "ListOptions" {
+			return ""
+		}
+	default:
 		return ""
 	}
 	return name
@@ -158,6 +186,61 @@ func isZeroResourceVersion(pass *analysis.Pass, expr ast.Expr) bool {
 	return err == nil && value == "0"
 }
 
+func collectFunctionScopes(files []*ast.File) []functionScope {
+	var scopes []functionScope
+	for _, file := range files {
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Body == nil {
+				continue
+			}
+			scopes = append(scopes, functionScope{
+				start: fn.Pos(),
+				end:   fn.End(),
+				name:  functionScopeName(fn),
+			})
+		}
+	}
+	return scopes
+}
+
+func functionScopeName(fn *ast.FuncDecl) string {
+	name := fn.Name.Name
+	if fn.Recv == nil || len(fn.Recv.List) == 0 {
+		return name
+	}
+	return receiverTypeName(fn.Recv.List[0].Type) + "." + name
+}
+
+func receiverTypeName(expr ast.Expr) string {
+	switch t := expr.(type) {
+	case *ast.StarExpr:
+		return receiverTypeName(t.X)
+	case *ast.Ident:
+		return t.Name
+	case *ast.SelectorExpr:
+		return t.Sel.Name
+	default:
+		return ""
+	}
+}
+
+func isPollingRelatedContext(pass *analysis.Pass, scopes []functionScope, pos token.Pos) bool {
+	fileName := pass.Fset.File(pos).Name()
+	if isGoTestFile(fileName) {
+		return false
+	}
+	if isPollingRelatedFile(fileName) {
+		return true
+	}
+	for _, scope := range scopes {
+		if pos >= scope.start && pos <= scope.end && isPollingRelatedIdentifier(scope.name) {
+			return true
+		}
+	}
+	return false
+}
+
 // isPollingRelatedFile returns true if the **filename** (not full path) suggests
 // it is part of the K8s VM polling/sync infrastructure where ResourceVersion
 // is mandatory. Only the base filename is checked to avoid false positives from
@@ -178,17 +261,29 @@ func isPollingRelatedFile(path string) bool {
 	}
 
 	lower := strings.ToLower(base)
+	return isPollingRelatedIdentifier(lower)
+}
 
-	// Files explicitly in the polling/sync/health-check path.
-	// Maintenance: add new patterns if the project introduces new polling-related
-	// file naming conventions. Prefer over-matching here — the analyzer's error
-	// message clearly explains what to fix.
+func isGoTestFile(path string) bool {
+	if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		path = path[idx+1:]
+	}
+	return strings.HasSuffix(path, "_test.go")
+}
+
+func isPollingRelatedIdentifier(value string) bool {
+	lower := strings.ToLower(value)
 	pollingPatterns := []string{
+		"live_status",
+		"livestatus",
+		"observed_live",
 		"status_sync",
+		"statussync",
 		"polling",
 		"poll_",
 		"_poll",
 		"sync_status",
+		"syncstatus",
 		"health_check",
 		"healthcheck",
 		"reconcile",
