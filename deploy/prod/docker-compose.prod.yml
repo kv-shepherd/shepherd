@@ -40,7 +40,7 @@ services:
 
   # ---------- Go Backend (Shepherd API Server) ----------
   server:
-    image: ${SERVER_IMAGE:-ghcr.io/kv-shepherd/shepherd-server:0.1.1-alpha.5}
+    image: ${SERVER_IMAGE:?SERVER_IMAGE is required. Run deploy-prod.sh or set SERVER_IMAGE in .env.prod}
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
@@ -76,7 +76,7 @@ services:
 
   # ---------- Next.js Frontend (Production SSR) ----------
   web:
-    image: ${WEB_IMAGE:-ghcr.io/kv-shepherd/shepherd-web:0.1.1-alpha.5}
+    image: ${WEB_IMAGE:?WEB_IMAGE is required. Run deploy-prod.sh or set WEB_IMAGE in .env.prod}
     restart: unless-stopped
     environment:
       NODE_ENV: production
