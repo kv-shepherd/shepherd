@@ -39,17 +39,91 @@ TLS_KEY_FILE="${TLS_KEY_FILE:-${TLS_DIR}/key.pem}"
 COMPOSE_PROJECT_NAME="${DEPLOY_COMPOSE_PROJECT_NAME:-shepherd-prod}"
 DEPLOY_ASSET_REF="${DEPLOY_ASSET_REF:-main}"
 DEPLOY_RAW_BASE="${DEPLOY_RAW_BASE:-https://raw.githubusercontent.com/kv-shepherd/shepherd/${DEPLOY_ASSET_REF}}"
-DEPLOY_RELEASE_VERSION="${DEPLOY_RELEASE_VERSION:-${SHEPHERD_VERSION:-0.1.1-alpha.5}}"
+DEPLOY_RELEASE_VERSION="${DEPLOY_RELEASE_VERSION:-${SHEPHERD_VERSION:-}}"
+RESOLVED_RELEASE_VERSION=""
+
+strip_release_prefix() {
+    local version="$1"
+    version="${version#refs/tags/}"
+    version="${version#v}"
+    printf "%s" "${version}"
+}
+
+fetch_latest_release_tag() {
+    local url="https://api.github.com/repos/kv-shepherd/shepherd/releases?per_page=1"
+    local body
+    if command -v curl >/dev/null 2>&1; then
+        body="$(curl -fsSL "${url}")"
+    elif command -v wget >/dev/null 2>&1; then
+        body="$(wget -qO- "${url}")"
+    else
+        return 1
+    fi
+    printf "%s\n" "${body}" | sed -nE 's/^[[:space:]]*"tag_name"[[:space:]]*:[[:space:]]*"([^"]+)".*/\1/p' | head -n 1
+}
+
+resolve_release_version() {
+    if [[ -n "${RESOLVED_RELEASE_VERSION}" ]]; then
+        printf "%s" "${RESOLVED_RELEASE_VERSION}"
+        return 0
+    fi
+
+    local raw="${DEPLOY_RELEASE_VERSION:-${SHEPHERD_VERSION:-}}"
+    if [[ -z "${raw}" && "${DEPLOY_ASSET_REF}" =~ ^v?[0-9]+\.[0-9]+\.[0-9]+ ]]; then
+        raw="${DEPLOY_ASSET_REF}"
+    fi
+    if [[ -z "${raw}" ]]; then
+        raw="$(fetch_latest_release_tag || true)"
+    fi
+
+    raw="$(strip_release_prefix "${raw}")"
+    if [[ -z "${raw}" ]]; then
+        echo "ERROR: could not resolve a Shepherd release image version." >&2
+        echo "  Set SHEPHERD_VERSION=<version> or SERVER_IMAGE/WEB_IMAGE explicitly." >&2
+        exit 1
+    fi
+
+    RESOLVED_RELEASE_VERSION="${raw}"
+    printf "%s" "${RESOLVED_RELEASE_VERSION}"
+}
 
 resolve_image_defaults() {
-    if [[ "${SOURCE_TREE_AVAILABLE}" == "1" ]]; then
+    local release_version_requested=0
+    if [[ -n "${DEPLOY_RELEASE_VERSION:-${SHEPHERD_VERSION:-}}" ]]; then
+        release_version_requested=1
+    fi
+
+    if [[ "${SOURCE_TREE_AVAILABLE}" == "1" && "${release_version_requested}" == "0" ]]; then
         SERVER_IMAGE="${SERVER_IMAGE:-shepherd-server:latest}"
         WEB_IMAGE="${WEB_IMAGE:-shepherd-web:latest}"
     else
-        SERVER_IMAGE="${SERVER_IMAGE:-ghcr.io/kv-shepherd/shepherd-server:${DEPLOY_RELEASE_VERSION}}"
-        WEB_IMAGE="${WEB_IMAGE:-ghcr.io/kv-shepherd/shepherd-web:${DEPLOY_RELEASE_VERSION}}"
+        local need_server_image=0
+        local need_web_image=0
+        local version=""
+
+        if [[ -z "${SERVER_IMAGE:-}" ]] || { [[ "${release_version_requested}" == "1" ]] && [[ -z "${CONFIG_ENV_OVERRIDES[SERVER_IMAGE]+x}" ]]; }; then
+            need_server_image=1
+        fi
+        if [[ -z "${WEB_IMAGE:-}" ]] || { [[ "${release_version_requested}" == "1" ]] && [[ -z "${CONFIG_ENV_OVERRIDES[WEB_IMAGE]+x}" ]]; }; then
+            need_web_image=1
+        fi
+
+        if [[ "${need_server_image}" == "1" || "${need_web_image}" == "1" ]]; then
+            version="$(resolve_release_version)"
+        fi
+        if [[ "${need_server_image}" == "1" ]]; then
+            SERVER_IMAGE="ghcr.io/kv-shepherd/shepherd-server:${version}"
+        fi
+        if [[ "${need_web_image}" == "1" ]]; then
+            WEB_IMAGE="ghcr.io/kv-shepherd/shepherd-web:${version}"
+        fi
     fi
     export SERVER_IMAGE WEB_IMAGE
+}
+
+persist_resolved_images() {
+    write_env_value SERVER_IMAGE "${SERVER_IMAGE}"
+    write_env_value WEB_IMAGE "${WEB_IMAGE}"
 }
 
 CONFIG_ENV_KEYS=(
@@ -86,7 +160,6 @@ for key in "${CONFIG_ENV_KEYS[@]}"; do
         CONFIG_ENV_OVERRIDES["${key}"]="${!key}"
     fi
 done
-resolve_image_defaults
 export TLS_CERT_FILE TLS_KEY_FILE
 ENTERPRISE_MODE=0
 BUILD_ONLY=0
@@ -118,7 +191,9 @@ Environment overrides:
   DEPLOY_ENV_FILE              Alternate .env.prod path
   DEPLOY_DIR                   Directory used when running this script via stdin
   DEPLOY_ASSET_REF             Git ref used for auto-downloaded deploy assets
-  SHEPHERD_VERSION             GHCR release image version for stdin/raw deploys
+  SHEPHERD_VERSION             GHCR release image version for stdin/raw deploys.
+                               If unset, deploy-prod.sh resolves the latest
+                               GitHub Release tag.
   DEPLOY_TLS_DIR               Alternate TLS cert/key directory
   DEPLOY_COMPOSE_PROJECT_NAME  Alternate docker compose project name
   SERVER_IMAGE                 Server image tag to build/run
@@ -557,6 +632,7 @@ set -a
 source "${ENV_FILE}"
 set +a
 resolve_image_defaults
+persist_resolved_images
 
 prepare_runtime_values
 
@@ -566,9 +642,10 @@ set -a
 source "${ENV_FILE}"
 set +a
 resolve_image_defaults
+persist_resolved_images
 
 # Validate required variables
-for var in DATABASE_URL SERVER_PUBLIC_BASE_URL; do
+for var in DATABASE_URL SERVER_PUBLIC_BASE_URL SERVER_IMAGE WEB_IMAGE; do
     val="${!var:-}"
     if is_placeholder_value "${val}"; then
         echo "ERROR: ${var} is not set or still has a placeholder value in ${ENV_FILE}"

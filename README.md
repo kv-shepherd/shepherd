@@ -75,101 +75,47 @@ See [CHANGELOG.md](CHANGELOG.md) for release details and
 
 ## Quick Start
 
-### Local Development
+### Deploy From Release Images
 
-Use this path when you want to modify Shepherd or run the full stack from the
-current source tree.
+Use this path for production or VPS installs. It uses GHCR release images and
+does not require a git checkout on the target host.
 
-Prerequisites:
-
-- Git
-- Go 1.25.10 or newer
-- Node.js 22 or newer with npm
-- Docker 24 or newer with Docker Compose v2
-- A Kubernetes/KubeVirt cluster is optional for development, but required for
-  real VM lifecycle operations
-
-```bash
-git clone https://github.com/kv-shepherd/shepherd.git
-cd shepherd
-git pull --ff-only origin main
-
-# Start frontend, backend, nginx, and a local PostgreSQL 18 container.
-./start-dev.sh
-
-# Start from a clean local database when you intentionally want a reset.
-./start-dev.sh --clean-all
-```
-
-| Endpoint | URL |
-|----------|-----|
-| Web UI | `http://localhost:3000` |
-| HTTPS dev ingress | `https://localhost:3443` |
-| API, through ingress | `http://localhost:3000/api/v1` |
-| API, direct backend | `http://localhost:8080/api/v1` |
-
-Local development seeds only the platform bootstrap baseline:
-
-- built-in roles
-- default admin account: `admin / admin`
-- first sign-in requires a password change
-
-Common development commands:
-
-```bash
-make generate   # Ent ORM + OpenAPI + sqlc code generation
-make build      # Go server binary -> bin/shepherd
-make test       # Go tests; PostgreSQL packages use postgres:18 test containers
-
-cd web
-npm ci
-npm run dev
-```
-
-### Deployment From Release Images
-
-The default production path uses GitHub-published container images from GHCR
-and does not require a git checkout or `git pull` on the target host. The
-host needs Docker, Docker Compose v2, and outbound access to `ghcr.io` and
-`raw.githubusercontent.com`.
+Prerequisites: Docker, Docker Compose v2, and outbound access to GHCR and
+GitHub release assets.
 
 ```bash
 mkdir -p shepherd-deploy && cd shepherd-deploy
 curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | bash -s -- --with-seed
 ```
 
-By default this starts the current pinned GHCR release images, bundled
-PostgreSQL 18, `https://localhost`, and a generated self-signed TLS certificate
-if no certificate files are present. The script writes generated secrets and
-bootstrap credentials to `.env.prod`; back up that file.
+This starts the latest published GHCR images with bundled PostgreSQL 18 and a
+local TLS endpoint. Generated secrets, bootstrap credentials, and resolved image
+refs are persisted to `.env.prod`; back up that file.
 
-All runtime overrides are optional and can be passed before `bash` only when
-needed:
+See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for external PostgreSQL 18,
+domain/TLS configuration, image version pinning, manual compose commands, and
+the security checklist.
 
-```bash
-# Use a real external URL when a domain or ingress is ready.
-curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
-  SERVER_PUBLIC_BASE_URL=https://shepherd.example.com bash -s -- --with-seed
+### Local Development
 
-# Use an external PostgreSQL 18 service instead of the bundled container.
-curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
-  DATABASE_URL='<postgres-18-dsn>' DEPLOY_BUNDLED_POSTGRES=false bash -s -- --with-seed
-
-# Pin a different GitHub Release image version. GHCR tags omit the leading "v".
-curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
-  SHEPHERD_VERSION=0.1.1-alpha.5 bash -s -- --with-seed
-```
-
-The first deploy should use `--with-seed` to create built-in roles and the
-initial `admin` account.
-
-Useful production commands from the deployment directory:
+Use this path when you want to modify Shepherd or run the full stack from the
+current source tree.
 
 ```bash
-docker compose -f docker-compose.prod.yml -p shepherd-prod ps
-docker compose -f docker-compose.prod.yml -p shepherd-prod logs -f
-docker compose -f docker-compose.prod.yml -p shepherd-prod down
+git clone https://github.com/kv-shepherd/shepherd.git
+cd shepherd
+git pull --ff-only origin main
+./start-dev.sh
 ```
+
+Prerequisites: Git, Go 1.25.10 or newer, Node.js 22 or newer with npm, and
+Docker 24 or newer with Docker Compose v2.
+
+Default local endpoints:
+
+- Web UI: `http://localhost:3000`
+- HTTPS dev ingress: `https://localhost:3443`
+- API: `http://localhost:3000/api/v1`
 
 ### Source Build Deployment
 
@@ -184,19 +130,13 @@ bash deploy/prod/deploy-prod.sh --with-seed
 ```
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full deployment guide,
-configuration reference, security checklist, manual compose flow, and VPS
-experience seed setup.
+configuration reference, security checklist, and VPS experience seed setup.
 
 ### Helm Deployment
 
-A Helm chart is the next Kubernetes-native deployment target. It is not shipped
-in this repository yet. The chart should use the same GHCR release images,
-prefer an external PostgreSQL 18 database, and map the current compose
-configuration into Kubernetes Secrets, Deployments, Services, Ingress, and
-health probes.
-
-Until the chart lands, use the release-image Docker Compose deployment above
-for production and VPS installs.
+Helm charts are maintained separately from the application source tree. Until
+the public chart repository is published, use the release-image Docker Compose
+deployment above for production and VPS installs.
 
 ## Documentation
 

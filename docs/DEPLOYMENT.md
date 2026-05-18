@@ -13,30 +13,78 @@ you do not point `DATABASE_URL` at an external database.
 | **web** | `ghcr.io/kv-shepherd/shepherd-web` by default | Next.js SSR frontend |
 | **nginx** | `nginx:1.27-alpine` | TLS termination, reverse proxy, rate limiting |
 
-## Deploying from Source
+## Deploying from Release Images
 
-### Recommended First Deploy
+Use this path for production or VPS hosts that should run published GHCR images
+without a git checkout.
 
-Use the deploy script unless you specifically need raw `docker compose`
-control. For the default bundled PostgreSQL topology, the script can generate a
-complete first-run `.env.prod` without required edits. Set
-`SERVER_PUBLIC_BASE_URL` when you have a real external URL.
+Required host tools:
+
+- Docker with Docker Compose v2
+- `curl` or `wget`
+- outbound access to GHCR, GitHub raw files, and GitHub release metadata
+
+The shortest first deploy uses bundled PostgreSQL 18, `https://localhost`, and
+a generated self-signed TLS certificate:
 
 ```bash
-# 1. Prepare the environment file
-cp deploy/prod/.env.prod.example deploy/prod/.env.prod
-#    Edit .env.prod:
-#      - optional: SERVER_PUBLIC_BASE_URL for a real domain or ingress
-#      - optional: DATABASE_URL + DEPLOY_BUNDLED_POSTGRES=false for external PostgreSQL
+mkdir -p shepherd-deploy && cd shepherd-deploy
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | bash -s -- --with-seed
+```
 
-# 2. Provide TLS certificates
-mkdir -p deploy/prod/tls
-cp /path/to/cert.pem deploy/prod/tls/cert.pem
-cp /path/to/key.pem  deploy/prod/tls/key.pem
+`wget` works too:
 
-# 3. Build, deploy, and seed the initial admin/bootstrap data
+```bash
+wget -qO- https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | bash -s -- --with-seed
+```
+
+All runtime inputs are optional. Pass them before `bash` only when you need to
+override the default topology:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  SERVER_PUBLIC_BASE_URL=https://shepherd.example.com bash -s -- --with-seed
+
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  DATABASE_URL='<postgres-18-dsn>' DEPLOY_BUNDLED_POSTGRES=false bash -s -- --with-seed
+
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  SHEPHERD_VERSION='vX.Y.Z' bash -s -- --with-seed
+```
+
+Use PostgreSQL 18 for external databases. The bundled `postgres:18` container
+is convenient for evaluation and VPS installs, but an operator-managed
+PostgreSQL 18 service is recommended for production. When `DATABASE_URL` points
+to an external PostgreSQL host, `deploy-prod.sh` auto-detects that topology and
+does not start the bundled database. Override with
+`DEPLOY_BUNDLED_POSTGRES=true|false` only when you need to force the topology.
+
+`deploy-prod.sh` resolves release images in this order:
+
+1. explicit `SERVER_IMAGE` and `WEB_IMAGE`
+2. explicit `SHEPHERD_VERSION` or `DEPLOY_RELEASE_VERSION`
+3. version-like `DEPLOY_ASSET_REF`, such as `vX.Y.Z`
+4. the latest published GitHub Release
+
+Resolved image refs and generated secrets are persisted to `.env.prod` in the
+deployment directory.
+
+## Deploying from Source Build
+
+Use source-build deployment only when you intentionally want the target host to
+build local backend and frontend images from a checkout.
+
+```bash
+git clone https://github.com/kv-shepherd/shepherd.git
+cd shepherd
+git pull --ff-only origin main
 bash deploy/prod/deploy-prod.sh --with-seed
 ```
+
+For source builds, `deploy-prod.sh` uses local image tags by default unless you
+set `SHEPHERD_VERSION`, `SERVER_IMAGE`, or `WEB_IMAGE`.
+
+## Deployment Script Behavior
 
 On the default bundled PostgreSQL path, `deploy-prod.sh` will automatically:
 
@@ -46,32 +94,24 @@ On the default bundled PostgreSQL path, `deploy-prod.sh` will automatically:
 - generate `SECURITY_SESSION_SECRET` and `SECURITY_ENCRYPTION_KEY` if they are
   empty and persist them back to `.env.prod`
 - build `DATABASE_URL` for the bundled `db` service when it is empty
-- generate a self-signed TLS certificate when `deploy/prod/tls/cert.pem` and
-  `deploy/prod/tls/key.pem` are missing
+- generate a self-signed TLS certificate when `tls/cert.pem` and `tls/key.pem`
+  are missing
 
 Additional script entry points:
 
 ```bash
-bash deploy/prod/deploy-prod.sh              # builds + deploys
-bash deploy/prod/deploy-prod.sh --with-seed  # first deploy/bootstrap
-bash deploy/prod/deploy-prod.sh --with-seed --with-experience-seed
-bash deploy/prod/deploy-prod.sh --help       # all options
+bash deploy-prod.sh              # deploy using release images
+bash deploy-prod.sh --with-seed  # first deploy/bootstrap
+bash deploy-prod.sh --with-seed --with-experience-seed
+bash deploy-prod.sh --help       # all options
 ```
-
-On first run, `deploy-prod.sh` will generate `deploy/prod/.env.prod` from
-`deploy/prod/.env.prod.example` if the file is missing. The generated template
-stays local to the deployment host; it is not copied into container images.
-
-When `DATABASE_URL` points to an external PostgreSQL host, `deploy-prod.sh`
-auto-detects that topology and does not start the bundled `postgres:18`
-service. Override with `DEPLOY_BUNDLED_POSTGRES=true|false` only when you need
-to force the topology.
 
 ### Manual Docker Compose Path
 
 If you prefer plain `docker compose` without `deploy-prod.sh`, fill the blank
-credential fields in `.env.prod` yourself first, then run the compose commands
-manually.
+credential and image fields in `.env.prod` yourself first, then run the compose
+commands manually. `deploy-prod.sh` resolves and persists image references for
+you; raw compose requires `SERVER_IMAGE` and `WEB_IMAGE` to be set explicitly.
 
 ```bash
 # 1. Build images
