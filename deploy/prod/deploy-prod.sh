@@ -18,10 +18,17 @@ if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
 else
     SCRIPT_DIR="${DEPLOY_DIR:-$(pwd)}"
 fi
-if ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." 2>/dev/null && pwd)"; then
+if [[ -f "${SCRIPT_DIR}/Dockerfile" && -f "${SCRIPT_DIR}/web/package.json" ]]; then
+    ROOT_DIR="${SCRIPT_DIR}"
+elif ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." 2>/dev/null && pwd)" \
+    && [[ -f "${ROOT_DIR}/Dockerfile" && -f "${ROOT_DIR}/web/package.json" ]]; then
     :
 else
     ROOT_DIR="$(pwd)"
+fi
+SOURCE_TREE_AVAILABLE=0
+if [[ -f "${ROOT_DIR}/Dockerfile" && -f "${ROOT_DIR}/web/package.json" ]]; then
+    SOURCE_TREE_AVAILABLE=1
 fi
 COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-${SCRIPT_DIR}/docker-compose.prod.yml}"
 ENV_FILE="${DEPLOY_ENV_FILE:-${SCRIPT_DIR}/.env.prod}"
@@ -32,6 +39,19 @@ TLS_KEY_FILE="${TLS_KEY_FILE:-${TLS_DIR}/key.pem}"
 COMPOSE_PROJECT_NAME="${DEPLOY_COMPOSE_PROJECT_NAME:-shepherd-prod}"
 DEPLOY_ASSET_REF="${DEPLOY_ASSET_REF:-main}"
 DEPLOY_RAW_BASE="${DEPLOY_RAW_BASE:-https://raw.githubusercontent.com/kv-shepherd/shepherd/${DEPLOY_ASSET_REF}}"
+DEPLOY_RELEASE_VERSION="${DEPLOY_RELEASE_VERSION:-${SHEPHERD_VERSION:-0.1.1-alpha.5}}"
+
+resolve_image_defaults() {
+    if [[ "${SOURCE_TREE_AVAILABLE}" == "1" ]]; then
+        SERVER_IMAGE="${SERVER_IMAGE:-shepherd-server:latest}"
+        WEB_IMAGE="${WEB_IMAGE:-shepherd-web:latest}"
+    else
+        SERVER_IMAGE="${SERVER_IMAGE:-ghcr.io/kv-shepherd/shepherd-server:${DEPLOY_RELEASE_VERSION}}"
+        WEB_IMAGE="${WEB_IMAGE:-ghcr.io/kv-shepherd/shepherd-web:${DEPLOY_RELEASE_VERSION}}"
+    fi
+    export SERVER_IMAGE WEB_IMAGE
+}
+
 CONFIG_ENV_KEYS=(
     POSTGRES_USER
     POSTGRES_PASSWORD
@@ -66,9 +86,8 @@ for key in "${CONFIG_ENV_KEYS[@]}"; do
         CONFIG_ENV_OVERRIDES["${key}"]="${!key}"
     fi
 done
-SERVER_IMAGE="${SERVER_IMAGE:-shepherd-server:latest}"
-WEB_IMAGE="${WEB_IMAGE:-shepherd-web:latest}"
-export SERVER_IMAGE WEB_IMAGE TLS_CERT_FILE TLS_KEY_FILE
+resolve_image_defaults
+export TLS_CERT_FILE TLS_KEY_FILE
 ENTERPRISE_MODE=0
 BUILD_ONLY=0
 SEED_ONLY=0
@@ -99,6 +118,7 @@ Environment overrides:
   DEPLOY_ENV_FILE              Alternate .env.prod path
   DEPLOY_DIR                   Directory used when running this script via stdin
   DEPLOY_ASSET_REF             Git ref used for auto-downloaded deploy assets
+  SHEPHERD_VERSION             GHCR release image version for stdin/raw deploys
   DEPLOY_TLS_DIR               Alternate TLS cert/key directory
   DEPLOY_COMPOSE_PROJECT_NAME  Alternate docker compose project name
   SERVER_IMAGE                 Server image tag to build/run
@@ -158,13 +178,12 @@ ensure_deploy_assets() {
 }
 
 ensure_source_tree_for_build() {
-    if [[ -f "${ROOT_DIR}/Dockerfile" && -f "${ROOT_DIR}/web/package.json" ]]; then
+    if [[ "${SOURCE_TREE_AVAILABLE}" == "1" ]]; then
         return
     fi
 
     echo "ERROR: source tree not found for local image build."
-    echo "  Run with --skip-build and SERVER_IMAGE/WEB_IMAGE for release-image deployment,"
-    echo "  or run this script from a full repository checkout."
+    echo "  Run this script from a full repository checkout for source-build deployment."
     exit 1
 }
 
@@ -409,6 +428,15 @@ sync_bundled_database_url() {
     fi
 }
 
+ensure_public_base_url() {
+    local current
+    current="$(read_env_value SERVER_PUBLIC_BASE_URL)"
+    if is_placeholder_value "${current}"; then
+        write_env_value SERVER_PUBLIC_BASE_URL "https://localhost"
+        echo "INFO: defaulted SERVER_PUBLIC_BASE_URL to https://localhost in ${ENV_FILE}."
+    fi
+}
+
 should_prepare_bundled_postgres_values() {
     local mode current host
     mode="$(read_env_value DEPLOY_BUNDLED_POSTGRES)"
@@ -431,6 +459,7 @@ should_prepare_bundled_postgres_values() {
 }
 
 prepare_runtime_values() {
+    ensure_public_base_url
     if should_prepare_bundled_postgres_values; then
         ensure_generated_secret POSTGRES_PASSWORD 16
     fi
@@ -527,6 +556,7 @@ set -a
 # shellcheck source=/dev/null
 source "${ENV_FILE}"
 set +a
+resolve_image_defaults
 
 prepare_runtime_values
 
@@ -535,6 +565,7 @@ set -a
 # shellcheck source=/dev/null
 source "${ENV_FILE}"
 set +a
+resolve_image_defaults
 
 # Validate required variables
 for var in DATABASE_URL SERVER_PUBLIC_BASE_URL; do
@@ -584,6 +615,24 @@ if [[ "${SEED_ONLY}" == "1" ]]; then
     echo "Skipping build phase (--seed-only)."
 elif [[ "${SKIP_BUILD}" == "1" ]]; then
     echo "Skipping build phase (--skip-build)."
+    if [[ "${BUILD_ONLY}" == "1" ]]; then
+        echo ""
+        echo "Build phase skipped. Images selected:"
+        echo "  - ${SERVER_IMAGE}"
+        echo "  - ${WEB_IMAGE}"
+        echo "  - nginx:1.27-alpine"
+        exit 0
+    fi
+elif [[ "${SOURCE_TREE_AVAILABLE}" != "1" ]]; then
+    echo "Skipping build phase (release-image deployment; no source tree found)."
+    if [[ "${BUILD_ONLY}" == "1" ]]; then
+        echo ""
+        echo "Release images selected:"
+        echo "  - ${SERVER_IMAGE}"
+        echo "  - ${WEB_IMAGE}"
+        echo "  - nginx:1.27-alpine"
+        exit 0
+    fi
 else
     ensure_source_tree_for_build
 
