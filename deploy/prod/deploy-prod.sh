@@ -13,8 +13,16 @@
 # =============================================================================
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+if [[ -n "${BASH_SOURCE[0]:-}" && -f "${BASH_SOURCE[0]}" ]]; then
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+else
+    SCRIPT_DIR="${DEPLOY_DIR:-$(pwd)}"
+fi
+if ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." 2>/dev/null && pwd)"; then
+    :
+else
+    ROOT_DIR="$(pwd)"
+fi
 COMPOSE_FILE="${DEPLOY_COMPOSE_FILE:-${SCRIPT_DIR}/docker-compose.prod.yml}"
 ENV_FILE="${DEPLOY_ENV_FILE:-${SCRIPT_DIR}/.env.prod}"
 ENV_EXAMPLE_FILE="${DEPLOY_ENV_EXAMPLE_FILE:-${SCRIPT_DIR}/.env.prod.example}"
@@ -22,6 +30,42 @@ TLS_DIR="${DEPLOY_TLS_DIR:-${SCRIPT_DIR}/tls}"
 TLS_CERT_FILE="${TLS_CERT_FILE:-${TLS_DIR}/cert.pem}"
 TLS_KEY_FILE="${TLS_KEY_FILE:-${TLS_DIR}/key.pem}"
 COMPOSE_PROJECT_NAME="${DEPLOY_COMPOSE_PROJECT_NAME:-shepherd-prod}"
+DEPLOY_ASSET_REF="${DEPLOY_ASSET_REF:-main}"
+DEPLOY_RAW_BASE="${DEPLOY_RAW_BASE:-https://raw.githubusercontent.com/kv-shepherd/shepherd/${DEPLOY_ASSET_REF}}"
+CONFIG_ENV_KEYS=(
+    POSTGRES_USER
+    POSTGRES_PASSWORD
+    POSTGRES_DB
+    DATABASE_URL
+    DEPLOY_BUNDLED_POSTGRES
+    SECURITY_SESSION_SECRET
+    SECURITY_ENCRYPTION_KEY
+    SERVER_PORT
+    SERVER_PUBLIC_BASE_URL
+    SERVER_ALLOWED_ORIGINS
+    SERVER_ALLOW_CREDENTIALS
+    SERVER_UNSAFE_ALLOW_ALL_ORIGINS
+    GIN_MODE
+    LOG_LEVEL
+    LOG_FORMAT
+    DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS
+    DATABASE_AUTO_MIGRATE
+    RIVER_MAX_WORKERS
+    RIVER_COMPLETED_JOB_RETENTION_PERIOD
+    WORKER_GENERAL_POOL_SIZE
+    WORKER_K8S_POOL_SIZE
+    DEV_ADMIN_PASSWORD
+    SERVER_IMAGE
+    WEB_IMAGE
+    NGINX_HTTP_PORT
+    NGINX_HTTPS_PORT
+)
+declare -A CONFIG_ENV_OVERRIDES=()
+for key in "${CONFIG_ENV_KEYS[@]}"; do
+    if [[ ${!key+x} ]]; then
+        CONFIG_ENV_OVERRIDES["${key}"]="${!key}"
+    fi
+done
 SERVER_IMAGE="${SERVER_IMAGE:-shepherd-server:latest}"
 WEB_IMAGE="${WEB_IMAGE:-shepherd-web:latest}"
 export SERVER_IMAGE WEB_IMAGE TLS_CERT_FILE TLS_KEY_FILE
@@ -53,10 +97,17 @@ Options:
 
 Environment overrides:
   DEPLOY_ENV_FILE              Alternate .env.prod path
+  DEPLOY_DIR                   Directory used when running this script via stdin
+  DEPLOY_ASSET_REF             Git ref used for auto-downloaded deploy assets
   DEPLOY_TLS_DIR               Alternate TLS cert/key directory
   DEPLOY_COMPOSE_PROJECT_NAME  Alternate docker compose project name
   SERVER_IMAGE                 Server image tag to build/run
   WEB_IMAGE                    Web image tag to build/run
+
+Deployment configuration values such as DATABASE_URL,
+DEPLOY_BUNDLED_POSTGRES, SERVER_PUBLIC_BASE_URL, SECURITY_*,
+DEV_ADMIN_PASSWORD, ports, and worker settings may be passed before bash.
+They are persisted to the deployment .env file before services start.
 EOF
 }
 
@@ -65,6 +116,56 @@ require_cmd() {
         echo "ERROR: required command not found: $1"
         exit 1
     fi
+}
+
+require_docker_compose() {
+    if ! docker compose version >/dev/null 2>&1; then
+        echo "ERROR: Docker Compose v2 is required (the 'docker compose' plugin is missing or unavailable)."
+        exit 1
+    fi
+}
+
+download_file() {
+    local url="$1"
+    local dest="$2"
+    mkdir -p "$(dirname "${dest}")"
+    if command -v curl >/dev/null 2>&1; then
+        curl -fsSL "${url}" -o "${dest}"
+    elif command -v wget >/dev/null 2>&1; then
+        wget -qO "${dest}" "${url}"
+    else
+        echo "ERROR: curl or wget is required to download missing deployment assets."
+        exit 1
+    fi
+}
+
+ensure_deploy_assets() {
+    if [[ ! -f "${COMPOSE_FILE}" ]]; then
+        echo "INFO: downloading production compose file to ${COMPOSE_FILE}"
+        download_file "${DEPLOY_RAW_BASE}/deploy/prod/docker-compose.prod.yml" "${COMPOSE_FILE}"
+    fi
+
+    if [[ ! -f "${ENV_EXAMPLE_FILE}" ]]; then
+        echo "INFO: downloading production environment template to ${ENV_EXAMPLE_FILE}"
+        download_file "${DEPLOY_RAW_BASE}/deploy/prod/.env.prod.example" "${ENV_EXAMPLE_FILE}"
+    fi
+
+    local nginx_conf="${SCRIPT_DIR}/nginx/prod.conf"
+    if [[ ! -f "${nginx_conf}" ]]; then
+        echo "INFO: downloading nginx production config to ${nginx_conf}"
+        download_file "${DEPLOY_RAW_BASE}/deploy/prod/nginx/prod.conf" "${nginx_conf}"
+    fi
+}
+
+ensure_source_tree_for_build() {
+    if [[ -f "${ROOT_DIR}/Dockerfile" && -f "${ROOT_DIR}/web/package.json" ]]; then
+        return
+    fi
+
+    echo "ERROR: source tree not found for local image build."
+    echo "  Run with --skip-build and SERVER_IMAGE/WEB_IMAGE for release-image deployment,"
+    echo "  or run this script from a full repository checkout."
+    exit 1
 }
 
 prepare_env_file() {
@@ -95,10 +196,22 @@ write_env_value() {
     local key="$1"
     local value="$2"
     if grep -Eq "^${key}=" "${ENV_FILE}"; then
-        sed -i -e "s|^${key}=.*$|${key}=${value}|" "${ENV_FILE}"
+        local escaped_value="${value//\\/\\\\}"
+        escaped_value="${escaped_value//&/\\&}"
+        escaped_value="${escaped_value//|/\\|}"
+        sed -i -e "s|^${key}=.*$|${key}=${escaped_value}|" "${ENV_FILE}"
     else
         printf '\n%s=%s\n' "${key}" "${value}" >> "${ENV_FILE}"
     fi
+}
+
+persist_env_overrides() {
+    local key
+    for key in "${CONFIG_ENV_KEYS[@]}"; do
+        if [[ ${CONFIG_ENV_OVERRIDES[${key}]+x} ]]; then
+            write_env_value "${key}" "${CONFIG_ENV_OVERRIDES[${key}]}"
+        fi
+    done
 }
 
 is_placeholder_value() {
@@ -397,6 +510,7 @@ done
 
 # ---- Preflight checks ----
 require_cmd docker
+require_docker_compose
 require_cmd openssl
 
 echo "=============================================="
@@ -404,7 +518,9 @@ echo "  KubeVirt Shepherd — Production Deployment"
 echo "=============================================="
 echo ""
 
+ensure_deploy_assets
 prepare_env_file
+persist_env_overrides
 
 # Source env so generated values can reuse the current topology inputs.
 set -a
@@ -469,6 +585,8 @@ if [[ "${SEED_ONLY}" == "1" ]]; then
 elif [[ "${SKIP_BUILD}" == "1" ]]; then
     echo "Skipping build phase (--skip-build)."
 else
+    ensure_source_tree_for_build
+
     echo ""
     echo "--- Phase 1: Building Images ---"
     echo ""
