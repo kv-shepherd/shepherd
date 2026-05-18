@@ -9,8 +9,8 @@ you do not point `DATABASE_URL` at an external database.
 | Service | Image | Role |
 |---------|-------|------|
 | **db** | `postgres:18` | Optional bundled data persistence service |
-| **server** | `shepherd-server` | Go API backend (distroless runtime) |
-| **web** | `shepherd-web` | Next.js SSR frontend |
+| **server** | `ghcr.io/kv-shepherd/shepherd-server` by default | Go API backend (distroless runtime) |
+| **web** | `ghcr.io/kv-shepherd/shepherd-web` by default | Next.js SSR frontend |
 | **nginx** | `nginx:1.27-alpine` | TLS termination, reverse proxy, rate limiting |
 
 ## Deploying from Source
@@ -18,14 +18,15 @@ you do not point `DATABASE_URL` at an external database.
 ### Recommended First Deploy
 
 Use the deploy script unless you specifically need raw `docker compose`
-control. For the default bundled PostgreSQL topology, the only required edit is
-the public URL.
+control. For the default bundled PostgreSQL topology, the script can generate a
+complete first-run `.env.prod` without required edits. Set
+`SERVER_PUBLIC_BASE_URL` when you have a real external URL.
 
 ```bash
 # 1. Prepare the environment file
 cp deploy/prod/.env.prod.example deploy/prod/.env.prod
 #    Edit .env.prod:
-#      - required: SERVER_PUBLIC_BASE_URL
+#      - optional: SERVER_PUBLIC_BASE_URL for a real domain or ingress
 #      - optional: DATABASE_URL + DEPLOY_BUNDLED_POSTGRES=false for external PostgreSQL
 
 # 2. Provide TLS certificates
@@ -39,6 +40,7 @@ bash deploy/prod/deploy-prod.sh --with-seed
 
 On the default bundled PostgreSQL path, `deploy-prod.sh` will automatically:
 
+- default `SERVER_PUBLIC_BASE_URL` to `https://localhost` when it is empty
 - generate `POSTGRES_PASSWORD` if it is empty and persist it back to `.env.prod`
 - generate `DEV_ADMIN_PASSWORD` if it is empty and persist it back to `.env.prod`
 - generate `SECURITY_SESSION_SECRET` and `SECURITY_ENCRYPTION_KEY` if they are
@@ -79,9 +81,11 @@ docker build -t shepherd-web:latest -f deploy/prod/web.Dockerfile web/
 # 2. Fill .env.prod manually
 cp deploy/prod/.env.prod.example deploy/prod/.env.prod
 #    Set at least:
+#      - SERVER_IMAGE=shepherd-server:latest
+#      - WEB_IMAGE=shepherd-web:latest
 #      - POSTGRES_PASSWORD (or a full external DATABASE_URL)
 #      - DATABASE_URL
-#      - SERVER_PUBLIC_BASE_URL
+#    SERVER_PUBLIC_BASE_URL defaults to https://localhost when blank.
 
 # 3. Launch
 docker compose -f deploy/prod/docker-compose.prod.yml \
@@ -125,11 +129,11 @@ cluster, export `E2E_KUBECONFIG_PATH=/path/to/kubeconfig` (or
 
 | Variable | Description |
 |----------|-------------|
-| `DATABASE_URL` | PostgreSQL connection string |
+| `DATABASE_URL` | PostgreSQL connection string; `deploy-prod.sh` creates a bundled PostgreSQL DSN when blank |
 | `DEPLOY_BUNDLED_POSTGRES` | `auto`, `true`, or `false` to control bundled vs external PostgreSQL topology |
 | `SECURITY_SESSION_SECRET` | Session-signing secret; `deploy-prod.sh` generates and persists one when blank |
 | `SECURITY_ENCRYPTION_KEY` | Hex-encoded AES-256 data-encryption key; `deploy-prod.sh` generates and persists one when blank |
-| `SERVER_PUBLIC_BASE_URL` | External URL (e.g. `https://shepherd.example.com`) |
+| `SERVER_PUBLIC_BASE_URL` | External URL; defaults to `https://localhost` when blank |
 | `SERVER_ALLOWED_ORIGINS` | CORS origins (comma-separated) |
 | `DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS` | Apply reviewed Atlas migrations before the server starts (`true` / `false`) |
 | `DATABASE_AUTO_MIGRATE` | Ent schema auto-migrate fallback (`true` / `false`, dev-only) |

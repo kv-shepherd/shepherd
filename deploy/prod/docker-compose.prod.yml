@@ -5,11 +5,9 @@
 #   docker compose -f deploy/prod/docker-compose.prod.yml --env-file deploy/prod/.env.prod up -d
 #
 # Prerequisites:
-#   1. Build images first:
-#      docker build --target runtime -t shepherd-server:latest .
-#      docker build -t shepherd-web:latest -f deploy/prod/web.Dockerfile web/
-#   2. Prepare .env.prod from .env.prod.example
-#   3. Place TLS cert/key in deploy/prod/tls/
+#   1. Prepare .env.prod from .env.prod.example or run deploy-prod.sh.
+#   2. Place TLS cert/key in deploy/prod/tls/ or let deploy-prod.sh generate
+#      an initial self-signed certificate for testing.
 # =============================================================================
 
 services:
@@ -42,7 +40,7 @@ services:
 
   # ---------- Go Backend (Shepherd API Server) ----------
   server:
-    image: ${SERVER_IMAGE:-shepherd-server:latest}
+    image: ${SERVER_IMAGE:-ghcr.io/kv-shepherd/shepherd-server:0.1.1-alpha.5}
     restart: unless-stopped
     environment:
       DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
@@ -51,7 +49,7 @@ services:
       SECURITY_SESSION_SECRET: ${SECURITY_SESSION_SECRET:-}
       SECURITY_ENCRYPTION_KEY: ${SECURITY_ENCRYPTION_KEY:-}
       SERVER_PORT: ${SERVER_PORT:-8080}
-      SERVER_PUBLIC_BASE_URL: ${SERVER_PUBLIC_BASE_URL:?SERVER_PUBLIC_BASE_URL is required}
+      SERVER_PUBLIC_BASE_URL: ${SERVER_PUBLIC_BASE_URL:-https://localhost}
       SERVER_READ_HEADER_TIMEOUT: ${SERVER_READ_HEADER_TIMEOUT:-10s}
       SERVER_IDLE_TIMEOUT: ${SERVER_IDLE_TIMEOUT:-2m}
       SERVER_MAX_REQUEST_BODY_BYTES: ${SERVER_MAX_REQUEST_BODY_BYTES:-10485760}
@@ -78,7 +76,7 @@ services:
 
   # ---------- Next.js Frontend (Production SSR) ----------
   web:
-    image: ${WEB_IMAGE:-shepherd-web:latest}
+    image: ${WEB_IMAGE:-ghcr.io/kv-shepherd/shepherd-web:0.1.1-alpha.5}
     restart: unless-stopped
     environment:
       NODE_ENV: production

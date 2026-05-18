@@ -129,49 +129,39 @@ npm run dev
 ### Deployment From Release Images
 
 The default production path uses GitHub-published container images from GHCR
-and does not require a git checkout or `git pull` on the target host. It only
-requires Docker, Docker Compose v2, outbound access to `ghcr.io` and
-`raw.githubusercontent.com`, and a PostgreSQL 18 database.
-
-For production, use a PostgreSQL 18 instance you operate yourself and pass
-`DATABASE_URL` before `bash`. With `DEPLOY_BUNDLED_POSTGRES=false`, the deploy
-script will not start the bundled `postgres:18` compose service.
+and does not require a git checkout or `git pull` on the target host. The
+host needs Docker, Docker Compose v2, and outbound access to `ghcr.io` and
+`raw.githubusercontent.com`.
 
 ```bash
-mkdir -p shepherd-deploy
-cd shepherd-deploy
-
-# Set this to the GitHub Release you want to deploy.
-# GHCR image tags omit the leading "v".
-SHEPHERD_VERSION=0.1.1-alpha.5
-DEPLOY_SCRIPT_REF=main
-
-curl -fsSL "https://raw.githubusercontent.com/kv-shepherd/shepherd/${DEPLOY_SCRIPT_REF}/deploy/prod/deploy-prod.sh" | \
-  DEPLOY_ASSET_REF="${DEPLOY_SCRIPT_REF}" \
-  SERVER_IMAGE="ghcr.io/kv-shepherd/shepherd-server:${SHEPHERD_VERSION}" \
-  WEB_IMAGE="ghcr.io/kv-shepherd/shepherd-web:${SHEPHERD_VERSION}" \
-  SERVER_PUBLIC_BASE_URL="https://shepherd.example.com" \
-  DATABASE_URL="postgres://shepherd:replace-me"@"postgres.example.com:5432/shepherd_db?sslmode=require" \
-  DEPLOY_BUNDLED_POSTGRES=false \
-  bash -s -- --skip-build --with-seed
+mkdir -p shepherd-deploy && cd shepherd-deploy
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | bash -s -- --with-seed
 ```
 
-Notes for the first run:
+By default this starts the current pinned GHCR release images, bundled
+PostgreSQL 18, `https://localhost`, and a generated self-signed TLS certificate
+if no certificate files are present. The script writes generated secrets and
+bootstrap credentials to `.env.prod`; back up that file.
 
-- Image tags use the release version without the leading `v`.
-- `DEPLOY_SCRIPT_REF` selects the public deploy helper and compose/nginx assets;
-  `main` is the default path for the latest one-command deploy flow.
-- `SERVER_PUBLIC_BASE_URL` must be the external HTTPS URL users will open.
-- The script writes generated secrets and bootstrap credentials to `.env.prod`;
-  back up this file.
-- If TLS files are missing, a self-signed certificate is generated for initial
-  testing. Replace it with a CA-issued certificate for production.
-- The first deploy should use `--with-seed` to create built-in roles and the
-  initial `admin` account.
+All runtime overrides are optional and can be passed before `bash` only when
+needed:
 
-If you need a single-host evaluation install without an external database, omit
-`DATABASE_URL` and `DEPLOY_BUNDLED_POSTGRES=false`; the same script will start
-the bundled PostgreSQL 18 service.
+```bash
+# Use a real external URL when a domain or ingress is ready.
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  SERVER_PUBLIC_BASE_URL=https://shepherd.example.com bash -s -- --with-seed
+
+# Use an external PostgreSQL 18 service instead of the bundled container.
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  DATABASE_URL='<postgres-18-dsn>' DEPLOY_BUNDLED_POSTGRES=false bash -s -- --with-seed
+
+# Pin a different GitHub Release image version. GHCR tags omit the leading "v".
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  SHEPHERD_VERSION=0.1.1-alpha.5 bash -s -- --with-seed
+```
+
+The first deploy should use `--with-seed` to create built-in roles and the
+initial `admin` account.
 
 Useful production commands from the deployment directory:
 
