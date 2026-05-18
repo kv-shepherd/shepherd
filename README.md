@@ -134,9 +134,10 @@ configuration reference, security checklist, and VPS experience seed setup.
 
 ### Helm Deployment
 
-Helm charts are maintained separately from the application source tree. Until
-the public chart repository is published, use the release-image Docker Compose
-deployment above for production and VPS installs.
+Helm charts are maintained separately in
+[kv-shepherd/helm-charts](https://github.com/kv-shepherd/helm-charts). Use that
+repository for Kubernetes-native installs; this application repository keeps
+release-image Docker Compose as the default host and VPS deployment path.
 
 ## Documentation
 
