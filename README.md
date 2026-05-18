@@ -8,14 +8,10 @@
 **[Online Demo](https://demo.kv-shepherd.io)** ·
 **[Documentation](docs/README.md)**
 
-**KubeVirt Shepherd** is a governance-first management platform for
+KubeVirt Shepherd is a governance-first management platform for
 [KubeVirt][kubevirt] virtual machines. It provides self-service VM lifecycle
-management with structured approval workflows, RBAC, and full audit trails
-across multiple Kubernetes clusters.
-
-> *Like a shepherd tending a flock, this platform ensures that VMs are properly
-> managed throughout their lifecycle — users enjoy self-service freedom while
-> governance policies prevent resource sprawl and orphaned instances.*
+management with structured approval workflows, RBAC, quota-aware operating
+models, and audit trails across multiple Kubernetes clusters.
 
 <p align="center">
   <img src="docs/assets/screenshot.png" alt="KubeVirt Shepherd Dashboard" width="800">
@@ -23,189 +19,220 @@ across multiple Kubernetes clusters.
 
 ## Why Shepherd?
 
-KubeVirt solves *"running VMs on Kubernetes"*. Shepherd solves what comes next:
-**who** can request a VM, **who** approves it, how are **quotas** enforced,
-and where is the **audit trail**?
+KubeVirt solves running VMs on Kubernetes. Shepherd focuses on the operating
+model around those VMs: who can request them, who approves the change, how
+platform permissions are enforced, which clusters are available, and where the
+audit trail lives.
 
-Today, these governance capabilities are mainly available through Red Hat's
-commercial stack (OpenShift Virtualization + RHACM). Shepherd provides an
-**open-source, vendor-neutral alternative** with contract-first API design,
-declarative schema migrations, structured ADR governance, and enforced CI
-gate checks.
+Shepherd is an open-source, vendor-neutral alternative for teams that need VM
+governance without tying the workflow to a specific commercial platform stack.
 
 | Capability | OpenShift Virt | Shepherd |
-|------------|---------------|----------|
-| Multi-cluster management | ✔ (requires RHACM) | ✔ Native |
-| Approval workflows | ✔ | ✔ Built-in |
-| Self-service portal | Operator-driven | ✔ Request → Approve → Deliver |
-| Audit trail | OpenShift-integrated | ✔ Platform-native |
-| Vendor lock-in | Strong (OpenShift) | None |
-
-## Born in Production
-
-Shepherd was created from recurring VM governance needs in a financial-services
-Kubernetes/KubeVirt environment: request intake, approval, delivery, RBAC,
-auditability, and lifecycle cleanup had to work together rather than as
-separate scripts.
-
-The public project is a clean Go/TypeScript implementation of that operating
-model. Core governance paths have been exercised internally, while the public
-Alpha status reflects the need for broader feedback across different clusters,
-storage classes, auth providers, and organizational policies.
+|------------|----------------|----------|
+| Multi-cluster management | Yes, commonly with RHACM | Native |
+| Approval workflows | Yes | Built in |
+| Self-service portal | Operator-driven | Request -> approve -> deliver |
+| Audit trail | OpenShift-integrated | Platform-native |
+| Vendor lock-in | Strong OpenShift coupling | None |
 
 ## Features
 
-- **Approval Workflow** — Structured request and multi-level approval for VM lifecycle operations
-- **VM Operations** — Create, modify, start, stop, restart, and delete through governed workflows
-- **Multi-Cluster** — Unified management across Kubernetes clusters
-- **Dual-Layer Access Control** — Platform-facing RBAC for global capabilities, plus System membership that inherits down to Services and VMs
-- **Environment-Scoped Bindings** — Global role bindings can be limited to approved environments such as test and prod
-- **Audit Trail** — Complete operation history for every resource change
-- **VM Console Access** — VNC and serial console access with approval-aware entrypoints
-- **i18n** — Chinese/English UI, extensible
-- **Auth Plugin SDK** — Pluggable authentication (LDAP, OIDC, custom)
+- Approval workflows for create, modify, start, stop, restart, and delete
+- Multi-cluster Kubernetes/KubeVirt management
+- Platform RBAC plus System, Service, and VM membership inheritance
+- Environment-scoped global role bindings
+- Full audit trail for governed resource changes
+- VNC and serial console entrypoints
+- Chinese and English UI
+- Auth provider plugin SDK for LDAP, OIDC, and custom integrations
+- PostgreSQL-only runtime architecture with River Queue for async work
 
 ## Architecture
 
-```
-Web UI (React 19 + Next.js 16)  ──REST──▶  Go Backend (Gin)  ──▶  PostgreSQL 18
-                                                               ──▶  KubeVirt clusters (client-go)
+```text
+Web UI (React 19 + Next.js 16)
+  -> Go Backend (Gin)
+  -> PostgreSQL 18
+  -> Kubernetes/KubeVirt clusters
 ```
 
-**Design principles:** PostgreSQL-only (no Redis / external MQ), async-first
-via River Queue, contract-first API (OpenAPI), 53 ADRs governing all technical
-decisions. See [docs/design/](docs/design/) for details.
+Shepherd intentionally avoids Redis and external message queues in the default
+architecture. PostgreSQL stores business state, audit data, credentials, and
+River background jobs. API changes are contract-first through OpenAPI, and
+architecture decisions are tracked in [docs/adr/](docs/adr/).
 
 ## Project Status
 
-> ⚠️ **Alpha** — The core governance capabilities — approval workflows, RBAC,
-> audit trails, and VM lifecycle management — have been validated through
-> internal production use within a financial-services team. We consider these
-> core functions production-capable.
->
-> The Alpha designation reflects a conservative assessment for external
-> adopters: every environment is different, and UX refinements, peripheral
-> features, and operational tooling are still being iterated. We label the
-> project Alpha not because the platform is unstable, but because broader
-> community feedback is needed to validate it across diverse environments.
->
-> **We welcome your feedback** — bug reports, feature requests, and usage
-> experiences all help raise the project's maturity. Please open an
-> [Issue](https://github.com/kv-shepherd/shepherd/issues).
+Shepherd is currently **Alpha**. The core governance paths - approval workflows,
+RBAC, audit trails, and VM lifecycle management - have been validated through
+internal production use in a financial-services Kubernetes/KubeVirt
+environment. The Alpha label is intentionally conservative while broader
+external feedback is gathered across different clusters, storage classes, auth
+providers, and operating policies.
 
-See [CHANGELOG.md](CHANGELOG.md) for release details.
+See [CHANGELOG.md](CHANGELOG.md) for release details and
+[ROADMAP.md](ROADMAP.md) for planned work.
 
 ## Quick Start
 
 ### Local Development
 
-Use the local source-based workflow for actual development work.
+Use this path when you want to modify Shepherd or run the full stack from the
+current source tree.
+
+Prerequisites:
+
+- Git
+- Go 1.25.10 or newer
+- Node.js 22 or newer with npm
+- Docker 24 or newer with Docker Compose v2
+- A Kubernetes/KubeVirt cluster is optional for development, but required for
+  real VM lifecycle operations
 
 ```bash
-# Start all services (frontend + backend + database)
+git clone https://github.com/kv-shepherd/shepherd.git
+cd shepherd
+git pull --ff-only origin main
+
+# Start frontend, backend, nginx, and a local PostgreSQL 18 container.
 ./start-dev.sh
 
-# Start from a clean local database
+# Start from a clean local database when you intentionally want a reset.
 ./start-dev.sh --clean-all
-
-# Or build from source
-make generate   # Ent ORM + OpenAPI + sqlc code generation
-make build      # Go binary → bin/shepherd
-make docker     # Docker image → kubevirt-shepherd:latest
-
-# Frontend
-cd web && npm ci && npm run dev
 ```
 
 | Endpoint | URL |
 |----------|-----|
 | Web UI | `http://localhost:3000` |
-| API | `http://localhost:8080` |
+| HTTPS dev ingress | `https://localhost:3443` |
+| API, through ingress | `http://localhost:3000/api/v1` |
+| API, direct backend | `http://localhost:8080/api/v1` |
 
 Local development seeds only the platform bootstrap baseline:
+
 - built-in roles
 - default admin account: `admin / admin`
 - first sign-in requires a password change
 
-Local dev preserves the existing database by default. Use `--clean-all` only
-when you intentionally want a fresh local environment.
-
-### GitHub Codespaces
-
-Use Codespaces as a browser-based technical entry point for the real product.
-It builds the current source tree, boots the full platform stack, and seeds
-sample data so contributors and KubeVirt community users can inspect and debug
-the running system directly.
-
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/kv-shepherd/shepherd?quickstart=1)
-
-#### Try it in Codespaces
-
-1. Click **Open in GitHub Codespaces**.
-2. Wait for the container bootstrap to finish.
-3. Open the forwarded **Shepherd UI** port if the browser does not open automatically.
-4. Sign in with one of the seeded accounts:
-   - `admin / admin`
-   - `test / test`
-
-Codespaces behavior:
-
-- first create builds `server` and `web` from the checked-out source tree
-- the first bootstrap starts from a clean database and seeds baseline data plus extended experience fixtures
-- later Codespace restarts reuse the existing data, and automatically rebuild `server` / `web` when the checked-out runtime source changes
-- the helper script still supports an explicit rebuild path when you want fresh images without wiping seeded data
-- the first start can still take a few minutes because the source images are built and the seed fixtures are loaded inside the Codespace
-
-Default Codespaces sign-in:
-- `admin / admin`
-- `test / test`
-- Codespaces starts with seeded product data, but it does **not** assume a live K8s/KubeVirt cluster is available. VM create, power, modify, delete, and console flows depend on a real cluster connection and can fail with normal availability or cluster-health errors until one is configured.
-
-### Prerequisites
-
-Go 1.25+ · Node.js 22+ · PostgreSQL 18+ · Docker 24+
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development setup.
-
-## Deployment
-
-Shepherd provides a Docker Compose-based production topology (`server` + `web`
-+ `nginx` + optional bundled PostgreSQL) with a one-click deploy script:
+Common development commands:
 
 ```bash
-bash deploy/prod/deploy-prod.sh --with-seed   # first deploy
+make generate   # Ent ORM + OpenAPI + sqlc code generation
+make build      # Go server binary -> bin/shepherd
+make test       # Go tests; PostgreSQL packages use postgres:18 test containers
+
+cd web
+npm ci
+npm run dev
+```
+
+### Deployment From Release Images
+
+The default production path uses GitHub-published container images from GHCR
+and does not require a git checkout or `git pull` on the target host. It only
+requires Docker, Docker Compose v2, outbound access to `ghcr.io` and
+`raw.githubusercontent.com`, and a PostgreSQL 18 database.
+
+For production, use a PostgreSQL 18 instance you operate yourself and pass
+`DATABASE_URL` before `bash`. With `DEPLOY_BUNDLED_POSTGRES=false`, the deploy
+script will not start the bundled `postgres:18` compose service.
+
+```bash
+mkdir -p shepherd-deploy
+cd shepherd-deploy
+
+# Set this to the GitHub Release you want to deploy.
+# GHCR image tags omit the leading "v".
+SHEPHERD_VERSION=0.1.1-alpha.5
+DEPLOY_SCRIPT_REF=main
+
+curl -fsSL "https://raw.githubusercontent.com/kv-shepherd/shepherd/${DEPLOY_SCRIPT_REF}/deploy/prod/deploy-prod.sh" | \
+  DEPLOY_ASSET_REF="${DEPLOY_SCRIPT_REF}" \
+  SERVER_IMAGE="ghcr.io/kv-shepherd/shepherd-server:${SHEPHERD_VERSION}" \
+  WEB_IMAGE="ghcr.io/kv-shepherd/shepherd-web:${SHEPHERD_VERSION}" \
+  SERVER_PUBLIC_BASE_URL="https://shepherd.example.com" \
+  DATABASE_URL="postgres://shepherd:replace-me"@"postgres.example.com:5432/shepherd_db?sslmode=require" \
+  DEPLOY_BUNDLED_POSTGRES=false \
+  bash -s -- --skip-build --with-seed
+```
+
+Notes for the first run:
+
+- Image tags use the release version without the leading `v`.
+- `DEPLOY_SCRIPT_REF` selects the public deploy helper and compose/nginx assets;
+  `main` is the default path for the latest one-command deploy flow.
+- `SERVER_PUBLIC_BASE_URL` must be the external HTTPS URL users will open.
+- The script writes generated secrets and bootstrap credentials to `.env.prod`;
+  back up this file.
+- If TLS files are missing, a self-signed certificate is generated for initial
+  testing. Replace it with a CA-issued certificate for production.
+- The first deploy should use `--with-seed` to create built-in roles and the
+  initial `admin` account.
+
+If you need a single-host evaluation install without an external database, omit
+`DATABASE_URL` and `DEPLOY_BUNDLED_POSTGRES=false`; the same script will start
+the bundled PostgreSQL 18 service.
+
+Useful production commands from the deployment directory:
+
+```bash
+docker compose -f docker-compose.prod.yml -p shepherd-prod ps
+docker compose -f docker-compose.prod.yml -p shepherd-prod logs -f
+docker compose -f docker-compose.prod.yml -p shepherd-prod down
+```
+
+### Source Build Deployment
+
+Use source-build deployment only when you intentionally want the target host to
+build local backend and frontend images from a checkout.
+
+```bash
+git clone https://github.com/kv-shepherd/shepherd.git
+cd shepherd
+git pull --ff-only origin main
+bash deploy/prod/deploy-prod.sh --with-seed
 ```
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full deployment guide,
-configuration reference, security checklist, and VPS experience seed setup.
+configuration reference, security checklist, manual compose flow, and VPS
+experience seed setup.
+
+### Helm Deployment
+
+A Helm chart is the next Kubernetes-native deployment target. It is not shipped
+in this repository yet. The chart should use the same GHCR release images,
+prefer an external PostgreSQL 18 database, and map the current compose
+configuration into Kubernetes Secrets, Deployments, Services, Ingress, and
+health probes.
+
+Until the chart lands, use the release-image Docker Compose deployment above
+for production and VPS installs.
 
 ## Documentation
 
-- [Website](https://www.kv-shepherd.io) — Project overview and getting started
-- [docs/README.md](docs/README.md) — Documentation index & 5-minute quick start
-- [docs/adr/](docs/adr/) — 53 Architecture Decision Records
-- [docs/design/](docs/design/) — Implementation specifications
-- [docs/RELEASE.md](docs/RELEASE.md) — Release process
-- [ROADMAP.md](ROADMAP.md) — Project roadmap
-- [ADOPTERS.md](ADOPTERS.md) — Who is using Shepherd
+- [docs/README.md](docs/README.md) - Documentation index and quick start
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) - Deployment guide and security checklist
+- [docs/adr/](docs/adr/) - Architecture Decision Records
+- [docs/design/](docs/design/) - Design and implementation notes
+- [docs/RELEASE.md](docs/RELEASE.md) - Release process
+- [ADOPTERS.md](ADOPTERS.md) - Organizations using Shepherd
 
 ## Community
 
-We welcome **all forms of feedback** — bug reports, feature suggestions, usage
-stories, and governance ideas. Your input helps shape the project direction.
+Feedback from real environments is especially useful while the project is in
+Alpha.
 
-- [GitHub Issues][issues] — Bug reports and feature requests
-- [Contributing](CONTRIBUTING.md) — PR workflow, CI gates, coding standards
-- [Code of Conduct](CODE_OF_CONDUCT.md) — Community standards
-- [Governance](GOVERNANCE.md) — Project governance
-- [Security](SECURITY.md) — Vulnerability reporting
-- [Adopters](ADOPTERS.md) — Organizations using Shepherd
+- [GitHub Issues][issues] - Bug reports and feature requests
+- [Contributing](CONTRIBUTING.md) - PR workflow, CI gates, and coding standards
+- [Code of Conduct](CODE_OF_CONDUCT.md) - Community standards
+- [Governance](GOVERNANCE.md) - Project governance
+- [Security](SECURITY.md) - Vulnerability reporting
 
 ## License
 
-Apache License 2.0 — See [LICENSE](LICENSE).
+Apache License 2.0 - See [LICENSE](LICENSE).
 
-    Copyright The KubeVirt Shepherd Authors.
+Copyright The KubeVirt Shepherd Authors.
 
 [kubevirt]: https://kubevirt.io
 [issues]: https://github.com/kv-shepherd/shepherd/issues
