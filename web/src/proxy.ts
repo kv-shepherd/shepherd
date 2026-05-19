@@ -33,8 +33,57 @@ const forwardedRequestHeaderAllowList = new Set([
   "user-agent",
 ]);
 
+function parseBooleanEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  switch (value.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true;
+    case "0":
+    case "false":
+    case "no":
+    case "off":
+      return false;
+    default:
+      return undefined;
+  }
+}
+
+export function shouldSendHTTPSOnlyHeaders(): boolean {
+  const isProduction = process.env.NODE_ENV === "production";
+  if (!isProduction) {
+    return false;
+  }
+
+  const explicit = parseBooleanEnv(process.env.SHEPHERD_ENABLE_HSTS);
+  if (explicit !== undefined) {
+    return explicit;
+  }
+
+  const rawPublicBaseURL = (
+    process.env.SHEPHERD_PUBLIC_BASE_URL ||
+    process.env.SERVER_PUBLIC_BASE_URL ||
+    ""
+  ).trim();
+  if (!rawPublicBaseURL) {
+    return true;
+  }
+
+  try {
+    return new URL(rawPublicBaseURL).protocol === "https:";
+  } catch {
+    return true;
+  }
+}
+
 function buildContentSecurityPolicy(nonce: string): string {
   const isProduction = process.env.NODE_ENV === "production";
+  const sendHTTPSOnlyHeaders = shouldSendHTTPSOnlyHeaders();
   const scriptSources = ["'self'", `'nonce-${nonce}'`, "'strict-dynamic'"];
   const styleSources = ["'self'", isProduction ? `'nonce-${nonce}'` : "'unsafe-inline'"];
   const connectSources = ["'self'"];
@@ -56,7 +105,7 @@ function buildContentSecurityPolicy(nonce: string): string {
     "frame-ancestors 'none'",
   ];
 
-  if (isProduction) {
+  if (sendHTTPSOnlyHeaders) {
     directives.push("upgrade-insecure-requests");
   }
 
@@ -65,6 +114,9 @@ function buildContentSecurityPolicy(nonce: string): string {
 
 function applyCspToResponse(response: NextResponse, nonce: string): NextResponse {
   response.headers.set("Content-Security-Policy", buildContentSecurityPolicy(nonce));
+  if (shouldSendHTTPSOnlyHeaders()) {
+    response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
   return response;
 }
 

@@ -75,8 +75,9 @@ describe("proxy", () => {
     expect(loginResponse.headers.get("location")).toBeNull();
   });
 
-  it("emits nonce-based CSP in production", () => {
+  it("emits nonce-based CSP without HTTPS-only directives for HTTP public URLs", () => {
     vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHEPHERD_PUBLIC_BASE_URL", "http://shepherd.example.com");
 
     const response = proxy(makeRequest("https://shepherd.example.com/dashboard", "shepherd_session=session-token"));
     const csp = response.headers.get("content-security-policy");
@@ -85,7 +86,19 @@ describe("proxy", () => {
     expect(csp).toContain("'strict-dynamic'");
     expect(csp).toContain("style-src 'self' 'nonce-");
     expect(csp).not.toContain("'unsafe-inline'");
+    expect(csp).not.toContain("upgrade-insecure-requests");
+    expect(response.headers.get("strict-transport-security")).toBeNull();
+  });
+
+  it("emits HTTPS-only headers for HTTPS public URLs", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHEPHERD_PUBLIC_BASE_URL", "https://shepherd.example.com");
+
+    const response = proxy(makeRequest("https://shepherd.example.com/dashboard", "shepherd_session=session-token"));
+    const csp = response.headers.get("content-security-policy");
+
     expect(csp).toContain("upgrade-insecure-requests");
+    expect(response.headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");
   });
 
   it("forwards only allow-listed request headers plus CSP nonce", () => {
