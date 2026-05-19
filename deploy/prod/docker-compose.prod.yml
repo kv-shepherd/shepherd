@@ -82,6 +82,7 @@ services:
       NODE_ENV: production
       NEXT_PUBLIC_API_URL: /api/v1
       INTERNAL_API_URL: http://server:${SERVER_PORT:-8080}
+      SHEPHERD_PUBLIC_BASE_URL: ${SERVER_PUBLIC_BASE_URL:-https://localhost}
       PORT: 3000
       HOSTNAME: "0.0.0.0"
     depends_on:

@@ -15,6 +15,52 @@ const allowedDevOrigins = (process.env.DEV_ALLOWED_ORIGINS || "")
   .filter(Boolean);
 const isProduction = process.env.NODE_ENV === "production";
 
+function parseBooleanEnv(value: string | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  switch (value.trim().toLowerCase()) {
+    case "1":
+    case "true":
+    case "yes":
+    case "on":
+      return true;
+    case "0":
+    case "false":
+    case "no":
+    case "off":
+      return false;
+    default:
+      return undefined;
+  }
+}
+
+function shouldSendHSTS(): boolean {
+  if (!isProduction) {
+    return false;
+  }
+
+  const explicit = parseBooleanEnv(process.env.SHEPHERD_ENABLE_HSTS);
+  if (explicit !== undefined) {
+    return explicit;
+  }
+
+  const rawPublicBaseURL = (
+    process.env.SHEPHERD_PUBLIC_BASE_URL ||
+    process.env.SERVER_PUBLIC_BASE_URL ||
+    ""
+  ).trim();
+  if (!rawPublicBaseURL) {
+    return true;
+  }
+
+  try {
+    return new URL(rawPublicBaseURL).protocol === "https:";
+  } catch {
+    return true;
+  }
+}
+
 function resolveInternalAPIURL(): string {
   const raw = process.env.INTERNAL_API_URL || "http://localhost:8080";
   let parsed: URL;
@@ -96,7 +142,7 @@ const nextConfig: NextConfig = {
         value: "camera=(), microphone=(), geolocation=()",
       },
     ];
-    if (isProduction) {
+    if (shouldSendHSTS()) {
       securityHeaders.push({
         key: "Strict-Transport-Security",
         value: "max-age=31536000; includeSubDomains",
