@@ -3692,6 +3692,72 @@ a {
   border-color: #cbd5e1 !important;
 }
 
+/* Single-column centered layout for change-password / standalone auth pages */
+.auth-shell__single {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.auth-shell__single-logo {
+  display: flex;
+  justify-content: center;
+}
+
+/* Change password: strength meter + requirement checklist */
+.change-password__strength {
+  margin-top: -16px;
+  margin-bottom: 16px;
+}
+
+.change-password__strength-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.change-password__requirements {
+  margin-bottom: 24px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.change-password__requirements-title.ant-typography {
+  display: block;
+  margin-bottom: 8px;
+  color: #475569 !important;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.change-password__requirements-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.change-password__requirement {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #94a3b8;
+  transition: color 0.2s ease;
+}
+
+.change-password__requirement.is-ok {
+  color: #10b981;
+}
+
 .audit-feed-card {
   display: flex;
   flex-direction: column;

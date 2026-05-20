@@ -8,10 +8,10 @@ you do not point `DATABASE_URL` at an external database.
 
 | Service | Image | Role |
 |---------|-------|------|
-| **db** | `postgres:18` | Optional bundled data persistence service |
+| **db** | `postgres:18` by default | Optional bundled data persistence service |
 | **server** | `ghcr.io/kv-shepherd/shepherd-server` by default | Go API backend (distroless runtime) |
 | **web** | `ghcr.io/kv-shepherd/shepherd-web` by default | Next.js SSR frontend |
-| **nginx** | `nginx:1.27-alpine` | TLS termination, reverse proxy, rate limiting |
+| **nginx** | `nginx:1.30.1-alpine` by default | TLS termination, reverse proxy, rate limiting |
 
 ## Deploying from Release Images
 
@@ -68,6 +68,10 @@ does not start the bundled database. Override with
 
 Resolved image refs and generated secrets are persisted to `.env.prod` in the
 deployment directory.
+
+For private or offline registries, set `SERVER_IMAGE`, `WEB_IMAGE`, and
+optionally `POSTGRES_IMAGE` or `NGINX_IMAGE` to full image references before
+running the script.
 
 ## Deploying from Source Build
 
@@ -171,6 +175,9 @@ cluster, export `E2E_KUBECONFIG_PATH=/path/to/kubeconfig` (or
 |----------|-------------|
 | `DATABASE_URL` | PostgreSQL connection string; `deploy-prod.sh` creates a bundled PostgreSQL DSN when blank |
 | `DEPLOY_BUNDLED_POSTGRES` | `auto`, `true`, or `false` to control bundled vs external PostgreSQL topology |
+| `SERVER_IMAGE` / `WEB_IMAGE` | Published Shepherd server and web image references |
+| `POSTGRES_IMAGE` | Bundled PostgreSQL image reference; default `postgres:18` |
+| `NGINX_IMAGE` | Docker Compose edge proxy image reference; default `nginx:1.30.1-alpine` |
 | `SECURITY_SESSION_SECRET` | Session-signing secret; `deploy-prod.sh` generates and persists one when blank |
 | `SECURITY_ENCRYPTION_KEY` | Hex-encoded AES-256 data-encryption key; `deploy-prod.sh` generates and persists one when blank |
 | `SERVER_PUBLIC_BASE_URL` | External URL; defaults to `https://localhost` when blank |

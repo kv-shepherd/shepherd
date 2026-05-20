@@ -34,6 +34,14 @@
             "placeholder_key": "instanceSizes.mask.eviction_strategy_placeholder"
         },
         {
+            "path": "spec.template.spec.domain.ioThreadsPolicy",
+            "display_name": "IOThreads Policy",
+            "display_name_key": "instanceSizes.mask.io_threads_policy",
+            "help_key": "instanceSizes.mask.io_threads_policy_help",
+            "placeholder": "auto",
+            "placeholder_key": "instanceSizes.mask.io_threads_policy_placeholder"
+        },
+        {
             "path": "spec.template.spec.domain.cpu.threads",
             "display_name": "CPU Threads",
             "display_name_key": "instanceSizes.mask.cpu_threads"

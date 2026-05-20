@@ -37,6 +37,7 @@ func TestValidateSpecOverrides_ValidPaths(t *testing.T) {
 			name: "multiple valid paths",
 			overrides: map[string]interface{}{
 				"spec.template.spec.domain.cpu.cores":                          4,
+				"spec.template.spec.domain.ioThreadsPolicy":                    "auto",
 				"spec.template.spec.domain.memory.hugepages.pageSize":          "2Mi",
 				"spec.template.spec.domain.devices.networkInterfaceMultiqueue": true,
 			},

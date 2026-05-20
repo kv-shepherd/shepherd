@@ -26,7 +26,7 @@ amends or supersedes the old decision.
 | Database | PostgreSQL 18 baseline; Ent, sqlc, and River share one pgx pool |
 | OpenAPI | `api/openapi.yaml` is OpenAPI `3.1.0` with 135 `operationId`s |
 | Ent schema count | 33 schema files under `ent/schema/` |
-| KubeVirt baseline | `kubevirt.io/api` and `kubevirt.io/client-go` `v1.8.1` |
+| KubeVirt baseline | `kubevirt.io/api` and `kubevirt.io/client-go` `v1.8.2` |
 | Kubernetes baseline | `k8s.io/*` `v0.34.3` |
 | Frontend stack | React 19.2, Next.js 16.2, Ant Design 5, TanStack Query 5, Zustand 5 |
 | Frontend route files | 29 App Router `page.tsx` files, including root and compatibility/alias routes |

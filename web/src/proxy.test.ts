@@ -6,9 +6,12 @@ import { buildForwardedRequestHeaders, proxy } from "./proxy";
 const originalLoginEntry = process.env.NEXT_PUBLIC_LOGIN_ENTRY_PATH;
 const originalSessionCookie = process.env.SESSION_COOKIE;
 
-function makeRequest(url: string, cookieHeader?: string) {
+function makeRequest(url: string, cookieHeader?: string, headers?: Record<string, string>) {
   return new NextRequest(url, {
-    headers: cookieHeader ? { cookie: cookieHeader } : undefined,
+    headers: {
+      ...(headers || {}),
+      ...(cookieHeader ? { cookie: cookieHeader } : {}),
+    },
   });
 }
 
@@ -99,6 +102,91 @@ describe("proxy", () => {
 
     expect(csp).toContain("upgrade-insecure-requests");
     expect(response.headers.get("strict-transport-security")).toBe("max-age=31536000; includeSubDomains");
+  });
+
+  it("redirects HTTP web requests to HTTPS when HTTPS-only headers are enabled", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHEPHERD_PUBLIC_BASE_URL", "https://shepherd.example.com");
+
+    const response = proxy(makeRequest("http://shepherd.example.com/dashboard"));
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://shepherd.example.com/dashboard");
+  });
+
+  it("does not redirect internal HTTP probe requests for a different host", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHEPHERD_PUBLIC_BASE_URL", "https://shepherd.example.com");
+
+    const response = proxy(makeRequest("http://10.6.101.184:3000/"));
+
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("redirects forwarded external HTTP requests when the forwarded host matches", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHEPHERD_PUBLIC_BASE_URL", "https://shepherd.example.com");
+
+    const response = proxy(
+      makeRequest("http://shepherd-web.shepherd.svc.cluster.local/dashboard", undefined, {
+        host: "shepherd-web.shepherd.svc.cluster.local",
+        "x-forwarded-host": "shepherd.example.com",
+        "x-forwarded-proto": "http",
+      }),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://shepherd.example.com/dashboard");
+  });
+
+  it("does not redirect ingress-terminated HTTPS requests back through HTTP", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHEPHERD_PUBLIC_BASE_URL", "https://shepherd.example.com");
+
+    const response = proxy(
+      makeRequest(
+        "http://shepherd-web.shepherd.svc.cluster.local/dashboard",
+        "shepherd_session=session-token",
+        {
+          host: "shepherd-web.shepherd.svc.cluster.local",
+          "x-forwarded-host": "shepherd.example.com",
+          "x-forwarded-proto": "https",
+        },
+      ),
+    );
+
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it("uses forwarded scheme and host for protected-route login redirects", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHEPHERD_PUBLIC_BASE_URL", "https://shepherd.example.com");
+
+    const response = proxy(
+      makeRequest("http://shepherd-web.shepherd.svc.cluster.local/dashboard", undefined, {
+        host: "shepherd-web.shepherd.svc.cluster.local",
+        "x-forwarded-host": "shepherd.example.com",
+        "x-forwarded-proto": "https",
+      }),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://shepherd.example.com/login");
+  });
+
+  it("uses the configured public origin instead of the internal request port", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("SHEPHERD_PUBLIC_BASE_URL", "https://shepherd.example.com");
+
+    const response = proxy(
+      makeRequest("http://shepherd.example.com:3000/dashboard", undefined, {
+        host: "shepherd.example.com:3000",
+        "x-forwarded-proto": "https",
+      }),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe("https://shepherd.example.com/login");
   });
 
   it("forwards only allow-listed request headers plus CSP nonce", () => {

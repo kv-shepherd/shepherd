@@ -1267,6 +1267,7 @@ func TestRenderVMSpecToYAML_ProductionGradeFullSpec(t *testing.T) {
 		SpecOverrides: map[string]interface{}{
 			"spec.template.spec.architecture":                            "amd64",
 			"spec.template.spec.domain.cpu.model":                        "host-passthrough",
+			"spec.template.spec.domain.ioThreadsPolicy":                  "auto",
 			"spec.template.spec.domain.memory.guest":                     "8Gi",
 			"spec.template.spec.evictionStrategy":                        "LiveMigrate",
 			"spec.template.spec.terminationGracePeriodSeconds":           int64(0),
@@ -1303,6 +1304,7 @@ func TestRenderVMSpecToYAML_ProductionGradeFullSpec(t *testing.T) {
 		"volumeMode: Block",
 		"architecture: amd64",
 		"model: host-passthrough",
+		"ioThreadsPolicy: auto",
 		"evictionStrategy: LiveMigrate",
 		"livenessProbe:",
 		"guestAgentPing:",

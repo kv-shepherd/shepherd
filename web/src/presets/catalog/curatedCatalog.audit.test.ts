@@ -54,6 +54,7 @@ describe('curatedCatalog internal audit', () => {
             expect(getAtPath(parsed, 'spec.template.spec.domain.memory.guest')).toBeUndefined();
             expect(getAtPath(parsed, 'spec.template.spec.domain.resources')).toBeUndefined();
 
+            expect(getAtPath(parsed, 'spec.template.spec.domain.ioThreadsPolicy')).toBe('auto');
             expect(getNameList(parsed, 'spec.template.spec.domain.devices.disks')).toEqual(
                 expect.arrayContaining(['rootfs', 'cloudinitdisk']),
             );

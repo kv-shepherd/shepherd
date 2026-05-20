@@ -88,6 +88,7 @@ const linuxBaseSpec = {
                     cpu: {
                         model: 'host-passthrough',
                     },
+                    ioThreadsPolicy: 'auto',
                     devices: {
                         autoattachSerialConsole: true,
                         autoattachMemBalloon: false,
@@ -156,6 +157,7 @@ const windowsBaseSpec = {
                         sockets: 1,
                         threads: 1,
                     },
+                    ioThreadsPolicy: 'auto',
                     clock: {
                         utc: {},
                         timer: {

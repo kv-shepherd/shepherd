@@ -128,6 +128,7 @@ persist_resolved_images() {
 
 CONFIG_ENV_KEYS=(
     POSTGRES_USER
+    POSTGRES_IMAGE
     POSTGRES_PASSWORD
     POSTGRES_DB
     DATABASE_URL
@@ -151,6 +152,7 @@ CONFIG_ENV_KEYS=(
     DEV_ADMIN_PASSWORD
     SERVER_IMAGE
     WEB_IMAGE
+    NGINX_IMAGE
     NGINX_HTTP_PORT
     NGINX_HTTPS_PORT
 )
@@ -198,6 +200,8 @@ Environment overrides:
   DEPLOY_COMPOSE_PROJECT_NAME  Alternate docker compose project name
   SERVER_IMAGE                 Server image tag to build/run
   WEB_IMAGE                    Web image tag to build/run
+  POSTGRES_IMAGE               Bundled PostgreSQL image (default: postgres:18)
+  NGINX_IMAGE                  Edge proxy image (default: nginx:1.30.1-alpine)
 
 Deployment configuration values such as DATABASE_URL,
 DEPLOY_BUNDLED_POSTGRES, SERVER_PUBLIC_BASE_URL, SECURITY_*,
@@ -697,7 +701,7 @@ elif [[ "${SKIP_BUILD}" == "1" ]]; then
         echo "Build phase skipped. Images selected:"
         echo "  - ${SERVER_IMAGE}"
         echo "  - ${WEB_IMAGE}"
-        echo "  - nginx:1.27-alpine"
+        echo "  - ${NGINX_IMAGE:-nginx:1.30.1-alpine}"
         exit 0
     fi
 elif [[ "${SOURCE_TREE_AVAILABLE}" != "1" ]]; then
@@ -707,7 +711,7 @@ elif [[ "${SOURCE_TREE_AVAILABLE}" != "1" ]]; then
         echo "Release images selected:"
         echo "  - ${SERVER_IMAGE}"
         echo "  - ${WEB_IMAGE}"
-        echo "  - nginx:1.27-alpine"
+        echo "  - ${NGINX_IMAGE:-nginx:1.30.1-alpine}"
         exit 0
     fi
 else
@@ -737,9 +741,9 @@ else
         "${ROOT_DIR}/web"
     echo "  ✓ ${WEB_IMAGE} built"
 
-    echo "[3/3] Pulling nginx:1.27-alpine..."
-    docker pull nginx:1.27-alpine >/dev/null 2>&1 || true
-    echo "  ✓ nginx:1.27-alpine ready"
+    echo "[3/3] Pulling ${NGINX_IMAGE:-nginx:1.30.1-alpine}..."
+    docker pull "${NGINX_IMAGE:-nginx:1.30.1-alpine}" >/dev/null 2>&1 || true
+    echo "  ✓ ${NGINX_IMAGE:-nginx:1.30.1-alpine} ready"
     if [[ "${BUNDLED_POSTGRES}" == "1" ]]; then
         echo "  ✓ bundled PostgreSQL topology selected (${BUNDLED_POSTGRES_MODE})"
     else
@@ -751,7 +755,7 @@ else
         echo "Build complete. Images ready:"
         echo "  - ${SERVER_IMAGE}"
         echo "  - ${WEB_IMAGE}"
-        echo "  - nginx:1.27-alpine"
+        echo "  - ${NGINX_IMAGE:-nginx:1.30.1-alpine}"
         exit 0
     fi
 fi

@@ -92,6 +92,10 @@ This starts the latest published GHCR images with bundled PostgreSQL 18 and a
 local TLS endpoint. Generated secrets, bootstrap credentials, and resolved image
 refs are persisted to `.env.prod`; back up that file.
 
+Domain and external PostgreSQL inputs are optional. When needed, pass
+`SERVER_PUBLIC_BASE_URL`, `DATABASE_URL`, and `DEPLOY_BUNDLED_POSTGRES=false`
+before `bash`.
+
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for external PostgreSQL 18,
 domain/TLS configuration, image version pinning, manual compose commands, and
 the security checklist.
@@ -135,9 +139,24 @@ configuration reference, security checklist, and VPS experience seed setup.
 ### Helm Deployment
 
 Helm charts are maintained separately in
-[kv-shepherd/helm-charts](https://github.com/kv-shepherd/helm-charts). Use that
-repository for Kubernetes-native installs; this application repository keeps
-release-image Docker Compose as the default host and VPS deployment path.
+[kv-shepherd/helm-charts](https://github.com/kv-shepherd/helm-charts). The
+published chart uses public Docker Hub images by default.
+
+Demo install without an Ingress controller or persistent database storage:
+
+```bash
+helm repo add shepherd https://kv-shepherd.github.io/helm-charts
+helm repo update
+helm upgrade --install shepherd shepherd/shepherd \
+  --namespace shepherd --create-namespace \
+  --set postgresql.persistence.enabled=false
+
+kubectl -n shepherd port-forward svc/shepherd-edge 3443:443
+```
+
+Open `https://127.0.0.1:3443`. See the chart repository for NodePort/IP access,
+Ingress with TLS, persistent PostgreSQL, external database values, and
+managed-cluster RBAC examples.
 
 ## Documentation
 
