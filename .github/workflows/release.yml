@@ -60,6 +60,7 @@ jobs:
     timeout-minutes: 15
     needs: [preflight]
     strategy:
+      fail-fast: false
       matrix:
         arch: [amd64, arm64]
     steps:
@@ -96,7 +97,7 @@ jobs:
             "${ATLAS_IMAGE}"
           docker cp "${atlas_container}:/atlas" dist/atlas
           docker rm -f "${atlas_container}" >/dev/null
-          chmod +x dist/atlas
+          chmod 0755 dist/atlas
           mkdir -p dist/share/shepherd/migrations
           cp -R migrations/atlas dist/share/shepherd/migrations/atlas
 
