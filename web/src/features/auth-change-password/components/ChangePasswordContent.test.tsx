@@ -13,6 +13,11 @@ vi.mock('next/image', () => ({
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
+        i18n: {
+            language: 'en',
+            resolvedLanguage: 'en',
+            changeLanguage: vi.fn(),
+        },
         t: (key: string) => {
             const labels: Record<string, string> = {
                 'auth.security': 'Security',
@@ -25,6 +30,10 @@ vi.mock('react-i18next', () => ({
                 'validation.password_min': 'Password is too short',
                 'validation.confirm_password_required': 'Please confirm password',
                 'validation.password_mismatch': 'Passwords do not match',
+                'auth.password_requirements': 'Password requirements',
+                'auth.password_req_min_length': 'At least 8 characters',
+                'auth.password_req_not_common': 'Not common',
+                'auth.password_req_not_identifier': 'Different from identifiers',
             };
             return labels[key] ?? key;
         },

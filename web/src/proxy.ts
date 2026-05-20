@@ -81,6 +81,27 @@ export function shouldSendHTTPSOnlyHeaders(): boolean {
   }
 }
 
+function resolveConfiguredPublicURL(protocol?: "http" | "https"): URL | undefined {
+  const rawPublicBaseURL = (
+    process.env.SHEPHERD_PUBLIC_BASE_URL ||
+    process.env.SERVER_PUBLIC_BASE_URL ||
+    ""
+  ).trim();
+  if (!rawPublicBaseURL) {
+    return undefined;
+  }
+
+  try {
+    const publicURL = new URL(rawPublicBaseURL);
+    if (protocol && publicURL.protocol !== `${protocol}:`) {
+      return undefined;
+    }
+    return publicURL;
+  } catch {
+    return undefined;
+  }
+}
+
 function buildContentSecurityPolicy(nonce: string): string {
   const isProduction = process.env.NODE_ENV === "production";
   const sendHTTPSOnlyHeaders = shouldSendHTTPSOnlyHeaders();
@@ -118,6 +139,66 @@ function applyCspToResponse(response: NextResponse, nonce: string): NextResponse
     response.headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
   }
   return response;
+}
+
+function firstForwardedHeaderValue(value: string | null): string {
+  return (value || "").split(",")[0]?.trim() || "";
+}
+
+function resolveOriginalProtocol(request: NextRequest): "http" | "https" | undefined {
+  const forwardedProto = firstForwardedHeaderValue(request.headers.get("x-forwarded-proto"))
+    .toLowerCase();
+  if (forwardedProto === "http" || forwardedProto === "https") {
+    return forwardedProto;
+  }
+
+  const protocol = request.nextUrl.protocol.replace(":", "").toLowerCase();
+  if (protocol === "http" || protocol === "https") {
+    return protocol;
+  }
+  return undefined;
+}
+
+function resolveHTTPSPublicHost(): string | undefined {
+  return resolveConfiguredPublicURL("https")?.host.toLowerCase();
+}
+
+function shouldRedirectHTTPToHTTPS(request: NextRequest, originalProtocol: string | undefined): boolean {
+  if (!shouldSendHTTPSOnlyHeaders() || originalProtocol !== "http") {
+    return false;
+  }
+
+  const publicHost = resolveHTTPSPublicHost();
+  if (!publicHost) {
+    return false;
+  }
+
+  const forwardedHost = firstForwardedHeaderValue(request.headers.get("x-forwarded-host")).toLowerCase();
+  const host = (
+    firstForwardedHeaderValue(request.headers.get("host")) || request.nextUrl.host
+  ).toLowerCase();
+  return forwardedHost === publicHost || host === publicHost;
+}
+
+function buildExternalURL(
+  request: NextRequest,
+  protocol: "http" | "https",
+  pathname?: string,
+): URL {
+  const publicURL = resolveConfiguredPublicURL(protocol);
+  const url = publicURL ? new URL(publicURL.origin) : request.nextUrl.clone();
+  url.protocol = `${protocol}:`;
+  url.pathname = pathname || request.nextUrl.pathname;
+  url.search = pathname ? "" : request.nextUrl.search;
+
+  if (!publicURL) {
+    const forwardedHost = firstForwardedHeaderValue(request.headers.get("x-forwarded-host"));
+    const host = forwardedHost || firstForwardedHeaderValue(request.headers.get("host"));
+    if (host) {
+      url.host = host;
+    }
+  }
+  return url;
 }
 
 export function buildForwardedRequestHeaders(headers: Headers, nonce: string): Headers {
@@ -168,9 +249,17 @@ export function proxy(request: NextRequest) {
   const loginPath = resolveLoginPath();
   const pathname = request.nextUrl.pathname;
   const hasSession = request.cookies.has(resolveSessionCookieName());
+  const originalProtocol = resolveOriginalProtocol(request);
+
+  if (shouldRedirectHTTPToHTTPS(request, originalProtocol)) {
+    return applyCspToResponse(NextResponse.redirect(buildExternalURL(request, "https")), nonce);
+  }
 
   if (isProtectedPath(pathname) && !hasSession) {
-    return applyCspToResponse(NextResponse.redirect(new URL(loginPath, request.url)), nonce);
+    return applyCspToResponse(
+      NextResponse.redirect(buildExternalURL(request, originalProtocol || "https", loginPath)),
+      nonce,
+    );
   }
 
   const requestHeaders = buildForwardedRequestHeaders(request.headers, nonce);
