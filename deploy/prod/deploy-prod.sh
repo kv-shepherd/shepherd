@@ -3,9 +3,13 @@
 # KubeVirt Shepherd — Production Deployment Script
 # =============================================================================
 # Usage:
-#   bash deploy/prod/deploy-prod.sh                    # Public deploy (no bootstrap seed)
-#   bash deploy/prod/deploy-prod.sh --with-seed        # Public deploy + bootstrap seed
-#   bash deploy/prod/deploy-prod.sh --with-seed --with-experience-seed
+#   bash deploy/prod/deploy-prod.sh --release-images
+#                                                # Public deploy from published images
+#   bash deploy/prod/deploy-prod.sh --release-images --with-seed
+#                                                # Public deploy + bootstrap seed
+#   bash deploy/prod/deploy-prod.sh --source-build --with-seed
+#                                                # Build local images from a checkout
+#   bash deploy/prod/deploy-prod.sh --release-images --with-seed --with-experience-seed
 #                                                 # Public deploy + baseline seed + experience fixtures
 #   bash deploy/prod/deploy-prod.sh --enterprise       # Enterprise edition
 #   bash deploy/prod/deploy-prod.sh --build-only       # Build images only
@@ -41,6 +45,7 @@ DEPLOY_ASSET_REF="${DEPLOY_ASSET_REF:-main}"
 DEPLOY_RAW_BASE="${DEPLOY_RAW_BASE:-https://raw.githubusercontent.com/kv-shepherd/shepherd/${DEPLOY_ASSET_REF}}"
 DEPLOY_RELEASE_VERSION="${DEPLOY_RELEASE_VERSION:-${SHEPHERD_VERSION:-}}"
 RESOLVED_RELEASE_VERSION=""
+DEPLOY_IMAGE_MODE="${DEPLOY_IMAGE_MODE:-auto}"
 
 strip_release_prefix() {
     local version="$1"
@@ -93,18 +98,52 @@ resolve_image_defaults() {
         release_version_requested=1
     fi
 
-    if [[ "${SOURCE_TREE_AVAILABLE}" == "1" && "${release_version_requested}" == "0" ]]; then
-        SERVER_IMAGE="${SERVER_IMAGE:-shepherd-server:latest}"
-        WEB_IMAGE="${WEB_IMAGE:-shepherd-web:latest}"
+    local use_source_build=0
+    local force_release_images=0
+    case "${DEPLOY_IMAGE_MODE}" in
+        source-build)
+            ensure_source_tree_for_build
+            use_source_build=1
+            ;;
+        release-images)
+            force_release_images=1
+            use_source_build=0
+            ;;
+        auto|"")
+            if [[ "${SOURCE_TREE_AVAILABLE}" == "1" && "${release_version_requested}" == "0" ]]; then
+                use_source_build=1
+            fi
+            ;;
+        *)
+            echo "ERROR: DEPLOY_IMAGE_MODE must be one of: auto, release-images, source-build" >&2
+            exit 1
+            ;;
+    esac
+
+    if [[ "${use_source_build}" == "1" ]]; then
+        if [[ -z "${CONFIG_ENV_OVERRIDES[SERVER_IMAGE]+x}" ]]; then
+            SERVER_IMAGE="shepherd-server:latest"
+        else
+            SERVER_IMAGE="${CONFIG_ENV_OVERRIDES[SERVER_IMAGE]}"
+        fi
+        if [[ -z "${CONFIG_ENV_OVERRIDES[WEB_IMAGE]+x}" ]]; then
+            WEB_IMAGE="shepherd-web:latest"
+        else
+            WEB_IMAGE="${CONFIG_ENV_OVERRIDES[WEB_IMAGE]}"
+        fi
     else
         local need_server_image=0
         local need_web_image=0
         local version=""
 
-        if [[ -z "${SERVER_IMAGE:-}" ]] || { [[ "${release_version_requested}" == "1" ]] && [[ -z "${CONFIG_ENV_OVERRIDES[SERVER_IMAGE]+x}" ]]; }; then
+        if [[ -z "${SERVER_IMAGE:-}" ]] \
+            || { [[ "${force_release_images}" == "1" ]] && [[ -z "${CONFIG_ENV_OVERRIDES[SERVER_IMAGE]+x}" ]]; } \
+            || { [[ "${release_version_requested}" == "1" ]] && [[ -z "${CONFIG_ENV_OVERRIDES[SERVER_IMAGE]+x}" ]]; }; then
             need_server_image=1
         fi
-        if [[ -z "${WEB_IMAGE:-}" ]] || { [[ "${release_version_requested}" == "1" ]] && [[ -z "${CONFIG_ENV_OVERRIDES[WEB_IMAGE]+x}" ]]; }; then
+        if [[ -z "${WEB_IMAGE:-}" ]] \
+            || { [[ "${force_release_images}" == "1" ]] && [[ -z "${CONFIG_ENV_OVERRIDES[WEB_IMAGE]+x}" ]]; } \
+            || { [[ "${release_version_requested}" == "1" ]] && [[ -z "${CONFIG_ENV_OVERRIDES[WEB_IMAGE]+x}" ]]; }; then
             need_web_image=1
         fi
 
@@ -179,6 +218,10 @@ usage() {
 Usage: deploy-prod.sh [options]
 
 Options:
+  --release-images Deploy published GHCR release images. Use this for curl/wget
+                   installs and normal single-host/VPS production deployments.
+  --source-build   Build server and web images from the local repository
+                   checkout. Requires the full source tree.
   --enterprise     Deploy enterprise edition (requires private repo)
   --build-only     Build images only, do not start services
   --with-seed      Run bootstrap seed after startup (roles + default admin)
@@ -192,8 +235,9 @@ Options:
 Environment overrides:
   DEPLOY_ENV_FILE              Alternate .env.prod path
   DEPLOY_DIR                   Directory used when running this script via stdin
+  DEPLOY_IMAGE_MODE            auto, release-images, or source-build
   DEPLOY_ASSET_REF             Git ref used for auto-downloaded deploy assets
-  SHEPHERD_VERSION             GHCR release image version for stdin/raw deploys.
+  SHEPHERD_VERSION             GHCR release image version for --release-images.
                                If unset, deploy-prod.sh resolves the latest
                                GitHub Release tag.
   DEPLOY_TLS_DIR               Alternate TLS cert/key directory
@@ -579,6 +623,22 @@ resolve_bundled_postgres_mode() {
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
+        --release-images)
+            if [[ "${DEPLOY_IMAGE_MODE}" == "source-build" ]]; then
+                echo "ERROR: --release-images and --source-build are mutually exclusive"
+                exit 1
+            fi
+            DEPLOY_IMAGE_MODE="release-images"
+            shift
+            ;;
+        --source-build)
+            if [[ "${DEPLOY_IMAGE_MODE}" == "release-images" ]]; then
+                echo "ERROR: --source-build and --release-images are mutually exclusive"
+                exit 1
+            fi
+            DEPLOY_IMAGE_MODE="source-build"
+            shift
+            ;;
         --enterprise)
             ENTERPRISE_MODE=1
             shift
@@ -704,8 +764,12 @@ elif [[ "${SKIP_BUILD}" == "1" ]]; then
         echo "  - ${NGINX_IMAGE:-nginx:1.30.1-alpine}"
         exit 0
     fi
-elif [[ "${SOURCE_TREE_AVAILABLE}" != "1" ]]; then
-    echo "Skipping build phase (release-image deployment; no source tree found)."
+elif [[ "${DEPLOY_IMAGE_MODE}" == "release-images" || "${SOURCE_TREE_AVAILABLE}" != "1" ]]; then
+    if [[ "${DEPLOY_IMAGE_MODE}" == "release-images" ]]; then
+        echo "Skipping build phase (--release-images)."
+    else
+        echo "Skipping build phase (release-image deployment; no source tree found)."
+    fi
     if [[ "${BUILD_ONLY}" == "1" ]]; then
         echo ""
         echo "Release images selected:"

@@ -75,7 +75,29 @@ See [CHANGELOG.md](CHANGELOG.md) for release details and
 
 ## Quick Start
 
-### Deploy From Release Images
+### Helm Deployment
+
+Use this path for Kubernetes-native installs. Helm charts are maintained
+separately in [kv-shepherd/helm-charts](https://github.com/kv-shepherd/helm-charts),
+and the published chart uses public Docker Hub images by default.
+
+Demo install without an Ingress controller or persistent database storage:
+
+```bash
+helm repo add shepherd https://kv-shepherd.github.io/helm-charts
+helm repo update
+helm upgrade --install shepherd shepherd/shepherd \
+  --namespace shepherd --create-namespace \
+  --set postgresql.persistence.enabled=false
+
+kubectl -n shepherd port-forward svc/shepherd-edge 3443:443
+```
+
+Open `https://127.0.0.1:3443`. See the chart repository for NodePort/IP access,
+Ingress with TLS, persistent PostgreSQL, external database values, and
+managed-cluster RBAC examples.
+
+### Docker Compose From Release Images
 
 Use this path for production or VPS installs. It uses GHCR release images and
 does not require a git checkout on the target host.
@@ -85,7 +107,8 @@ GitHub release assets.
 
 ```bash
 mkdir -p shepherd-deploy && cd shepherd-deploy
-curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | bash -s -- --with-seed
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  bash -s -- --release-images --with-seed
 ```
 
 This starts the latest published GHCR images with bundled PostgreSQL 18 and a
@@ -121,7 +144,7 @@ Default local endpoints:
 - HTTPS dev ingress: `https://localhost:3443`
 - API: `http://localhost:3000/api/v1`
 
-### Source Build Deployment
+### Docker Compose From Source Build
 
 Use source-build deployment only when you intentionally want the target host to
 build local backend and frontend images from a checkout.
@@ -130,33 +153,14 @@ build local backend and frontend images from a checkout.
 git clone https://github.com/kv-shepherd/shepherd.git
 cd shepherd
 git pull --ff-only origin main
-bash deploy/prod/deploy-prod.sh --with-seed
+bash deploy/prod/deploy-prod.sh --source-build --with-seed
 ```
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full deployment guide,
+Both Docker Compose paths use `deploy-prod.sh`, but the mode flag is deliberate:
+`--release-images` runs published images and can be used from `curl`; `--source-build`
+requires a git checkout and builds local images before starting the stack. See
+[docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for the full deployment guide,
 configuration reference, security checklist, and VPS experience seed setup.
-
-### Helm Deployment
-
-Helm charts are maintained separately in
-[kv-shepherd/helm-charts](https://github.com/kv-shepherd/helm-charts). The
-published chart uses public Docker Hub images by default.
-
-Demo install without an Ingress controller or persistent database storage:
-
-```bash
-helm repo add shepherd https://kv-shepherd.github.io/helm-charts
-helm repo update
-helm upgrade --install shepherd shepherd/shepherd \
-  --namespace shepherd --create-namespace \
-  --set postgresql.persistence.enabled=false
-
-kubectl -n shepherd port-forward svc/shepherd-edge 3443:443
-```
-
-Open `https://127.0.0.1:3443`. See the chart repository for NodePort/IP access,
-Ingress with TLS, persistent PostgreSQL, external database values, and
-managed-cluster RBAC examples.
 
 ## Documentation
 

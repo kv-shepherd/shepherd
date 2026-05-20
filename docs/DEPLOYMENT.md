@@ -1,10 +1,37 @@
 # Production Deployment
 
-Shepherd ships with a Docker Compose-based production topology built around
-`server`, `web`, and `nginx`, with an optional bundled PostgreSQL service when
-you do not point `DATABASE_URL` at an external database.
+Shepherd supports two public deployment paths:
 
-## Service Architecture
+- Helm for Kubernetes-native installs.
+- Docker Compose for single-host, VPS, or source-build installs.
+
+## Helm Deployment
+
+Use this path when deploying Shepherd into Kubernetes. Helm charts are maintained
+separately in [kv-shepherd/helm-charts](https://github.com/kv-shepherd/helm-charts).
+The published chart uses public Docker Hub images by default.
+
+Demo install without an Ingress controller or persistent database storage:
+
+```bash
+helm repo add shepherd https://kv-shepherd.github.io/helm-charts
+helm repo update
+helm upgrade --install shepherd shepherd/shepherd \
+  --namespace shepherd --create-namespace \
+  --set postgresql.persistence.enabled=false
+
+kubectl -n shepherd port-forward svc/shepherd-edge 3443:443
+```
+
+Open `https://127.0.0.1:3443`. See the chart repository for NodePort/IP access,
+Ingress with TLS, persistent PostgreSQL, external database values, and
+managed-cluster RBAC examples.
+
+## Docker Compose Service Architecture
+
+The Docker Compose topology is built around `server`, `web`, and `nginx`, with
+an optional bundled PostgreSQL service when you do not point `DATABASE_URL` at
+an external database.
 
 | Service | Image | Role |
 |---------|-------|------|
@@ -13,7 +40,7 @@ you do not point `DATABASE_URL` at an external database.
 | **web** | `ghcr.io/kv-shepherd/shepherd-web` by default | Next.js SSR frontend |
 | **nginx** | `nginx:1.30.1-alpine` by default | TLS termination, reverse proxy, rate limiting |
 
-## Deploying from Release Images
+## Docker Compose from Release Images
 
 Use this path for production or VPS hosts that should run published GHCR images
 without a git checkout.
@@ -29,13 +56,15 @@ a generated self-signed TLS certificate:
 
 ```bash
 mkdir -p shepherd-deploy && cd shepherd-deploy
-curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | bash -s -- --with-seed
+curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  bash -s -- --release-images --with-seed
 ```
 
 `wget` works too:
 
 ```bash
-wget -qO- https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | bash -s -- --with-seed
+wget -qO- https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
+  bash -s -- --release-images --with-seed
 ```
 
 All runtime inputs are optional. Pass them before `bash` only when you need to
@@ -43,13 +72,13 @@ override the default topology:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
-  SERVER_PUBLIC_BASE_URL=https://shepherd.example.com bash -s -- --with-seed
+  SERVER_PUBLIC_BASE_URL=https://shepherd.example.com bash -s -- --release-images --with-seed
 
 curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
-  DATABASE_URL='<postgres-18-dsn>' DEPLOY_BUNDLED_POSTGRES=false bash -s -- --with-seed
+  DATABASE_URL='<postgres-18-dsn>' DEPLOY_BUNDLED_POSTGRES=false bash -s -- --release-images --with-seed
 
 curl -fsSL https://raw.githubusercontent.com/kv-shepherd/shepherd/main/deploy/prod/deploy-prod.sh | \
-  SHEPHERD_VERSION='vX.Y.Z' bash -s -- --with-seed
+  SHEPHERD_VERSION='vX.Y.Z' bash -s -- --release-images --with-seed
 ```
 
 Use PostgreSQL 18 for external databases. The bundled `postgres:18` container
@@ -73,7 +102,7 @@ For private or offline registries, set `SERVER_IMAGE`, `WEB_IMAGE`, and
 optionally `POSTGRES_IMAGE` or `NGINX_IMAGE` to full image references before
 running the script.
 
-## Deploying from Source Build
+## Docker Compose from Source Build
 
 Use source-build deployment only when you intentionally want the target host to
 build local backend and frontend images from a checkout.
@@ -82,11 +111,16 @@ build local backend and frontend images from a checkout.
 git clone https://github.com/kv-shepherd/shepherd.git
 cd shepherd
 git pull --ff-only origin main
-bash deploy/prod/deploy-prod.sh --with-seed
+bash deploy/prod/deploy-prod.sh --source-build --with-seed
 ```
 
 For source builds, `deploy-prod.sh` uses local image tags by default unless you
-set `SHEPHERD_VERSION`, `SERVER_IMAGE`, or `WEB_IMAGE`.
+set `SERVER_IMAGE` or `WEB_IMAGE`.
+
+Both Docker Compose paths use `deploy-prod.sh`, but the mode flag is deliberate:
+`--release-images` runs published images and can be used from `curl` or `wget`;
+`--source-build` requires a git checkout and builds local images before
+starting the stack.
 
 ## Deployment Script Behavior
 
@@ -104,10 +138,11 @@ On the default bundled PostgreSQL path, `deploy-prod.sh` will automatically:
 Additional script entry points:
 
 ```bash
-bash deploy-prod.sh              # deploy using release images
-bash deploy-prod.sh --with-seed  # first deploy/bootstrap
-bash deploy-prod.sh --with-seed --with-experience-seed
-bash deploy-prod.sh --help       # all options
+bash deploy-prod.sh --release-images
+bash deploy-prod.sh --release-images --with-seed
+bash deploy-prod.sh --release-images --with-seed --with-experience-seed
+bash deploy-prod.sh --source-build --with-seed
+bash deploy-prod.sh --help
 ```
 
 ### Manual Docker Compose Path
@@ -153,7 +188,7 @@ production deployment topology and add the extended experience seed instead of
 using a separate demo mode:
 
 ```bash
-bash deploy/prod/deploy-prod.sh --with-seed --with-experience-seed
+bash deploy/prod/deploy-prod.sh --source-build --with-seed --with-experience-seed
 ```
 
 This keeps the normal `server` + `web` + `nginx` + PostgreSQL deployment path
