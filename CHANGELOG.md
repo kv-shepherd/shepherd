@@ -5,6 +5,78 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.6](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.5...v0.1.1-alpha.6) (2026-05-19)
+
+
+### Features
+
+* **activity:** add i18n message contracts ([#575](https://github.com/kv-shepherd/shepherd/issues/575)) ([4d61e88](https://github.com/kv-shepherd/shepherd/commit/4d61e88074be8802f68f1c864cd7c1b6c501a049)), closes [#574](https://github.com/kv-shepherd/shepherd/issues/574)
+* add external approval polling endpoints ([#616](https://github.com/kv-shepherd/shepherd/issues/616)) ([bd32d48](https://github.com/kv-shepherd/shepherd/commit/bd32d48ffe7ce79a8475a7f572881189110b4c7e)), closes [#615](https://github.com/kv-shepherd/shepherd/issues/615)
+* add external approval registry admin wiring ([#612](https://github.com/kv-shepherd/shepherd/issues/612)) ([58b8e2d](https://github.com/kv-shepherd/shepherd/commit/58b8e2dcb7c4a0eae7c74d93cdd3f06c59ff93e4)), closes [#611](https://github.com/kv-shepherd/shepherd/issues/611)
+* add signed external approval callback ([#614](https://github.com/kv-shepherd/shepherd/issues/614)) ([5fe9579](https://github.com/kv-shepherd/shepherd/commit/5fe95790590d31abfb1a61379e202e5e4e1be34e)), closes [#613](https://github.com/kv-shepherd/shepherd/issues/613)
+* add VM tombstone cleanup ([#618](https://github.com/kv-shepherd/shepherd/issues/618)) ([e0bfb80](https://github.com/kv-shepherd/shepherd/commit/e0bfb80155264a1ae17efe4bd919367af9524540)), closes [#617](https://github.com/kv-shepherd/shepherd/issues/617)
+* harden auth and catalog compatibility ([#659](https://github.com/kv-shepherd/shepherd/issues/659)) ([3dabefe](https://github.com/kv-shepherd/shepherd/commit/3dabefe8910c031a5f10ec97b79d354cf47aa1d7)), closes [#658](https://github.com/kv-shepherd/shepherd/issues/658)
+* **vm:** add operation readiness features ([#610](https://github.com/kv-shepherd/shepherd/issues/610)) ([339d6f8](https://github.com/kv-shepherd/shepherd/commit/339d6f86a5a3bbebfc6c1be691e0d72e8e46ad67)), closes [#609](https://github.com/kv-shepherd/shepherd/issues/609)
+
+
+### Bug Fixes
+
+* **activity:** localize audit resource events ([#583](https://github.com/kv-shepherd/shepherd/issues/583)) ([6949efc](https://github.com/kv-shepherd/shepherd/commit/6949efc2982e929e439053c5f455a88f61a11219)), closes [#581](https://github.com/kv-shepherd/shepherd/issues/581)
+* **admin:** align namespace access and shell footer ([#564](https://github.com/kv-shepherd/shepherd/issues/564)) ([042bb54](https://github.com/kv-shepherd/shepherd/commit/042bb54fe40fa57f0c2a72aefa53aeeb10032ead))
+* align container Go baseline ([#627](https://github.com/kv-shepherd/shepherd/issues/627)) ([9078d2f](https://github.com/kv-shepherd/shepherd/commit/9078d2fd77c1c6d472a64684ba61cce2f8ec8e3a)), closes [#626](https://github.com/kv-shepherd/shepherd/issues/626)
+* **approval:** keep preflight failures pending ([#603](https://github.com/kv-shepherd/shepherd/issues/603)) ([ff9be84](https://github.com/kv-shepherd/shepherd/commit/ff9be842c4938f33debf7dd57e30bad9d042d55e)), closes [#602](https://github.com/kv-shepherd/shepherd/issues/602)
+* **auth:** clear stale session cookies ([#669](https://github.com/kv-shepherd/shepherd/issues/669)) ([4eecb09](https://github.com/kv-shepherd/shepherd/commit/4eecb09d7a9fbaca94e5cbf9f3358480173fbc29)), closes [#668](https://github.com/kv-shepherd/shepherd/issues/668)
+* **auth:** harden session and login protection flows ([#586](https://github.com/kv-shepherd/shepherd/issues/586)) ([#587](https://github.com/kv-shepherd/shepherd/issues/587)) ([a36015d](https://github.com/kv-shepherd/shepherd/commit/a36015d032daa3e74eff0bd5c4ca04468c7f91b5))
+* **auth:** harden session revocation and trust boundaries ([#589](https://github.com/kv-shepherd/shepherd/issues/589)) ([3206f0b](https://github.com/kv-shepherd/shepherd/commit/3206f0bee5ffef1a8c92597ec020021be4ab0862))
+* **auth:** keep standard login route local ([#671](https://github.com/kv-shepherd/shepherd/issues/671)) ([639d443](https://github.com/kv-shepherd/shepherd/commit/639d44327b6312c07b08a52c8349c60bdb808369)), closes [#670](https://github.com/kv-shepherd/shepherd/issues/670)
+* **demo:** restore read-only admin views ([#557](https://github.com/kv-shepherd/shepherd/issues/557)) ([d2f3cb6](https://github.com/kv-shepherd/shepherd/commit/d2f3cb6593dad4dcd55cecc740231476d853da39)), closes [#556](https://github.com/kv-shepherd/shepherd/issues/556)
+* **deploy:** harden startup migrations ([#577](https://github.com/kv-shepherd/shepherd/issues/577)) ([2cfc53e](https://github.com/kv-shepherd/shepherd/commit/2cfc53e18630f0e9423732db5f83f17d7074ff87)), closes [#576](https://github.com/kv-shepherd/shepherd/issues/576)
+* **deploy:** make migrations artifact-owned ([#644](https://github.com/kv-shepherd/shepherd/issues/644)) ([e74efb5](https://github.com/kv-shepherd/shepherd/commit/e74efb5a0a576020ec0aa2fafb149f7228d2c597)), closes [#641](https://github.com/kv-shepherd/shepherd/issues/641)
+* **deploy:** repair production deploy flow ([#552](https://github.com/kv-shepherd/shepherd/issues/552)) ([4ceb038](https://github.com/kv-shepherd/shepherd/commit/4ceb038e25a55706bbd7f696166cba180cc5d98c)), closes [#551](https://github.com/kv-shepherd/shepherd/issues/551)
+* **deploy:** resolve release image defaults ([#679](https://github.com/kv-shepherd/shepherd/issues/679)) ([4e4f86b](https://github.com/kv-shepherd/shepherd/commit/4e4f86b3b0a92734021aa4a7e83cc8be748be1d0)), closes [#678](https://github.com/kv-shepherd/shepherd/issues/678)
+* **deploy:** simplify release image defaults ([#677](https://github.com/kv-shepherd/shepherd/issues/677)) ([e23d839](https://github.com/kv-shepherd/shepherd/commit/e23d8395753843046df603282be9080d3c0cb8eb)), closes [#676](https://github.com/kv-shepherd/shepherd/issues/676)
+* **deploy:** support release image bootstrap ([#675](https://github.com/kv-shepherd/shepherd/issues/675)) ([df2605c](https://github.com/kv-shepherd/shepherd/commit/df2605cdf99f218a4d4ada1d783ac2c1811220bc)), closes [#674](https://github.com/kv-shepherd/shepherd/issues/674)
+* **deps:** update fast-uri lockfile ([#643](https://github.com/kv-shepherd/shepherd/issues/643)) ([041cf97](https://github.com/kv-shepherd/shepherd/commit/041cf9713148b0a78f938ddd9102e62b559734d3)), closes [#642](https://github.com/kv-shepherd/shepherd/issues/642)
+* gate web hsts by public base url ([123f67b](https://github.com/kv-shepherd/shepherd/commit/123f67ba445fce25ba152f312989b85b98748f99))
+* harden HTTP body and web build gates ([#569](https://github.com/kv-shepherd/shepherd/issues/569)) ([2d09b24](https://github.com/kv-shepherd/shepherd/commit/2d09b2478976a76e79129386579aa6232b8df544)), closes [#568](https://github.com/kv-shepherd/shepherd/issues/568)
+* harden River worker concurrency config ([#622](https://github.com/kv-shepherd/shepherd/issues/622)) ([ea9a0e4](https://github.com/kv-shepherd/shepherd/commit/ea9a0e4c2d30b36a57470d8e43ed15f7366632ef)), closes [#621](https://github.com/kv-shepherd/shepherd/issues/621)
+* make https-only web headers runtime aware ([2ef0852](https://github.com/kv-shepherd/shepherd/commit/2ef0852b7caa3ebf69f0f6e77b884290168644e8))
+* **queue:** harden claim-check atomicity ([#661](https://github.com/kv-shepherd/shepherd/issues/661)) ([3cd7e77](https://github.com/kv-shepherd/shepherd/commit/3cd7e770a3cbe86f7b7e02fbf5fbbd85b9d788d3)), closes [#660](https://github.com/kv-shepherd/shepherd/issues/660)
+* **rbac:** align contracts with granular auth ([#555](https://github.com/kv-shepherd/shepherd/issues/555)) ([971e74a](https://github.com/kv-shepherd/shepherd/commit/971e74a9be3d63cdaaf852dce4a57fe8f71640a3)), closes [#554](https://github.com/kv-shepherd/shepherd/issues/554)
+* **security:** harden auth callback boundaries ([#595](https://github.com/kv-shepherd/shepherd/issues/595)) ([4f17170](https://github.com/kv-shepherd/shepherd/commit/4f17170f54c85e829d81a56397e71c0fe18ec770)), closes [#594](https://github.com/kv-shepherd/shepherd/issues/594)
+* **security:** harden kubeconfig and CSP ([#591](https://github.com/kv-shepherd/shepherd/issues/591)) ([e83d3d6](https://github.com/kv-shepherd/shepherd/commit/e83d3d66924e0f28687f13fb75415ef8b0fd297a)), closes [#590](https://github.com/kv-shepherd/shepherd/issues/590)
+* **security:** harden proxy and session boundary ([#593](https://github.com/kv-shepherd/shepherd/issues/593)) ([8e41f12](https://github.com/kv-shepherd/shepherd/commit/8e41f1284f461c1952cbd0faedc9297744b6b195)), closes [#592](https://github.com/kv-shepherd/shepherd/issues/592)
+* **security:** harden public controls ([#654](https://github.com/kv-shepherd/shepherd/issues/654)) ([050d25b](https://github.com/kv-shepherd/shepherd/commit/050d25bd19225c613f131e2a5ebe2868535cbcb4))
+* update Go security baseline ([#625](https://github.com/kv-shepherd/shepherd/issues/625)) ([7b8b78f](https://github.com/kv-shepherd/shepherd/commit/7b8b78fabac7aa2c1f2c8f9f1e713db5a041a5a4)), closes [#624](https://github.com/kv-shepherd/shepherd/issues/624)
+* validate create approvals before retry ([#566](https://github.com/kv-shepherd/shepherd/issues/566)) ([97a77df](https://github.com/kv-shepherd/shepherd/commit/97a77df83b31c985c38e52a5964f7d89f2864882)), closes [#565](https://github.com/kv-shepherd/shepherd/issues/565)
+* **validation:** harden governance names ([#630](https://github.com/kv-shepherd/shepherd/issues/630)) ([2840d5e](https://github.com/kv-shepherd/shepherd/commit/2840d5e79e878137b4f0e89995baaa86544432d2)), closes [#629](https://github.com/kv-shepherd/shepherd/issues/629)
+* **vm:** carry live status resourceVersion ([#673](https://github.com/kv-shepherd/shepherd/issues/673)) ([53ce47c](https://github.com/kv-shepherd/shepherd/commit/53ce47cebce5f30f7a66b257d69a069c411ab4c5)), closes [#672](https://github.com/kv-shepherd/shepherd/issues/672)
+* **web:** align read-only admin RBAC ([#559](https://github.com/kv-shepherd/shepherd/issues/559)) ([39d2674](https://github.com/kv-shepherd/shepherd/commit/39d2674f418e81923dc1e1319fc89dfaab6ce556))
+* **web:** align setup guide quick actions with RBAC ([#561](https://github.com/kv-shepherd/shepherd/issues/561)) ([b7a3fe5](https://github.com/kv-shepherd/shepherd/commit/b7a3fe56d150074ef1a920e0eaebc012edfea038))
+* **web:** clarify admin UI surfaces ([#571](https://github.com/kv-shepherd/shepherd/issues/571)) ([7920594](https://github.com/kv-shepherd/shepherd/commit/792059404bb5a83a7970024b68cb51a0951861a1)), closes [#570](https://github.com/kv-shepherd/shepherd/issues/570)
+* **web:** compact request row actions ([#584](https://github.com/kv-shepherd/shepherd/issues/584)) ([b375924](https://github.com/kv-shepherd/shepherd/commit/b3759240d88a7c7602d3e1c19d431126a4f78cc8)), closes [#580](https://github.com/kv-shepherd/shepherd/issues/580)
+* **web:** compact service row actions ([#579](https://github.com/kv-shepherd/shepherd/issues/579)) ([717ade6](https://github.com/kv-shepherd/shepherd/commit/717ade6bcf34bcae94b117da646bab3bd46defcc)), closes [#578](https://github.com/kv-shepherd/shepherd/issues/578)
+* **web:** polish shell header controls ([#585](https://github.com/kv-shepherd/shepherd/issues/585)) ([9127f55](https://github.com/kv-shepherd/shepherd/commit/9127f55758bcbb67487cde8bc34e8d30a6684e5e)), closes [#582](https://github.com/kv-shepherd/shepherd/issues/582)
+* **web:** polish systems UI and PR gate ([#573](https://github.com/kv-shepherd/shepherd/issues/573)) ([1ad830b](https://github.com/kv-shepherd/shepherd/commit/1ad830bd85fe50103a0f9ecc54d33cf9d3625b3c)), closes [#572](https://github.com/kv-shepherd/shepherd/issues/572)
+
+
+### Documentation
+
+* align Phase 3 manual DI gate docs ([#620](https://github.com/kv-shepherd/shepherd/issues/620)) ([c08158f](https://github.com/kv-shepherd/shepherd/commit/c08158fafe2072c074121ad3025a8e3d07de939a)), closes [#619](https://github.com/kv-shepherd/shepherd/issues/619)
+* align Phase 4 V1 governance scope ([#628](https://github.com/kv-shepherd/shepherd/issues/628)) ([6536dcf](https://github.com/kv-shepherd/shepherd/commit/6536dcf5890beb4a4003d38e3ae2962a97506b7a)), closes [#623](https://github.com/kv-shepherd/shepherd/issues/623)
+* **api:** complete OpenAPI warning metadata ([#600](https://github.com/kv-shepherd/shepherd/issues/600)) ([f17352b](https://github.com/kv-shepherd/shepherd/commit/f17352babe7c7c16d6a8fcfa372e661a624e1013)), closes [#596](https://github.com/kv-shepherd/shepherd/issues/596)
+* **api:** describe OpenAPI parameters and tags ([#599](https://github.com/kv-shepherd/shepherd/issues/599)) ([65693d4](https://github.com/kv-shepherd/shepherd/commit/65693d4a91ed1783896f29316a21a589d9605fd0)), closes [#596](https://github.com/kv-shepherd/shepherd/issues/596)
+* **api:** describe OpenAPI request bodies ([#598](https://github.com/kv-shepherd/shepherd/issues/598)) ([f09dd77](https://github.com/kv-shepherd/shepherd/commit/f09dd77ef3fb00ed2249f4c4f023aed0234c8dd2)), closes [#596](https://github.com/kv-shepherd/shepherd/issues/596)
+* **ci:** freeze phase 1 credential gate ([#646](https://github.com/kv-shepherd/shepherd/issues/646)) ([aca9873](https://github.com/kv-shepherd/shepherd/commit/aca9873ca7fd0bf7dd70e8246fe82c9ccbbd5620)), closes [#645](https://github.com/kv-shepherd/shepherd/issues/645)
+* **deploy:** clarify migration startup path ([#640](https://github.com/kv-shepherd/shepherd/issues/640)) ([124da3f](https://github.com/kv-shepherd/shepherd/commit/124da3f245ef53ae7f1bb090d750b5323a76dac5)), closes [#639](https://github.com/kv-shepherd/shepherd/issues/639)
+* link helm chart repository ([#681](https://github.com/kv-shepherd/shepherd/issues/681)) ([b17bb64](https://github.com/kv-shepherd/shepherd/commit/b17bb641a3ae3dc3b0970690d35478052a78f271)), closes [#680](https://github.com/kv-shepherd/shepherd/issues/680)
+* refresh project docs ([#567](https://github.com/kv-shepherd/shepherd/issues/567)) ([c77ae1a](https://github.com/kv-shepherd/shepherd/commit/c77ae1a20abded07687eba1e7f0d50ff1fabdad1))
+
+
+### Miscellaneous
+
+* **deps:** consolidate dependency updates ([9da2707](https://github.com/kv-shepherd/shepherd/commit/9da2707b3a9b5ea6e417cf6d4dc840c8a66638b4))
+
 ## [0.1.1-alpha.5](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.4...v0.1.1-alpha.5) (2026-04-21)
 
 
