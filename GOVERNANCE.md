@@ -109,6 +109,7 @@ As the project grows, we may establish:
 
 | Channel | Purpose |
 |---------|---------|
+| 💬 **[Discord](https://discord.gg/9P2wtpPMUe)** | Real-time community chat |
 | 📧 **maintainers@kv-shepherd.io** | Direct maintainer contact |
 | [GitHub Issues](https://github.com/kv-shepherd/shepherd/issues) | Bug reports, feature requests |
 | [GitHub Discussions](https://github.com/kv-shepherd/shepherd/discussions) | General questions, ideas |

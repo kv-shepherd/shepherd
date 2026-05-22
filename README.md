@@ -176,7 +176,9 @@ configuration reference, security checklist, and VPS experience seed setup.
 Feedback from real environments is especially useful while the project is in
 Alpha.
 
+- [Discord](https://discord.gg/9P2wtpPMUe) - Chat with the community
 - [GitHub Issues][issues] - Bug reports and feature requests
+- [GitHub Discussions](https://github.com/kv-shepherd/shepherd/discussions) - Questions and ideas
 - [Contributing](CONTRIBUTING.md) - PR workflow, CI gates, and coding standards
 - [Code of Conduct](CODE_OF_CONDUCT.md) - Community standards
 - [Governance](GOVERNANCE.md) - Project governance

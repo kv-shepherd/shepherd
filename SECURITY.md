@@ -117,6 +117,7 @@ We appreciate responsible disclosure and will acknowledge security researchers w
 ## Contact
 
 For security-related questions that are not vulnerabilities:
+- Join the [Discord](https://discord.gg/9P2wtpPMUe) community
 - Open a [GitHub Discussion](https://github.com/kv-shepherd/shepherd/discussions) with the `security` label
 
 ---

@@ -39,6 +39,9 @@ For Code of Conduct concerns:
 - 📧 **coc@kv-shepherd.io** (confidential)
 - Or open a private issue with the `conduct` label
 
+For general community interaction:
+- 💬 Join our [Discord](https://discord.gg/9P2wtpPMUe)
+
 ---
 
 *This project is committed to providing a welcoming and inclusive experience for everyone.*

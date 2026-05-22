@@ -526,6 +526,7 @@ git rebase --autosquash -i main
 
 ## Getting Help
 
+- Join our [Discord](https://discord.gg/9P2wtpPMUe) for real-time chat
 - Open a [GitHub Discussion](https://github.com/kv-shepherd/shepherd/discussions)
 - Check existing [documentation](docs/)
 - Review related [ADRs](docs/adr/) for design context
