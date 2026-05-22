@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.7](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.6...v0.1.1-alpha.7) (2026-05-22)
+
+
+### Bug Fixes
+
+* package atlas binary in release archives ([#682](https://github.com/kv-shepherd/shepherd/issues/682)) ([a6e05a4](https://github.com/kv-shepherd/shepherd/commit/a6e05a4e99964b345df8869d3555a97cf5245f2b))
+* **runtime:** align deploy and KubeVirt defaults ([#685](https://github.com/kv-shepherd/shepherd/issues/685)) ([87549e3](https://github.com/kv-shepherd/shepherd/commit/87549e3ff747d827b85d2adabe793bf59604ece4)), closes [#684](https://github.com/kv-shepherd/shepherd/issues/684)
+
+
+### Documentation
+
+* **deploy:** clarify deployment modes ([#687](https://github.com/kv-shepherd/shepherd/issues/687)) ([2833efc](https://github.com/kv-shepherd/shepherd/commit/2833efcc31bd1d84b11a66e8a4058f2c8f31ef9e)), closes [#686](https://github.com/kv-shepherd/shepherd/issues/686)
+
+
+### Miscellaneous
+
+* **deps:** aggregate dependency upgrades ([d1ee30c](https://github.com/kv-shepherd/shepherd/commit/d1ee30cb1ae3462bd8ef8d72cc20a11ec524be41))
+
 ## [0.1.1-alpha.6](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.5...v0.1.1-alpha.6) (2026-05-19)
 
 
