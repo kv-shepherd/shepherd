@@ -31,6 +31,7 @@ import {
     getSpecOverrideValue,
     normalizeInstanceSizeSpecOverrides,
     setNestedValue,
+    stripIndexedSpecOverridePaths,
 } from '../specOverrides';
 
 interface UseAdminInstanceSizesControllerArgs {
@@ -151,9 +152,16 @@ function resolveHugepagesRequirement(record: Pick<InstanceSize, 'requires_hugepa
 }
 
 function hydrateSpecOverridesForEditing(instanceSize: InstanceSize): Record<string, unknown> {
-    const specOverrides = normalizeInstanceSizeSpecOverrides(
-        instanceSize.spec_overrides as Record<string, unknown> | undefined,
-    );
+    // Inbound boundary normalization: even if a legacy DB row stored indexed
+    // fields (e.g. dedicatedCpuPlacement) inside spec_overrides, strip them
+    // here so the form-side spec_text never carries those phantom values.
+    // The indexed columns (dedicated_cpu / cpu_cores / memory_gi / ...) remain
+    // the single source of truth (ADR-0018 §4 / ADR-0036).
+    const specOverrides = stripIndexedSpecOverridePaths(
+        normalizeInstanceSizeSpecOverrides(
+            instanceSize.spec_overrides as Record<string, unknown> | undefined,
+        ),
+    ) ?? {};
     const { hugepagesSize } = resolveHugepagesRequirement(instanceSize);
     if (hugepagesSize && getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH) === undefined) {
         setNestedValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH, hugepagesSize);
@@ -263,7 +271,16 @@ function formToPayload(
         try {
             const parsed = JSON.parse(values.spec_text) as unknown;
             if (parsed !== null && !Array.isArray(parsed) && typeof parsed === 'object') {
-                specOverrides = normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>);
+                // Outbound boundary normalization: legacy paths are migrated
+                // to canonical form, then any indexed-column path that may have
+                // slipped in (preset payload, raw JSON edit, legacy DB row)
+                // is stripped so the API contract stays consistent with the
+                // backend ADR-0036 guard. Without this, the dedicated_cpu
+                // checkbox could disagree with a phantom dedicatedCpuPlacement
+                // override surviving from a preset like linux-prod.
+                specOverrides = stripIndexedSpecOverridePaths(
+                    normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>),
+                );
             }
         } catch {
             // Malformed spec_text — ignore, send without spec_overrides

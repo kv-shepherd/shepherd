@@ -94,13 +94,16 @@ describe('useAdminInstanceSizesController', () => {
     useApiActionMock.mockReturnValue({ mutate: deleteMutate, isPending: false });
 
     // spec_text replaces spec_overrides_text; content is KubeVirt VirtualMachineSpec JSON.
+    // The chosen sample field (ioThreadsPolicy) is intentionally NOT an indexed
+    // column, so it survives stripIndexedSpecOverridePaths intact and lets the
+    // test verify the spec_text → spec_overrides parsing path end-to-end.
     createFormState.validateFields.mockResolvedValue({
       name: 'm4.large',
       catalog_scope: 'prod',
       cpu_cores: 4,
       memory_gi: 8,
       enabled: true,
-      spec_text: '{"spec":{"template":{"spec":{"domain":{"resources":{"limits":{"memory":"8Gi"}}}}}}}',
+      spec_text: '{"spec":{"template":{"spec":{"domain":{"ioThreadsPolicy":"auto"}}}}}',
     });
 
     const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
@@ -121,11 +124,7 @@ describe('useAdminInstanceSizesController', () => {
           template: {
             spec: {
               domain: {
-                resources: {
-                  limits: {
-                    memory: '8Gi',
-                  },
-                },
+                ioThreadsPolicy: 'auto',
               },
             },
           },
@@ -466,19 +465,14 @@ describe('useAdminInstanceSizesController', () => {
     expect(result.current.editInitialValues).toEqual(expect.objectContaining({
       dedicated_cpu: true,
       cpu_overcommit_enabled: false,
-      spec_text: JSON.stringify({
-        spec: {
-          template: {
-            spec: {
-              domain: {
-                cpu: {
-                  dedicatedCpuPlacement: true,
-                },
-              },
-            },
-          },
-        },
-      }, null, 2),
+      // spec_text is canonical and indexed-column-free: even though the legacy
+      // DB row stored `dedicatedCpuPlacement: true` inside spec_overrides,
+      // hydrateSpecOverridesForEditing strips that phantom field at the
+      // inbound boundary (ADR-0018 §4). The form still hydrates the indexed
+      // `dedicated_cpu` checkbox to true via hasDedicatedCPURequirement, so
+      // the user keeps the intent without re-entering the now-redundant
+      // override.
+      spec_text: JSON.stringify({}, null, 2),
     }));
   });
 
@@ -515,19 +509,12 @@ describe('useAdminInstanceSizesController', () => {
     expect(result.current.editInitialValues).toEqual(expect.objectContaining({
       dedicated_cpu: true,
       cpu_overcommit_enabled: false,
-      spec_text: JSON.stringify({
-        spec: {
-          template: {
-            spec: {
-              domain: {
-                cpu: {
-                  dedicatedCpuPlacement: true,
-                },
-              },
-            },
-          },
-        },
-      }, null, 2),
+      // Same boundary contract as the previous test: legacy `spec.domain.cpu.
+      // dedicatedCpuPlacement` is migrated to canonical form by
+      // normalizeInstanceSizeSpecOverrides, then stripped by
+      // stripIndexedSpecOverridePaths so spec_text never carries a duplicate
+      // of the indexed `dedicated_cpu` column.
+      spec_text: JSON.stringify({}, null, 2),
     }));
   });
 
@@ -586,19 +573,13 @@ describe('useAdminInstanceSizesController', () => {
       id: 'size-dedicated-legacy',
       body: expect.objectContaining({
         dedicated_cpu: true,
-        spec_overrides: {
-          spec: {
-            template: {
-              spec: {
-                domain: {
-                  cpu: {
-                    dedicatedCpuPlacement: true,
-                  },
-                },
-              },
-            },
-          },
-        },
+        // Outbound boundary contract: legacy `spec.domain.cpu.
+        // dedicatedCpuPlacement` is migrated to canonical form, then the
+        // indexed-column path is stripped by stripIndexedSpecOverridePaths
+        // (ADR-0018 §4). The empty branches are pruned, so the API receives
+        // an empty spec_overrides object instead of a phantom override that
+        // would conflict with the ADR-0036 backend guard.
+        spec_overrides: {},
       }),
     });
   });

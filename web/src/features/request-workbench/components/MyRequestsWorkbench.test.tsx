@@ -1,7 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { TFunction } from 'i18next';
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
@@ -235,6 +235,23 @@ vi.mock('@/components/illustrations/DashboardIllustrations', () => ({
 vi.mock('antd', async () => {
     const actual = await vi.importActual<typeof import('antd')>('antd');
 
+    // Tooltip must be mocked to a passthrough: the real Tooltip reacts to
+    // hover/focus triggers with RAF-based show/hide timers. When userEvent
+    // simulates the full pointer→click event sequence on a Tooltip-wrapped
+    // button, the accumulated animation timers push the test over 10 000 ms.
+    // The test validates click behavior, not tooltip rendering.
+    const Tooltip = ({ children }: { children?: ReactNode }) => <>{children}</>;
+
+    // List must be mocked for the same timer/portal reason — real antd List
+    // uses scroll observation and resize observers that stall jsdom.
+    const ListItem = ({ children, className, style }: { children?: ReactNode; className?: string; style?: CSSProperties }) => (
+        <div data-testid="mock-list-item" className={className} style={style}>{children}</div>
+    );
+    const List = (({ dataSource, renderItem }: { dataSource?: unknown[]; renderItem?: (item: unknown, index: number) => ReactNode }) => (
+        <div data-testid="mock-list">{dataSource?.map((item, index) => <div key={String((item as Record<string, unknown>)?.id ?? index)}>{renderItem?.(item, index)}</div>)}</div>
+    )) as ((props: { dataSource?: unknown[]; renderItem?: (item: unknown, index: number) => ReactNode }) => ReactNode) & { Item: typeof ListItem };
+    List.Item = ListItem;
+
     const Card = ({
         children,
         title,
@@ -379,9 +396,11 @@ vi.mock('antd', async () => {
         Card,
         Descriptions,
         Drawer,
+        List,
         Popover,
         Table,
         Tabs,
+        Tooltip,
     };
 });
 

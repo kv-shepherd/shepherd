@@ -59,9 +59,12 @@ describe('instanceSizePresets', () => {
         expect(preset.catalog_scope).toBe('prod');
         expect(preset.dedicated_cpu).toBe(true);
         expect(preset.cpu_overcommit_enabled).toBe(false);
+        // dedicatedCpuPlacement intentionally absent: the preset relies solely
+        // on the indexed `dedicated_cpu: true` column (ADR-0018 §4 / ADR-0036).
+        // The form would strip it via stripIndexedSpecOverridePaths anyway.
         expect(
             spec.spec?.template?.spec?.domain?.cpu?.dedicatedCpuPlacement,
-        ).toBe(true);
+        ).toBeUndefined();
         expect(
             spec.spec?.template?.spec?.domain?.cpu?.numa,
         ).toBeUndefined();
