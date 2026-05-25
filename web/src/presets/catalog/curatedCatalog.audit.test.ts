@@ -108,7 +108,12 @@ describe('curatedCatalog internal audit', () => {
                 expect(values.memory_overcommit_enabled).toBe(false);
                 expect(values.memory_request_gi).toBeUndefined();
                 expect(values.dedicated_cpu).toBe(true);
-                expect(getAtPath(parsed, 'spec.template.spec.domain.cpu.dedicatedCpuPlacement')).toBe(true);
+                // Per ADR-0018 §4 the indexed `dedicated_cpu` column is the single
+                // source of truth, so prod presets no longer carry
+                // dedicatedCpuPlacement inside spec_text. The boundary cleanse
+                // (stripIndexedSpecOverridePaths in specOverrides.ts) would strip
+                // it anyway, so the audit asserts the source matches the contract.
+                expect(getAtPath(parsed, 'spec.template.spec.domain.cpu.dedicatedCpuPlacement')).toBeUndefined();
                 expect(getAtPath(parsed, 'spec.template.spec.domain.cpu.numa.guestMappingPassthrough')).toBeUndefined();
                 expect(getAtPath(parsed, 'spec.template.spec.domain.memory.hugepages.pageSize')).toBe('2Mi');
             }

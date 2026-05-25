@@ -66,6 +66,7 @@ import {
     type InstanceSizePresetKey,
 } from '../instanceSizePresets';
 import { buildResolvedInstanceSizePreview } from '../resolvedPreview';
+import { INDEXED_SPEC_OVERRIDE_PATHS } from '../specOverrides';
 import {
     formatCores,
     formatMemory,
@@ -85,15 +86,11 @@ import { useDynamicSchema } from '../../admin-templates/hooks/useDynamicSchema';
 
 const { Text } = Typography;
 
-const INSTANCE_SIZE_RECOGNIZED_EXCLUDED_PATHS = [
-    'spec.template.spec.domain.cpu.cores',
-    'spec.template.spec.domain.cpu.dedicatedCpuPlacement',
-    'spec.template.spec.domain.memory.guest',
-    'spec.template.spec.domain.resources.limits.cpu',
-    'spec.template.spec.domain.resources.limits.memory',
-    'spec.template.spec.domain.resources.requests.cpu',
-    'spec.template.spec.domain.resources.requests.memory',
-];
+// DynamicSchemaForm hides these spec paths because they are owned by the
+// InstanceSize indexed columns (cpu_cores / memory_gi / dedicated_cpu / ...).
+// The same list is used at every data boundary by stripIndexedSpecOverridePaths
+// to keep spec_text clean — see specOverrides.ts for the full rationale.
+const INSTANCE_SIZE_RECOGNIZED_EXCLUDED_PATHS: string[] = [...INDEXED_SPEC_OVERRIDE_PATHS];
 
 const ROOT_VOLUME_ACCESS_MODE_OPTIONS = [
     'ReadWriteOnce',

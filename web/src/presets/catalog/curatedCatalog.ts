@@ -389,11 +389,18 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
                             ...linuxBaseSpec.spec.template.spec,
                             domain: {
                                 ...linuxBaseSpec.spec.template.spec.domain,
+                                // dedicatedCpuPlacement is intentionally omitted here:
+                                // per ADR-0018 §4 the indexed `dedicated_cpu` column is the
+                                // single source of truth, and stripIndexedSpecOverridePaths
+                                // (see web/src/features/admin-instance-sizes/specOverrides.ts)
+                                // would strip it on every data boundary anyway. Keeping it
+                                // here used to leak through as a UI-hidden "ghost field"
+                                // and conflicted with the ADR-0036 backend guard whenever an
+                                // operator unchecked dedicated_cpu on the form.
                                 cpu: {
                                     ...linuxBaseSpec.spec.template.spec.domain.cpu,
                                     sockets: 1,
                                     threads: 1,
-                                    dedicatedCpuPlacement: true,
                                     isolateEmulatorThread: false,
                                 },
                                 memory: {
@@ -462,9 +469,11 @@ export const CURATED_INSTANCE_SIZE_PRESET_ITEMS: Array<InstanceSizePresetCatalog
                             ...windowsBaseSpec.spec.template.spec,
                             domain: {
                                 ...windowsBaseSpec.spec.template.spec.domain,
+                                // dedicatedCpuPlacement is intentionally omitted here:
+                                // see linux-prod above for the full rationale (ADR-0018 §4 +
+                                // ADR-0036 + stripIndexedSpecOverridePaths boundary cleanse).
                                 cpu: {
                                     ...windowsBaseSpec.spec.template.spec.domain.cpu,
-                                    dedicatedCpuPlacement: true,
                                     isolateEmulatorThread: false,
                                 },
                                 memory: {
