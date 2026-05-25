@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.8](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.7...v0.1.1-alpha.8) (2026-05-25)
+
+
+### Bug Fixes
+
+* **instance-size:** enforce indexed-column SOT at data boundaries ([#691](https://github.com/kv-shepherd/shepherd/issues/691)) ([f3be52f](https://github.com/kv-shepherd/shepherd/commit/f3be52f74371824a268484f4292d877e203916c3)), closes [#690](https://github.com/kv-shepherd/shepherd/issues/690)
+
+
+### Documentation
+
+* add Discord community links ([b383ffd](https://github.com/kv-shepherd/shepherd/commit/b383ffd78d04c6c220b8b1a47259b4ddfe3ebf9b))
+
 ## [0.1.1-alpha.7](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.6...v0.1.1-alpha.7) (2026-05-22)
 
 
