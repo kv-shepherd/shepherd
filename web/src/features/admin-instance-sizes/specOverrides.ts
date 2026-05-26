@@ -127,8 +127,20 @@ const LEGACY_INDEXED_SPEC_OVERRIDE_PATHS = INDEXED_SPEC_OVERRIDE_PATHS.map(
  * value propagation, avoiding double-source-of-truth races.
  *
  * Returns a shallow clone with both the flat dot-notation keys and the
- * matching nested branches removed; orphan empty parents are pruned so the
- * resulting spec_overrides is canonical and round-trippable.
+ * matching nested branches removed; ancestors emptied **by this unset** are
+ * pruned along the unset path only.
+ *
+ * Pruning semantics align with Lodash `_.unset` (which by design retains an
+ * empty parent object after removing a leaf, e.g. `_.unset({a:[{b:{c:7}}]},
+ * 'a[0].b.c')` -> `{a:[{b:{}}]}`) and never touch sibling branches. KubeVirt
+ * relies on "marker" empty objects such as `livenessProbe.guestAgentPing: {}`,
+ * `devices.rng: {}`, `interfaces[*].bridge: {}`, `networks[*].pod: {}` and
+ * `clock.utc: {}` as legitimate leaf values (see the `// Empty map = leaf
+ * value` invariant in internal/provider/vm_renderer.go). A naive whole-tree
+ * prune would silently strip those markers and the KubeVirt admission webhook
+ * would reject the resulting VM spec ("either ...livenessProbe.tcpSocket,
+ * .exec or .httpGet must be set"), so cleanup is restricted to the ADR-0036
+ * ancestor chain only.
  */
 export function stripIndexedSpecOverridePaths(
     spec: Record<string, unknown> | undefined,
@@ -136,23 +148,67 @@ export function stripIndexedSpecOverridePaths(
     if (!spec) {
         return spec;
     }
-    const cleaned: Record<string, unknown> = { ...spec };
+    // Deep clone before mutating: `unsetAndPruneAncestors` calls `delete` on
+    // descendants, so a shallow `{ ...spec }` would leak writes into the
+    // caller's tree. Today both call sites in `useAdminInstanceSizesController`
+    // happen to feed us a normalized (already cloned) tree, but this is an
+    // exported public API and must stay side-effect free regardless of caller.
+    // `cloneSpecOverrides` uses the structuredClone deep-copy best practice
+    // (MDN; falls back to JSON for older runtimes), which is safe here because
+    // spec_overrides is by contract pure JSON.
+    const cleaned = cloneSpecOverrides(spec);
     for (const path of [...INDEXED_SPEC_OVERRIDE_PATHS, ...LEGACY_INDEXED_SPEC_OVERRIDE_PATHS]) {
         delete cleaned[path];
-        deleteNestedValue(cleaned, path);
+        unsetAndPruneAncestors(cleaned, path);
     }
-    pruneEmptyBranches(cleaned);
     return cleaned;
 }
 
-function pruneEmptyBranches(target: Record<string, unknown>) {
-    for (const [key, value] of Object.entries(target)) {
-        if (!isRecord(value)) {
-            continue;
+/**
+ * Removes the leaf at `path` and bubbles up to prune ancestors that became
+ * empty **as a direct result of this unset**. Sibling branches are never
+ * inspected, so KubeVirt marker empty objects (e.g. `guestAgentPing: {}`,
+ * `rng: {}`, `bridge: {}`, `pod: {}`) survive untouched.
+ *
+ * Aligns with Lodash `_.unset` (path-targeted, retains empty parents) and
+ * adds one ADR-0036 boundary-cleanup rule: when the leaf removal genuinely
+ * empties the parent chain, those empty ancestors are pruned upward until
+ * either a non-empty ancestor is reached or the tree root is hit.
+ *
+ * The leaf-exists guard is required: an absent leaf cannot have been
+ * "emptied by this unset", so we must not prune ancestors that were already
+ * empty before the call (they encode their own KubeVirt marker semantics).
+ */
+function unsetAndPruneAncestors(
+    target: Record<string, unknown>,
+    path: string,
+): void {
+    const segments = path.split('.').filter(Boolean);
+    if (segments.length === 0) {
+        return;
+    }
+    const ancestors: Array<{ parent: Record<string, unknown>; key: string }> = [];
+    let current: Record<string, unknown> = target;
+    for (let index = 0; index < segments.length - 1; index += 1) {
+        const next = current[segments[index]];
+        if (!isRecord(next)) {
+            return;
         }
-        pruneEmptyBranches(value);
-        if (Object.keys(value).length === 0) {
-            delete target[key];
+        ancestors.push({ parent: current, key: segments[index] });
+        current = next;
+    }
+    const leafKey = segments[segments.length - 1];
+    if (!Object.prototype.hasOwnProperty.call(current, leafKey)) {
+        return;
+    }
+    delete current[leafKey];
+    for (let index = ancestors.length - 1; index >= 0; index -= 1) {
+        const { parent, key } = ancestors[index];
+        const value = parent[key];
+        if (isRecord(value) && Object.keys(value).length === 0) {
+            delete parent[key];
+        } else {
+            break;
         }
     }
 }
