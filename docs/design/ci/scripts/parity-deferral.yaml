@@ -1,0 +1,121 @@
+# Parity Deferral Table
+# Registered multi-line `run: |` blocks that are exempt from the
+# "new/unregistered run: | blocks prohibited" policy rule.
+#
+# Each entry identifies an existing inline script by file + job + step_name.
+# Only NEW blocks not listed here will fail the parity gate.
+#
+# Fields:
+#   file:       workflow filename relative to .github/workflows/
+#   job:        job key in the workflow YAML
+#   step_name:  the `- name:` value of the step (exact match)
+#   owner:      responsible team or working group
+#   expiry:     YYYY-MM-DD, must be ≤ 90 days from plan date (2026-05-27)
+#   reason:     brief justification for deferral
+#   migrating:  (optional) true if this block is being extracted in this PR
+
+deferrals:
+  # ── release-please.yml (1 block) ──
+  - file: release-please.yml
+    job: release-please
+    step_name: "Trigger release artifacts workflow"
+    owner: release-wg
+    expiry: "2026-08-25"
+    reason: "gh CLI dispatch requires multi-line script; no Makefile equivalent needed"
+
+  # ── api-contract-validation.yml (5 blocks) ──
+  - file: api-contract-validation.yml
+    job: lint-spec
+    step_name: "Check if spec exists"
+    owner: api-wg
+    expiry: "2026-08-25"
+    reason: "Simple file-existence guard setting GITHUB_OUTPUT; too trivial for Makefile"
+
+  - file: api-contract-validation.yml
+    job: breaking-changes
+    step_name: "Check if spec exists"
+    owner: api-wg
+    expiry: "2026-08-25"
+    reason: "Duplicate file-existence guard for breaking-changes job"
+
+  - file: api-contract-validation.yml
+    job: breaking-changes
+    step_name: "Generate Changelog"
+    owner: api-wg
+    expiry: "2026-08-25"
+    reason: "Wraps make api-changelog with output redirect and empty-check"
+
+  - file: api-contract-validation.yml
+    job: generated-code-sync
+    step_name: "Install dependencies"
+    owner: api-wg
+    expiry: "2026-08-25"
+    reason: "Dual-ecosystem install (go mod download + npm ci); single-line make would hide intent"
+
+  # ── dco.yaml (0 blocks — migrated to scripts/check_dco_signoff.sh) ──
+
+  # ── release.yml (7 blocks) ──
+  - file: release.yml
+    job: preflight
+    step_name: "Extract version metadata"
+    owner: release-wg
+    expiry: "2026-08-25"
+    reason: "Tag parsing + GITHUB_OUTPUT for downstream jobs; release-only logic"
+
+  - file: release.yml
+    job: build-go
+    step_name: "Build binaries"
+    owner: release-wg
+    expiry: "2026-08-25"
+    reason: "Multi-step Go build + Atlas extraction + tar/sha256; release-pipeline specific"
+
+  - file: release.yml
+    job: build-docker
+    step_name: "Build metadata"
+    owner: release-wg
+    expiry: "2026-08-25"
+    reason: "Extract Atlas version from go.mod as Docker build-arg"
+
+  - file: release.yml
+    job: build-docker
+    step_name: "Sign images with Cosign"
+    owner: release-wg
+    expiry: "2026-08-25"
+    reason: "Cosign loop over multi-tag digests; requires OIDC context"
+
+  - file: release.yml
+    job: upload-assets
+    step_name: "Consolidate checksums"
+    owner: release-wg
+    expiry: "2026-08-25"
+    reason: "Trivial cat of sha256 files into single manifest"
+
+  - file: release.yml
+    job: upload-assets
+    step_name: "Upload to GitHub Release"
+    owner: release-wg
+    expiry: "2026-08-25"
+    reason: "gh CLI release upload + body append; release-pipeline specific"
+
+  # ── ci.yml (1 block) ──
+  - file: ci.yml
+    job: master-flow-strict
+    step_name: "Frontend e2e tests (live) disabled"
+    owner: e2e-wg
+    expiry: "2026-08-25"
+    reason: "Informational echo when live E2E is disabled; no logic to extract"
+
+  # ── frontend-tests.yml (2 blocks) ──
+  - file: frontend-tests.yml
+    job: unit-tests
+    step_name: "Report Next.js build cache status"
+    owner: frontend-wg
+    expiry: "2026-08-25"
+    reason: "Cache diagnostic echo; trivial and runner-specific"
+
+  - file: frontend-tests.yml
+    job: e2e-tests
+    step_name: "Report Next.js E2E cache status"
+    owner: frontend-wg
+    expiry: "2026-08-25"
+    reason: "Cache diagnostic echo; trivial and runner-specific"

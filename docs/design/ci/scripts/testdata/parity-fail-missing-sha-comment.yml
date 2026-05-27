@@ -1,0 +1,17 @@
+# Fixture: parity-fail-missing-sha-comment.yml
+# Expected: FAIL — uses: line has SHA but missing # vX.Y.Z comment.
+name: Fixture Missing SHA Comment
+
+on: push
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Run tests
+        run: make test

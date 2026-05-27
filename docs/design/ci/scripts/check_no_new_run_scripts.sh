@@ -66,6 +66,7 @@ KNOWN_SCRIPTS=(
   "check_validate_spec.go"
   "check_vm_create_spec_completeness.go"
   "check_vm_create_status_progression.go"
+  "check_workflow_make_parity.go"
 )
 
 if [ ! -d "$SCRIPTS_DIR" ]; then

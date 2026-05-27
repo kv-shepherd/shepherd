@@ -1,0 +1,20 @@
+# Fixture: parity-fail-unregistered-run.yml
+# Expected: FAIL — contains a run: | block not in the deferral table.
+name: Fixture Unregistered Run
+
+on: push
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Unregistered multi-line script
+        run: |
+          echo "This block is not in the deferral table"
+          echo "It should trigger a parity violation"

@@ -1,0 +1,25 @@
+# Fixture: parity-pass-deferred.yml
+# Expected: PASS — the run: | block IS registered in the deferral table
+# (matches: ci.yml / master-flow-strict / "Frontend e2e tests (live) disabled").
+#
+# Note: this fixture simulates by using the exact file/job/step_name combination
+# that exists in the deferral table. The checker matches on the basename of the
+# fixture file, so we name the jobs/steps to match an existing deferral entry.
+name: CI
+
+on: push
+
+permissions:
+  contents: read
+
+jobs:
+  master-flow-strict:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Frontend e2e tests (live) disabled
+        run: |
+          echo "Live E2E gate is disabled."
+          echo "This is a registered deferral and should pass."
