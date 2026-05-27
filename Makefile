@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.10
@@ -143,11 +143,32 @@ docker:
 ci-ent-generated-sync:
 	@go run docs/design/ci/scripts/check_ent_codegen.go
 
+## ci-parity: Run actionlint + Go policy checker + fixture tests for workflow/Makefile parity.
+ci-parity:
+	@command -v shellcheck >/dev/null 2>&1 || { echo "FAIL: shellcheck not in PATH — actionlint requires it for shell script analysis."; echo "  Install: sudo apt-get install shellcheck (or brew install shellcheck)"; exit 1; }
+	@echo "Running actionlint..."
+	@go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12 .github/workflows/*.yml .github/workflows/*.yaml
+	@echo "Running Go policy checker..."
+	@go run docs/design/ci/scripts/check_workflow_make_parity.go
+	@echo "Running fixture tests..."
+	@go run docs/design/ci/scripts/check_workflow_make_parity.go --test-fixture docs/design/ci/scripts/testdata/parity-pass-deferred.yml
+	@bash -c 'if go run docs/design/ci/scripts/check_workflow_make_parity.go --test-fixture docs/design/ci/scripts/testdata/parity-fail-unregistered-run.yml 2>/dev/null; then echo "FAIL: parity-fail-unregistered-run.yml should have failed"; exit 1; else echo "OK: parity-fail-unregistered-run.yml correctly rejected"; fi'
+	@bash -c 'if go run docs/design/ci/scripts/check_workflow_make_parity.go --test-fixture docs/design/ci/scripts/testdata/parity-fail-missing-sha-comment.yml 2>/dev/null; then echo "FAIL: parity-fail-missing-sha-comment.yml should have failed"; exit 1; else echo "OK: parity-fail-missing-sha-comment.yml correctly rejected"; fi'
+
+## dco-check: Verify DCO Signed-off-by on PR commits (requires BASE_REF, HEAD_SHA env vars).
+dco-check:
+	@bash scripts/check_dco_signoff.sh
+
+## api-changelog-comment: Post API changelog comment to PR (requires GITHUB_TOKEN, GITHUB_REPOSITORY, PR_NUMBER).
+api-changelog-comment:
+	@bash scripts/post_api_changelog_comment.sh
+
 ## ci-governance: Run canonical governance/static CI check scripts wired in GitHub Actions.
 ## shepherd-arch project scanning runs in ci-go-lint via custom-gcl; this target keeps
 ## analyzer unit tests plus non-linter governance gates to avoid duplicate scans.
 ci-governance:
 	@echo "Running CI checks..."
+	@$(MAKE) ci-parity
 	@$(MAKE) test-shepherd-linter
 	@bash docs/design/ci/scripts/check_no_new_run_scripts.sh
 	@bash docs/design/ci/scripts/check_no_legacy_batch1_invocations.sh

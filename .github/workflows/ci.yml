@@ -210,8 +210,8 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix web
 
-      - name: Install ripgrep
-        run: sudo apt-get update && sudo apt-get install -y ripgrep
+      - name: Install ripgrep and shellcheck
+        run: sudo apt-get update && sudo apt-get install -y ripgrep shellcheck
       
       - name: Run governance/static gates
         run: make ci-governance

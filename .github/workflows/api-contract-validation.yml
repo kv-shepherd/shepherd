@@ -42,9 +42,9 @@ jobs:
         id: check_file
         run: |
           if [ -f "api/openapi.yaml" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       # ADR-0029: Use vacuum instead of spectral (Go-native, 10x faster)
@@ -69,9 +69,9 @@ jobs:
         id: check_file
         run: |
           if [ -f "api/openapi.yaml" ]; then
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Check for Breaking Changes
@@ -90,43 +90,9 @@ jobs:
         if: github.event_name == 'pull_request' && steps.check_file.outputs.exists == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
-        run: |
-          set -euo pipefail
-          MARKER="<!-- api-contract-changelog -->"
-          COMMENT_BODY="$(mktemp)"
-          {
-            echo "${MARKER}"
-            echo "## API Changelog"
-            echo
-            cat /tmp/api-changelog.md
-          } > "${COMMENT_BODY}"
-
-          COMMENTS_API="https://api.github.com/repos/${REPO}/issues/${PR_NUMBER}/comments"
-          EXISTING_ID="$(curl -fsSL \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            "${COMMENTS_API}" | jq -r --arg marker "${MARKER}" '.[] | select(.body | contains($marker)) | .id' | head -n1)"
-
-          JSON_PAYLOAD="$(jq -Rs '{body: .}' < "${COMMENT_BODY}")"
-          if [ -n "${EXISTING_ID}" ]; then
-            curl -fsSL -X PATCH \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "Content-Type: application/json" \
-              "https://api.github.com/repos/${REPO}/issues/comments/${EXISTING_ID}" \
-              -d "${JSON_PAYLOAD}" > /dev/null
-            echo "✅ Updated existing API changelog comment (${EXISTING_ID})"
-          else
-            curl -fsSL -X POST \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "Content-Type: application/json" \
-              "${COMMENTS_API}" \
-              -d "${JSON_PAYLOAD}" > /dev/null
-            echo "✅ Created new API changelog comment"
-          fi
+        run: make api-changelog-comment
 
   # ─────────────────────────────────────────────────────────────────
   # Stage 3: Verify Generated Code is in Sync
