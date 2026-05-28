@@ -1,0 +1,148 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: shepherd-baseline
+  labels:
+    app.kubernetes.io/name: shepherd
+    app.kubernetes.io/component: monitoring
+    role: alert-rules
+spec:
+  groups:
+    - name: shepherd.recording
+      interval: 30s
+      rules:
+        - record: shepherd:http_requests:rate5m
+          expr: sum(rate(shepherd_http_requests_total[5m]))
+
+        - record: shepherd:http_requests_5xx:rate5m
+          expr: sum(rate(shepherd_http_requests_total{status=~"5.."}[5m]))
+
+        - record: shepherd:http_5xx:ratio5m
+          expr: |
+            sum(rate(shepherd_http_requests_total{status=~"5.."}[5m]))
+            /
+            clamp_min(sum(rate(shepherd_http_requests_total[5m])), 0.001)
+
+        - record: shepherd:http_request_duration_seconds:p95_5m
+          expr: |
+            histogram_quantile(
+              0.95,
+              sum by (le) (rate(shepherd_http_request_duration_seconds_bucket[5m]))
+            )
+
+        - record: shepherd:openapi_validation_failures:rate5m
+          expr: |
+            sum by (phase, code) (
+              rate(shepherd_openapi_validation_failures_total[5m])
+            )
+
+        - record: shepherd:river_ready_jobs:sum
+          expr: sum by (queue) (shepherd_river_ready_jobs)
+
+        - record: shepherd:river_recent_discarded_jobs:sum
+          expr: |
+            sum by (queue) (
+              shepherd_river_recent_terminal_jobs{state="discarded"}
+            )
+
+    - name: shepherd.baseline
+      interval: 30s
+      rules:
+        - alert: ShepherdMetricsTargetDown
+          expr: up{job="shepherd"} == 0
+          for: 2m
+          labels:
+            severity: critical
+            service: shepherd
+          annotations:
+            summary: Shepherd metrics target is down
+            description: Prometheus cannot scrape the Shepherd metrics target.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdmetricstargetdown
+
+        - alert: ShepherdHighHTTP5xxRate
+          expr: shepherd:http_5xx:ratio5m > 0.05
+          for: 10m
+          labels:
+            severity: warning
+            service: shepherd
+          annotations:
+            summary: Shepherd HTTP 5xx ratio is high
+            description: More than 5% of Shepherd HTTP requests are returning 5xx responses.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdhighhttp5xxrate
+
+        - alert: ShepherdHighHTTPP95Latency
+          expr: shepherd:http_request_duration_seconds:p95_5m > 2
+          for: 10m
+          labels:
+            severity: warning
+            service: shepherd
+          annotations:
+            summary: Shepherd HTTP p95 latency is high
+            description: Global Shepherd HTTP p95 latency is above 2 seconds.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdhighhttpp95latency
+
+        - alert: ShepherdOpenAPIValidationFailures
+          expr: shepherd:openapi_validation_failures:rate5m > 0.01
+          for: 10m
+          labels:
+            severity: warning
+            service: shepherd
+          annotations:
+            summary: Shepherd OpenAPI validation failures are sustained
+            description: Runtime OpenAPI validation failures are sustained for phase={{ $labels.phase }} code={{ $labels.code }}.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdopenapivalidationfailures
+
+        - alert: ShepherdPostgresStatsScrapeFailed
+          expr: shepherd_postgres_table_stats_scrape_success == 0
+          for: 10m
+          labels:
+            severity: warning
+            service: shepherd
+          annotations:
+            summary: Shepherd PostgreSQL stats scrape failed
+            description: Shepherd cannot collect PostgreSQL table statistics for observability.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdpostgresstatsscrapefailed
+
+        - alert: ShepherdRiverDeadTupleRatioHigh
+          expr: shepherd_river_dead_tuple_ratio > 0.30
+          for: 30m
+          labels:
+            severity: critical
+            service: shepherd
+          annotations:
+            summary: Shepherd River dead tuple ratio is high
+            description: River dead tuple ratio has stayed above the 30% RFC-0001 evaluation threshold.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverdeadtupleratiohigh
+
+        - alert: ShepherdRiverQueueStatsScrapeFailed
+          expr: shepherd_river_queue_stats_scrape_success == 0
+          for: 10m
+          labels:
+            severity: warning
+            service: shepherd
+          annotations:
+            summary: Shepherd River queue stats scrape failed
+            description: Shepherd cannot collect River queue statistics for observability.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverqueuestatsscrapefailed
+
+        - alert: ShepherdRiverQueueBacklogAgeHigh
+          expr: shepherd_river_oldest_ready_job_age_seconds > 300
+          for: 15m
+          labels:
+            severity: warning
+            service: shepherd
+          annotations:
+            summary: Shepherd River queue backlog age is high
+            description: The oldest ready Shepherd River job has waited more than 5 minutes for queue={{ $labels.queue }}.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverqueuebacklogagehigh
+
+        - alert: ShepherdRiverJobsDiscarded
+          expr: shepherd:river_recent_discarded_jobs:sum > 0
+          for: 5m
+          labels:
+            severity: critical
+            service: shepherd
+          annotations:
+            summary: Shepherd River jobs were discarded
+            description: One or more Shepherd River jobs reached the discarded terminal state for queue={{ $labels.queue }}.
+            runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverjobsdiscarded

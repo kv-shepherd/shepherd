@@ -1,6 +1,6 @@
 # CI Gate Hardening Checklist (Gate-First)
 
-> Status: Active (2026-02-14)
+> Status: Active (audited 2026-05-28)
 > Principle: `Gate > Feature`
 > Source of truth for interaction intent: [`docs/design/interaction-flows/master-flow.md`](../interaction-flows/master-flow.md)
 
@@ -32,6 +32,9 @@
 | D-016 | Contract Tooling | ADR-0028 generated-type verification remained a manual review item even though `api/oapi-codegen.yaml` and generated Go tags are deterministic artifacts | `docs/design/checklist/phase-1-checklist.md`, `api/oapi-codegen.yaml`, `internal/api/generated/server.gen.go` | ✅ Resolved (2026-05-09): `check_openapi_critical_contract.go` now verifies oapi-codegen optional-pointer options and generated `omitempty,omitzero` tag semantics |
 | D-017 | Ent Tooling | Ent generated-code sync existed only as an advisory helper and was not wired into required governance checks, leaving schema/code drift to review discipline | `docs/design/ci/scripts/check_ent_codegen.go`, `ent/generate.go`, `go.mod` | ✅ Resolved (2026-05-09): `check_ent_codegen.go` runs in `make ci-governance`; `go.mod` pins the Ent generator as a tool dependency |
 | D-018 | Ent Query Safety | Runtime handlers had legitimate JSONB dynamic predicates but imported raw `ent/dialect/sql` directly, leaving no boundary against future type-unsafe dynamic-query expansion | `internal/api/handlers/member.go`, `internal/api/handlers/server_approval.go`, `internal/api/handlers/server_admin.go`, `tools/shepherd-linter` | ✅ Resolved (2026-05-09): custom JSONB predicates moved into reviewed `*_ent_predicates.go` helpers and `shepherd-arch/entquerysafety` blocks raw Ent SQL imports elsewhere |
+| D-019 | Observability vs CI | Minimal observability was roadmap/RFC-backed, but metrics, River queue health, request correlation logs, rules, dashboards, dashboard query syntax, Prometheus config, Operator rule parity, alert runbook links, and deployment assets needed blocking repository checks instead of review-only inspection | `docs/rfc/RFC-0010-observability.md`, `deploy/monitoring/`, `deploy/prod/docker-compose.monitoring.yml`, `docs/design/observability/` | ✅ Resolved (2026-05-28): ADR-0054 through ADR-0057 accepted; Prometheus, River queue health, request correlation logs, Grafana, dashboard PromQL, Operator, Compose, config, rule-parity, and runbook-link assets are guarded by `make ci-prometheus-rules`, `make ci-monitoring-assets`, and design governance |
+| D-020 | Tooling Availability | Prometheus rule tests could silently degrade if `promtool` was absent locally or in CI | `docs/design/ci/scripts/promtool_lib.sh`, `.github/workflows/ci.yml`, `deploy/monitoring/prometheus/shepherd-rules.test.yml` | ✅ Resolved (2026-05-28): CI installs `prometheus`, prints `promtool --version`, and runs governance with `PROMTOOL_REQUIRED=1` |
+| D-021 | Live E2E Evidence | The real-cluster live E2E path needed machine-readable evidence; path-sorted "latest" selection could confuse preflight evidence with full completion evidence | `scripts/run_e2e_live.sh`, `.run/live-e2e/**/live-e2e.evidence.json` | ✅ Resolved (2026-05-28): ADR-0058 evidence manifest, fixture/self-test validator, `find_latest_live_e2e_full_evidence.mjs`, and manual latest-full validation are guarded; live E2E remains outside required GitHub CI |
 
 ## 3. Gate Hardening Queue (Do First)
 
@@ -62,6 +65,19 @@
 | GH-023 | P1 | Freeze ADR-0028 generated optional-field semantics | `check_openapi_critical_contract.go` oapi-codegen config + generated Go tag checks | ✅ Done (2026-05-09) |
 | GH-024 | P1 | Promote Ent code generation sync from advisory helper to required governance gate | `check_ent_codegen.go` + `go.mod` tool pin + Phase 1 checklist sync | ✅ Done (2026-05-09) |
 | GH-025 | P1 | Freeze Ent dynamic-query safety boundary in shepherd-linter | `entquerysafety` analyzer + reviewed `*_ent_predicates.go` helpers + Phase 1 checklist sync | ✅ Done (2026-05-09) |
+| GH-026 | P1 | Freeze minimal Prometheus metrics, recording rules, alert rules, and rule-test fixtures | `check_prometheus_recording_rules.sh`, `check_prometheus_alert_rules.sh`, `check_prometheus_rule_tests.sh`, `make ci-prometheus-rules` | ✅ Done (2026-05-28) |
+| GH-027 | P1 | Make Prometheus rule validation fail-closed in CI when `promtool` is unavailable | `promtool_lib.sh` + `.github/workflows/ci.yml` with `PROMTOOL_REQUIRED=1` | ✅ Done (2026-05-28) |
+| GH-028 | P1 | Freeze optional monitoring deployment assets for Prometheus Operator, Docker Compose, and Grafana provisioning | `check_prometheus_operator_assets.sh`, `check_monitoring_compose_assets.sh`, `check_grafana_dashboards.sh`, `make ci-monitoring-assets` | ✅ Done (2026-05-28) |
+| GH-029 | P0 | Require live E2E evidence manifests to be schema-checked with positive and negative fixtures | `check_live_e2e_evidence_manifest.sh --self-test` + ADR-0058 fixtures + `make ci-live-e2e-evidence` | ✅ Done (2026-05-28) |
+| GH-030 | P0 | Ensure manual release validation selects only the newest `mode=full` live E2E manifest | `find_latest_live_e2e_full_evidence.mjs` and `make ci-live-e2e-latest-evidence` | ✅ Done (2026-05-28) |
+| GH-031 | P0 | Split static master-flow completion from CI-suitable project completion so a green allowlist check cannot imply runtime completion | `make master-flow-completion` for static debt; `make project-completion-readiness` for static debt + monitoring assets + evidence schema fixtures | ✅ Done (2026-05-28) |
+| GH-032 | P1 | Validate the Prometheus scrape config and local rule-file loading path with promtool | `check_prometheus_config.sh`, `make ci-prometheus-config`, `make ci-monitoring-assets` | ✅ Done (2026-05-28) |
+| GH-033 | P1 | Validate Prometheus Operator rule-content parity against native Prometheus rule files | `check_prometheus_operator_rule_parity.sh`, `make ci-prometheus-operator-rule-parity`, `make ci-monitoring-assets` | ✅ Done (2026-05-28) |
+| GH-034 | P1 | Validate baseline Prometheus alert runbook_url annotations against local Markdown anchors | `check_prometheus_alert_runbooks.sh`, `make ci-prometheus-alert-runbooks`, `make ci-monitoring-assets` | ✅ Done (2026-05-28) |
+| GH-035 | P1 | Validate starter Grafana dashboard panel PromQL syntax with Prometheus tooling | `check_grafana_dashboard_promql.sh`, `make ci-grafana-dashboard-promql`, `make ci-monitoring-assets` | ✅ Done (2026-05-28) |
+| GH-036 | P1 | Freeze River queue health observability across runtime metrics, rules, dashboards, and governance | `internal/observability/river_queue_stats.go`, ADR-0054, Prometheus rule assets, Grafana dashboard assets, and `check_design_doc_governance.sh` | ✅ Done (2026-05-28) |
+| GH-037 | P1 | Freeze HTTP request correlation logging boundaries and trace ID response exposure | `internal/observability/http_request_log.go`, ADR-0057, router wiring, request-log tests, and `check_design_doc_governance.sh` | ✅ Done (2026-05-28) |
+| GH-038 | P1 | Freeze River worker correlation logging boundaries and trace metadata propagation | `internal/observability/river_worker_log.go`, ADR-0057, River client wiring, worker-log tests, and `check_design_doc_governance.sh` | ✅ Done (2026-05-28) |
 
 ## 4. Deferred API Scope (Explicitly Tracked)
 
@@ -101,6 +117,22 @@ go run docs/design/ci/scripts/check_frontend_route_shell_architecture.go
 bash docs/design/ci/scripts/check_changed_code_has_tests.sh
 go run docs/design/ci/scripts/check_no_sqlite_in_tests.go
 go run docs/design/ci/scripts/check_master_flow_completion_readiness.go
+bash docs/design/ci/scripts/check_prometheus_config.sh
+bash docs/design/ci/scripts/check_prometheus_recording_rules.sh
+bash docs/design/ci/scripts/check_prometheus_alert_rules.sh
+bash docs/design/ci/scripts/check_prometheus_alert_runbooks.sh
+bash docs/design/ci/scripts/check_prometheus_rule_tests.sh
+bash docs/design/ci/scripts/check_prometheus_operator_rule_parity.sh
+bash docs/design/ci/scripts/check_prometheus_operator_assets.sh
+bash docs/design/ci/scripts/check_monitoring_compose_assets.sh
+bash docs/design/ci/scripts/check_grafana_dashboards.sh
+bash docs/design/ci/scripts/check_grafana_dashboard_promql.sh
+bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh --self-test
+node docs/design/ci/scripts/find_latest_live_e2e_full_evidence.mjs --self-test
+make ci-monitoring-assets
+make ci-live-e2e-evidence
+# CI-suitable project completion claim; live E2E full-pass evidence is manual.
+make project-completion-readiness
 bash docs/design/ci/scripts/check_design_doc_governance.sh
 
 # Isolated Docker PostgreSQL execution

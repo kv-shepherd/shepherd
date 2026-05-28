@@ -72,3 +72,16 @@ security:
 worker:
   general_pool_size: 100
   k8s_pool_size: 50
+
+observability:
+  metrics_enabled: true
+  metrics_path: "/metrics"
+  database_metrics_enabled: true
+  database_metrics_timeout: "2s"
+  river_metrics_enabled: true
+  river_metrics_timeout: "2s"
+  tracing_enabled: false
+  tracing_service_name: "shepherd"
+  tracing_exporter: "otlp_http"
+  tracing_sample_ratio: 0.10
+  tracing_shutdown_timeout: "5s"

@@ -66,16 +66,16 @@ func main() {
 		sort.Slice(pending, func(i, j int) bool {
 			return pending[i].file.Path < pending[j].file.Path
 		})
-		fmt.Println("FAIL: master-flow completion readiness check failed")
+		fmt.Println("FAIL: static master-flow completion readiness check failed")
 		fmt.Println("The following deferred/exemption lists are not empty:")
 		for _, p := range pending {
 			fmt.Printf(" - %s (%s): %d pending entries\n", p.file.Path, p.file.Desc, len(p.lines))
 		}
-		fmt.Println("Rule: To claim full master-flow completion, all deferred/exemption allowlists above must be empty.")
+		fmt.Println("Rule: To claim static master-flow completion, all deferred/exemption allowlists above must be empty.")
 		os.Exit(1)
 	}
 
-	fmt.Println("OK: master-flow completion readiness check passed (no deferred/exemption entries)")
+	fmt.Println("OK: static master-flow completion readiness check passed (no deferred/exemption entries)")
 }
 
 func loadMeaningfulLines(path string) ([]string, error) {

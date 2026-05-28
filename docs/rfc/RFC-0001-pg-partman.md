@@ -32,7 +32,7 @@ Evaluate implementation when:
 
 - **Daily job volume exceeds 10 million (10M)**
 - River Job Cleaner's DELETE produces dead tuples faster than Autovacuum can handle
-- `river_dead_tuple_ratio` metric persistently > 30%
+- `shepherd_river_dead_tuple_ratio` metric persistently > 0.30
 
 ---
 

@@ -21,7 +21,7 @@
 | [RFC-0007](./RFC-0007-redis-cache.md) | Redis Cache Support | Deferred | P3 | Cache miss causing bottleneck |
 | [RFC-0008](./RFC-0008-extended-auth.md) | Extended Auth Providers | Deferred | P2 | MFA/SAML 2.0 or active token revocation required |
 | [RFC-0009](./RFC-0009-pgbouncer.md) | PgBouncer Dual Pool | Deferred | P3 | Enterprise deployment |
-| [RFC-0010](./RFC-0010-observability.md) | Observability Stack | Deferred | P2 | Metrics/Tracing required |
+| [RFC-0010](./RFC-0010-observability.md) | Observability Stack | Accepted for minimal metrics baseline; advanced scope deferred | P2 | Metrics/Tracing required |
 | [RFC-0011](./RFC-0011-vnc-console.md) | VNC Console (noVNC) | Deferred | P2 | Embedded noVNC UX, active revoke, or session recording needed |
 | [RFC-0012](./RFC-0012-kubevirt-advanced.md) | KubeVirt Advanced Features | Deferred | P2 | Snapshot/Clone/Migration |
 | [RFC-0013](./RFC-0013-vm-snapshot.md) | VM Snapshot | Deferred | P2 | Backup/Restore needed |
@@ -43,6 +43,7 @@
 | [RFC-0005](./RFC-0005-event-archiving.md) | Soft archiving via `archived_at` is implemented; this RFC only covers physical archive tables and purge. |
 | [RFC-0006](./RFC-0006-hot-reload.md) | Limited runtime hot-reload primitives exist; config admin API and multi-instance sync do not. |
 | [RFC-0008](./RFC-0008-extended-auth.md) | Auth-provider admin/plugin-management foundation is implemented; MFA, SAML, and active session revocation remain deferred. |
+| [RFC-0010](./RFC-0010-observability.md) | Runtime Prometheus metrics are accepted by ADR-0054; starter rules, rule tests, runbook-link checks, and Grafana assets are accepted by ADR-0055; optional monitoring deployment packaging is accepted by ADR-0056; default-off HTTP tracing and bounded HTTP/River correlation logs are accepted by ADR-0057; deep tracing, provider log correlation, custom business metrics, advanced alert routing, advanced SLOs, and advanced dashboards remain deferred. |
 | [RFC-0011](./RFC-0011-vnc-console.md) | Stage 6 VNC baseline is implemented end-to-end; this RFC now tracks optional V2+ noVNC/proxy/session enhancements. |
 | [RFC-0012](./RFC-0012-kubevirt-advanced.md), [RFC-0013](./RFC-0013-vm-snapshot.md), [RFC-0014](./RFC-0014-vm-clone.md) | Interfaces and domain types exist, but runtime Snapshot/Clone/Migration provider methods are still deferred. |
 | [RFC-0016](./RFC-0016-key-rotation.md) | Verification-side signing-key compatibility exists; full keyring rotation and re-encryption workflow do not. |

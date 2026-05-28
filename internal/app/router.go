@@ -11,6 +11,8 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/observability"
+	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
 type corsOriginChecker interface {
@@ -67,10 +69,21 @@ var defaultTrustedLoopbackProxies = []string{
 	"::1/128",
 }
 
-func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg middleware.JWTConfig) *gin.Engine {
+func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg middleware.JWTConfig, metrics *observability.Metrics, tracing *observability.Tracing) *gin.Engine {
 	router := gin.New()
 	configureTrustedProxies(router, cfg.Server.TrustedProxies)
 	router.Use(gin.Recovery(), middleware.RequestID(), middleware.ErrorHandler())
+	if tracing != nil {
+		router.Use(tracing.Middleware())
+	}
+	router.Use(observability.HTTPRequestLogMiddleware(observability.HTTPRequestLogOptions{
+		Logger:      logger.LOrNop(),
+		MetricsPath: cfg.Observability.EffectiveMetricsPath(),
+	}))
+	if metrics != nil {
+		router.Use(metrics.Middleware())
+		router.GET(cfg.Observability.EffectiveMetricsPath(), gin.WrapH(metrics.Handler()))
+	}
 	router.Use(middleware.MaxRequestBodyBytes(cfg.Server.MaxRequestBodyBytes))
 
 	var requestOriginChecker corsRequestOriginChecker
@@ -86,7 +99,11 @@ func newRouter(cfg *config.Config, server generated.ServerInterface, jwtCfg midd
 	router.Use(cors.New(buildCORSConfig(cfg, requestOriginChecker, originChecker)))
 
 	router.Use(jwtSkipPublic(jwtCfg))
-	router.Use(middleware.MustOpenAPIValidator("/api/v1"))
+	openAPIValidatorOptions := make([]middleware.OpenAPIValidatorOption, 0, 1)
+	if metrics != nil {
+		openAPIValidatorOptions = append(openAPIValidatorOptions, middleware.WithOpenAPIValidationMetrics(metrics.OpenAPIValidationRecorder()))
+	}
+	router.Use(middleware.MustOpenAPIValidator("/api/v1", openAPIValidatorOptions...))
 
 	generated.RegisterHandlersWithOptions(router, server, generated.GinServerOptions{
 		BaseURL: "/api/v1",
@@ -101,7 +118,7 @@ func buildCORSConfig(cfg *config.Config, requestChecker corsRequestOriginChecker
 	corsCfg := cors.Config{
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept", "X-Request-ID", "X-Shepherd-Session-Mode", "X-External-Approval-System-ID", "X-Shepherd-Timestamp", "X-Signature-256", "X-Ticket-ID"},
-		ExposeHeaders:    []string{"Content-Length", "X-Request-ID"},
+		ExposeHeaders:    []string{"Content-Length", "X-Request-ID", observability.TraceIDHeader},
 		AllowCredentials: cfg.Server.AllowCredentials,
 		MaxAge:           12 * time.Hour,
 	}

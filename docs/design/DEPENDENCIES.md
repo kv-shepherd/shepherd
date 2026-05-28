@@ -1,7 +1,7 @@
 # Dependency Version Definitions
 
 > **Purpose**: Authoritative dependency and toolchain version reference.
-> **Last audited**: 2026-04-24.
+> **Last audited**: 2026-05-28.
 > **Primary sources**: `go.mod`, `Makefile`, `build/api.mk`, `web/package.json`,
 > `api/openapi.yaml`.
 
@@ -27,14 +27,21 @@ ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
 | `github.com/gin-contrib/cors` | `v1.7.7` | CORS middleware |
 | `github.com/go-playground/validator/v10` | `v10.30.2` | Request/struct validation |
 | `entgo.io/ent` | `v0.14.6` | ORM |
-| `github.com/jackc/pgx/v5` | `v5.9.1` | PostgreSQL driver and pool |
-| `github.com/riverqueue/river` | `v0.32.0` | PostgreSQL-native job queue |
-| `github.com/riverqueue/river/riverdriver/riverpgxv5` | `v0.32.0` | River pgx v5 driver |
+| `github.com/jackc/pgx/v5` | `v5.9.2` | PostgreSQL driver and pool |
+| `github.com/riverqueue/river` | `v0.37.0` | PostgreSQL-native job queue |
+| `github.com/riverqueue/river/riverdriver/riverpgxv5` | `v0.37.0` | River pgx v5 driver |
 | `github.com/sqlc-dev/sqlc` | `v1.30.0` | SQL code generation; invoked by `make sqlc-gen` |
-| `go.uber.org/zap` | `v1.27.1` | Structured logging |
+| `go.uber.org/zap` | `v1.28.0` | Structured logging |
 | `github.com/spf13/viper` | `v1.21.0` | Configuration |
 | `github.com/robfig/cron/v3` | `v3.0.1` | Directory-enrichment schedule parsing |
 | `github.com/panjf2000/ants/v2` | `v2.12.0` | In-process worker pool |
+| `github.com/prometheus/client_golang` | `v1.23.2` | Prometheus metrics registry, collectors, and `/metrics` exposition |
+| `github.com/prometheus/client_model` | `v0.6.2` | Prometheus metric DTOs used by collector tests |
+| `go.opentelemetry.io/otel` | `v1.44.0` | OpenTelemetry API and context propagation |
+| `go.opentelemetry.io/otel/sdk` | `v1.44.0` | OpenTelemetry tracer provider and sampling |
+| `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp` | `v1.44.0` | OTLP/HTTP trace exporter |
+| `go.opentelemetry.io/otel/exporters/stdout/stdouttrace` | `v1.44.0` | Local stdout trace exporter for tests and diagnostics |
+| `go.opentelemetry.io/otel/trace` | `v1.44.0` | Trace API helpers used by middleware tests |
 | `golang.org/x/sync` | `v0.20.0` | Semaphore/errgroup utilities |
 
 ### Database
@@ -72,13 +79,13 @@ runtime does not depend on `sigs.k8s.io/controller-runtime`.
 |-----------------|---------|--------|
 | OpenAPI spec | `3.1.0` | `api/openapi.yaml` |
 | `github.com/oapi-codegen/oapi-codegen/v2` | `v2.5.1` | `build/api.mk`, CI version check |
-| `github.com/oapi-codegen/runtime` | `v1.3.1` | `go.mod` |
+| `github.com/oapi-codegen/runtime` | `v1.4.0` | `go.mod` |
 | `openapi-typescript` | `^7.13.0` | `web/package.json` |
 | `openapi-fetch` | `^0.16.0` | `web/package.json` |
 | `github.com/daveshanley/vacuum` | `v0.23.8` | `build/api.mk` |
 | `github.com/oasdiff/oasdiff` | `v1.11.10` | `build/api.mk` |
-| `github.com/pb33f/libopenapi` | `v0.35.1` | `go.mod` |
-| `github.com/pb33f/libopenapi-validator` | `v0.13.1` | `go.mod` |
+| `github.com/pb33f/libopenapi` | `v0.36.3` | `go.mod` |
+| `github.com/pb33f/libopenapi-validator` | `v0.13.4` | `go.mod` |
 | `github.com/getkin/kin-openapi` | `v0.134.0` | `go.mod` |
 
 Canonical flow:
@@ -99,7 +106,7 @@ artifact when 3.1 features require it.
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `github.com/golang-jwt/jwt/v5` | `v5.3.1` | Shepherd JWTs |
-| `golang.org/x/crypto` | `v0.50.0` | bcrypt and crypto utilities |
+| `golang.org/x/crypto` | `v0.51.0` | bcrypt and crypto utilities |
 | `github.com/go-ldap/ldap/v3` | `v3.4.13` | LDAP auth provider |
 | `github.com/gorilla/websocket` | `v1.5.4-0.20250319132907-e064f32e3674` | Console websocket handling |
 
@@ -148,6 +155,7 @@ bootstrap secrets and console replay markers; the current runtime does not use
 | `gitleaks` | `v8.28.0` | Secret scanning |
 | `golangci-lint` | Custom binary from `.custom-gcl.yml` when present | Go lint plus shepherd architecture analyzers |
 | `shepherd-lint` | Repository-local build | Custom go/analysis architecture checks |
+| `promtool` | Installed from Ubuntu `prometheus` package in CI | Prometheus config, rule, and rule-test validation |
 
 ## Middleware Versions
 
@@ -180,6 +188,15 @@ Defaults are defined in `internal/config/config.go` and shown in
 | `river.max_workers` | `10` | `RIVER_MAX_WORKERS` |
 | `worker.general_pool_size` | `100` | `WORKER_GENERAL_POOL_SIZE` |
 | `worker.k8s_pool_size` | `50` | `WORKER_K8S_POOL_SIZE` |
+| `observability.metrics_enabled` | `true` | `OBSERVABILITY_METRICS_ENABLED` |
+| `observability.metrics_path` | `/metrics` | `OBSERVABILITY_METRICS_PATH` |
+| `observability.database_metrics_enabled` | `true` | `OBSERVABILITY_DATABASE_METRICS_ENABLED` |
+| `observability.database_metrics_timeout` | `2s` | `OBSERVABILITY_DATABASE_METRICS_TIMEOUT` |
+| `observability.tracing_enabled` | `false` | `OBSERVABILITY_TRACING_ENABLED` |
+| `observability.tracing_service_name` | `shepherd` | `OBSERVABILITY_TRACING_SERVICE_NAME` |
+| `observability.tracing_exporter` | `otlp_http` | `OBSERVABILITY_TRACING_EXPORTER` |
+| `observability.tracing_sample_ratio` | `0.10` | `OBSERVABILITY_TRACING_SAMPLE_RATIO` |
+| `observability.tracing_shutdown_timeout` | `5s` | `OBSERVABILITY_TRACING_SHUTDOWN_TIMEOUT` |
 
 ## HPA Concurrency Constraints Required
 
@@ -209,8 +226,8 @@ go 1.25.10
 require (
     entgo.io/ent v0.14.6
     github.com/gin-gonic/gin v1.12.0
-    github.com/jackc/pgx/v5 v5.9.1
-    github.com/riverqueue/river v0.32.0
+    github.com/jackc/pgx/v5 v5.9.2
+    github.com/riverqueue/river v0.37.0
     github.com/oapi-codegen/oapi-codegen/v2 v2.5.1
     k8s.io/api v0.34.3
     k8s.io/apimachinery v0.34.3

@@ -66,6 +66,36 @@ func TestApplication_Shutdown_Nil(t *testing.T) {
 	}, "Shutdown on empty Application should not panic")
 }
 
+func TestNewObservabilityTracingDisabled(t *testing.T) {
+	t.Parallel()
+
+	tracing, err := newObservabilityTracing(context.Background(), &config.Config{
+		Observability: config.ObservabilityConfig{
+			TracingEnabled: false,
+		},
+	})
+
+	require.NoError(t, err)
+	require.Nil(t, tracing)
+}
+
+func TestNewObservabilityTracingInvalidExporter(t *testing.T) {
+	t.Parallel()
+
+	tracing, err := newObservabilityTracing(context.Background(), &config.Config{
+		Observability: config.ObservabilityConfig{
+			TracingEnabled:     true,
+			TracingServiceName: "shepherd",
+			TracingExporter:    "invalid",
+			TracingSampleRatio: 0.1,
+		},
+	})
+
+	require.Error(t, err)
+	require.Nil(t, tracing)
+	require.Contains(t, err.Error(), "unsupported tracing exporter")
+}
+
 func TestApplication_Start_NoDependencies(t *testing.T) {
 	t.Parallel()
 

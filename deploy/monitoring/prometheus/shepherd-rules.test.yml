@@ -1,0 +1,177 @@
+rule_files:
+  - shepherd-recording-rules.yml
+  - shepherd-alerts.yml
+
+evaluation_interval: 1m
+
+group_eval_order:
+  - shepherd.recording
+  - shepherd.baseline
+
+tests:
+  - name: shepherd baseline recording and alert rules
+    interval: 1m
+    input_series:
+      - series: 'up{job="shepherd",instance="localhost:8080"}'
+        values: '0x35'
+      - series: 'shepherd_http_requests_total{method="GET",route="/api/v1/health/live",status="200"}'
+        values: '0+540x35'
+      - series: 'shepherd_http_requests_total{method="GET",route="/api/v1/health/live",status="500"}'
+        values: '0+60x35'
+      - series: 'shepherd_http_request_duration_seconds_bucket{method="GET",route="/api/v1/health/live",status="200",le="0.5"}'
+        values: '0x35'
+      - series: 'shepherd_http_request_duration_seconds_bucket{method="GET",route="/api/v1/health/live",status="200",le="1"}'
+        values: '0+300x35'
+      - series: 'shepherd_http_request_duration_seconds_bucket{method="GET",route="/api/v1/health/live",status="200",le="2.5"}'
+        values: '0+600x35'
+      - series: 'shepherd_http_request_duration_seconds_bucket{method="GET",route="/api/v1/health/live",status="200",le="+Inf"}'
+        values: '0+600x35'
+      - series: 'shepherd_openapi_validation_failures_total{phase="request",code="request_schema",method="POST",route="/api/v1/vms"}'
+        values: '0+6x35'
+      - series: 'shepherd_postgres_table_stats_scrape_success'
+        values: '0x35'
+      - series: 'shepherd_river_dead_tuple_ratio'
+        values: '0.4x35'
+      - series: 'shepherd_river_queue_stats_scrape_success'
+        values: '0x35'
+      - series: 'shepherd_river_ready_jobs{queue="vm_operations",kind="vm_create"}'
+        values: '3x35'
+      - series: 'shepherd_river_oldest_ready_job_age_seconds{queue="vm_operations"}'
+        values: '600x35'
+      - series: 'shepherd_river_recent_terminal_jobs{queue="vm_operations",state="discarded",kind="vm_create"}'
+        values: '1x35'
+
+    promql_expr_test:
+      - expr: shepherd:http_requests:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:http_requests:rate5m{}'
+            value: 10
+      - expr: shepherd:http_requests_5xx:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:http_requests_5xx:rate5m{}'
+            value: 1
+      - expr: shepherd:http_5xx:ratio5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:http_5xx:ratio5m{}'
+            value: 0.1
+      - expr: shepherd:http_request_duration_seconds:p95_5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:http_request_duration_seconds:p95_5m{}'
+            value: 2.35
+      - expr: shepherd:openapi_validation_failures:rate5m
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:openapi_validation_failures:rate5m{code="request_schema",phase="request"}'
+            value: 0.1
+      - expr: shepherd:river_ready_jobs:sum
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:river_ready_jobs:sum{queue="vm_operations"}'
+            value: 3
+      - expr: shepherd:river_recent_discarded_jobs:sum
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:river_recent_discarded_jobs:sum{queue="vm_operations"}'
+            value: 1
+
+    alert_rule_test:
+      - alertname: ShepherdMetricsTargetDown
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              instance: localhost:8080
+              job: shepherd
+              severity: critical
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd metrics target is down
+              description: Prometheus cannot scrape the Shepherd metrics target.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdmetricstargetdown
+      - alertname: ShepherdHighHTTP5xxRate
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd HTTP 5xx ratio is high
+              description: More than 5% of Shepherd HTTP requests are returning 5xx responses.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdhighhttp5xxrate
+      - alertname: ShepherdHighHTTPP95Latency
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd HTTP p95 latency is high
+              description: Global Shepherd HTTP p95 latency is above 2 seconds.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdhighhttpp95latency
+      - alertname: ShepherdOpenAPIValidationFailures
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              code: request_schema
+              phase: request
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd OpenAPI validation failures are sustained
+              description: Runtime OpenAPI validation failures are sustained for phase=request code=request_schema.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdopenapivalidationfailures
+      - alertname: ShepherdPostgresStatsScrapeFailed
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd PostgreSQL stats scrape failed
+              description: Shepherd cannot collect PostgreSQL table statistics for observability.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdpostgresstatsscrapefailed
+      - alertname: ShepherdRiverDeadTupleRatioHigh
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd River dead tuple ratio is high
+              description: River dead tuple ratio has stayed above the 30% RFC-0001 evaluation threshold.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverdeadtupleratiohigh
+      - alertname: ShepherdRiverQueueStatsScrapeFailed
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd River queue stats scrape failed
+              description: Shepherd cannot collect River queue statistics for observability.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverqueuestatsscrapefailed
+      - alertname: ShepherdRiverQueueBacklogAgeHigh
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              queue: vm_operations
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd River queue backlog age is high
+              description: The oldest ready Shepherd River job has waited more than 5 minutes for queue=vm_operations.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverqueuebacklogagehigh
+      - alertname: ShepherdRiverJobsDiscarded
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              queue: vm_operations
+              severity: critical
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd River jobs were discarded
+              description: One or more Shepherd River jobs reached the discarded terminal state for queue=vm_operations.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverjobsdiscarded

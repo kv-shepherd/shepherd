@@ -1,0 +1,16 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: shepherd
+  labels:
+    app.kubernetes.io/name: shepherd
+    app.kubernetes.io/component: monitoring
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: shepherd
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scheme: http

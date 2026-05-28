@@ -24,6 +24,158 @@ var (
 	testOpenAPIValidatorCache = map[string]gin.HandlerFunc{}
 )
 
+type recordingOpenAPIValidationMetrics struct {
+	mu     sync.Mutex
+	events []openAPIValidationMetricEvent
+}
+
+type openAPIValidationMetricEvent struct {
+	method string
+	route  string
+	phase  string
+	code   string
+}
+
+func (r *recordingOpenAPIValidationMetrics) RecordOpenAPIValidationFailure(method, route, phase, code string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, openAPIValidationMetricEvent{
+		method: method,
+		route:  route,
+		phase:  phase,
+		code:   code,
+	})
+}
+
+func (r *recordingOpenAPIValidationMetrics) onlyEvent(t *testing.T) openAPIValidationMetricEvent {
+	t.Helper()
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.events) != 1 {
+		t.Fatalf("recorded validation metric events = %d, want 1: %#v", len(r.events), r.events)
+	}
+	return r.events[0]
+}
+
+func newOpenAPIValidatorMetricsTestRouter(t *testing.T, metrics OpenAPIValidationMetrics) *gin.Engine {
+	t.Helper()
+	testLoggerInit.Do(func() {
+		_ = logger.Init("error", "console")
+	})
+	prevMode := gin.Mode()
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(func() {
+		gin.SetMode(prevMode)
+	})
+
+	router := gin.New()
+	middleware, err := NewOpenAPIValidator("/api/v1", WithOpenAPIValidationMetrics(metrics))
+	if err != nil {
+		t.Fatalf("init openapi validator: %v", err)
+	}
+	router.Use(middleware)
+	return router
+}
+
+func TestOpenAPIValidatorRecordsRequestValidationFailureMetric(t *testing.T) {
+	metrics := &recordingOpenAPIValidationMetrics{}
+	router := newOpenAPIValidatorMetricsTestRouter(t, metrics)
+	router.POST("/api/v1/vms/request", func(c *gin.Context) {
+		c.JSON(http.StatusAccepted, gin.H{
+			"ticket_id": "ticket-123",
+			"status":    "PENDING",
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/vms/request", bytes.NewBufferString(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer test-token")
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid request body, got %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	event := metrics.onlyEvent(t)
+	if event != (openAPIValidationMetricEvent{
+		method: http.MethodPost,
+		route:  "/api/v1/vms/request",
+		phase:  openAPIValidationPhaseRequest,
+		code:   openAPIRequestInvalidCode,
+	}) {
+		t.Fatalf("validation metric event = %#v", event)
+	}
+}
+
+func TestOpenAPIValidatorRecordsResponseValidationFailureMetric(t *testing.T) {
+	metrics := &recordingOpenAPIValidationMetrics{}
+	router := newOpenAPIValidatorMetricsTestRouter(t, metrics)
+	router.GET("/api/v1/health/live", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "NOT_OK"})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/health/live", http.NoBody)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500 for invalid response schema, got %d body=%s", resp.Code, resp.Body.String())
+	}
+
+	event := metrics.onlyEvent(t)
+	if event != (openAPIValidationMetricEvent{
+		method: http.MethodGet,
+		route:  "/api/v1/health/live",
+		phase:  openAPIValidationPhaseResponse,
+		code:   openAPIResponseInvalidCode,
+	}) {
+		t.Fatalf("validation metric event = %#v", event)
+	}
+}
+
+func TestOpenAPIValidatorRecordsSetupFailureWithUnmatchedFallback(t *testing.T) {
+	metrics := &recordingOpenAPIValidationMetrics{}
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/missing", http.NoBody)
+	resp := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(resp)
+	c.Request = req
+
+	runtime := &openAPIRuntimeValidator{metrics: metrics}
+	runtime.recordValidationFailure(c, openAPIValidationPhaseSetup, openAPIValidatorUnavailableCode)
+
+	event := metrics.onlyEvent(t)
+	if event != (openAPIValidationMetricEvent{
+		method: http.MethodGet,
+		route:  openAPIMetricUnmatchedRoute,
+		phase:  openAPIValidationPhaseSetup,
+		code:   openAPIValidatorUnavailableCode,
+	}) {
+		t.Fatalf("validation metric event = %#v", event)
+	}
+}
+
+func TestOpenAPIValidatorNormalizesUnknownHTTPMethodForMetrics(t *testing.T) {
+	metrics := &recordingOpenAPIValidationMetrics{}
+	req := httptest.NewRequest("BREW", "/api/v1/missing", http.NoBody)
+	resp := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(resp)
+	c.Request = req
+
+	runtime := &openAPIRuntimeValidator{metrics: metrics}
+	runtime.recordValidationFailure(c, openAPIValidationPhaseSetup, openAPIValidatorUnavailableCode)
+
+	event := metrics.onlyEvent(t)
+	if event != (openAPIValidationMetricEvent{
+		method: "_OTHER",
+		route:  openAPIMetricUnmatchedRoute,
+		phase:  openAPIValidationPhaseSetup,
+		code:   openAPIValidatorUnavailableCode,
+	}) {
+		t.Fatalf("validation metric event = %#v", event)
+	}
+}
+
 func newOpenAPIValidatorTestRouter(t *testing.T) *gin.Engine {
 	t.Helper()
 	return newOpenAPIValidatorTestRouterWithMode(t, gin.TestMode)
@@ -1035,6 +1187,55 @@ func TestOpenAPIValidatorAllowsDynamicDirectorySyncDescriptorRequestSchemaInStri
 
 	if resp.Code != http.StatusOK {
 		t.Fatalf("expected 200 for dynamic directory request_schema, got %d body=%s", resp.Code, resp.Body.String())
+	}
+}
+
+func TestOpenAPIValidatorAllowsDynamicLoginProviderRequestSchemaInStrictMode(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/auth/providers", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":        "ldap-default",
+					"name":      "LDAP",
+					"auth_type": "ldap",
+					"login_modes": []gin.H{
+						{
+							"key":          "credentials",
+							"display_name": "LDAP Login",
+							"interaction":  "credentials",
+							"request_schema": gin.H{
+								"type":                 "object",
+								"required":             []string{"username", "password"},
+								"additionalProperties": false,
+								"properties": gin.H{
+									"username": gin.H{
+										"type":        "string",
+										"title":       "Username",
+										"description": "LDAP username",
+									},
+									"password": gin.H{
+										"type":        "string",
+										"format":      "password",
+										"title":       "Password",
+										"description": "LDAP password",
+									},
+								},
+							},
+							"default": true,
+						},
+					},
+				},
+			},
+		})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/auth/providers", http.NoBody)
+	resp := httptest.NewRecorder()
+	router.ServeHTTP(resp, req)
+
+	if resp.Code != http.StatusOK {
+		t.Fatalf("expected 200 for dynamic login provider request_schema, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

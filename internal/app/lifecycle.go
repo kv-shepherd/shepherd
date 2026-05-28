@@ -68,6 +68,11 @@ func (a *Application) Shutdown() {
 	if a.DB != nil {
 		a.DB.Close()
 	}
+	if a.Tracing != nil {
+		if err := a.Tracing.Shutdown(shutdownCtx); err != nil {
+			logger.Warn("failed to shut down tracing", zap.Error(err))
+		}
+	}
 }
 
 func (a *Application) runClusterHealthLoop(ctx context.Context) {

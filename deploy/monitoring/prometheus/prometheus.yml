@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/rules/shepherd-recording-rules.yml
+  - /etc/prometheus/rules/shepherd-alerts.yml
+
+scrape_configs:
+  - job_name: shepherd
+    metrics_path: /metrics
+    scheme: http
+    static_configs:
+      - targets:
+          - server:8080

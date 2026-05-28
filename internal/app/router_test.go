@@ -8,11 +8,13 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/observability"
 	"kv-shepherd.io/shepherd/internal/provider"
 )
 
@@ -61,6 +63,7 @@ func TestBuildCORSConfig_UsesDefaultOriginsWhenEmpty(t *testing.T) {
 		"http://127.0.0.1:3000",
 	}, corsCfg.AllowOrigins)
 	require.True(t, corsCfg.AllowCredentials)
+	require.Contains(t, corsCfg.ExposeHeaders, observability.TraceIDHeader)
 }
 
 type stubCORSOriginChecker struct {
@@ -173,7 +176,7 @@ func TestNewRouterAppliesMaxRequestBodyBytesBeforeHandlers(t *testing.T) {
 			AllowCredentials:    true,
 		},
 	}
-	router := newRouter(cfg, nil, middleware.JWTConfig{})
+	router := newRouter(cfg, nil, middleware.JWTConfig{}, nil, nil)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader("12345"))
 	rr := httptest.NewRecorder()
@@ -249,4 +252,131 @@ func TestMapClusterHealthStatus(t *testing.T) {
 	require.Equal(t, entcluster.StatusUNHEALTHY, mapClusterHealthStatus(provider.ClusterStatusUnhealthy))
 	require.Equal(t, entcluster.StatusUNREACHABLE, mapClusterHealthStatus(provider.ClusterStatusUnreachable))
 	require.Equal(t, entcluster.StatusUNKNOWN, mapClusterHealthStatus(provider.ClusterStatus("unexpected")))
+}
+
+func TestNewRouterExposesMetricsBeforeAuthAndOpenAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			MaxRequestBodyBytes: 4,
+			AllowCredentials:    true,
+		},
+		Observability: config.ObservabilityConfig{
+			MetricsEnabled: true,
+			MetricsPath:    "/metrics",
+		},
+	}
+	metrics := observability.NewMetrics()
+	router := newRouter(cfg, nil, middleware.JWTConfig{}, metrics, nil)
+
+	var rr *httptest.ResponseRecorder
+	for range 2 {
+		req := httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody)
+		rr = httptest.NewRecorder()
+		router.ServeHTTP(rr, req)
+	}
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Contains(t, rr.Body.String(), "go_goroutines")
+	require.Contains(t, rr.Body.String(), "shepherd_http_requests_total")
+}
+
+func TestNewRouterExposesTraceIDHeaderFromTracingMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			MaxRequestBodyBytes: 4,
+			AllowCredentials:    true,
+		},
+		Observability: config.ObservabilityConfig{
+			MetricsEnabled:  true,
+			MetricsPath:     "/metrics",
+			TracingEnabled:  true,
+			TracingExporter: observability.TracingExporterStdout,
+		},
+	}
+	tracing, err := observability.NewTracing(context.Background(), observability.TracingOptions{
+		Enabled:     true,
+		ServiceName: "shepherd-test",
+		Exporter:    observability.TracingExporterStdout,
+		SampleRatio: 1,
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, tracing.Shutdown(context.Background()))
+	})
+
+	router := newRouter(cfg, nil, middleware.JWTConfig{}, observability.NewMetrics(), tracing)
+	req := httptest.NewRequest(http.MethodGet, "/metrics", http.NoBody)
+	req.Header.Set("traceparent", "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusOK, rr.Code)
+	require.Equal(t, "4bf92f3577b34da6a3ce929d0e0e4736", rr.Header().Get(observability.TraceIDHeader))
+}
+
+func TestNewRouterWiresOpenAPIValidationMetrics(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := &config.Config{
+		Server: config.ServerConfig{
+			MaxRequestBodyBytes: 1 << 20,
+			AllowCredentials:    true,
+		},
+		Observability: config.ObservabilityConfig{
+			MetricsEnabled: true,
+			MetricsPath:    "/metrics",
+		},
+	}
+	metrics := observability.NewMetrics()
+	router := newRouter(cfg, nil, middleware.JWTConfig{}, metrics, nil)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{}`))
+	req.Header.Set("Content-Type", "application/json")
+	rr := httptest.NewRecorder()
+	router.ServeHTTP(rr, req)
+
+	require.Equal(t, http.StatusBadRequest, rr.Code)
+
+	families, err := metrics.Gather()
+	require.NoError(t, err)
+	metric := requireMetric(t, families, "shepherd_openapi_validation_failures_total", map[string]string{
+		"phase":  "request",
+		"code":   "OPENAPI_REQUEST_INVALID",
+		"method": http.MethodPost,
+		"route":  "/api/v1/auth/login",
+	})
+	require.Equal(t, float64(1), metric.GetCounter().GetValue())
+}
+
+func requireMetric(t *testing.T, families []*dto.MetricFamily, name string, labels map[string]string) *dto.Metric {
+	t.Helper()
+	for _, family := range families {
+		if family.GetName() != name {
+			continue
+		}
+		for _, metric := range family.GetMetric() {
+			if appMetricHasLabels(metric, labels) {
+				return metric
+			}
+		}
+	}
+	t.Fatalf("metric %s with labels %v not found", name, labels)
+	return nil
+}
+
+func appMetricHasLabels(metric *dto.Metric, labels map[string]string) bool {
+	actual := make(map[string]string, len(metric.GetLabel()))
+	for _, label := range metric.GetLabel() {
+		actual[label.GetName()] = label.GetValue()
+	}
+	for key, want := range labels {
+		if actual[key] != want {
+			return false
+		}
+	}
+	return true
 }

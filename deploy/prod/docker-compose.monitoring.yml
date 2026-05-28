@@ -1,0 +1,52 @@
+# =============================================================================
+# KubeVirt Shepherd — Optional Production Monitoring Overlay
+# =============================================================================
+# Usage:
+#   docker compose \
+#     -f deploy/prod/docker-compose.prod.yml \
+#     -f deploy/prod/docker-compose.monitoring.yml \
+#     --env-file deploy/prod/.env.prod \
+#     up -d
+# =============================================================================
+
+services:
+  prometheus:
+    image: ${PROMETHEUS_IMAGE:?PROMETHEUS_IMAGE is required when monitoring overlay is enabled}
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/shepherd-recording-rules.yml:/etc/prometheus/rules/shepherd-recording-rules.yml:ro
+      - ../monitoring/prometheus/shepherd-alerts.yml:/etc/prometheus/rules/shepherd-alerts.yml:ro
+      - shepherd_prometheus_data:/prometheus
+    depends_on:
+      server:
+        condition: service_started
+
+  grafana:
+    image: ${GRAFANA_IMAGE:?GRAFANA_IMAGE is required when monitoring overlay is enabled}
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required when monitoring overlay is enabled}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    ports:
+      - "${GRAFANA_PORT:-3001}:3000"
+    volumes:
+      - ../monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ../monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards/shepherd:ro
+      - shepherd_grafana_data:/var/lib/grafana
+    depends_on:
+      prometheus:
+        condition: service_started
+
+volumes:
+  shepherd_prometheus_data:
+    driver: local
+  shepherd_grafana_data:
+    driver: local
