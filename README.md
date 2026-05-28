@@ -4,7 +4,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kv-shepherd/shepherd)](go.mod)
 [![CI](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml/badge.svg)](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml)
 
-**[Website](https://www.kv-shepherd.io)** ·
+**[Website](https://kv-shepherd.io)** ·
 **[Online Demo](https://demo.kv-shepherd.io)** ·
 **[Documentation](docs/README.md)**
 
@@ -95,7 +95,15 @@ kubectl -n shepherd port-forward svc/shepherd-edge 3443:443
 
 Open `https://127.0.0.1:3443`. See the chart repository for NodePort/IP access,
 Ingress with TLS, persistent PostgreSQL, external database values, and
-managed-cluster RBAC examples.
+managed-cluster RBAC examples. Clusters that run Prometheus Operator can also
+enable chart-managed monitoring resources:
+
+```bash
+helm upgrade --install shepherd shepherd/shepherd \
+  --namespace shepherd --create-namespace \
+  --set observability.serviceMonitor.enabled=true \
+  --set observability.prometheusRule.enabled=true
+```
 
 ### Docker Compose From Release Images
 
@@ -121,7 +129,7 @@ before `bash`.
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for external PostgreSQL 18,
 domain/TLS configuration, image version pinning, manual compose commands, and
-the security checklist.
+the optional Prometheus/Grafana monitoring overlay, and the security checklist.
 
 ### Local Development
 
@@ -176,6 +184,7 @@ configuration reference, security checklist, and VPS experience seed setup.
 Feedback from real environments is especially useful while the project is in
 Alpha.
 
+- [Official Website](https://kv-shepherd.io) - Project homepage and feature overview
 - [Discord](https://discord.gg/9P2wtpPMUe) - Chat with the community
 - [GitHub Issues][issues] - Bug reports and feature requests
 - [GitHub Discussions](https://github.com/kv-shepherd/shepherd/discussions) - Questions and ideas

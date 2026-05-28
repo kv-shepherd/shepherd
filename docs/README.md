@@ -1,5 +1,7 @@
 # KubeVirt Shepherd Documentation
 
+> **[kv-shepherd.io](https://kv-shepherd.io)** · **[Online Demo](https://demo.kv-shepherd.io)** · **[Deployment Guide](./DEPLOYMENT.md)**
+>
 > This directory contains all project documentation organized following open source best practices.
 
 ---
@@ -164,6 +166,7 @@ See [CONTRIBUTING.md](../CONTRIBUTING.md) for detailed guidelines.
 
 | Document | Purpose |
 |----------|---------|
+| [kv-shepherd.io](https://kv-shepherd.io) | Official project website |
 | [DEPLOYMENT.md](./DEPLOYMENT.md) | Production deployment guide and configuration reference |
 | [RELEASE.md](./RELEASE.md) | Release process and versioning |
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Contribution guidelines |
