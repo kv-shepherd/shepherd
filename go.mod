@@ -25,7 +25,7 @@ require (
 	github.com/prometheus/client_model v0.6.2
 	github.com/riverqueue/river v0.37.0
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.37.0
-	github.com/riverqueue/river/rivertype v0.37.0
+	github.com/riverqueue/river/rivertype v0.38.0
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
