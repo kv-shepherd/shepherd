@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion test-backend-docker-pg master-flow-strict-docker-pg pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion project-completion-readiness test-backend-docker-pg master-flow-strict-docker-pg live-e2e-readiness ci-live-e2e-evidence ci-live-e2e-latest-evidence pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract ci-prometheus-config ci-prometheus-alert-runbooks ci-prometheus-operator-rule-parity ci-prometheus-rules ci-grafana-dashboard-promql ci-monitoring-assets govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.10
@@ -198,6 +198,7 @@ ci-governance:
 	@go run docs/design/ci/scripts/check_stage5e_batch_baseline.go
 	@go run docs/design/ci/scripts/check_stage6_vnc_baseline.go
 	@bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
+	@$(MAKE) ci-live-e2e-evidence
 	@go run docs/design/ci/scripts/check_auth_provider_plugin_boundary.go
 	@go run docs/design/ci/scripts/check_frontend_openapi_usage.go
 	@go run docs/design/ci/scripts/check_frontend_no_non_english_literals.go
@@ -271,6 +272,26 @@ ci-e2e-smoke:
 	echo "Using Playwright web port $$PW_WEB_PORT"; \
 	CI=1 PW_WEB_PORT="$$PW_WEB_PORT" npm run test:e2e:mock --prefix web
 	@find web -maxdepth 1 -name 'tsconfig.e2e.*.json' -delete
+
+## live-e2e-readiness: Validate live E2E prerequisites without starting services. Set LIVE_E2E_PREFLIGHT_ARGS='--no-db-wrapper' when DATABASE_URL is already provided.
+live-e2e-readiness:
+	@bash scripts/run_e2e_live.sh --preflight-only $(LIVE_E2E_PREFLIGHT_ARGS)
+
+## ci-live-e2e-evidence: Validate ADR-0058 live E2E evidence manifest fixtures. Set LIVE_E2E_EVIDENCE_FILE to validate a real manifest.
+ci-live-e2e-evidence:
+	@if [ -n "$(LIVE_E2E_EVIDENCE_FILE)" ]; then \
+		bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh --require-full-pass --require-existing-artifacts "$(LIVE_E2E_EVIDENCE_FILE)"; \
+	else \
+		bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh; \
+		bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh --self-test; \
+		node docs/design/ci/scripts/find_latest_live_e2e_full_evidence.mjs --self-test; \
+	fi
+
+## ci-live-e2e-latest-evidence: Manually validate the newest .run/live-e2e full evidence manifest as release evidence.
+ci-live-e2e-latest-evidence:
+	@set -e; \
+	manifest="$$(node docs/design/ci/scripts/find_latest_live_e2e_full_evidence.mjs .run/live-e2e)"; \
+	bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh --require-full-pass --require-existing-artifacts "$${manifest}"
 
 ## ci-go-lint: Run the Go lint target set used by the required CI Lint job
 ci-go-lint: lint-version-check
@@ -376,6 +397,39 @@ ci-api-generated-sync-check:
 ci-api-contract:
 	@$(MAKE) api-contract-test
 
+## ci-prometheus-config: Validate the Prometheus scrape config and referenced rule-file loading path.
+ci-prometheus-config:
+	@bash docs/design/ci/scripts/check_prometheus_config.sh
+
+## ci-prometheus-operator-rule-parity: Validate Operator PrometheusRule content parity with native rule files.
+ci-prometheus-operator-rule-parity:
+	@bash docs/design/ci/scripts/check_prometheus_operator_rule_parity.sh
+
+## ci-prometheus-alert-runbooks: Validate baseline alert runbook_url annotations.
+ci-prometheus-alert-runbooks:
+	@bash docs/design/ci/scripts/check_prometheus_alert_runbooks.sh
+
+## ci-prometheus-rules: Validate Prometheus recording rules, alert rules, runbooks, rule tests, config, and operator rule packaging. Set PROMTOOL=/path/to/promtool for real promtool execution, or PROMTOOL_REQUIRED=1 to fail when promtool is absent.
+ci-prometheus-rules:
+	@$(MAKE) ci-prometheus-config
+	@bash docs/design/ci/scripts/check_prometheus_recording_rules.sh
+	@bash docs/design/ci/scripts/check_prometheus_alert_rules.sh
+	@$(MAKE) ci-prometheus-alert-runbooks
+	@bash docs/design/ci/scripts/check_prometheus_rule_tests.sh
+	@$(MAKE) ci-prometheus-operator-rule-parity
+	@bash docs/design/ci/scripts/check_prometheus_operator_assets.sh
+
+## ci-grafana-dashboard-promql: Validate starter Grafana dashboard panel PromQL syntax.
+ci-grafana-dashboard-promql:
+	@bash docs/design/ci/scripts/check_grafana_dashboard_promql.sh
+
+## ci-monitoring-assets: Validate all optional monitoring deployment assets.
+ci-monitoring-assets:
+	@$(MAKE) ci-prometheus-rules
+	@bash docs/design/ci/scripts/check_monitoring_compose_assets.sh
+	@bash docs/design/ci/scripts/check_grafana_dashboards.sh
+	@$(MAKE) ci-grafana-dashboard-promql
+
 ## pr: Short alias for the workflow-equivalent PR validation bundle
 pr: pr-ci
 
@@ -443,11 +497,17 @@ master-flow-strict:
 	go test -count=1 ./internal/api/handlers ./internal/governance/approval ./internal/usecase ./internal/jobs ./internal/repository/sqlc ./internal/service
 	npm run typecheck --prefix web
 	npm run test:run --prefix web
-	bash scripts/run_e2e_live.sh --no-db-wrapper
 
-## master-flow-completion: Check if full master-flow completion can be claimed (no deferred/exemption debt)
+## master-flow-completion: Check static master-flow completion readiness (no deferred/exemption debt)
 master-flow-completion:
 	go run docs/design/ci/scripts/check_master_flow_completion_readiness.go
+
+## project-completion-readiness: Check CI-suitable completion readiness (static debt, monitoring assets, and evidence schema).
+project-completion-readiness:
+	@$(MAKE) master-flow-completion
+	@$(MAKE) ci-monitoring-assets
+	@$(MAKE) ci-live-e2e-evidence
+	@echo "OK: project completion readiness check passed (static gates + monitoring assets + live E2E evidence schema)"
 
 ## test-backend-docker-pg: Run backend PostgreSQL test suites against an isolated Docker PostgreSQL container
 test-backend-docker-pg:

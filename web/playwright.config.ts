@@ -1,4 +1,4 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices, type ReporterDescription } from '@playwright/test';
 
 const e2eRunId = process.env.PW_E2E_RUN_ID ?? 'local';
 const defaultWebPort = 3210;
@@ -19,6 +19,14 @@ const e2eCacheDir = `${e2eDistDir}/cache`;
 const e2eTsconfigPath = `tsconfig.e2e.${e2eRunId}.json`;
 const e2eTsconfigBackupPath = `tsconfig.e2e.${e2eRunId}.backup.json`;
 const useExistingBuild = process.env.PW_USE_EXISTING_BUILD === '1';
+const playwrightJsonOutputFile = process.env.PLAYWRIGHT_JSON_OUTPUT_FILE;
+const playwrightHtmlOutputDir = process.env.PLAYWRIGHT_HTML_OUTPUT_DIR;
+const reporters: ReporterDescription[] = process.env.CI
+	? [['github'], ['html', { open: 'never', ...(playwrightHtmlOutputDir ? { outputFolder: playwrightHtmlOutputDir } : {}) }]]
+	: [['list']];
+if (playwrightJsonOutputFile) {
+	reporters.push(['json', { outputFile: playwrightJsonOutputFile }]);
+}
 const webServerCommand = useExistingBuild
 	? `sh -c 'DEV_ALLOWED_ORIGINS=${devAllowedOrigins} npx next start --port ${webPort}'`
 	: `sh -c 'trap "if [ -f ${e2eTsconfigBackupPath} ]; then mv ${e2eTsconfigBackupPath} tsconfig.json; fi; rm -f ${e2eTsconfigPath}" EXIT && mkdir -p ${e2eCacheDir} && find ${e2eDistDir} -mindepth 1 -maxdepth 1 ! -name cache -exec rm -rf {} + && rm -f ${e2eTsconfigPath} ${e2eTsconfigBackupPath} && cp tsconfig.json ${e2eTsconfigBackupPath} && cp tsconfig.json ${e2eTsconfigPath} && DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npx next build --webpack && DEV_ALLOWED_ORIGINS=${devAllowedOrigins} NEXT_DIST_DIR=${e2eDistDir} NEXT_TSCONFIG_PATH=${e2eTsconfigPath} npx next start --port ${webPort}'`;
@@ -39,7 +47,8 @@ export default defineConfig({
 	// (live tests are stateful – excessive retries cause duplicate side-effects)
 	retries: process.env.CI ? 2 : 0,
 	workers: process.env.CI ? 1 : undefined,
-	reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
+	reporter: reporters,
+	outputDir: process.env.PLAYWRIGHT_TEST_RESULTS_DIR ?? './test-results',
 	use: {
 		baseURL,
 		trace: 'on-first-retry',

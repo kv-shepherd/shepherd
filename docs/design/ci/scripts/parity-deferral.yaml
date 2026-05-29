@@ -97,14 +97,6 @@ deferrals:
     expiry: "2026-08-25"
     reason: "gh CLI release upload + body append; release-pipeline specific"
 
-  # ── ci.yml (1 block) ──
-  - file: ci.yml
-    job: master-flow-strict
-    step_name: "Frontend e2e tests (live) disabled"
-    owner: e2e-wg
-    expiry: "2026-08-25"
-    reason: "Informational echo when live E2E is disabled; no logic to extract"
-
   # ── frontend-tests.yml (2 blocks) ──
   - file: frontend-tests.yml
     job: unit-tests

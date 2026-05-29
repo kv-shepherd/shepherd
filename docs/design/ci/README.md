@@ -14,6 +14,7 @@ This document is the authoritative source for **engineering governance and CI ga
 - `docs/design/ci/README.md` (this file): implementation governance, quality gates, and CI enforcement mechanics.
 - `docs/design/ci/MASTER_FLOW_STRICT_TEST_FLOW.md`: mandatory spec-driven test execution order (fail -> rework).
 - `docs/design/ci/GATE_HARDENING_CHECKLIST.md`: gate-first remediation queue and verified drift register.
+- `docs/design/ci/live-e2e-evidence-baseline.md`: ADR-0058 live E2E evidence manifest and artifact contract.
 - `docs/design/phases/*.md`: implementation details that must satisfy both interaction outcomes and CI/ADR constraints.
 
 Do not place CI toolchain policy details in `master-flow.md`; keep those details here and in `docs/design/ci/scripts/`.
@@ -75,6 +76,9 @@ Enforcement is blocking:
 | [check_stage5e_batch_baseline.go](./scripts/check_stage5e_batch_baseline.go) | Enforce Stage 5.E batch canonical endpoints (+ `/vms/batch/power` compatibility) + admin rate-limit override endpoints + handler/idempotency/rate-limit baseline + gateway child-dispatch + parent-status sync fragments; remove stale deferred allowlist entries | Required | ✅ Yes |
 | [check_stage6_vnc_baseline.go](./scripts/check_stage6_vnc_baseline.go) | Enforce Stage 6 VNC canonical endpoints + handler/token/gateway baseline + behavior tests + stale deferred allowlist cleanup | Required | ✅ Yes |
 | [check_live_e2e_no_mock.sh](./scripts/check_live_e2e_no_mock.sh) | Block network route-mocking patterns in strict live e2e spec (`master-flow-live.spec.ts`) | Required | ✅ Yes |
+| [check_live_e2e_evidence_manifest.sh](./scripts/check_live_e2e_evidence_manifest.sh) | Validate ADR-0058 live E2E evidence manifest fixtures and real-run manifests when provided | Required | ✅ Yes |
+| [find_latest_live_e2e_full_evidence.mjs](./scripts/find_latest_live_e2e_full_evidence.mjs) | Select the newest `mode=full` live E2E evidence manifest under `.run/live-e2e/` for manual release evidence validation; preflight readiness evidence cannot satisfy a full-pass claim | Manual release evidence | ✅ Yes |
+| [live-e2e-evidence-baseline.md](./live-e2e-evidence-baseline.md) | ADR-0058 evidence contract for `live-e2e.evidence.json`, Playwright JSON output, and release pass criteria | Required design contract | ✅ Yes |
 | `shepherd-arch/rbacguards` (Analyzer) | Enforce route-level/platform-admin RBAC invariants and explicit fail-closed guards for high-risk handlers | Required | ✅ Yes |
 | [check_auth_provider_plugin_boundary.go](./scripts/check_auth_provider_plugin_boundary.go) | Enforce auth-provider runtime/frontend/OpenAPI stay plugin-standard (no OIDC/LDAP hardcoded branches, no enterprise-private naming on public auth/directory surfaces, narrow contract packages stay split from root re-export files) | Required | ✅ Yes |
 | [check_frontend_openapi_usage.go](./scripts/check_frontend_openapi_usage.go) | Enforce each REST-client OpenAPI operation is consumed by frontend or explicitly deferred; require `x-frontend-consumption` metadata for non-REST-client operations; guard system delete `confirm_name` flow | Required | ✅ Yes |
@@ -96,10 +100,20 @@ Enforcement is blocking:
 | [check_doc_claims_consistency.go](./scripts/check_doc_claims_consistency.go) | Block checklist "done" claims that lack implementation evidence, block stale provider-boundary doc claims that collapse approval/notification/runtime auth back into `internal/provider/auth.go`, and freeze Phase 1 cluster kubeconfig security evidence | Required | ✅ Yes |
 | [check_master_flow_api_alignment.go](./scripts/check_master_flow_api_alignment.go) | Enforce every master-flow API path is either in OpenAPI or explicit deferred allowlist | Required | ✅ Yes |
 | [check_master_flow_test_matrix.go](./scripts/check_master_flow_test_matrix.go) | Enforce required master-flow stages have executable tests or explicit deferred entries; when `live_step_markers` are declared, enforce those ASCII flow markers exist in mapped `*-live.spec.ts` files (ADR-0034 strict profile: full stage set) | Required | ✅ Yes |
-| [check_master_flow_completion_readiness.go](./scripts/check_master_flow_completion_readiness.go) | Full-completion claim gate: deferred/exemption allowlists must all be empty | Required (for completion claim) | ✅ Yes |
+| [check_master_flow_completion_readiness.go](./scripts/check_master_flow_completion_readiness.go) | Static master-flow completion gate: deferred/exemption allowlists must all be empty | Required (for static completion claim) | ✅ Yes |
 | [check_markdown_links.go](./scripts/check_markdown_links.go) | Validate local markdown links and anchors | Required | ✅ Yes |
+| [check_prometheus_config.sh](./scripts/check_prometheus_config.sh) | Validate the ADR-0056 Prometheus scrape config and referenced rule-file loading path with `promtool check config`; CI sets `PROMTOOL_REQUIRED=1` so missing `promtool` fails | Required | ✅ Yes |
+| [check_prometheus_recording_rules.sh](./scripts/check_prometheus_recording_rules.sh) | Validate the ADR-0055 Prometheus recording rule pack structure and run `promtool check rules`; CI sets `PROMTOOL_REQUIRED=1` so missing `promtool` fails | Required | ✅ Yes |
+| [check_prometheus_alert_rules.sh](./scripts/check_prometheus_alert_rules.sh) | Validate the ADR-0055 Prometheus alert rule pack structure and run `promtool check rules`; CI sets `PROMTOOL_REQUIRED=1` so missing `promtool` fails | Required | ✅ Yes |
+| [check_prometheus_alert_runbooks.sh](./scripts/check_prometheus_alert_runbooks.sh) | Validate ADR-0055 baseline alert `runbook_url` annotations against local Markdown anchors | Required | ✅ Yes |
+| [check_prometheus_rule_tests.sh](./scripts/check_prometheus_rule_tests.sh) | Validate the ADR-0055 Prometheus rule unit test fixture, including ADR-0054 River queue health records and alerts, and run `promtool test rules`; CI sets `PROMTOOL_REQUIRED=1` so missing `promtool` fails | Required | ✅ Yes |
+| [check_prometheus_operator_rule_parity.sh](./scripts/check_prometheus_operator_rule_parity.sh) | Validate ADR-0056 Operator `PrometheusRule.spec.groups` content parity with native rule files, including ADR-0054 River queue rules, and run `promtool check rules` on the extracted groups | Required | ✅ Yes |
+| [check_prometheus_operator_assets.sh](./scripts/check_prometheus_operator_assets.sh) | Validate the ADR-0056 Prometheus Operator starter manifests | Required | ✅ Yes |
+| [check_monitoring_compose_assets.sh](./scripts/check_monitoring_compose_assets.sh) | Validate the ADR-0056 Docker Compose monitoring overlay and provisioning files | Required | ✅ Yes |
+| [check_grafana_dashboards.sh](./scripts/check_grafana_dashboards.sh) | Validate the ADR-0055 starter Grafana dashboard JSON, ADR-0054 River queue panels, and file-provisioning example | Required | ✅ Yes |
+| [check_grafana_dashboard_promql.sh](./scripts/check_grafana_dashboard_promql.sh) | Validate ADR-0055 starter Grafana dashboard panel PromQL through `promtool check rules`; CI sets `PROMTOOL_REQUIRED=1` so missing `promtool` fails | Required | ✅ Yes |
 | [check_master_flow_traceability.go](./scripts/check_master_flow_traceability.go) | Enforce master-flow traceability manifest (ADR-0032) | Required | ✅ Yes |
-| [check_design_doc_governance.sh](./scripts/check_design_doc_governance.sh) | Enforce design doc path/link governance (ADR-0030) | Required | ✅ Yes |
+| [check_design_doc_governance.sh](./scripts/check_design_doc_governance.sh) | Enforce design doc path/link governance (ADR-0030) plus production operations runbook presence and key deployment/live-E2E markers | Required | ✅ Yes |
 
 ### Exempt Directories
 
@@ -157,10 +171,71 @@ bash docs/design/ci/scripts/check_changed_code_has_tests.sh
 # Enforce English-only content policy (except approved i18n paths)
 bash docs/design/ci/scripts/check_no_chinese_chars.sh
 
+# Validate the ADR-0056 Prometheus scrape config
+bash docs/design/ci/scripts/check_prometheus_config.sh
+
+# Validate the ADR-0055 Prometheus recording rule pack
+bash docs/design/ci/scripts/check_prometheus_recording_rules.sh
+
+# Validate the ADR-0055 Prometheus alert rule pack
+bash docs/design/ci/scripts/check_prometheus_alert_rules.sh
+
+# Validate ADR-0055 alert runbook_url anchors
+bash docs/design/ci/scripts/check_prometheus_alert_runbooks.sh
+
+# Validate the ADR-0055 Prometheus rule test fixture,
+# including ADR-0054 River queue health records and alerts
+bash docs/design/ci/scripts/check_prometheus_rule_tests.sh
+
+# Validate ADR-0056 Operator PrometheusRule content parity
+bash docs/design/ci/scripts/check_prometheus_operator_rule_parity.sh
+
+# Validate the ADR-0056 Prometheus Operator starter manifests
+bash docs/design/ci/scripts/check_prometheus_operator_assets.sh
+
+# Validate the ADR-0056 Docker Compose monitoring overlay
+bash docs/design/ci/scripts/check_monitoring_compose_assets.sh
+
+# Run the complete Prometheus monitoring asset validation bundle
+make ci-prometheus-rules
+
+# CI/release evidence mode: fail instead of falling back when promtool is absent
+PROMTOOL_REQUIRED=1 make ci-prometheus-rules
+
+# Run all monitoring deployment asset checks
+make ci-monitoring-assets
+
+# Validate the ADR-0055 starter Grafana dashboard,
+# including ADR-0054 River queue health panels
+bash docs/design/ci/scripts/check_grafana_dashboards.sh
+
+# Validate ADR-0055 starter Grafana dashboard PromQL
+bash docs/design/ci/scripts/check_grafana_dashboard_promql.sh
+make ci-grafana-dashboard-promql
+
 # Strict live e2e must not contain page.route/route.fulfill mocks
 bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
 
-# Full master-flow completion claim (no deferred/exemption debt)
+# Validate ADR-0058 live E2E evidence manifest fixtures
+bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh
+
+# Validate the evidence manifest checker's positive and negative fixtures
+bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh --self-test
+
+# Self-test the latest real live E2E manifest selector
+node docs/design/ci/scripts/find_latest_live_e2e_full_evidence.mjs --self-test
+
+# Manual release evidence only: validate the latest real live E2E run manifest
+# in full-pass mode after an operator-controlled real-cluster run
+make ci-live-e2e-latest-evidence
+
+# Live E2E environment readiness without starting services or browser tests
+bash scripts/run_e2e_live.sh --preflight-only
+make live-e2e-readiness
+# Optional explicit evidence path for release artifact collectors
+bash scripts/run_e2e_live.sh --foreground --evidence-file .run/live-e2e/release/live-e2e.evidence.json
+
+# Static master-flow completion claim (no deferred/exemption debt)
 go run docs/design/ci/scripts/check_master_flow_completion_readiness.go
 
 # Workflow-equivalent local PR validation bundle (parallel)
@@ -172,10 +247,11 @@ make pr-sequential
 # Supplemental scanners
 make supplemental-scans
 
-# End-to-end strict chain (requires DATABASE_URL)
+# End-to-end strict chain (requires DATABASE_URL; does not start live E2E)
 make master-flow-strict
 
-# Run strict live e2e only (no mock routes; requires backend env)
+# Run strict live E2E manually (no mock routes; requires real cluster inputs)
+bash scripts/run_e2e_live.sh --preflight-only
 bash scripts/run_e2e_live.sh --no-db-wrapper
 # run_e2e_live.sh includes preflight gates:
 #   - check_master_flow_test_matrix.go (incl. live_step_markers)
@@ -190,15 +266,20 @@ make master-flow-strict-docker-pg
 ./scripts/run_with_docker_pg.sh
 make test-backend-docker-pg
 
-# Completion claim gate
+# Static completion claim gate
 make master-flow-completion
+
+# CI-suitable project completion claim gate
+# Requires static completion, monitoring assets, and evidence schema fixtures.
+make project-completion-readiness
 ```
 
 Frontend/OpenAPI usage rule:
 
 - REST-client operations in `api/openapi.yaml` must be observed by the frontend AST scanner or listed as a temporary deferment in `docs/design/ci/allowlists/frontend_openapi_unused.txt`.
 - Operations that are intentionally not invoked through the generated frontend REST client must declare operation-level `x-frontend-consumption` metadata with a supported `mode` and `reason`.
-- The deferment allowlist must remain comment-only for a full-completion claim.
+- The deferment allowlist must remain comment-only for a static completion
+  claim.
 
 Docs governance check:
 
@@ -216,7 +297,8 @@ Current split (2026-05-09 optimization):
   Frontend typecheck/unit, API generated-code sync, and project-wide `shepherd-arch`
   scans no longer duplicate here.
 - `ci-prep`: shared local dependency preflight (`npm ci`) before parallel lanes.
-- `master-flow-strict`: PostgreSQL behavior suites + optional live e2e (`ENABLE_LIVE_E2E=true`).
+- `master-flow-strict`: PostgreSQL behavior suites only; live E2E is manual
+  release evidence and stays outside required GitHub CI.
 - `lint`: top-level blocking lint bundle. Runs `govulncheck`, frontend dead-code/dependency
   hygiene (`knip`), and the Go lint stack together. The Go lint stack includes
   `shepherd-arch` through the `custom-gcl` golangci-lint module plugin.
@@ -231,6 +313,9 @@ Current split (2026-05-09 optimization):
   the duplicate governance invocation to avoid concurrent `go generate ./ent` package
   loading races.
 - `ci-e2e-smoke`: local once-only Playwright mock smoke lane.
+- Live E2E is manual release evidence, not required GitHub CI. Use
+  `make live-e2e-readiness` for preflight and `make ci-live-e2e-latest-evidence`
+  after an operator-controlled real-cluster run.
 - `pr` / `pr-ci`: top-level local mirror for required GitHub Actions jobs. Runs the local
   lanes in parallel after `ci-prep`, `ci-api-sync-local`, and `ci-ent-generated-sync`, so
   every quality gate still runs at least once while duplicate local typecheck and Ent
@@ -313,6 +398,14 @@ ci/
 │   ├── frontend_route_shell_legacy.txt # Temporary legacy route-shell threshold exceptions
 │   ├── test_delta_guard_exempt.txt   # Temporary exemptions for strict changed-code-has-tests gate
 │   └── module_noop_hooks.txt      # Explicit allowlist for noop module hook methods
+├── fixtures/
+│   ├── live-e2e-evidence-full.passed.json # ADR-0058 full-pass manifest fixture
+│   ├── live-e2e-evidence-full.failed-early.json # ADR-0058 early full-run failure fixture
+│   ├── live-e2e-evidence-preflight.passed.json # ADR-0058 preflight manifest fixture
+│   ├── live-e2e-evidence-flaky.invalid.json # ADR-0058 negative flaky-result fixture
+│   ├── live-e2e-evidence-secret.invalid.json # ADR-0058 negative secret-leak fixture
+│   ├── live-e2e-evidence-cluster-probe.invalid.json # ADR-0058 negative cluster-probe fixture
+│   └── live-e2e-evidence-cluster-probe-skipped.invalid.json # ADR-0058 negative skipped cluster-probe fixture
 ├── locks/
 │   ├── frontend-route-shell-legacy.lock # Lockfile for allowed legacy route-shell exception paths
 │   └── openapi-critical.lock       # Fingerprint lock for critical OpenAPI nodes
@@ -335,6 +428,19 @@ ci/
     ├── check_stage5e_batch_baseline.go # Stage 5.E batch runtime+contract baseline check
     ├── check_stage6_vnc_baseline.go # Stage 6 VNC runtime+contract baseline check
     ├── check_live_e2e_no_mock.sh # Strict live e2e must not use route-mocking APIs
+    ├── check_live_e2e_evidence_manifest.sh # ADR-0058 evidence manifest schema check
+    ├── find_latest_live_e2e_full_evidence.mjs # Latest full-run live E2E evidence selector
+    ├── check_prometheus_config.sh # Prometheus config and rule-loading check
+    ├── check_prometheus_recording_rules.sh # Prometheus recording rule asset check
+    ├── check_prometheus_alert_rules.sh # Prometheus alert rule asset check
+    ├── check_prometheus_alert_runbooks.sh # Prometheus alert runbook link check
+    ├── check_prometheus_rule_tests.sh # Prometheus rule unit test check
+    ├── check_prometheus_operator_rule_parity.sh # Operator PrometheusRule parity check
+    ├── check_prometheus_operator_assets.sh # Prometheus Operator manifest check
+    ├── check_monitoring_compose_assets.sh # Compose monitoring overlay check
+    ├── check_grafana_dashboards.sh # Grafana dashboard/provisioning check
+    ├── check_grafana_dashboard_promql.sh # Grafana dashboard PromQL parser check
+    ├── promtool_lib.sh # Shared promtool discovery/fail-closed helper
     ├── check_no_global_platform_admin_gate.go # Legacy reference; superseded by shepherd-arch/rbacguards
     ├── check_handler_explicit_rbac_guards.go # Legacy reference; superseded by shepherd-arch/rbacguards
     ├── check_auth_provider_plugin_boundary.go # Auth-provider plugin boundary + anti-hardcode guard

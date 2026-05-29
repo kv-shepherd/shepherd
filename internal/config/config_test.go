@@ -106,6 +106,40 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Worker.K8sPoolSize != 50 {
 		t.Errorf("Worker.K8sPoolSize = %d, want 50", cfg.Worker.K8sPoolSize)
 	}
+
+	if !cfg.Observability.MetricsEnabled {
+		t.Errorf("Observability.MetricsEnabled = %v, want true", cfg.Observability.MetricsEnabled)
+	}
+	if cfg.Observability.MetricsPath != "/metrics" {
+		t.Errorf("Observability.MetricsPath = %q, want /metrics", cfg.Observability.MetricsPath)
+	}
+	if !cfg.Observability.DatabaseMetricsEnabled {
+		t.Errorf("Observability.DatabaseMetricsEnabled = %v, want true", cfg.Observability.DatabaseMetricsEnabled)
+	}
+	if cfg.Observability.DatabaseMetricsTimeout != 2*time.Second {
+		t.Errorf("Observability.DatabaseMetricsTimeout = %v, want 2s", cfg.Observability.DatabaseMetricsTimeout)
+	}
+	if !cfg.Observability.RiverMetricsEnabled {
+		t.Errorf("Observability.RiverMetricsEnabled = %v, want true", cfg.Observability.RiverMetricsEnabled)
+	}
+	if cfg.Observability.RiverMetricsTimeout != 2*time.Second {
+		t.Errorf("Observability.RiverMetricsTimeout = %v, want 2s", cfg.Observability.RiverMetricsTimeout)
+	}
+	if cfg.Observability.TracingEnabled {
+		t.Errorf("Observability.TracingEnabled = %v, want false", cfg.Observability.TracingEnabled)
+	}
+	if cfg.Observability.TracingServiceName != "shepherd" {
+		t.Errorf("Observability.TracingServiceName = %q, want shepherd", cfg.Observability.TracingServiceName)
+	}
+	if cfg.Observability.TracingExporter != "otlp_http" {
+		t.Errorf("Observability.TracingExporter = %q, want otlp_http", cfg.Observability.TracingExporter)
+	}
+	if cfg.Observability.TracingSampleRatio != 0.10 {
+		t.Errorf("Observability.TracingSampleRatio = %v, want 0.10", cfg.Observability.TracingSampleRatio)
+	}
+	if cfg.Observability.TracingShutdownTimeout != 5*time.Second {
+		t.Errorf("Observability.TracingShutdownTimeout = %v, want 5s", cfg.Observability.TracingShutdownTimeout)
+	}
 }
 
 func TestDatabaseConfig_DSN(t *testing.T) {
@@ -224,6 +258,146 @@ func TestLoad_RiverConsumeJobsFromEnv(t *testing.T) {
 
 	if cfg.River.ConsumeJobs {
 		t.Fatalf("River.ConsumeJobs = %v, want false", cfg.River.ConsumeJobs)
+	}
+}
+
+func TestLoad_ObservabilityFromEnv(t *testing.T) {
+	t.Setenv("OBSERVABILITY_METRICS_ENABLED", "false")
+	t.Setenv("OBSERVABILITY_METRICS_PATH", "/internal/metrics")
+	t.Setenv("OBSERVABILITY_DATABASE_METRICS_ENABLED", "false")
+	t.Setenv("OBSERVABILITY_DATABASE_METRICS_TIMEOUT", "5s")
+	t.Setenv("OBSERVABILITY_RIVER_METRICS_ENABLED", "false")
+	t.Setenv("OBSERVABILITY_RIVER_METRICS_TIMEOUT", "6s")
+	t.Setenv("OBSERVABILITY_TRACING_ENABLED", "true")
+	t.Setenv("OBSERVABILITY_TRACING_SERVICE_NAME", "shepherd-api")
+	t.Setenv("OBSERVABILITY_TRACING_EXPORTER", "stdout")
+	t.Setenv("OBSERVABILITY_TRACING_SAMPLE_RATIO", "0.25")
+	t.Setenv("OBSERVABILITY_TRACING_SHUTDOWN_TIMEOUT", "7s")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+	if cfg.Observability.MetricsEnabled {
+		t.Fatalf("Observability.MetricsEnabled = %v, want false", cfg.Observability.MetricsEnabled)
+	}
+	if cfg.Observability.MetricsPath != "/internal/metrics" {
+		t.Fatalf("Observability.MetricsPath = %q, want /internal/metrics", cfg.Observability.MetricsPath)
+	}
+	if cfg.Observability.DatabaseMetricsEnabled {
+		t.Fatalf("Observability.DatabaseMetricsEnabled = %v, want false", cfg.Observability.DatabaseMetricsEnabled)
+	}
+	if cfg.Observability.DatabaseMetricsTimeout != 5*time.Second {
+		t.Fatalf("Observability.DatabaseMetricsTimeout = %v, want 5s", cfg.Observability.DatabaseMetricsTimeout)
+	}
+	if cfg.Observability.RiverMetricsEnabled {
+		t.Fatalf("Observability.RiverMetricsEnabled = %v, want false", cfg.Observability.RiverMetricsEnabled)
+	}
+	if cfg.Observability.RiverMetricsTimeout != 6*time.Second {
+		t.Fatalf("Observability.RiverMetricsTimeout = %v, want 6s", cfg.Observability.RiverMetricsTimeout)
+	}
+	if !cfg.Observability.TracingEnabled {
+		t.Fatalf("Observability.TracingEnabled = %v, want true", cfg.Observability.TracingEnabled)
+	}
+	if cfg.Observability.TracingServiceName != "shepherd-api" {
+		t.Fatalf("Observability.TracingServiceName = %q, want shepherd-api", cfg.Observability.TracingServiceName)
+	}
+	if cfg.Observability.TracingExporter != "stdout" {
+		t.Fatalf("Observability.TracingExporter = %q, want stdout", cfg.Observability.TracingExporter)
+	}
+	if cfg.Observability.TracingSampleRatio != 0.25 {
+		t.Fatalf("Observability.TracingSampleRatio = %v, want 0.25", cfg.Observability.TracingSampleRatio)
+	}
+	if cfg.Observability.TracingShutdownTimeout != 7*time.Second {
+		t.Fatalf("Observability.TracingShutdownTimeout = %v, want 7s", cfg.Observability.TracingShutdownTimeout)
+	}
+}
+
+func TestLoad_ObservabilityMetricsPathRejectsInvalidValues(t *testing.T) {
+	for _, value := range []string{"metrics", "/metrics?name[]=go_goroutines", "/metrics#fragment", "/api/v1/metrics"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("OBSERVABILITY_METRICS_PATH", value)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatal("Load() error = nil, want invalid metrics path error")
+			}
+			if !strings.Contains(err.Error(), "observability.metrics_path") {
+				t.Fatalf("Load() error = %v, want observability.metrics_path validation error", err)
+			}
+		})
+	}
+}
+
+func TestLoad_ObservabilityDatabaseMetricsTimeoutRejectsNegative(t *testing.T) {
+	t.Setenv("OBSERVABILITY_DATABASE_METRICS_TIMEOUT", "-1s")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want invalid database metrics timeout error")
+	}
+	if got := err.Error(); got != "validate config: observability.database_metrics_timeout must be >= 0" {
+		t.Fatalf("Load() error = %q", got)
+	}
+}
+
+func TestLoad_ObservabilityRiverMetricsTimeoutRejectsNegative(t *testing.T) {
+	t.Setenv("OBSERVABILITY_RIVER_METRICS_TIMEOUT", "-1s")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want invalid river metrics timeout error")
+	}
+	if got := err.Error(); got != "validate config: observability.river_metrics_timeout must be >= 0" {
+		t.Fatalf("Load() error = %q", got)
+	}
+}
+
+func TestLoad_ObservabilityTracingRejectsInvalidValues(t *testing.T) {
+	testCases := []struct {
+		name     string
+		envKey   string
+		envValue string
+		want     string
+	}{
+		{
+			name:     "invalid exporter",
+			envKey:   "OBSERVABILITY_TRACING_EXPORTER",
+			envValue: "jaeger",
+			want:     "observability.tracing_exporter must be one of: otlp_http, stdout",
+		},
+		{
+			name:     "sample ratio below zero",
+			envKey:   "OBSERVABILITY_TRACING_SAMPLE_RATIO",
+			envValue: "-0.01",
+			want:     "observability.tracing_sample_ratio must be between 0.0 and 1.0",
+		},
+		{
+			name:     "sample ratio above one",
+			envKey:   "OBSERVABILITY_TRACING_SAMPLE_RATIO",
+			envValue: "1.01",
+			want:     "observability.tracing_sample_ratio must be between 0.0 and 1.0",
+		},
+		{
+			name:     "negative shutdown timeout",
+			envKey:   "OBSERVABILITY_TRACING_SHUTDOWN_TIMEOUT",
+			envValue: "-1s",
+			want:     "observability.tracing_shutdown_timeout must be >= 0",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv(tc.envKey, tc.envValue)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatal("Load() error = nil, want invalid tracing config error")
+			}
+			if got := err.Error(); !strings.Contains(got, tc.want) {
+				t.Fatalf("Load() error = %q, want fragment %q", got, tc.want)
+			}
+		})
 	}
 }
 

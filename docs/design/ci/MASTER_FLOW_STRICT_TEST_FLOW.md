@@ -38,10 +38,10 @@ Rule: **if tests fail against master-flow intent, implementation must be reworke
 
 Any failure in steps 1-5 is a hard stop for merge.
 
-## 3.1 Completion Claim Rule (No Deferred Debt)
+## 3.1 Static Completion Claim Rule (No Deferred Debt)
 
 Passing strict tests means implementation is valid for current scope.
-Claiming "**master-flow fully completed**" additionally requires:
+Claiming "**static master-flow completion**" additionally requires:
 
 1. No deferred API entries.
 2. No deferred stage-test entries.
@@ -54,7 +54,21 @@ Run:
 go run docs/design/ci/scripts/check_master_flow_completion_readiness.go
 ```
 
-If this check fails, the project is still in "partially implemented / deferred" state.
+If this check fails, the project is still in "partially implemented / deferred"
+state for static master-flow scope.
+
+This check is intentionally not a release-quality project completion claim. The
+CI-suitable project completion gate also requires the accepted monitoring asset
+gates and the ADR-0058 evidence-schema checks:
+
+```bash
+make project-completion-readiness
+```
+
+That target runs static completion readiness, monitoring asset validation, and
+live E2E evidence fixture validation. It does not start live E2E or require a
+latest `mode=full` manifest because real-cluster E2E is a manual release
+evidence path, not required GitHub CI.
 
 ## 4. Red/Green Rule
 
@@ -100,7 +114,8 @@ Convenience targets:
 
 ```bash
 make master-flow-strict      # requires DATABASE_URL
-make master-flow-completion  # full-completion claim check
+make master-flow-completion  # static completion claim check
+make project-completion-readiness # CI-suitable completion gate
 make master-flow-strict-docker-pg # auto-provision isolated Docker PostgreSQL
 make test-backend-docker-pg       # backend PostgreSQL suites with isolated Docker PostgreSQL
 bash scripts/run_e2e_live.sh --no-db-wrapper

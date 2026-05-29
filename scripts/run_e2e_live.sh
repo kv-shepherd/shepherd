@@ -784,10 +784,14 @@ run_live_e2e_preflight_checks() {
   fi
 
   log_info "running master-flow test matrix gate (includes live_step_markers checks)"
-  go run docs/design/ci/scripts/check_master_flow_test_matrix.go
+  if ! go run docs/design/ci/scripts/check_master_flow_test_matrix.go; then
+    return 1
+  fi
 
   log_info "running live-e2e no-mock policy gate"
-  bash docs/design/ci/scripts/check_live_e2e_no_mock.sh
+  if ! bash docs/design/ci/scripts/check_live_e2e_no_mock.sh; then
+    return 1
+  fi
 }
 
 ROOT_DIR="$(git rev-parse --show-toplevel)"
@@ -797,12 +801,17 @@ NO_DB_WRAPPER=0
 BACKGROUND=0
 FOREGROUND=0
 STATUS_ONLY=0
+PREFLIGHT_ONLY=0
 BG_LOG_FILE=""
 BG_PID_FILE=""
 BG_RESULT_FILE=""
-BG_OUTPUT_DIR="${ROOT_DIR}/.run/live-e2e"
+BG_EVIDENCE_FILE=""
+BG_OUTPUT_DIR=".run/live-e2e"
 BG_STATE_FILE=""
 PASSTHRU_ARGS=()
+LIVE_E2E_PHASE="not_started"
+LIVE_E2E_FINALIZED=0
+LIVE_E2E_BACKEND_STARTED=0
 
 usage() {
   cat <<'EOF'
@@ -815,10 +824,12 @@ Options:
   --no-db-wrapper        Use existing DATABASE_URL instead of auto-starting Docker PostgreSQL
   --background           Force detached background mode
   --status               Read run status only (no log content), for low-token polling
+  --preflight-only       Validate live E2E readiness without starting services or browser tests
   --output-dir <path>    Background run output root (default: .run/live-e2e/, subfolders: YYYYMMDD/HHMM)
   --log-file <path>      Background mode log file path (default: <output-dir>/YYYYMMDD/HHMM/live-e2e.log)
   --pid-file <path>      Background mode pid file path (default: <output-dir>/YYYYMMDD/HHMM/live-e2e.pid)
   --result-file <path>   Background mode result file path (default: <output-dir>/YYYYMMDD/HHMM/live-e2e.result)
+  --evidence-file <path> Evidence JSON manifest path (default: <run-dir>/live-e2e.evidence.json)
   --state-file <path>    Status metadata file (default: <output-dir>/latest.env)
   -h, --help             Show this help
 
@@ -852,6 +863,10 @@ while [[ $# -gt 0 ]]; do
       STATUS_ONLY=1
       shift
       ;;
+    --preflight-only)
+      PREFLIGHT_ONLY=1
+      shift
+      ;;
     --output-dir)
       BG_OUTPUT_DIR="${2:-}"
       shift 2
@@ -866,6 +881,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --result-file)
       BG_RESULT_FILE="${2:-}"
+      shift 2
+      ;;
+    --evidence-file)
+      BG_EVIDENCE_FILE="${2:-}"
       shift 2
       ;;
     --state-file)
@@ -1127,13 +1146,579 @@ cleanup_residual_e2e_containers() {
   fi
 }
 
+decode_base64_to_file() {
+  local raw="$1"
+  local output="$2"
+
+  if printf '%s' "${raw}" | base64 -d >"${output}" 2>/dev/null; then
+    return 0
+  fi
+  if printf '%s' "${raw}" | base64 --decode >"${output}" 2>/dev/null; then
+    return 0
+  fi
+  if printf '%s' "${raw}" | base64 -D >"${output}" 2>/dev/null; then
+    return 0
+  fi
+
+  return 1
+}
+
+resolve_live_e2e_kubeconfig_file() {
+  local output="$1"
+  local default_kubeconfig_file="${ROOT_DIR}/k8s-admin.yaml"
+
+  if [[ -n "${E2E_KUBECONFIG_B64:-}" ]]; then
+    decode_base64_to_file "${E2E_KUBECONFIG_B64}" "${output}"
+    return $?
+  fi
+
+  if [[ -f "${default_kubeconfig_file}" ]]; then
+    cp "${default_kubeconfig_file}" "${output}"
+    return 0
+  fi
+
+  return 1
+}
+
+live_e2e_kubeconfig_source() {
+  local default_kubeconfig_file="${ROOT_DIR}/k8s-admin.yaml"
+
+  if [[ -n "${E2E_KUBECONFIG_B64:-}" ]]; then
+    echo "env:E2E_KUBECONFIG_B64"
+    return 0
+  fi
+  if [[ -f "${default_kubeconfig_file}" ]]; then
+    echo "file:k8s-admin.yaml"
+    return 0
+  fi
+  echo "missing"
+}
+
+live_e2e_kube_context() {
+  local kubeconfig_tmp=""
+  local context=""
+
+  kubeconfig_tmp="$(mktemp)"
+  if ! resolve_live_e2e_kubeconfig_file "${kubeconfig_tmp}"; then
+    rm -f "${kubeconfig_tmp}"
+    return 1
+  fi
+
+  if command -v kubectl >/dev/null 2>&1; then
+    context="$(kubectl --kubeconfig "${kubeconfig_tmp}" config current-context 2>/dev/null || true)"
+  fi
+  if [[ -z "${context}" ]]; then
+    context="$(awk -F': *' '/^[[:space:]]*current-context:[[:space:]]*/ { print $2; exit }' "${kubeconfig_tmp}" | tr -d '"' || true)"
+  fi
+  rm -f "${kubeconfig_tmp}"
+
+  [[ -n "${context}" ]] || return 1
+  printf '%s' "${context}"
+}
+
+live_e2e_cluster_probe_json() {
+  local kubeconfig_tmp=""
+  local api_server_reachable="false"
+  local kubernetes_version=""
+  local kubevirt_api_available="false"
+  local kubevirt_api_versions=""
+  local version_json=""
+  local api_versions=""
+
+  kubeconfig_tmp="$(mktemp)"
+  if resolve_live_e2e_kubeconfig_file "${kubeconfig_tmp}" && command -v kubectl >/dev/null 2>&1; then
+    if version_json="$(kubectl --kubeconfig "${kubeconfig_tmp}" version --output=json --request-timeout=10s 2>/dev/null)"; then
+      api_server_reachable="true"
+      kubernetes_version="$(
+        printf '%s' "${version_json}" | node -e '
+          let raw = "";
+          process.stdin.on("data", (chunk) => { raw += chunk; });
+          process.stdin.on("end", () => {
+            try {
+              const parsed = JSON.parse(raw);
+              const version = parsed.serverVersion?.gitVersion;
+              if (typeof version === "string") process.stdout.write(version);
+            } catch {}
+          });
+        ' 2>/dev/null || true
+      )"
+    fi
+
+    if api_versions="$(kubectl --kubeconfig "${kubeconfig_tmp}" api-versions --request-timeout=10s 2>/dev/null)"; then
+      kubevirt_api_versions="$(
+        printf '%s\n' "${api_versions}" | awk '/(^|[.])kubevirt[.]io\// { print }' | sort -u | paste -sd, -
+      )"
+      if [[ -n "${kubevirt_api_versions}" ]]; then
+        kubevirt_api_available="true"
+      fi
+    fi
+  fi
+  rm -f "${kubeconfig_tmp}"
+
+  node -e '
+    const versions = process.argv[4]
+      ? process.argv[4].split(",").map((value) => value.trim()).filter(Boolean)
+      : [];
+    process.stdout.write(JSON.stringify({
+      api_server_reachable: process.argv[1] === "true",
+      kubernetes_version: process.argv[2] || null,
+      kubevirt_api_available: process.argv[3] === "true",
+      kubevirt_api_versions: versions,
+    }));
+  ' "${api_server_reachable}" "${kubernetes_version}" "${kubevirt_api_available}" "${kubevirt_api_versions}"
+}
+
+write_live_e2e_evidence_manifest() {
+  local status="$1"
+  local exit_code="${2:-}"
+  local playwright_exit_code="${3:-}"
+  local backend_guard_exit_code="${4:-}"
+  local mode="${5:-full}"
+  local evidence_file="${RUN_EVIDENCE_FILE:-}"
+
+  if [[ -z "${evidence_file}" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "${evidence_file}")"
+  if ! command -v node >/dev/null 2>&1; then
+    log_warn "cannot write live E2E evidence manifest because node is not available"
+    return 0
+  fi
+
+  if ! LIVE_E2E_EVIDENCE_FILE="${evidence_file}" \
+    LIVE_E2E_STATUS="${status}" \
+    LIVE_E2E_EXIT_CODE="${exit_code}" \
+    LIVE_E2E_PLAYWRIGHT_EXIT_CODE="${playwright_exit_code}" \
+    LIVE_E2E_BACKEND_GUARD_EXIT_CODE="${backend_guard_exit_code}" \
+    LIVE_E2E_MODE="${mode}" \
+    LIVE_E2E_RUN_DIR="${E2E_RUN_DIR:-}" \
+    LIVE_E2E_RUN_ID="${E2E_RUN_ID:-}" \
+    LIVE_E2E_RESULT_FILE="${RUN_RESULT_FILE:-}" \
+    LIVE_E2E_RUN_LOG_FILE="${RUN_LOG_FILE:-}" \
+    LIVE_E2E_BACKEND_LOG_FILE="${SERVER_LOG:-}" \
+    LIVE_E2E_PLAYWRIGHT_JSON_FILE="${PLAYWRIGHT_JSON_OUTPUT_FILE:-}" \
+    LIVE_E2E_PLAYWRIGHT_HTML_REPORT="${PLAYWRIGHT_HTML_OUTPUT_DIR:-}" \
+    LIVE_E2E_PLAYWRIGHT_TEST_RESULTS="${PLAYWRIGHT_TEST_RESULTS_DIR:-}" \
+    LIVE_E2E_PLAYWRIGHT_PROJECT="${DEFAULT_PW_PROJECT:-${E2E_PLAYWRIGHT_PROJECT:-}}" \
+    LIVE_E2E_KUBECONFIG_SOURCE="$(live_e2e_kubeconfig_source)" \
+    LIVE_E2E_KUBE_CONTEXT="$(live_e2e_kube_context || true)" \
+    LIVE_E2E_CLUSTER_PROBE_JSON="$(live_e2e_cluster_probe_json || true)" \
+    node <<'NODE'
+const fs = require('fs');
+const path = require('path');
+
+const env = process.env;
+const optional = (value) => {
+  if (typeof value !== 'string') return null;
+  const trimmed = value.trim();
+  return trimmed === '' ? null : trimmed;
+};
+const numberOrNull = (value) => {
+  const trimmed = optional(value);
+  if (trimmed === null) return null;
+  const parsed = Number(trimmed);
+  return Number.isFinite(parsed) ? parsed : null;
+};
+const exists = (value) => {
+  const filePath = optional(value);
+  return filePath !== null && fs.existsSync(filePath);
+};
+const artifact = (value) => {
+  const filePath = optional(value);
+  return { path: filePath, exists: exists(filePath) };
+};
+const parseKeyValueFile = (filePath) => {
+  if (!exists(filePath)) return {};
+  const parsed = {};
+  for (const line of fs.readFileSync(filePath, 'utf8').split(/\r?\n/)) {
+    const index = line.indexOf('=');
+    if (index <= 0) continue;
+    parsed[line.slice(0, index)] = line.slice(index + 1);
+  }
+  return parsed;
+};
+const parsePlaywrightJSON = (filePath) => {
+  if (!exists(filePath)) return null;
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf8'));
+    return {
+      stats: parsed.stats ?? null,
+      suite_count: Array.isArray(parsed.suites) ? parsed.suites.length : null,
+    };
+  } catch (error) {
+    return { parse_error: error instanceof Error ? error.message : String(error) };
+  }
+};
+const parseClusterProbe = (value) => {
+  if (typeof value !== 'string' || value.trim() === '') return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+};
+
+const evidenceFile = env.LIVE_E2E_EVIDENCE_FILE;
+const result = parseKeyValueFile(env.LIVE_E2E_RESULT_FILE);
+const mode = optional(env.LIVE_E2E_MODE) ?? 'full';
+const policySkipped = env.E2E_SKIP_PREFLIGHT_GATES === '1';
+const clusterProbeSkipped = env.E2E_PREFLIGHT_CLUSTER_PROBE === '0';
+const clusterProbe = parseClusterProbe(env.LIVE_E2E_CLUSTER_PROBE_JSON);
+const manifest = {
+  schema_version: 1,
+  generated_at: new Date().toISOString(),
+  mode,
+  status: optional(env.LIVE_E2E_STATUS),
+  exit_code: numberOrNull(env.LIVE_E2E_EXIT_CODE),
+  playwright_exit_code: numberOrNull(env.LIVE_E2E_PLAYWRIGHT_EXIT_CODE),
+  backend_guard_exit_code: numberOrNull(env.LIVE_E2E_BACKEND_GUARD_EXIT_CODE),
+  run: {
+    id: optional(env.LIVE_E2E_RUN_ID),
+    directory: optional(env.LIVE_E2E_RUN_DIR),
+  },
+  artifacts: {
+    evidence: { path: optional(evidenceFile), exists: true },
+    result: artifact(env.LIVE_E2E_RESULT_FILE),
+    runner_log: artifact(env.LIVE_E2E_RUN_LOG_FILE),
+    backend_log: artifact(env.LIVE_E2E_BACKEND_LOG_FILE),
+    playwright_json: artifact(env.LIVE_E2E_PLAYWRIGHT_JSON_FILE),
+    playwright_report: artifact(env.LIVE_E2E_PLAYWRIGHT_HTML_REPORT),
+    playwright_test_results: artifact(env.LIVE_E2E_PLAYWRIGHT_TEST_RESULTS),
+  },
+  result_file: result,
+  policy_gates: {
+    skipped: policySkipped || clusterProbeSkipped,
+    master_flow_test_matrix: policySkipped ? 'skipped' : 'required',
+    live_e2e_no_mock: policySkipped ? 'skipped' : 'required',
+    cluster_probe: clusterProbeSkipped ? 'skipped' : 'required',
+  },
+  cluster: {
+    kubeconfig_source: optional(env.LIVE_E2E_KUBECONFIG_SOURCE),
+    current_context: optional(env.LIVE_E2E_KUBE_CONTEXT),
+    api_server_reachable: typeof clusterProbe.api_server_reachable === 'boolean' ? clusterProbe.api_server_reachable : null,
+    kubernetes_version: optional(clusterProbe.kubernetes_version),
+    kubevirt_api_available: typeof clusterProbe.kubevirt_api_available === 'boolean' ? clusterProbe.kubevirt_api_available : null,
+    kubevirt_api_versions: Array.isArray(clusterProbe.kubevirt_api_versions)
+      ? clusterProbe.kubevirt_api_versions.filter((value) => typeof value === 'string' && value.trim() !== '')
+      : [],
+  },
+  playwright: {
+    project: optional(env.LIVE_E2E_PLAYWRIGHT_PROJECT),
+    json_report: parsePlaywrightJSON(env.LIVE_E2E_PLAYWRIGHT_JSON_FILE),
+  },
+  cleanup: {
+    namespace: optional(env.E2E_NAMESPACE),
+    namespace_vm_cleanup_enabled: env.E2E_CLEANUP_NAMESPACE_VMS !== '0',
+    review_log_required: true,
+  },
+};
+
+fs.mkdirSync(path.dirname(evidenceFile), { recursive: true });
+fs.writeFileSync(evidenceFile, `${JSON.stringify(manifest, null, 2)}\n`);
+NODE
+  then
+    log_warn "failed to write live E2E evidence manifest: ${evidence_file}"
+    return 0
+  fi
+
+  log_info "evidence file: ${evidence_file}"
+}
+
+write_live_e2e_result_file() {
+  local final_exit_code="$1"
+  local playwright_exit_code="${2:-}"
+  local backend_guard_exit_code="${3:-}"
+  local result_line=""
+
+  if [[ -z "${RUN_RESULT_FILE:-}" ]]; then
+    return 0
+  fi
+
+  mkdir -p "$(dirname "${RUN_RESULT_FILE}")"
+  {
+    echo "exit_code=${final_exit_code}"
+    echo "playwright_exit_code=${playwright_exit_code}"
+    echo "backend_guard_exit_code=${backend_guard_exit_code}"
+    echo "phase=${LIVE_E2E_PHASE:-unknown}"
+    if [[ -n "${RUN_LOG_FILE:-}" ]] && result_line="$(extract_result_summary "${RUN_LOG_FILE}")"; then
+      echo "${result_line}"
+    else
+      echo "summary=unavailable"
+    fi
+  } >"${RUN_RESULT_FILE}"
+}
+
+finalize_live_e2e_failure_artifacts() {
+  local exit_code="$1"
+
+  if [[ "${exit_code}" -eq 0 ]]; then
+    return 0
+  fi
+  if [[ "${LIVE_E2E_FINALIZED:-0}" == "1" ]]; then
+    return 0
+  fi
+  if [[ -z "${RUN_RESULT_FILE:-}" || -z "${RUN_EVIDENCE_FILE:-}" ]]; then
+    return 0
+  fi
+
+  write_live_e2e_result_file "${exit_code}" "${RUN_EXIT_CODE:-}" "${BACKEND_GUARD_EXIT:-}"
+  write_live_e2e_evidence_manifest "failed" "${exit_code}" "${RUN_EXIT_CODE:-}" "${BACKEND_GUARD_EXIT:-}" "full"
+  LIVE_E2E_FINALIZED=1
+}
+
+check_live_e2e_readiness() {
+  local include_policy_gates="${1:-0}"
+  local failures=0
+  local required_cmd
+  local atlas_exec_path=""
+  local backend_port=""
+  local kubeconfig_tmp=""
+  local kube_context=""
+  local api_versions=""
+  local kubevirt_api_versions=""
+
+  log_info "checking live E2E readiness"
+
+  for required_cmd in go node npm curl rg base64 kubectl; do
+    if ! command -v "${required_cmd}" >/dev/null 2>&1; then
+      log_error "required command not found for live E2E: ${required_cmd}"
+      failures=$((failures + 1))
+    fi
+  done
+
+  if [[ ! -f "web/playwright.config.ts" ]]; then
+    log_error "missing Playwright config: web/playwright.config.ts"
+    failures=$((failures + 1))
+  fi
+  if ! compgen -G "web/tests/e2e/*-live.spec.ts" >/dev/null; then
+    log_error "no live Playwright specs found under web/tests/e2e"
+    failures=$((failures + 1))
+  fi
+  if [[ ! -x "web/node_modules/.bin/playwright" ]]; then
+    log_error "Playwright is not installed under web/node_modules; run npm ci --prefix web"
+    failures=$((failures + 1))
+  elif ! (cd web && ./node_modules/.bin/playwright --version >/dev/null); then
+    log_error "Playwright binary exists but failed to execute"
+    failures=$((failures + 1))
+  fi
+
+  if atlas_exec_path="$(resolve_live_e2e_atlas_exec_path)"; then
+    export ATLAS_EXEC_PATH="${atlas_exec_path}"
+    log_info "using Atlas executable: ${ATLAS_EXEC_PATH}"
+    if ! "${ATLAS_EXEC_PATH}" version >/dev/null 2>&1; then
+      log_error "Atlas executable exists but failed to run: ${ATLAS_EXEC_PATH}"
+      failures=$((failures + 1))
+    fi
+  else
+    log_error "live E2E requires Atlas CLI for startup migrations; set ATLAS_EXEC_PATH or install atlas"
+    failures=$((failures + 1))
+  fi
+
+  if [[ "${NO_DB_WRAPPER}" -eq 1 ]]; then
+    if [[ -z "${DATABASE_URL:-}" ]]; then
+      log_error "DATABASE_URL is required with --no-db-wrapper"
+      failures=$((failures + 1))
+    elif [[ ! "${DATABASE_URL}" =~ ^postgres(ql)?:// ]]; then
+      log_error "DATABASE_URL must be a PostgreSQL DSN for live E2E"
+      failures=$((failures + 1))
+    fi
+  else
+    if ! command -v docker >/dev/null 2>&1; then
+      log_error "docker is required for the default live E2E PostgreSQL wrapper"
+      failures=$((failures + 1))
+    elif ! docker info >/dev/null 2>&1; then
+      log_error "docker is installed but the daemon is not reachable"
+      failures=$((failures + 1))
+    fi
+  fi
+
+  backend_port="${SERVER_PORT:-${E2E_BACKEND_PORT:-}}"
+  if [[ -n "${backend_port}" ]] && port_in_use "${backend_port}"; then
+    log_error "configured backend port is already in use: ${backend_port}"
+    failures=$((failures + 1))
+  fi
+  if [[ -n "${PW_WEB_PORT:-}" ]] && port_in_use "${PW_WEB_PORT}"; then
+    log_error "configured Playwright web port is already in use: ${PW_WEB_PORT}"
+    failures=$((failures + 1))
+  fi
+
+  kubeconfig_tmp="$(mktemp)"
+  if ! resolve_live_e2e_kubeconfig_file "${kubeconfig_tmp}"; then
+    log_error "live E2E requires a real kubeconfig (set E2E_KUBECONFIG_B64 or provide ${ROOT_DIR}/k8s-admin.yaml)"
+    failures=$((failures + 1))
+  else
+    if ! rg -q '^apiVersion:' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig is missing apiVersion"
+      failures=$((failures + 1))
+    fi
+    if ! rg -q '^[[:space:]]*clusters:' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig is missing clusters"
+      failures=$((failures + 1))
+    fi
+    if ! rg -q '^[[:space:]]*contexts:' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig is missing contexts"
+      failures=$((failures + 1))
+    fi
+    if ! rg -q '^[[:space:]]*users:' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig is missing users"
+      failures=$((failures + 1))
+    fi
+    if ! rg -q '^[[:space:]]*current-context:[[:space:]]*[^[:space:]]+' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig is missing non-empty current-context"
+      failures=$((failures + 1))
+    fi
+    if ! rg -q '^[[:space:]]*server:[[:space:]]*https?://' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig is missing an HTTP(S) cluster server"
+      failures=$((failures + 1))
+    fi
+    if rg -q '^[[:space:]]*(client-certificate|client-key|certificate-authority):[[:space:]]*[^[:space:]]+' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig uses local certificate file references; embed certificate data instead"
+      failures=$((failures + 1))
+    fi
+    if rg -q '^[[:space:]]*exec:' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig uses an exec auth plugin, which Shepherd rejects"
+      failures=$((failures + 1))
+    fi
+    if rg -q '^[[:space:]]*auth-provider:' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig uses an auth-provider plugin, which Shepherd rejects"
+      failures=$((failures + 1))
+    fi
+    if rg -q '^[[:space:]]*proxy-url:' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig uses proxy-url, which Shepherd rejects"
+      failures=$((failures + 1))
+    fi
+    if rg -q '^[[:space:]]*insecure-skip-tls-verify:[[:space:]]*true' "${kubeconfig_tmp}"; then
+      log_error "live E2E kubeconfig enables insecure-skip-tls-verify, which Shepherd rejects"
+      failures=$((failures + 1))
+    fi
+
+    if command -v kubectl >/dev/null 2>&1; then
+      kube_context="$(kubectl --kubeconfig "${kubeconfig_tmp}" config current-context 2>/dev/null || true)"
+      if [[ -z "${kube_context}" ]]; then
+        log_error "kubectl cannot resolve current-context from the live E2E kubeconfig"
+        failures=$((failures + 1))
+      else
+        log_info "live E2E kubeconfig context: ${kube_context}"
+      fi
+
+      if [[ "${E2E_PREFLIGHT_CLUSTER_PROBE:-1}" == "0" ]]; then
+        log_warn "skipping live E2E cluster probe (E2E_PREFLIGHT_CLUSTER_PROBE=0); do not use this for release evidence"
+      else
+        if kubectl --kubeconfig "${kubeconfig_tmp}" version --output=json --request-timeout=10s >/dev/null 2>&1; then
+          log_info "live E2E Kubernetes API server probe succeeded"
+        else
+          log_error "live E2E Kubernetes API server probe failed"
+          failures=$((failures + 1))
+        fi
+
+        if api_versions="$(kubectl --kubeconfig "${kubeconfig_tmp}" api-versions --request-timeout=10s 2>/dev/null)"; then
+          kubevirt_api_versions="$(
+            printf '%s\n' "${api_versions}" | awk '/(^|[.])kubevirt[.]io\// { print }' | sort -u | paste -sd, -
+          )"
+          if [[ -n "${kubevirt_api_versions}" ]]; then
+            log_info "live E2E KubeVirt API discovery succeeded: ${kubevirt_api_versions}"
+          else
+            log_error "live E2E KubeVirt API discovery failed: no kubevirt.io API versions found"
+            failures=$((failures + 1))
+          fi
+        else
+          log_error "live E2E KubeVirt API discovery failed"
+          failures=$((failures + 1))
+        fi
+      fi
+    else
+      log_error "kubectl not found; cannot prove live E2E cluster context or KubeVirt API discovery"
+      failures=$((failures + 1))
+    fi
+  fi
+  rm -f "${kubeconfig_tmp}"
+
+  if [[ "${include_policy_gates}" == "1" ]]; then
+    if ! run_live_e2e_preflight_checks; then
+      failures=$((failures + 1))
+    fi
+  fi
+
+  if (( failures > 0 )); then
+    log_error "live E2E readiness check failed (${failures} issue(s))"
+    return 1
+  fi
+
+  log_info "live E2E readiness check passed"
+}
+
+resolve_live_e2e_atlas_exec_path() {
+  local candidate=""
+  local from_path=""
+  local candidates=()
+
+  candidates+=("${ATLAS_EXEC_PATH:-}")
+  candidates+=("${ROOT_DIR}/.run/tools/atlas")
+  candidates+=("/usr/local/bin/atlas")
+
+  if from_path="$(command -v atlas 2>/dev/null)"; then
+    candidates+=("${from_path}")
+  fi
+
+  for candidate in "${candidates[@]}"; do
+    candidate="${candidate#"${candidate%%[![:space:]]*}"}"
+    candidate="${candidate%"${candidate##*[![:space:]]}"}"
+    if [[ -n "${candidate}" && -x "${candidate}" && ! -d "${candidate}" ]]; then
+      printf '%s' "${candidate}"
+      return 0
+    fi
+  done
+
+  return 1
+}
+
 if [[ "${BACKGROUND}" -eq 1 && "${FOREGROUND}" -eq 1 ]]; then
   log_error "--background and --foreground cannot be used together"
   exit 1
 fi
 
-if [[ "${STATUS_ONLY}" -eq 0 && "${BACKGROUND}" -eq 0 && "${FOREGROUND}" -eq 0 ]]; then
+if [[ "${PREFLIGHT_ONLY}" -eq 1 && "${STATUS_ONLY}" -eq 1 ]]; then
+  log_error "--preflight-only and --status cannot be used together"
+  exit 1
+fi
+
+if [[ "${PREFLIGHT_ONLY}" -eq 1 && "${BACKGROUND}" -eq 1 ]]; then
+  log_error "--preflight-only and --background cannot be used together"
+  exit 1
+fi
+
+if [[ "${STATUS_ONLY}" -eq 0 && "${PREFLIGHT_ONLY}" -eq 0 && "${BACKGROUND}" -eq 0 && "${FOREGROUND}" -eq 0 ]]; then
   BACKGROUND=1
+fi
+
+if [[ "${PREFLIGHT_ONLY}" -eq 1 ]]; then
+  preflight_run_dir="${BG_OUTPUT_DIR}/preflight/$(date +%Y%m%d)/$(date +%H%M)-$$"
+  mkdir -p "${preflight_run_dir}"
+  RUN_RESULT_FILE="${BG_RESULT_FILE:-${preflight_run_dir}/live-e2e.result}"
+  RUN_EVIDENCE_FILE="${BG_EVIDENCE_FILE:-${preflight_run_dir}/live-e2e.evidence.json}"
+  E2E_RUN_DIR="${preflight_run_dir}"
+  E2E_RUN_ID="$(basename "${preflight_run_dir}")"
+
+  set +e
+  check_live_e2e_readiness 1
+  preflight_exit=$?
+  set -e
+
+  mkdir -p "$(dirname "${RUN_RESULT_FILE}")"
+  {
+    echo "exit_code=${preflight_exit}"
+    echo "mode=preflight"
+  } >"${RUN_RESULT_FILE}"
+
+  if [[ "${preflight_exit}" -eq 0 ]]; then
+    write_live_e2e_evidence_manifest "preflight_passed" "${preflight_exit}" "" "" "preflight"
+  else
+    write_live_e2e_evidence_manifest "preflight_failed" "${preflight_exit}" "" "" "preflight"
+  fi
+  log_info "result file: ${RUN_RESULT_FILE}"
+  exit "${preflight_exit}"
 fi
 
 if [[ "$STATUS_ONLY" -eq 1 ]]; then
@@ -1182,6 +1767,15 @@ if [[ "$STATUS_ONLY" -eq 1 ]]; then
     else
       echo "RESULT: summary line not found in log"
     fi
+    if [[ -z "${BG_EVIDENCE_FILE}" ]]; then
+      if [[ -f "${BG_STATE_FILE}" ]]; then
+        # shellcheck disable=SC1090
+        source "${BG_STATE_FILE}"
+      fi
+    fi
+    if [[ -n "${BG_EVIDENCE_FILE}" && -f "${BG_EVIDENCE_FILE}" ]]; then
+      echo "EVIDENCE_FILE: ${BG_EVIDENCE_FILE}"
+    fi
   fi
   exit 0
 fi
@@ -1202,10 +1796,12 @@ if [[ "$BACKGROUND" -eq 1 ]]; then
   BG_LOG_FILE="${BG_LOG_FILE:-${run_dir}/live-e2e.log}"
   BG_PID_FILE="${BG_PID_FILE:-${run_dir}/live-e2e.pid}"
   BG_RESULT_FILE="${BG_RESULT_FILE:-${run_dir}/live-e2e.result}"
+  BG_EVIDENCE_FILE="${BG_EVIDENCE_FILE:-${run_dir}/live-e2e.evidence.json}"
   BG_STATE_FILE="${BG_STATE_FILE:-${BG_OUTPUT_DIR}/latest.env}"
   mkdir -p "$(dirname "${BG_LOG_FILE}")"
   mkdir -p "$(dirname "${BG_PID_FILE}")"
   mkdir -p "$(dirname "${BG_RESULT_FILE}")"
+  mkdir -p "$(dirname "${BG_EVIDENCE_FILE}")"
   mkdir -p "$(dirname "${BG_STATE_FILE}")"
 
   CMD=(bash "${ROOT_DIR}/scripts/run_e2e_live.sh")
@@ -1217,13 +1813,14 @@ if [[ "$BACKGROUND" -eq 1 ]]; then
     CMD+=(-- "${PASSTHRU_ARGS[@]}")
   fi
 
-  RUN_RESULT_FILE="${BG_RESULT_FILE}" RUN_LOG_FILE="${BG_LOG_FILE}" nohup "${CMD[@]}" >"${BG_LOG_FILE}" 2>&1 &
+  RUN_RESULT_FILE="${BG_RESULT_FILE}" RUN_EVIDENCE_FILE="${BG_EVIDENCE_FILE}" RUN_LOG_FILE="${BG_LOG_FILE}" nohup "${CMD[@]}" >"${BG_LOG_FILE}" 2>&1 &
   bg_pid=$!
   echo "${bg_pid}" >"${BG_PID_FILE}"
   cat >"${BG_STATE_FILE}" <<EOF
 BG_LOG_FILE=${BG_LOG_FILE}
 BG_PID_FILE=${BG_PID_FILE}
 BG_RESULT_FILE=${BG_RESULT_FILE}
+BG_EVIDENCE_FILE=${BG_EVIDENCE_FILE}
 BG_RUN_DIR=${run_dir}
 EOF
   log_info "started background live e2e run"
@@ -1233,6 +1830,7 @@ EOF
   log_info "pid file: ${BG_PID_FILE}"
   log_info "log file: ${BG_LOG_FILE}"
   log_info "result file: ${BG_RESULT_FILE}"
+  log_info "evidence file: ${BG_EVIDENCE_FILE}"
   log_info "reminder: poll status every 5 minutes (not log content) until completion"
   log_info "command: bash scripts/run_e2e_live.sh --status --state-file ${BG_STATE_FILE}"
   exit 0
@@ -1254,21 +1852,6 @@ if [[ "$NO_DB_WRAPPER" -eq 0 ]]; then
     exit 1
   fi
   exec env PG_PORT="${E2E_PG_PORT}" ./scripts/run_with_docker_pg.sh --image "${PG_IMAGE}" -- bash ./scripts/run_e2e_live.sh --foreground --no-db-wrapper "$@"
-fi
-
-if [[ -z "${DATABASE_URL:-}" ]]; then
-  log_error "DATABASE_URL is required when --no-db-wrapper is set"
-  exit 1
-fi
-
-if ! command -v curl >/dev/null 2>&1; then
-  log_error "curl command not found"
-  exit 1
-fi
-
-if ! command -v node >/dev/null 2>&1; then
-  log_error "node command not found"
-  exit 1
 fi
 
 pick_free_port() {
@@ -1304,6 +1887,8 @@ E2E_RUN_DIR="${BG_RUN_DIR:-${BG_OUTPUT_DIR}/$(date +%Y%m%d)/$(date +%H%M)-$$}"
 mkdir -p "${E2E_RUN_DIR}"
 SERVER_LOG="${E2E_SERVER_LOG:-${E2E_RUN_DIR}/shepherd-e2e-server.log}"
 SERVER_BIN="${E2E_SERVER_BIN:-${E2E_RUN_DIR}/shepherd-e2e-server-bin}"
+RUN_RESULT_FILE="${RUN_RESULT_FILE:-${E2E_RUN_DIR}/live-e2e.result}"
+RUN_EVIDENCE_FILE="${RUN_EVIDENCE_FILE:-${E2E_RUN_DIR}/live-e2e.evidence.json}"
 # Use a per-run Next.js dist directory to avoid lock contention on
 # web/.next-e2e/dev/lock when another dev server is alive or a stale lock exists.
 E2E_RUN_ID="$(basename "${E2E_RUN_DIR}")"
@@ -1319,6 +1904,8 @@ cat > "${WEB_NEXT_TSCONFIG_PATH}" <<'EOF'
 EOF
 log_info "run directory : ${E2E_RUN_DIR}"
 log_info "backend log   : ${SERVER_LOG}"
+log_info "result file   : ${RUN_RESULT_FILE}"
+log_info "evidence file : ${RUN_EVIDENCE_FILE}"
 log_info "next dist dir : ${NEXT_DIST_DIR}"
 log_info "next tsconfig : ${NEXT_TSCONFIG_PATH}"
 # Use same-origin API path by default to avoid browser CORS between Playwright web port
@@ -1343,8 +1930,58 @@ export NEXT_DIST_DIR
 export NEXT_TSCONFIG_PATH
 export PW_WEB_PORT
 export PW_BASE_URL
+export PW_E2E_RUN_ID="${PW_E2E_RUN_ID:-${E2E_RUN_ID}}"
+export PLAYWRIGHT_JSON_OUTPUT_FILE="${PLAYWRIGHT_JSON_OUTPUT_FILE:-${E2E_RUN_DIR}/playwright-results.json}"
+export PLAYWRIGHT_HTML_OUTPUT_DIR="${PLAYWRIGHT_HTML_OUTPUT_DIR:-${E2E_RUN_DIR}/playwright-report}"
+export PLAYWRIGHT_TEST_RESULTS_DIR="${PLAYWRIGHT_TEST_RESULTS_DIR:-${E2E_RUN_DIR}/test-results}"
+export RUN_RESULT_FILE
+export RUN_EVIDENCE_FILE
 # Expose run directory to Playwright config (used for webServer stdout/stderr logs).
 export E2E_RUN_DIR
+log_info "Playwright JSON report : ${PLAYWRIGHT_JSON_OUTPUT_FILE}"
+log_info "Playwright HTML report : ${PLAYWRIGHT_HTML_OUTPUT_DIR}"
+log_info "Playwright test results: ${PLAYWRIGHT_TEST_RESULTS_DIR}"
+
+SERVER_PID=""
+cleanup() {
+  local exit_code=$?
+  local cleanup_vm_exit=0
+  set +e
+  if [[ "${LIVE_E2E_BACKEND_STARTED:-0}" == "1" ]]; then
+    cleanup_namespace_vms
+    cleanup_vm_exit=$?
+  fi
+  if [[ -n "$SERVER_PID" ]]; then
+    kill "$SERVER_PID" >/dev/null 2>&1 || true
+    wait "$SERVER_PID" >/dev/null 2>&1 || true
+  fi
+  cleanup_next_web_port "${PW_WEB_PORT:-}"
+  if [[ "${cleanup_vm_exit}" -ne 0 ]]; then
+    log_warn "namespace VM cleanup completed with warnings"
+  fi
+  finalize_live_e2e_failure_artifacts "${exit_code}"
+  return "${exit_code}"
+}
+trap cleanup EXIT INT TERM
+
+LIVE_E2E_PHASE="environment"
+if [[ -z "${DATABASE_URL:-}" ]]; then
+  log_error "DATABASE_URL is required when --no-db-wrapper is set"
+  exit 1
+fi
+
+if ! command -v curl >/dev/null 2>&1; then
+  log_error "curl command not found"
+  exit 1
+fi
+
+if ! command -v node >/dev/null 2>&1; then
+  log_error "node command not found"
+  exit 1
+fi
+
+LIVE_E2E_PHASE="readiness"
+check_live_e2e_readiness 0
 export DATABASE_AUTO_MIGRATE="${DATABASE_AUTO_MIGRATE:-false}"
 export DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS="${DATABASE_AUTO_APPLY_VERSIONED_MIGRATIONS:-true}"
 export SECURITY_SESSION_SECRET="${SECURITY_SESSION_SECRET:-}"
@@ -1370,6 +2007,7 @@ export E2E_VM_STOPPED_ID="${E2E_VM_STOPPED_ID:-vm-e2e-stopped}"
 export E2E_VM_RUNNING_NAME="${E2E_VM_RUNNING_NAME:-vm-live}"
 export E2E_VM_STOPPED_NAME="${E2E_VM_STOPPED_NAME:-vm-stopped}"
 
+LIVE_E2E_PHASE="kubeconfig"
 if [[ -z "${E2E_KUBECONFIG_B64:-}" ]]; then
   DEFAULT_KUBECONFIG_FILE="${ROOT_DIR}/k8s-admin.yaml"
   if [[ -f "${DEFAULT_KUBECONFIG_FILE}" ]]; then
@@ -1392,37 +2030,22 @@ fi
 export E2E_ADMIN_USERNAME="${E2E_ADMIN_USERNAME:-${E2E_USERNAME}}"
 export E2E_ADMIN_PASSWORD="${E2E_ADMIN_PASSWORD:-${E2E_PASSWORD}}"
 
-SERVER_PID=""
-cleanup() {
-  local exit_code=$?
-  local cleanup_vm_exit=0
-  set +e
-  cleanup_namespace_vms
-  cleanup_vm_exit=$?
-  if [[ -n "$SERVER_PID" ]]; then
-    kill "$SERVER_PID" >/dev/null 2>&1 || true
-    wait "$SERVER_PID" >/dev/null 2>&1 || true
-  fi
-  cleanup_next_web_port "${PW_WEB_PORT:-}"
-  if [[ "${cleanup_vm_exit}" -ne 0 ]]; then
-    log_warn "namespace VM cleanup completed with warnings"
-  fi
-  return "${exit_code}"
-}
-trap cleanup EXIT INT TERM
-
+LIVE_E2E_PHASE="backend_port"
 if port_in_use "$SERVER_PORT"; then
   log_error "backend port ${SERVER_PORT} is already in use"
   exit 1
 fi
 
+LIVE_E2E_PHASE="build_backend"
 log_info "building backend server binary"
 go build -o "$SERVER_BIN" ./cmd/server
 
+LIVE_E2E_PHASE="start_backend"
 log_info "starting backend server on :${SERVER_PORT}"
 "$SERVER_BIN" >"$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 
+LIVE_E2E_PHASE="backend_readiness"
 log_info "waiting for backend readiness (${API_BASE_URL}/api/v1/health/live)"
 READY=0
 for _ in $(seq 1 120); do
@@ -1445,20 +2068,26 @@ if [[ "$READY" -ne 1 ]]; then
   tail -n 120 "$SERVER_LOG" || true
   exit 1
 fi
+LIVE_E2E_BACKEND_STARTED=1
 
+LIVE_E2E_PHASE="seed_baseline"
 log_info "seeding baseline data"
 go run ./cmd/seed
 
+LIVE_E2E_PHASE="seed_api_fixtures"
 log_info "seeding API-managed live fixtures"
 SEED_API_TOKEN="$(login_api_token "${E2E_ADMIN_USERNAME}" "${E2E_ADMIN_PASSWORD}")"
 seed_live_api_managed_fixtures "${SEED_API_TOKEN}"
 
+LIVE_E2E_PHASE="seed_low_level_fixtures"
 log_info "seeding extended low-level fixtures"
 E2E_SKIP_API_MANAGED_FIXTURES=1 go run ./cmd/e2e-seed
 
+LIVE_E2E_PHASE="policy_gates"
 log_info "running live-e2e preflight gates"
 run_live_e2e_preflight_checks
 
+LIVE_E2E_PHASE="playwright"
 log_info "running live Playwright E2E suite (no mock routes)"
 DEFAULT_PW_PROJECT="${E2E_PLAYWRIGHT_PROJECT:-live-chromium}"
 HAS_PROJECT_ARG=0
@@ -1478,6 +2107,7 @@ CI=1 npm --prefix web run test:e2e:all -- "${PLAYWRIGHT_ARGS[@]}"
 RUN_EXIT_CODE=$?
 set -e
 
+LIVE_E2E_PHASE="backend_guard"
 BACKEND_GUARD_EXIT=0
 if [[ "${E2E_BACKEND_CRITICAL_GUARD:-1}" != "0" ]]; then
   if ! check_backend_critical_errors "${SERVER_LOG}"; then
@@ -1490,17 +2120,14 @@ if [[ "${BACKEND_GUARD_EXIT}" -ne 0 ]]; then
   FINAL_EXIT_CODE=1
 fi
 
-if [[ -n "${RUN_RESULT_FILE:-}" ]]; then
-  {
-    echo "exit_code=${FINAL_EXIT_CODE}"
-    echo "playwright_exit_code=${RUN_EXIT_CODE}"
-    echo "backend_guard_exit_code=${BACKEND_GUARD_EXIT}"
-    if [[ -n "${RUN_LOG_FILE:-}" ]] && result_line="$(extract_result_summary "${RUN_LOG_FILE}")"; then
-      echo "${result_line}"
-    else
-      echo "summary=unavailable"
-    fi
-  } >"${RUN_RESULT_FILE}"
+LIVE_E2E_PHASE="finalizing"
+write_live_e2e_result_file "${FINAL_EXIT_CODE}" "${RUN_EXIT_CODE}" "${BACKEND_GUARD_EXIT}"
+
+if [[ "${FINAL_EXIT_CODE}" -eq 0 ]]; then
+  write_live_e2e_evidence_manifest "passed" "${FINAL_EXIT_CODE}" "${RUN_EXIT_CODE}" "${BACKEND_GUARD_EXIT}" "full"
+else
+  write_live_e2e_evidence_manifest "failed" "${FINAL_EXIT_CODE}" "${RUN_EXIT_CODE}" "${BACKEND_GUARD_EXIT}" "full"
 fi
+LIVE_E2E_FINALIZED=1
 
 exit "${FINAL_EXIT_CODE}"

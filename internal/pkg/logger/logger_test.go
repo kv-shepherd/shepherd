@@ -89,6 +89,16 @@ func TestL_PanicsWithoutInit(t *testing.T) {
 	L()
 }
 
+func TestLOrNopBeforeInitDoesNotPanic(t *testing.T) {
+	resetLogger()
+
+	log := LOrNop()
+	if log == nil {
+		t.Fatal("LOrNop() = nil, want logger")
+	}
+	log.Info("nop logger smoke test")
+}
+
 func TestLoggingFunctions(t *testing.T) {
 	resetLogger()
 

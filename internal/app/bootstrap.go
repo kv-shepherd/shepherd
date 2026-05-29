@@ -15,6 +15,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/jobs"
+	"kv-shepherd.io/shepherd/internal/observability"
 	"kv-shepherd.io/shepherd/internal/pkg/worker"
 	"kv-shepherd.io/shepherd/internal/provider"
 	_ "kv-shepherd.io/shepherd/plugins/authprovider/autoreg" // Register built-in auth-provider plugins.
@@ -29,6 +30,8 @@ type Application struct {
 	Modules     []modules.Module
 	EntClient   *ent.Client
 	HealthCheck *provider.ClusterHealthChecker
+	Metrics     *observability.Metrics
+	Tracing     *observability.Tracing
 }
 
 // Bootstrap initializes all dependencies using module-oriented manual DI.
@@ -78,16 +81,57 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 	allModules := baseModules
 	serverDeps := modules.NewServerDeps(cfg, infra, allModules)
 	server := handlers.NewServer(serverDeps)
+	metrics := newObservabilityMetrics(cfg, infra)
+	tracing, err := newObservabilityTracing(ctx, cfg)
+	if err != nil {
+		infra.Close()
+		return nil, fmt.Errorf("init tracing: %w", err)
+	}
 
 	return &Application{
 		Config:      cfg,
-		Router:      newRouter(cfg, server, serverDeps.JWTCfg),
+		Router:      newRouter(cfg, server, serverDeps.JWTCfg, metrics, tracing),
 		DB:          infra.DB,
 		Pools:       infra.Pools,
 		Modules:     allModules,
 		EntClient:   infra.EntClient,
 		HealthCheck: infra.HealthCheck,
+		Metrics:     metrics,
+		Tracing:     tracing,
 	}, nil
+}
+
+func newObservabilityMetrics(cfg *config.Config, infra *modules.Infrastructure) *observability.Metrics {
+	if cfg == nil || !cfg.Observability.MetricsEnabled {
+		return nil
+	}
+	opts := make([]observability.Option, 0, 2)
+	if cfg.Observability.DatabaseMetricsEnabled && infra != nil && infra.Pool != nil {
+		opts = append(opts, observability.WithPostgresTableStats(
+			infra.Pool,
+			cfg.Observability.EffectiveDatabaseMetricsTimeout(),
+		))
+	}
+	if cfg.Observability.RiverMetricsEnabled && infra != nil && infra.Pool != nil {
+		opts = append(opts, observability.WithRiverQueueStats(
+			infra.Pool,
+			cfg.Observability.EffectiveRiverMetricsTimeout(),
+		))
+	}
+	return observability.NewMetrics(opts...)
+}
+
+func newObservabilityTracing(ctx context.Context, cfg *config.Config) (*observability.Tracing, error) {
+	if cfg == nil || !cfg.Observability.TracingEnabled {
+		return nil, nil
+	}
+	return observability.NewTracing(ctx, observability.TracingOptions{
+		Enabled:         true,
+		ServiceName:     cfg.Observability.EffectiveTracingServiceName(),
+		Exporter:        cfg.Observability.EffectiveTracingExporter(),
+		SampleRatio:     cfg.Observability.EffectiveTracingSampleRatio(),
+		ShutdownTimeout: cfg.Observability.EffectiveTracingShutdownTimeout(),
+	})
 }
 
 // registerPeriodicJobs configures scheduled background tasks.

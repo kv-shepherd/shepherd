@@ -25,14 +25,15 @@ const riverMaxWorkersLimit = 10_000
 
 // Config is the root configuration structure.
 type Config struct {
-	Server   ServerConfig   `mapstructure:"server"`
-	Database DatabaseConfig `mapstructure:"database"`
-	Session  SessionConfig  `mapstructure:"session"`
-	K8s      K8sConfig      `mapstructure:"k8s"`
-	Log      LogConfig      `mapstructure:"log"`
-	River    RiverConfig    `mapstructure:"river"`
-	Security SecurityConfig `mapstructure:"security"`
-	Worker   WorkerConfig   `mapstructure:"worker"`
+	Server        ServerConfig        `mapstructure:"server"`
+	Database      DatabaseConfig      `mapstructure:"database"`
+	Session       SessionConfig       `mapstructure:"session"`
+	K8s           K8sConfig           `mapstructure:"k8s"`
+	Log           LogConfig           `mapstructure:"log"`
+	River         RiverConfig         `mapstructure:"river"`
+	Security      SecurityConfig      `mapstructure:"security"`
+	Worker        WorkerConfig        `mapstructure:"worker"`
+	Observability ObservabilityConfig `mapstructure:"observability"`
 }
 
 // ServerConfig contains HTTP server settings.
@@ -161,9 +162,31 @@ type WorkerConfig struct {
 	K8sPoolSize     int `mapstructure:"k8s_pool_size"`
 }
 
+// ObservabilityConfig contains metrics and monitoring settings.
+type ObservabilityConfig struct {
+	MetricsEnabled         bool          `mapstructure:"metrics_enabled"`
+	MetricsPath            string        `mapstructure:"metrics_path"`
+	DatabaseMetricsEnabled bool          `mapstructure:"database_metrics_enabled"`
+	DatabaseMetricsTimeout time.Duration `mapstructure:"database_metrics_timeout"`
+	RiverMetricsEnabled    bool          `mapstructure:"river_metrics_enabled"`
+	RiverMetricsTimeout    time.Duration `mapstructure:"river_metrics_timeout"`
+	TracingEnabled         bool          `mapstructure:"tracing_enabled"`
+	TracingServiceName     string        `mapstructure:"tracing_service_name"`
+	TracingExporter        string        `mapstructure:"tracing_exporter"`
+	TracingSampleRatio     float64       `mapstructure:"tracing_sample_ratio"`
+	TracingShutdownTimeout time.Duration `mapstructure:"tracing_shutdown_timeout"`
+}
+
 const (
 	defaultMaxRequestBodyBytes    int64 = 10 << 20 // 10 MiB
 	unsafeAllowAllOriginsAckValue       = "I_UNDERSTAND_THIS_IS_UNSAFE"
+	defaultMetricsPath                  = "/metrics"
+	defaultDatabaseMetricsTimeout       = 2 * time.Second
+	defaultRiverMetricsTimeout          = 2 * time.Second
+	defaultTracingServiceName           = "shepherd"
+	defaultTracingExporter              = "otlp_http"
+	defaultTracingSampleRatio           = 0.10
+	defaultTracingShutdownTimeout       = 5 * time.Second
 )
 
 // Load reads configuration from file and environment variables.
@@ -298,6 +321,36 @@ func (c *Config) Validate() error {
 			return err
 		}
 	}
+	metricsPath := c.Observability.EffectiveMetricsPath()
+	if !strings.HasPrefix(metricsPath, "/") {
+		return fmt.Errorf("observability.metrics_path must be an absolute path")
+	}
+	if strings.ContainsAny(metricsPath, "?#") {
+		return fmt.Errorf("observability.metrics_path must not include query or fragment")
+	}
+	if metricsPath == "/api/v1" || strings.HasPrefix(metricsPath, "/api/v1/") {
+		return fmt.Errorf("observability.metrics_path must stay outside /api/v1")
+	}
+	if c.Observability.DatabaseMetricsTimeout < 0 {
+		return fmt.Errorf("observability.database_metrics_timeout must be >= 0")
+	}
+	if c.Observability.RiverMetricsTimeout < 0 {
+		return fmt.Errorf("observability.river_metrics_timeout must be >= 0")
+	}
+	switch c.Observability.EffectiveTracingExporter() {
+	case "otlp_http", "stdout":
+	default:
+		return fmt.Errorf("observability.tracing_exporter must be one of: otlp_http, stdout")
+	}
+	if strings.TrimSpace(c.Observability.EffectiveTracingServiceName()) == "" {
+		return fmt.Errorf("observability.tracing_service_name must not be empty")
+	}
+	if c.Observability.TracingSampleRatio < 0 || c.Observability.TracingSampleRatio > 1 {
+		return fmt.Errorf("observability.tracing_sample_ratio must be between 0.0 and 1.0")
+	}
+	if c.Observability.TracingShutdownTimeout < 0 {
+		return fmt.Errorf("observability.tracing_shutdown_timeout must be >= 0")
+	}
 	return nil
 }
 
@@ -405,6 +458,19 @@ func setDefaults(v *viper.Viper) {
 	// Worker Pool (ADR-0031)
 	v.SetDefault("worker.general_pool_size", 100)
 	v.SetDefault("worker.k8s_pool_size", 50)
+
+	// Observability (ADR-0054)
+	v.SetDefault("observability.metrics_enabled", true)
+	v.SetDefault("observability.metrics_path", defaultMetricsPath)
+	v.SetDefault("observability.database_metrics_enabled", true)
+	v.SetDefault("observability.database_metrics_timeout", defaultDatabaseMetricsTimeout.String())
+	v.SetDefault("observability.river_metrics_enabled", true)
+	v.SetDefault("observability.river_metrics_timeout", defaultRiverMetricsTimeout.String())
+	v.SetDefault("observability.tracing_enabled", false)
+	v.SetDefault("observability.tracing_service_name", defaultTracingServiceName)
+	v.SetDefault("observability.tracing_exporter", defaultTracingExporter)
+	v.SetDefault("observability.tracing_sample_ratio", defaultTracingSampleRatio)
+	v.SetDefault("observability.tracing_shutdown_timeout", defaultTracingShutdownTimeout.String())
 }
 
 func bindEnvKeys(v *viper.Viper) {
@@ -462,6 +528,17 @@ func bindEnvKeys(v *viper.Viper) {
 		"security.login_rate_limit.block_duration",
 		"worker.general_pool_size",
 		"worker.k8s_pool_size",
+		"observability.metrics_enabled",
+		"observability.metrics_path",
+		"observability.database_metrics_enabled",
+		"observability.database_metrics_timeout",
+		"observability.river_metrics_enabled",
+		"observability.river_metrics_timeout",
+		"observability.tracing_enabled",
+		"observability.tracing_service_name",
+		"observability.tracing_exporter",
+		"observability.tracing_sample_ratio",
+		"observability.tracing_shutdown_timeout",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			panic(fmt.Sprintf("bind env for %s: %v", key, err))
@@ -527,4 +604,60 @@ func sanitizeStringSlice(values []string) []string {
 		}
 	}
 	return items
+}
+
+// EffectiveMetricsPath returns the configured Prometheus path or the default.
+func (c ObservabilityConfig) EffectiveMetricsPath() string {
+	path := strings.TrimSpace(c.MetricsPath)
+	if path == "" {
+		return defaultMetricsPath
+	}
+	return path
+}
+
+// EffectiveDatabaseMetricsTimeout returns the PostgreSQL stats scrape timeout or the default.
+func (c ObservabilityConfig) EffectiveDatabaseMetricsTimeout() time.Duration {
+	if c.DatabaseMetricsTimeout <= 0 {
+		return defaultDatabaseMetricsTimeout
+	}
+	return c.DatabaseMetricsTimeout
+}
+
+// EffectiveRiverMetricsTimeout returns the River queue stats scrape timeout or the default.
+func (c ObservabilityConfig) EffectiveRiverMetricsTimeout() time.Duration {
+	if c.RiverMetricsTimeout <= 0 {
+		return defaultRiverMetricsTimeout
+	}
+	return c.RiverMetricsTimeout
+}
+
+// EffectiveTracingServiceName returns the configured OpenTelemetry service name or the default.
+func (c ObservabilityConfig) EffectiveTracingServiceName() string {
+	name := strings.TrimSpace(c.TracingServiceName)
+	if name == "" {
+		return defaultTracingServiceName
+	}
+	return name
+}
+
+// EffectiveTracingExporter returns the configured tracing exporter or the default.
+func (c ObservabilityConfig) EffectiveTracingExporter() string {
+	exporter := strings.TrimSpace(c.TracingExporter)
+	if exporter == "" {
+		return defaultTracingExporter
+	}
+	return exporter
+}
+
+// EffectiveTracingSampleRatio returns the configured sample ratio.
+func (c ObservabilityConfig) EffectiveTracingSampleRatio() float64 {
+	return c.TracingSampleRatio
+}
+
+// EffectiveTracingShutdownTimeout returns the tracing shutdown timeout or the default.
+func (c ObservabilityConfig) EffectiveTracingShutdownTimeout() time.Duration {
+	if c.TracingShutdownTimeout <= 0 {
+		return defaultTracingShutdownTimeout
+	}
+	return c.TracingShutdownTimeout
 }

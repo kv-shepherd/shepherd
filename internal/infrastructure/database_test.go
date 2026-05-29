@@ -4,9 +4,11 @@ import (
 	"testing"
 
 	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/rivertype"
 
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/jobs"
+	"kv-shepherd.io/shepherd/internal/observability"
 )
 
 func TestBuildRiverQueues_ConfiguredWorkers(t *testing.T) {
@@ -48,5 +50,23 @@ func TestInitRiverClient_RejectsInvalidMaxWorkers(t *testing.T) {
 	err := clients.InitRiverClient(river.NewWorkers(), config.RiverConfig{MaxWorkers: 0})
 	if err == nil {
 		t.Fatalf("InitRiverClient() error = nil, want invalid max workers error")
+	}
+}
+
+func TestBuildRiverMiddlewareIncludesWorkerLogMiddleware(t *testing.T) {
+	t.Parallel()
+
+	middleware := buildRiverMiddleware()
+	if len(middleware) != 1 {
+		t.Fatalf("middleware count = %d, want 1", len(middleware))
+	}
+	if _, ok := middleware[0].(*observability.RiverWorkerLogMiddleware); !ok {
+		t.Fatalf("middleware[0] = %T, want RiverWorkerLogMiddleware", middleware[0])
+	}
+	if _, ok := middleware[0].(rivertype.JobInsertMiddleware); !ok {
+		t.Fatalf("middleware[0] = %T, want JobInsertMiddleware", middleware[0])
+	}
+	if _, ok := middleware[0].(rivertype.WorkerMiddleware); !ok {
+		t.Fatalf("middleware[0] = %T, want WorkerMiddleware", middleware[0])
 	}
 }

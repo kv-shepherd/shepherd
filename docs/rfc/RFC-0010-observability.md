@@ -1,6 +1,6 @@
 # RFC-0010: Observability Stack
 
-> **Status**: Deferred  
+> **Status**: Accepted for minimal metrics baseline; advanced scope deferred
 > **Priority**: P2  
 > **Trigger**: Metrics and tracing required for production monitoring
 
@@ -8,10 +8,19 @@
 
 ## Problem
 
-V1.0 includes basic health checks and logging. Production deployments may require:
-- Prometheus metrics export
-- Distributed tracing (OpenTelemetry)
+V1.0 includes health checks and logging. ADR-0054 accepts the runtime
+Prometheus metrics baseline for HTTP traffic, process/runtime health, OpenAPI
+validation failures, PostgreSQL table health, and River queue health.
+ADR-0055 accepts starter Prometheus recording rules, alerts, rule tests,
+runbook-link checks, and a Grafana overview dashboard for those metrics.
+ADR-0056 accepts optional Compose and Prometheus Operator packaging for the
+baseline monitoring assets. ADR-0057 accepts default-off OpenTelemetry HTTP
+ingress tracing, W3C propagation, and bounded HTTP/River worker correlation
+logs.
+Production deployments may still require:
+- Deep distributed tracing beyond HTTP ingress
 - Custom business metrics
+- Advanced alert routing and dashboard contracts
 
 ---
 
@@ -63,6 +72,19 @@ func (s *VMService) CreateVM(ctx context.Context, ...) error {
 ```
 GET /metrics  # Prometheus scrape endpoint
 ```
+
+The minimal `/metrics` endpoint and low-cardinality runtime metrics are
+accepted by [ADR-0054](../adr/ADR-0054-minimal-prometheus-observability-baseline.md).
+Starter Prometheus rules and Grafana assets are accepted by
+[ADR-0055](../adr/ADR-0055-prometheus-rules-and-grafana-dashboard-baseline.md).
+Optional monitoring deployment packaging is accepted by
+[ADR-0056](../adr/ADR-0056-observability-deployment-packaging-baseline.md).
+Default-off HTTP ingress tracing and bounded correlation logs are accepted by
+[ADR-0057](../adr/ADR-0057-opentelemetry-and-correlation-logging-baseline.md).
+Deep OpenTelemetry instrumentation, service/provider log correlation beyond
+the River lifecycle boundary, custom VM/business metrics, advanced alert
+routing, and advanced dashboard contracts remain deferred until their contracts
+are accepted.
 
 ---
 

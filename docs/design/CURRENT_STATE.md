@@ -1,6 +1,6 @@
 # Current Implementation State
 
-> **Last audited**: 2026-05-08
+> **Last audited**: 2026-05-28
 > **Scope**: Code-vs-design alignment snapshot for `public/kubevirt-shepherd`.
 
 This document records the current implementation shape without changing any
@@ -16,6 +16,7 @@ amends or supersedes the old decision.
 | Frontend surface | `web/package.json`, `web/src/app/**/page.tsx`, `web/src/features/` |
 | Persistence model | `ent/schema/`, `internal/repository/sqlc/`, `migrations/atlas/` |
 | Design governance | `docs/adr/README.md`, `docs/design/CHECKLIST.md`, `docs/design/ci/` |
+| Operations runbooks | `docs/operations/`, `deploy/prod/`, `scripts/run_e2e_live.sh` |
 
 ## Runtime Snapshot
 
@@ -31,6 +32,8 @@ amends or supersedes the old decision.
 | Frontend stack | React 19.2, Next.js 16.2, Ant Design 5, TanStack Query 5, Zustand 5 |
 | Frontend route files | 29 App Router `page.tsx` files, including root and compatibility/alias routes |
 | Background workers | VM create/delete/modify/power/status sync, notification cleanup, domain-event archive, directory sync, directory enrichment scan |
+| Observability | Prometheus `/metrics` baseline with Go/process/build collectors, low-cardinality HTTP metrics, PostgreSQL/River bloat metrics, River queue health metrics, OpenAPI validation failure metrics, bounded HTTP request correlation logs, bounded River worker correlation logs, validated recording rules, rule-test fixtures, Prometheus config validation, Prometheus Operator rule parity validation, alert runbook link validation, Grafana dashboard PromQL validation, optional Prometheus Operator packaging, optional Compose monitoring packaging, a validated starter alert rule pack, a validated starter Grafana dashboard, and default-off OpenTelemetry HTTP ingress tracing |
+| Live E2E evidence | ADR-0058 evidence bundle design exists; runner implementation emits per-run result, evidence manifest, and Playwright structured artifacts for readiness/full live E2E runs |
 
 ## Implemented Capabilities
 
@@ -49,6 +52,7 @@ amends or supersedes the old decision.
 | Cluster policy | Explicit cluster policy controls for clone, image import, host devices, storage classes, and namespace scope |
 | Cluster credentials | DB-backed sanitized kubeconfig bytes protected with AES-256-GCM; upload/update rejects local file references, exec/auth-provider plugins, proxy URLs, and unsafe TLS settings |
 | VM status convergence | ADR-0038 adaptive polling with ResourceVersion caching and River scheduling |
+| Observability | ADR-0054 runtime Prometheus metrics, ADR-0055 starter Prometheus rules and Grafana assets, ADR-0056 optional monitoring deployment packaging, and ADR-0057 default-off tracing plus bounded HTTP/River correlation logs are implemented; business SLO metrics, deep tracing, advanced alert routing, and advanced dashboards remain RFC-0010 follow-ups |
 
 ## Design Drift Decisions
 
@@ -68,7 +72,7 @@ Non-blocking production, environment, and V2 follow-ups are tracked centrally in
 
 | Gap | Status |
 |-----|--------|
-| Live E2E validation across a real K8s/KubeVirt cluster | Pending |
+| Live E2E validation across a real K8s/KubeVirt cluster | Runner, preflight gates, SOP, and ADR-0058 evidence manifest exist; real-cluster execution evidence remains pending |
 | Batch result export UX | Implemented via frontend JSON export from the canonical batch detail response |
 | VNC proxy internals, active revocation, and transport hardening validation | V2+ / hardening |
 | Reconciler beyond the ADR-0038 status sync worker | Deferred |
@@ -76,6 +80,7 @@ Non-blocking production, environment, and V2 follow-ups are tracked centrally in
 | External approval native connectors and provider metadata enrichment | RFC-backed future scope |
 | VM snapshot, full VM clone, and live migration workflows | RFC-backed future scope |
 | PostgreSQL partitioning / pg_partman | RFC-backed future scope |
+| Deep OpenTelemetry instrumentation, service/provider log correlation beyond the River lifecycle boundary, business metrics, advanced alert routing, and advanced dashboards | RFC-backed future scope |
 
 ## ADR Assessment
 
@@ -85,6 +90,23 @@ No ADR changes are required for this sync:
   snapshot/clone/migration features.
 - The status convergence path is covered by ADR-0038.
 - Existing VM mutation behavior is covered by ADR-0052.
+- The minimal Prometheus metrics baseline is covered by ADR-0054.
+- PostgreSQL/River bloat metrics are covered by ADR-0054.
+- OpenAPI validation failure metrics are covered by ADR-0054.
+- Minimal Prometheus alert rules are covered by ADR-0055.
+- Starter Grafana dashboard assets are covered by ADR-0055.
+- Default-off HTTP ingress tracing is covered by ADR-0057.
+- Prometheus recording rules are covered by ADR-0055.
+- Prometheus rule unit tests are covered by ADR-0055.
+- Prometheus Operator packaging is covered by ADR-0056.
+- Docker Compose monitoring packaging is covered by ADR-0056.
+- Prometheus config validation is covered by ADR-0056.
+- Prometheus Operator rule-content parity validation is covered by ADR-0056.
+- Prometheus alert runbook link validation is covered by ADR-0055.
+- Grafana dashboard PromQL validation is covered by ADR-0055.
+- River queue observability metrics are covered by ADR-0054.
+- River worker correlation logs are covered by ADR-0057.
+- Live E2E evidence bundling is covered by ADR-0058.
 - The frontend and contract-first behavior remain covered by ADR-0020,
   ADR-0021, ADR-0028, ADR-0029, and ADR-0030.
 

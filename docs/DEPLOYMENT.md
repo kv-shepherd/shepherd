@@ -27,6 +27,20 @@ Open `https://127.0.0.1:3443`. See the chart repository for NodePort/IP access,
 Ingress with TLS, persistent PostgreSQL, external database values, and
 managed-cluster RBAC examples.
 
+For Kubernetes clusters that run Prometheus Operator, apply the public starter
+monitoring manifests from this repository after installing Shepherd:
+
+```bash
+kubectl -n shepherd apply \
+  -f deploy/monitoring/prometheus-operator/shepherd-service-monitor.yml \
+  -f deploy/monitoring/prometheus-operator/shepherd-prometheus-rule.yml
+```
+
+The starter manifests provide a `ServiceMonitor` for `/metrics` and a
+`PrometheusRule` containing the accepted Shepherd recording and alert rules. They
+do not install Prometheus, Alertmanager, Grafana, receiver routing, or long-term
+storage.
+
 ## Docker Compose Service Architecture
 
 The Docker Compose topology is built around `server`, `web`, and `nginx`, with
@@ -39,6 +53,13 @@ an external database.
 | **server** | `ghcr.io/kv-shepherd/shepherd-server` by default | Go API backend (distroless runtime) |
 | **web** | `ghcr.io/kv-shepherd/shepherd-web` by default | Next.js SSR frontend |
 | **nginx** | `nginx:1.30.1-alpine` by default | TLS termination, reverse proxy, rate limiting |
+
+The production Compose path exposes the same `OBSERVABILITY_*` runtime
+configuration used by Helm. When `OBSERVABILITY_TRACING_ENABLED=true` and the
+exporter is `otlp_http`, set the standard `OTEL_EXPORTER_OTLP_*` endpoint and
+auth variables in the production env file. Enable
+`deploy/prod/docker-compose.monitoring.yml` when the host should also run
+Prometheus and Grafana locally.
 
 ## Docker Compose from Release Images
 

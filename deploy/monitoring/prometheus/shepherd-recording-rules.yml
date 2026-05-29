@@ -1,0 +1,37 @@
+groups:
+  - name: shepherd.recording
+    interval: 30s
+    rules:
+      - record: shepherd:http_requests:rate5m
+        expr: sum(rate(shepherd_http_requests_total[5m]))
+
+      - record: shepherd:http_requests_5xx:rate5m
+        expr: sum(rate(shepherd_http_requests_total{status=~"5.."}[5m]))
+
+      - record: shepherd:http_5xx:ratio5m
+        expr: |
+          sum(rate(shepherd_http_requests_total{status=~"5.."}[5m]))
+          /
+          clamp_min(sum(rate(shepherd_http_requests_total[5m])), 0.001)
+
+      - record: shepherd:http_request_duration_seconds:p95_5m
+        expr: |
+          histogram_quantile(
+            0.95,
+            sum by (le) (rate(shepherd_http_request_duration_seconds_bucket[5m]))
+          )
+
+      - record: shepherd:openapi_validation_failures:rate5m
+        expr: |
+          sum by (phase, code) (
+            rate(shepherd_openapi_validation_failures_total[5m])
+          )
+
+      - record: shepherd:river_ready_jobs:sum
+        expr: sum by (queue) (shepherd_river_ready_jobs)
+
+      - record: shepherd:river_recent_discarded_jobs:sum
+        expr: |
+          sum by (queue) (
+            shepherd_river_recent_terminal_jobs{state="discarded"}
+          )

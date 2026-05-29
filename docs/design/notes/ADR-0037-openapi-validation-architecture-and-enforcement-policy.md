@@ -89,6 +89,10 @@ Linked ADR: `docs/adr/ADR-0037-openapi-validation-architecture-and-enforcement-p
 > 2. Re-aligned middleware with strict lifecycle policy: validator instance is now created per validation call (request and response each create their own instance), no reuse.
 > 3. Added release-mode regression test to ensure request validation errors return generic messages without detailed leakage.
 > 4. Cleaned stale design-template/tooling references to removed `openapi-compat-generate.sh` script and synchronized with Go-native compat generator.
+>
+> **rev.17 Change Summary (observability baseline execution)**:
+> 1. ADR-0054 accepts the low-cardinality OpenAPI validation failure metric.
+> 2. The rev.7 monitoring plan is partially implemented by `shepherd_openapi_validation_failures_total`; latency histograms, alert thresholds, and dashboards remain RFC-0010 scope.
 
 ---
 
@@ -593,14 +597,11 @@ Use sequential atomic PRs, one concern per PR, with baseline refresh between eac
 - **Best practice**: All checks as blocking gates, branch protection required checks, contract testing in CI pipeline, spec drift prevention via automated validation.
 - **This plan**: PR-1 establishes branch protection; PR-6 completes CI gates (lint + sync + breaking + compat + frontend type sync + contract test).
 
-### 6. Monitoring Validation Failures (🟡 Partially aligned — concrete plan added in rev.7)
+### 6. Monitoring Validation Failures (✅ Baseline aligned — ADR-0054 accepted)
 
 - **Best practice**: Collect validation failure metrics, configure alerts for high-frequency invalid requests.
-- **This plan**: PR-3 middleware can instrument metrics, but specific implementation is deferred to post-PR-7 as it depends on observability infrastructure selection.
-- **(rev.7) Concrete post-PR-7 plan** (see `REMEDIATION-PLAN-BEST-STATE.md` §13 for full details):
-  - Metrics defined: `openapi_validation_failures_total` (Counter), `openapi_validation_latency_seconds` (Histogram), `openapi_strict_reject_total` (Counter)
-  - Timeline: PR-7 merge + 1 sprint to embed metric collection points (default disabled); enable after observability infra selection
-  - Tracking: Dedicated Issue with `enhancement` + `observability` labels, referenced in ADR-0037 Decision section
+- **Baseline implemented by ADR-0054**: `shepherd_openapi_validation_failures_total` records setup, request, and response validation failures with fixed `phase`, `code`, `method`, and normalized `route` labels.
+- **Still deferred to RFC-0010**: validation latency histograms, strict-reject split counters, alert thresholds, and dashboards.
 
 ### 7. Asynchronous Response Validation (🟡 Noted for reference)
 

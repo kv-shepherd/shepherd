@@ -19,15 +19,49 @@ import (
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/internal/api/specembed"
+	"kv-shepherd.io/shepherd/internal/pkg/httpmethod"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
 const openAPIResponseValidationMessage = "response does not conform to OpenAPI contract"
 const openAPIRequestValidationMessage = "request does not conform to OpenAPI contract"
 
+const (
+	openAPIValidationPhaseSetup    = "setup"
+	openAPIValidationPhaseRequest  = "request"
+	openAPIValidationPhaseResponse = "response"
+
+	openAPIValidatorUnavailableCode = "OPENAPI_VALIDATOR_UNAVAILABLE"
+	openAPIRequestInvalidCode       = "OPENAPI_REQUEST_INVALID"
+	openAPIRouteInvalidCode         = "OPENAPI_ROUTE_INVALID"
+	openAPIResponseInvalidCode      = "OPENAPI_RESPONSE_INVALID"
+
+	openAPIMetricUnmatchedRoute = "unmatched"
+)
+
+// OpenAPIValidationMetrics records runtime OpenAPI validation failures without
+// tying this middleware package to a concrete metrics backend.
+type OpenAPIValidationMetrics interface {
+	RecordOpenAPIValidationFailure(method, route, phase, code string)
+}
+
+type openAPIValidatorOptions struct {
+	metrics OpenAPIValidationMetrics
+}
+
+// OpenAPIValidatorOption customizes the runtime OpenAPI validator.
+type OpenAPIValidatorOption func(*openAPIValidatorOptions)
+
+// WithOpenAPIValidationMetrics records OpenAPI validation failures.
+func WithOpenAPIValidationMetrics(metrics OpenAPIValidationMetrics) OpenAPIValidatorOption {
+	return func(options *openAPIValidatorOptions) {
+		options.metrics = metrics
+	}
+}
+
 // MustOpenAPIValidator creates an OpenAPI runtime validator middleware and panics on setup failure.
-func MustOpenAPIValidator(basePath string) gin.HandlerFunc {
-	mw, err := NewOpenAPIValidator(basePath)
+func MustOpenAPIValidator(basePath string, opts ...OpenAPIValidatorOption) gin.HandlerFunc {
+	mw, err := NewOpenAPIValidator(basePath, opts...)
 	if err != nil {
 		panic(fmt.Sprintf("init openapi validator: %v", err))
 	}
@@ -35,7 +69,7 @@ func MustOpenAPIValidator(basePath string) gin.HandlerFunc {
 }
 
 // NewOpenAPIValidator validates request + response against the canonical OpenAPI spec.
-func NewOpenAPIValidator(basePath string) (gin.HandlerFunc, error) {
+func NewOpenAPIValidator(basePath string, opts ...OpenAPIValidatorOption) (gin.HandlerFunc, error) {
 	document, err := libopenapi.NewDocument(specembed.CanonicalSpec)
 	if err != nil {
 		return nil, fmt.Errorf("load canonical openapi document: %w", err)
@@ -44,12 +78,21 @@ func NewOpenAPIValidator(basePath string) (gin.HandlerFunc, error) {
 		return nil, fmt.Errorf("build canonical openapi model: %w", err)
 	}
 
+	options := openAPIValidatorOptions{}
+	for _, opt := range opts {
+		if opt == nil {
+			continue
+		}
+		opt(&options)
+	}
+
 	runtime := &openAPIRuntimeValidator{
 		document:              document,
 		basePath:              normalizeBasePath(basePath),
 		validateResponse:      gin.Mode() != gin.ReleaseMode,
 		exposeValidationError: gin.Mode() != gin.ReleaseMode,
 		schemaCache:           validatorcache.NewDefaultCache(),
+		metrics:               options.metrics,
 	}
 
 	return runtime.middleware, nil
@@ -61,6 +104,7 @@ type openAPIRuntimeValidator struct {
 	validateResponse      bool
 	exposeValidationError bool
 	schemaCache           validatorcache.SchemaCache
+	metrics               OpenAPIValidationMetrics
 }
 
 func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
@@ -80,8 +124,9 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 			zap.String("path", c.Request.URL.Path),
 			zap.Error(err),
 		)
+		v.recordValidationFailure(c, openAPIValidationPhaseSetup, openAPIValidatorUnavailableCode)
 		c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
-			"code":    "OPENAPI_VALIDATOR_UNAVAILABLE",
+			"code":    openAPIValidatorUnavailableCode,
 			"message": "OpenAPI validator could not be initialized",
 		})
 		return
@@ -104,9 +149,9 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 			c.Next()
 			return
 		}
-		code := "OPENAPI_REQUEST_INVALID"
+		code := openAPIRequestInvalidCode
 		if hasRouteValidationError(requestErrs) {
-			code = "OPENAPI_ROUTE_INVALID"
+			code = openAPIRouteInvalidCode
 		}
 
 		message := summarizeValidationErrors(requestErrs)
@@ -125,6 +170,7 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 			})),
 		)
 
+		v.recordValidationFailure(c, openAPIValidationPhaseRequest, code)
 		abortWithOpenAPIError(c, http.StatusBadRequest, code, message)
 		return
 	}
@@ -155,8 +201,9 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 			zap.String("path", c.Request.URL.Path),
 			zap.Error(err),
 		)
+		v.recordValidationFailure(c, openAPIValidationPhaseSetup, openAPIValidatorUnavailableCode)
 		buffered.ResetJSON(http.StatusInternalServerError, map[string]string{
-			"code":    "OPENAPI_VALIDATOR_UNAVAILABLE",
+			"code":    openAPIValidatorUnavailableCode,
 			"message": "OpenAPI validator could not be initialized",
 		})
 	} else {
@@ -174,8 +221,9 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 				zap.Int("status", buffered.Status()),
 				zap.String("reason", summarizeValidationErrors(responseErrs)),
 			)
+			v.recordValidationFailure(c, openAPIValidationPhaseResponse, openAPIResponseInvalidCode)
 			buffered.ResetJSON(http.StatusInternalServerError, map[string]string{
-				"code":    "OPENAPI_RESPONSE_INVALID",
+				"code":    openAPIResponseInvalidCode,
 				"message": openAPIResponseValidationMessage,
 			})
 		}
@@ -188,6 +236,27 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 			zap.Error(err),
 		)
 	}
+}
+
+func (v *openAPIRuntimeValidator) recordValidationFailure(c *gin.Context, phase, code string) {
+	if v == nil || v.metrics == nil || c == nil {
+		return
+	}
+	method := ""
+	if c.Request != nil {
+		method = httpmethod.NormalizeForObservability(c.Request.Method)
+	}
+	v.metrics.RecordOpenAPIValidationFailure(method, openAPIMetricRoute(c), phase, code)
+}
+
+func openAPIMetricRoute(c *gin.Context) string {
+	if c == nil {
+		return openAPIMetricUnmatchedRoute
+	}
+	if route := strings.TrimSpace(c.FullPath()); route != "" {
+		return route
+	}
+	return openAPIMetricUnmatchedRoute
 }
 
 func requestStrictIgnorePaths(request *http.Request, basePath string) []string {
@@ -321,6 +390,16 @@ func responseStrictIgnorePaths(request *http.Request, basePath string) []string 
 			"$.body.request_snapshot",
 			"$.body.request_snapshot.**",
 			"$.body.**.request_snapshot.**",
+		)
+	}
+	if path == "/auth/providers" {
+		// Public login descriptors expose provider-owned credential request
+		// schemas. These are JSON Schema fragments and are intentionally
+		// free-form under the AuthLoginMode.request_schema contract.
+		ignorePaths = append(
+			ignorePaths,
+			"$.body.**.request_schema",
+			"$.body.**.request_schema.**",
 		)
 	}
 	if path == "/admin/users" ||

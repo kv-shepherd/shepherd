@@ -27,8 +27,10 @@ versions, storage classes, auth providers, and organization models.
 
 - Keep public documentation aligned with the current monorepo structure.
 - Finish live E2E validation for login, VM request, approval, delivery, power,
-  delete, VNC/serial console, and directory-sync paths.
-- Harden deployment documentation and production upgrade guidance.
+  delete, VNC/serial console, and directory-sync paths using the documented
+  real-cluster validation SOP.
+- Keep deployment documentation, monitoring packaging, and production upgrade
+  guidance aligned with the operations runbooks.
 - Continue API contract checks, generated type sync, and design-governance
   gates as blocking CI.
 
@@ -42,7 +44,13 @@ versions, storage classes, auth providers, and organization models.
 - Treat ResourceVersion-aware adaptive polling as the authoritative VM status
   convergence path.
 - Keep snapshot, full clone, live migration, external approval adapters, and
-  advanced observability behind RFCs until their contracts are accepted.
+  advanced observability behind RFCs until their contracts are accepted. The
+  runtime metrics baseline is accepted by ADR-0054. Starter Prometheus rules,
+  rule tests, runbook-link checks, and Grafana dashboard assets are accepted by
+  ADR-0055. Optional Compose and Prometheus Operator monitoring packaging is
+  accepted by ADR-0056. Default-off OpenTelemetry HTTP tracing plus bounded HTTP
+  and River worker correlation logs are accepted by ADR-0057. Live E2E
+  completion evidence must use the ADR-0058 machine-readable evidence bundle.
 
 ## V2+ Candidates
 

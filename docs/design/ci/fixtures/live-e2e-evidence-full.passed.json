@@ -1,0 +1,84 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-28T00:00:00.000Z",
+  "mode": "full",
+  "status": "passed",
+  "exit_code": 0,
+  "playwright_exit_code": 0,
+  "backend_guard_exit_code": 0,
+  "run": {
+    "id": "1300-12345",
+    "directory": ".run/live-e2e/20260528/1300-12345"
+  },
+  "artifacts": {
+    "evidence": {
+      "path": ".run/live-e2e/20260528/1300-12345/live-e2e.evidence.json",
+      "exists": true
+    },
+    "result": {
+      "path": ".run/live-e2e/20260528/1300-12345/live-e2e.result",
+      "exists": true
+    },
+    "runner_log": {
+      "path": ".run/live-e2e/20260528/1300-12345/live-e2e.log",
+      "exists": true
+    },
+    "backend_log": {
+      "path": ".run/live-e2e/20260528/1300-12345/shepherd-e2e-server.log",
+      "exists": true
+    },
+    "playwright_json": {
+      "path": ".run/live-e2e/20260528/1300-12345/playwright-results.json",
+      "exists": true
+    },
+    "playwright_report": {
+      "path": ".run/live-e2e/20260528/1300-12345/playwright-report",
+      "exists": true
+    },
+    "playwright_test_results": {
+      "path": ".run/live-e2e/20260528/1300-12345/test-results",
+      "exists": true
+    }
+  },
+  "result_file": {
+    "exit_code": "0",
+    "playwright_exit_code": "0",
+    "backend_guard_exit_code": "0",
+    "failed": "0",
+    "flaky": "0",
+    "passed": "6",
+    "total": "6",
+    "pass_rate": "100.00%"
+  },
+  "policy_gates": {
+    "skipped": false,
+    "master_flow_test_matrix": "required",
+    "live_e2e_no_mock": "required",
+    "cluster_probe": "required"
+  },
+  "cluster": {
+    "kubeconfig_source": "env:E2E_KUBECONFIG_B64",
+    "current_context": "e2e",
+    "api_server_reachable": true,
+    "kubernetes_version": "v1.34.3",
+    "kubevirt_api_available": true,
+    "kubevirt_api_versions": ["kubevirt.io/v1"]
+  },
+  "playwright": {
+    "project": "live-chromium",
+    "json_report": {
+      "stats": {
+        "expected": 6,
+        "unexpected": 0,
+        "flaky": 0,
+        "skipped": 0
+      },
+      "suite_count": 6
+    }
+  },
+  "cleanup": {
+    "namespace": "e2e-live",
+    "namespace_vm_cleanup_enabled": true,
+    "review_log_required": true
+  }
+}

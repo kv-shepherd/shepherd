@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Design
 
 > **Project Status**: Active
-> **Last audited**: 2026-04-24
+> **Last audited**: 2026-05-28
 > **Authority**: Implementation design layer under ADR-0030.
 
 This directory contains the implementation design for KubeVirt Shepherd. Accepted
@@ -52,7 +52,8 @@ Current implementation facts:
 | Database | PostgreSQL 18, shared pgx pool for Ent + sqlc + River |
 | HTTP contract | OpenAPI `3.1.0`, 135 operationIds |
 | Ent schemas | 33 schema files |
-| KubeVirt baseline | `kubevirt.io/client-go` `v1.8.1` |
+| KubeVirt baseline | `kubevirt.io/client-go` `v1.8.2` |
+| Observability | Prometheus metrics, River queue health metrics, HTTP request correlation logs, River worker correlation logs, config validation, recording rules, alert rules, Grafana starter dashboard with PromQL validation, and default-off OpenTelemetry HTTP tracing |
 | Frontend | React 19.2 + Next.js 16.2 + Ant Design 5 |
 | Frontend route files | 29 App Router `page.tsx` files |
 
@@ -86,6 +87,7 @@ docs/design/
 ├── phases/                   # Phase-level implementation specifications
 ├── checklist/                # Per-phase verification checklists
 ├── database/                 # Persistence lifecycle and transaction rules
+├── observability/            # Metrics and monitoring contracts
 ├── frontend/                 # Frontend design and testing rules
 ├── examples/                 # Reference implementation examples
 ├── notes/                    # Design notes paired with proposed ADRs
@@ -137,6 +139,8 @@ Detailed versions are pinned in [DEPENDENCIES.md](./DEPENDENCIES.md).
 | [DEFERRED_FOLLOWUPS.md](./DEFERRED_FOLLOWUPS.md) | Centralized non-blocking follow-ups moved out of phase checklists |
 | [interaction-flows/master-flow.md](./interaction-flows/master-flow.md) | Product interaction source of truth |
 | [database/README.md](./database/README.md) | Database reference layer: schema domains, retention, transaction boundaries |
+| [observability/README.md](./observability/README.md) | Production observability baseline and deferred monitoring scope |
+| [Operations Guides](../operations/README.md) | Production deployment, live E2E validation, database operations, and admin handoff runbooks |
 | [DEPENDENCIES.md](./DEPENDENCIES.md) | Version pinning and toolchain source of truth |
 | [CHECKLIST.md](./CHECKLIST.md) | Acceptance dashboard and core ADR constraints |
 | [frontend/README.md](./frontend/README.md) | Frontend design docs index |

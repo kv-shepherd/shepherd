@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-28T00:00:00.000Z",
+  "mode": "preflight",
+  "status": "preflight_passed",
+  "exit_code": 0,
+  "playwright_exit_code": null,
+  "backend_guard_exit_code": null,
+  "run": {
+    "id": "1300-12345",
+    "directory": ".run/live-e2e/preflight/20260528/1300-12345"
+  },
+  "artifacts": {
+    "evidence": {
+      "path": ".run/live-e2e/preflight/20260528/1300-12345/live-e2e.evidence.json",
+      "exists": true
+    },
+    "result": {
+      "path": ".run/live-e2e/preflight/20260528/1300-12345/live-e2e.result",
+      "exists": true
+    },
+    "runner_log": {
+      "path": null,
+      "exists": false
+    },
+    "backend_log": {
+      "path": null,
+      "exists": false
+    },
+    "playwright_json": {
+      "path": null,
+      "exists": false
+    },
+    "playwright_report": {
+      "path": null,
+      "exists": false
+    },
+    "playwright_test_results": {
+      "path": null,
+      "exists": false
+    }
+  },
+  "result_file": {
+    "exit_code": "0",
+    "mode": "preflight"
+  },
+  "policy_gates": {
+    "skipped": false,
+    "master_flow_test_matrix": "required",
+    "live_e2e_no_mock": "required",
+    "cluster_probe": "required"
+  },
+  "cluster": {
+    "kubeconfig_source": "env:E2E_KUBECONFIG_B64",
+    "current_context": "e2e",
+    "api_server_reachable": true,
+    "kubernetes_version": "v1.34.3",
+    "kubevirt_api_available": true,
+    "kubevirt_api_versions": ["kubevirt.io/v1"]
+  },
+  "playwright": {
+    "project": null,
+    "json_report": null
+  },
+  "cleanup": {
+    "namespace": null,
+    "namespace_vm_cleanup_enabled": true,
+    "review_log_required": true
+  }
+}

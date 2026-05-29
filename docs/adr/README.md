@@ -63,6 +63,11 @@
 | [ADR-0051](./ADR-0051-scheduled-directory-enrichment.md) | Scheduled Directory Enrichment for Existing Users | **Accepted** | Optional scheduled enrichment of existing users via explicit join key, without abandoning JIT user-center construction |
 | [ADR-0052](./ADR-0052-existing-vm-mutation-strategy.md) | Existing VM Mutation Strategy — KubeVirt Client First, Exact Patch + Dry-Run | **Accepted** | Narrows SSA to full desired-state submission and moves existing-VM mutation to KubeVirt-native patch/update semantics |
 | [ADR-0053](./ADR-0053-prelaunch-rbac-baseline-cleanup.md) | Pre-Launch RBAC Baseline Cleanup and Environment-Scoped Built-In Roles | **Accepted** | Removes compatibility-era RBAC aliases, drops bootstrap-only built-ins, and keeps environment scope in role bindings |
+| [ADR-0054](./ADR-0054-minimal-prometheus-observability-baseline.md) | Minimal Prometheus Observability Baseline | **Accepted** | Adds `/metrics`, low-cardinality HTTP/OpenAPI/PostgreSQL/River metrics, and an isolated Prometheus registry |
+| [ADR-0055](./ADR-0055-prometheus-rules-and-grafana-dashboard-baseline.md) | Prometheus Rules and Grafana Dashboard Baseline | **Accepted** | Adds starter recording rules, alerts, rule tests, runbook-link checks, and a starter Grafana dashboard for accepted metrics |
+| [ADR-0056](./ADR-0056-observability-deployment-packaging-baseline.md) | Observability Deployment Packaging Baseline | **Accepted** | Adds optional Compose and Prometheus Operator monitoring packaging with config and parity validation |
+| [ADR-0057](./ADR-0057-opentelemetry-and-correlation-logging-baseline.md) | OpenTelemetry and Correlation Logging Baseline | **Accepted** | Adds default-off HTTP tracing plus bounded HTTP and River worker correlation logs |
+| [ADR-0058](./ADR-0058-live-e2e-evidence-bundle-baseline.md) | Live E2E Evidence Bundle Baseline | **Accepted** | Adds machine-readable evidence for manual/operator-run real-cluster live E2E validation outside required GitHub CI |
 
 > ℹ️ **ADR-0037 Sync Notes**:
 >
@@ -148,6 +153,11 @@ For newcomers, we recommend reading ADRs in this order:
 25. **ADR-0051** (Scheduled Directory Enrichment, **Accepted**) → Adds enrich-existing-only scheduled profile/cohort sync while keeping JIT user-center construction as the default
 26. **ADR-0052** (Existing VM Mutation Strategy, **Accepted**) → Narrows SSA to create/provisioning and moves existing-VM modify flows to exact KubeVirt-native patch/update + dry-run
 27. **ADR-0053** (Pre-Launch RBAC Baseline Cleanup, **Accepted**) → Removes compatibility-era RBAC aliases, defines the pre-launch built-in role set, and keeps environment scope in role bindings
+28. **ADR-0054** (Minimal Prometheus Observability Baseline, **Accepted**) → Adds the runtime metrics baseline and keeps business metrics in RFC scope
+29. **ADR-0055** (Prometheus Rules and Grafana Dashboard Baseline, **Accepted**) → Turns accepted metrics into validated starter recording rules, alerts, rule tests, and dashboards
+30. **ADR-0056** (Observability Deployment Packaging Baseline, **Accepted**) → Adds optional Compose and Prometheus Operator monitoring packaging
+31. **ADR-0057** (OpenTelemetry and Correlation Logging Baseline, **Accepted**) → Adds default-off tracing and bounded HTTP/River lifecycle correlation logs
+32. **ADR-0058** (Live E2E Evidence Bundle Baseline, **Accepted**) → Defines manual/operator-run live E2E evidence outside required GitHub CI
 
 ### Historical Context
 - **ADR-0002** → Why we moved from Git storage to DB (Superseded by ADR-0007)

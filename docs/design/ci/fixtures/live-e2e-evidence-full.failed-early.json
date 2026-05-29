@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-05-28T00:00:00.000Z",
+  "mode": "full",
+  "status": "failed",
+  "exit_code": 1,
+  "playwright_exit_code": null,
+  "backend_guard_exit_code": null,
+  "run": {
+    "id": "1300-12345",
+    "directory": ".run/live-e2e/20260528/1300-12345"
+  },
+  "artifacts": {
+    "evidence": {
+      "path": ".run/live-e2e/20260528/1300-12345/live-e2e.evidence.json",
+      "exists": true
+    },
+    "result": {
+      "path": ".run/live-e2e/20260528/1300-12345/live-e2e.result",
+      "exists": true
+    },
+    "runner_log": {
+      "path": null,
+      "exists": false
+    },
+    "backend_log": {
+      "path": ".run/live-e2e/20260528/1300-12345/shepherd-e2e-server.log",
+      "exists": false
+    },
+    "playwright_json": {
+      "path": ".run/live-e2e/20260528/1300-12345/playwright-results.json",
+      "exists": false
+    },
+    "playwright_report": {
+      "path": ".run/live-e2e/20260528/1300-12345/playwright-report",
+      "exists": false
+    },
+    "playwright_test_results": {
+      "path": ".run/live-e2e/20260528/1300-12345/test-results",
+      "exists": false
+    }
+  },
+  "result_file": {
+    "exit_code": "1",
+    "playwright_exit_code": "",
+    "backend_guard_exit_code": "",
+    "phase": "environment",
+    "summary": "unavailable"
+  },
+  "policy_gates": {
+    "skipped": false,
+    "master_flow_test_matrix": "required",
+    "live_e2e_no_mock": "required",
+    "cluster_probe": "required"
+  },
+  "cluster": {
+    "kubeconfig_source": "missing",
+    "current_context": null,
+    "api_server_reachable": null,
+    "kubernetes_version": null,
+    "kubevirt_api_available": null,
+    "kubevirt_api_versions": []
+  },
+  "playwright": {
+    "project": null,
+    "json_report": null
+  },
+  "cleanup": {
+    "namespace": null,
+    "namespace_vm_cleanup_enabled": true,
+    "review_log_required": true
+  }
+}

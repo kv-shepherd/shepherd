@@ -57,8 +57,14 @@ ORDER BY dead_ratio_percent DESC;
 
 | Metric | Warning | Critical | Action |
 |--------|---------|----------|--------|
-| `dead_ratio_percent` | > 10% | > 30% | Manual VACUUM immediately |
+| `dead_ratio_percent` / `shepherd_postgres_table_dead_tuple_ratio` | > 10% / > 0.10 | > 30% / > 0.30 | Manual VACUUM immediately |
 | `n_dead_tup` (river_job) | > 100,000 | > 500,000 | Check autovacuum daemon |
+
+Runtime Prometheus metrics are exposed by ADR-0054 through `/metrics` when
+`observability.database_metrics_enabled=true`. `shepherd_river_dead_tuple_ratio`
+is the stable River-specific trigger metric for RFC-0001 partitioning review.
+ADR-0055's starter alert `ShepherdRiverDeadTupleRatioHigh` fires when that
+ratio stays above `0.30` for 30 minutes.
 
 ---
 

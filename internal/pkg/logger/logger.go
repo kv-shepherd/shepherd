@@ -71,6 +71,14 @@ func L() *zap.Logger {
 	return global
 }
 
+// LOrNop returns the global logger or a no-op logger when logging is not initialized.
+func LOrNop() *zap.Logger {
+	if global == nil {
+		return zap.NewNop()
+	}
+	return global
+}
+
 // S returns the global sugared logger.
 func S() *zap.SugaredLogger {
 	return L().Sugar()

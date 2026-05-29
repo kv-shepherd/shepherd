@@ -95,14 +95,13 @@ kubectl -n shepherd port-forward svc/shepherd-edge 3443:443
 
 Open `https://127.0.0.1:3443`. See the chart repository for NodePort/IP access,
 Ingress with TLS, persistent PostgreSQL, external database values, and
-managed-cluster RBAC examples. Clusters that run Prometheus Operator can also
-enable chart-managed monitoring resources:
+managed-cluster RBAC examples. Clusters that run Prometheus Operator can apply
+the public starter monitoring manifests from this repository:
 
 ```bash
-helm upgrade --install shepherd shepherd/shepherd \
-  --namespace shepherd --create-namespace \
-  --set observability.serviceMonitor.enabled=true \
-  --set observability.prometheusRule.enabled=true
+kubectl -n shepherd apply \
+  -f deploy/monitoring/prometheus-operator/shepherd-service-monitor.yml \
+  -f deploy/monitoring/prometheus-operator/shepherd-prometheus-rule.yml
 ```
 
 ### Docker Compose From Release Images

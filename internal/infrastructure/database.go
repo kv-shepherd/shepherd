@@ -20,12 +20,14 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
+	"github.com/riverqueue/river/rivertype"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
 	entmigrate "kv-shepherd.io/shepherd/ent/migrate"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/jobs"
+	"kv-shepherd.io/shepherd/internal/observability"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
@@ -175,6 +177,7 @@ func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.Riv
 	riverClient, err := river.NewClient(riverpgxv5.New(c.Pool), &river.Config{
 		Queues:                      riverQueues,
 		Workers:                     workers,
+		Middleware:                  buildRiverMiddleware(),
 		CompletedJobRetentionPeriod: cfg.CompletedJobRetentionPeriod,
 	})
 	if err != nil {
@@ -191,6 +194,12 @@ func buildRiverQueues(maxWorkers int) map[string]river.QueueConfig {
 		"vm_operations":    {MaxWorkers: maxWorkers},
 		// ADR-0038: dedicated queue for adaptive VM status sync polling jobs.
 		jobs.VMStatusSyncJobKind: {MaxWorkers: maxWorkers},
+	}
+}
+
+func buildRiverMiddleware() []rivertype.Middleware {
+	return []rivertype.Middleware{
+		observability.NewRiverWorkerLogMiddleware(logger.LOrNop()),
 	}
 }
 
