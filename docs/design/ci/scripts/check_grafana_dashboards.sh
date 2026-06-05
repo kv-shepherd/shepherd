@@ -67,6 +67,15 @@ expected_panels = {
     "River ready jobs",
     "River oldest ready job age",
     "River recent terminal jobs",
+    "Firing alerts",
+    "Firing alert details",
+    "Business metrics scrape success",
+    "Pending approvals",
+    "Oldest pending approval age",
+    "Failed approvals",
+    "Pending batch approvals",
+    "Batch approval failures",
+    "Approval failure audit actions",
 }
 
 panels = dashboard.get("panels") or []
@@ -88,9 +97,21 @@ allowed_metrics = {
     "shepherd:river_ready_jobs:sum",
     "shepherd_river_oldest_ready_job_age_seconds",
     "shepherd_river_recent_terminal_jobs",
+    "shepherd_business_metrics_scrape_success",
+    "shepherd:business_approval_pending:sum",
+    "shepherd_business_approval_pending_oldest_age_seconds",
+    "shepherd:business_approval_failed:sum",
+    "shepherd:business_batch_approval_pending:sum",
+    "shepherd:business_batch_approval_failed:sum",
+    "shepherd:business_approval_failure_audit_actions:sum",
 }
 required_metrics = set(allowed_metrics)
 observed_metrics = set()
+expected_alert_queries = {
+    "sum(ALERTS{alertstate=\"firing\", service=\"shepherd\"}) or vector(0)",
+    "ALERTS{alertstate=\"firing\", service=\"shepherd\"}",
+}
+observed_alert_queries = set()
 for panel in panels:
     grid = panel.get("gridPos") or {}
     for key in ("h", "w", "x", "y"):
@@ -106,6 +127,8 @@ for panel in panels:
         expr = target.get("expr")
         if not isinstance(expr, str) or not expr.strip():
             fail(f"panel {panel.get('title')} target missing expr")
+        if "ALERTS" in expr:
+            observed_alert_queries.add(expr)
         for metric in re.findall(r"shepherd[:_][A-Za-z0-9_:]+", expr):
             if metric not in allowed_metrics:
                 fail(f"unsupported metric reference {metric}")
@@ -117,6 +140,10 @@ for panel in panels:
 missing = sorted(required_metrics - observed_metrics)
 if missing:
     fail(f"required metric references missing: {missing}")
+
+missing_alert_queries = sorted(expected_alert_queries - observed_alert_queries)
+if missing_alert_queries:
+    fail(f"required alert panel queries missing: {missing_alert_queries}")
 PY
 
 rg -q '^apiVersion: 1$' "${provisioning_file}" || fail "${provisioning_file}: missing apiVersion"

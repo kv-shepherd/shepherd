@@ -105,7 +105,7 @@ func newObservabilityMetrics(cfg *config.Config, infra *modules.Infrastructure) 
 	if cfg == nil || !cfg.Observability.MetricsEnabled {
 		return nil
 	}
-	opts := make([]observability.Option, 0, 2)
+	opts := make([]observability.Option, 0, 3)
 	if cfg.Observability.DatabaseMetricsEnabled && infra != nil && infra.Pool != nil {
 		opts = append(opts, observability.WithPostgresTableStats(
 			infra.Pool,
@@ -116,6 +116,12 @@ func newObservabilityMetrics(cfg *config.Config, infra *modules.Infrastructure) 
 		opts = append(opts, observability.WithRiverQueueStats(
 			infra.Pool,
 			cfg.Observability.EffectiveRiverMetricsTimeout(),
+		))
+	}
+	if cfg.Observability.BusinessMetricsEnabled && infra != nil && infra.Pool != nil {
+		opts = append(opts, observability.WithBusinessMetrics(
+			infra.Pool,
+			cfg.Observability.EffectiveBusinessMetricsTimeout(),
 		))
 	}
 	return observability.NewMetrics(opts...)

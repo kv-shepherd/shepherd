@@ -40,6 +40,24 @@ tests:
         values: '600x35'
       - series: 'shepherd_river_recent_terminal_jobs{queue="vm_operations",state="discarded",kind="vm_create"}'
         values: '1x35'
+      - series: 'shepherd_business_metrics_scrape_success'
+        values: '0x35'
+      - series: 'shepherd_business_approval_tickets{status="PENDING",operation_type="CREATE"}'
+        values: '4x35'
+      - series: 'shepherd_business_approval_tickets{status="FAILED",operation_type="POWER"}'
+        values: '2x35'
+      - series: 'shepherd_business_approval_pending_oldest_age_seconds{operation_type="CREATE"}'
+        values: '90000x35'
+      - series: 'shepherd_business_batch_approval_tickets{status="PENDING_APPROVAL",batch_type="BATCH_CREATE"}'
+        values: '1x35'
+      - series: 'shepherd_business_batch_approval_tickets{status="FAILED",batch_type="BATCH_POWER"}'
+        values: '1x35'
+      - series: 'shepherd_business_batch_approval_pending_oldest_age_seconds{batch_type="BATCH_CREATE"}'
+        values: '90000x35'
+      - series: 'shepherd_business_batch_approval_failed_children{batch_type="BATCH_POWER"}'
+        values: '3x35'
+      - series: 'shepherd_business_approval_failure_audit_actions_recent{action="approval.validation_failed"}'
+        values: '2x35'
 
     promql_expr_test:
       - expr: shepherd:http_requests:rate5m
@@ -77,6 +95,31 @@ tests:
         exp_samples:
           - labels: 'shepherd:river_recent_discarded_jobs:sum{queue="vm_operations"}'
             value: 1
+      - expr: shepherd:business_approval_pending:sum
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:business_approval_pending:sum{operation_type="CREATE"}'
+            value: 4
+      - expr: shepherd:business_approval_failed:sum
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:business_approval_failed:sum{operation_type="POWER"}'
+            value: 2
+      - expr: shepherd:business_batch_approval_pending:sum
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:business_batch_approval_pending:sum{batch_type="BATCH_CREATE"}'
+            value: 1
+      - expr: shepherd:business_batch_approval_failed:sum
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:business_batch_approval_failed:sum{batch_type="BATCH_POWER"}'
+            value: 4
+      - expr: shepherd:business_approval_failure_audit_actions:sum
+        eval_time: 10m
+        exp_samples:
+          - labels: 'shepherd:business_approval_failure_audit_actions:sum{action="approval.validation_failed"}'
+            value: 2
 
     alert_rule_test:
       - alertname: ShepherdMetricsTargetDown
@@ -175,3 +218,68 @@ tests:
               summary: Shepherd River jobs were discarded
               description: One or more Shepherd River jobs reached the discarded terminal state for queue=vm_operations.
               runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverjobsdiscarded
+      - alertname: ShepherdBusinessMetricsScrapeFailed
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd business metrics scrape failed
+              description: Shepherd cannot collect approval and audit-log business metrics.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdbusinessmetricsscrapefailed
+      - alertname: ShepherdApprovalPendingTooLong
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              operation_type: CREATE
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd approval has been pending too long
+              description: The oldest pending approval has waited more than 24 hours for operation_type=CREATE.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdapprovalpendingtoolong
+      - alertname: ShepherdApprovalFailuresPresent
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              operation_type: POWER
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd approval failures are present
+              description: One or more approval tickets are in FAILED status for operation_type=POWER.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdapprovalfailurespresent
+      - alertname: ShepherdBatchApprovalPendingTooLong
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              batch_type: BATCH_CREATE
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd batch approval has been pending too long
+              description: The oldest pending batch approval has waited more than 24 hours for batch_type=BATCH_CREATE.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdbatchapprovalpendingtoolong
+      - alertname: ShepherdBatchApprovalFailuresPresent
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              batch_type: BATCH_POWER
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd batch approval failures are present
+              description: One or more batch approvals or child tasks have failed for batch_type=BATCH_POWER.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdbatchapprovalfailurespresent
+      - alertname: ShepherdApprovalFailureAuditActionsRecent
+        eval_time: 31m
+        exp_alerts:
+          - exp_labels:
+              action: approval.validation_failed
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd approval failure audit actions were recorded
+              description: Approval-related failure audit actions were recorded recently for action=approval.validation_failed.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdapprovalfailureauditactionsrecent

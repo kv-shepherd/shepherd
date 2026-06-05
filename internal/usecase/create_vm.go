@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
@@ -22,6 +23,7 @@ import (
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
+	"kv-shepherd.io/shepherd/internal/observability"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/service"
@@ -82,7 +84,16 @@ func (uc *CreateVMUseCase) WithAuditLogger(al *audit.Logger) *CreateVMUseCase {
 // Phase 1: Creates DomainEvent + Ticket in atomic transaction.
 // Phase 2: After approval, K8s create is executed by River worker.
 // master-flow.md Stage 5.A: includes duplicate pending guard + audit log.
-func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (*CreateVMOutput, error) {
+func (uc *CreateVMUseCase) Execute(ctx context.Context, input CreateVMInput) (output *CreateVMOutput, err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.vm.request_create",
+		attribute.String("shepherd.business.operation", "vm.request_create"),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	if uc.templateSvc == nil {
 		return nil, fmt.Errorf("template service is not configured")
 	}

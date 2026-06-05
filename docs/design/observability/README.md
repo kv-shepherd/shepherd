@@ -15,6 +15,7 @@ This directory documents Shepherd's production observability contracts.
 | PostgreSQL/River dead tuple metrics | Accepted database baseline | [ADR-0054](../../adr/ADR-0054-minimal-prometheus-observability-baseline.md) |
 | OpenAPI validation failure metrics | Accepted contract baseline | [ADR-0054](../../adr/ADR-0054-minimal-prometheus-observability-baseline.md) |
 | River queue health metrics | Accepted async execution baseline | [river-queue-metrics-baseline.md](./river-queue-metrics-baseline.md) |
+| Approval/audit business metrics | Built-in business baseline | [metrics-baseline.md](./metrics-baseline.md) |
 | HTTP request correlation logs | Accepted ingress correlation baseline | [request-correlation-logging-baseline.md](./request-correlation-logging-baseline.md) |
 | River worker correlation logs | Accepted async execution log baseline | [river-worker-correlation-logging-baseline.md](./river-worker-correlation-logging-baseline.md) |
 | Prometheus alert rule pack | Accepted alert baseline | [alerts-baseline.md](./alerts-baseline.md) |
@@ -28,7 +29,9 @@ This directory documents Shepherd's production observability contracts.
 | Prometheus Operator packaging | Accepted optional deployment baseline | [prometheus-operator-baseline.md](./prometheus-operator-baseline.md) |
 | Prometheus Operator rule parity | Accepted packaging parity baseline | [prometheus-operator-rule-parity-baseline.md](./prometheus-operator-rule-parity-baseline.md) |
 | Docker Compose monitoring packaging | Accepted optional deployment baseline | [compose-monitoring-baseline.md](./compose-monitoring-baseline.md) |
-| VM/business metrics | Deferred | [RFC-0010](../../rfc/RFC-0010-observability.md) |
+| Broad VM/provider/notification business SLOs | Deferred | [RFC-0010](../../rfc/RFC-0010-observability.md) |
+| Advanced trace dashboards and trace-derived alerting | Deferred | [RFC-0010](../../rfc/RFC-0010-observability.md) |
+| Log backend and log-based monitoring | Deferred | [RFC-0010](../../rfc/RFC-0010-observability.md) |
 
 ## Boundaries
 
@@ -48,6 +51,11 @@ River queue metrics record only aggregate `queue`, `state`, and `kind` labels.
 Job args, job IDs, errors, metadata, tags, ticket IDs, VM names, namespaces,
 clusters, users, and payload values stay out of metrics.
 
+Approval/audit business metrics record only aggregate ticket status,
+operation type, batch type, and fixed audit action labels. Requesters,
+approvers, actors, ticket IDs, resource IDs, VM names, namespaces, clusters,
+audit details, and payload values stay out of metrics.
+
 HTTP request correlation logs record bounded ingress fields only: request ID,
 trace ID, span ID, method, normalized route, status, and duration. They do not
 record raw paths, query strings, headers, bodies, users, tickets, VMs,
@@ -64,8 +72,9 @@ The baseline alert rule pack and starter Grafana dashboard are optional
 deployment inputs. Baseline recording rules centralize shared HTTP, OpenAPI, and
 River queue queries for those assets. Alert runbook link validation proves each
 baseline alert points to an existing local Markdown runbook section. They are
-validated by repository governance, but advanced Alertmanager routing, business
-SLO dashboards, and tracing views remain deployment-specific RFC-0010 follow-ups.
+validated by repository governance, but advanced Alertmanager routing, broad
+business SLO dashboards, and tracing views remain deployment-specific RFC-0010
+follow-ups.
 Dashboard PromQL validation wraps panel queries as temporary recording rules and
 runs `promtool check rules`, so syntax drift is caught without requiring a live
 Grafana or Prometheus server.
@@ -83,10 +92,14 @@ Operator a Shepherd runtime dependency. Operator rule parity validation ensures
 rule files.
 
 Docker Compose monitoring manifests are optional deployment packaging for
-Prometheus and Grafana users. They do not make either service a mandatory
-runtime dependency.
+Prometheus, Tempo, and OpenTelemetry Collector. They do not make those services
+mandatory Shepherd runtime dependencies. Grafana dashboard assets remain
+repository-owned for operators who want to import them into their own Grafana.
 
-OpenTelemetry tracing is accepted for default-off HTTP ingress spans, W3C
-context propagation, and the ADR-0057 HTTP/River correlation-log baseline.
-Service, database, KubeVirt, provider, frontend, and business spans remain
-deferred.
+OpenTelemetry tracing is accepted for HTTP ingress spans, W3C context
+propagation, the ADR-0057 HTTP/River correlation-log baseline, business spans,
+pgx DB spans, River worker spans, and KubeVirt/provider client spans.
+
+The built-in Compose monitoring bundle includes Tempo as the trace backend and
+OpenTelemetry Collector as the application trace ingest endpoint. It does not
+include a log backend, log-derived metrics, or log-based alert rules.

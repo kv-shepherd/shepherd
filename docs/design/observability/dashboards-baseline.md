@@ -8,8 +8,8 @@
 The baseline dashboard is a starter Grafana overview for the metrics accepted by
 ADR-0054. HTTP, OpenAPI, and River queue computed panels use the recording
 series accepted by ADR-0055. It complements the ADR-0055 alert rule pack without
-taking ownership of advanced dashboard suites, business SLO panels,
-Alertmanager routing, or tracing views.
+taking ownership of advanced dashboard suites, broad business SLO panels,
+Alertmanager routing, trace-derived alerting, or log-based monitoring views.
 
 Dashboard assets:
 
@@ -34,6 +34,19 @@ deploy/monitoring/grafana/provisioning/dashboards/shepherd.yml
 | River ready jobs | `shepherd:river_ready_jobs:sum` | Show async backlog by queue |
 | River oldest ready job age | `shepherd_river_oldest_ready_job_age_seconds` | Show oldest due job wait time by queue |
 | River recent terminal jobs | `shepherd_river_recent_terminal_jobs` | Show recent cancelled/discarded jobs by queue and kind |
+| Firing alerts | `sum(ALERTS{alertstate="firing", service="shepherd"}) or vector(0)` | Show current Shepherd alert count from Prometheus rule evaluation |
+| Firing alert details | `ALERTS{alertstate="firing", service="shepherd"}` | Show firing alert names and severities |
+| Business metrics scrape success | `shepherd_business_metrics_scrape_success` | Show whether approval/audit business metrics are available |
+| Pending approvals | `shepherd:business_approval_pending:sum` | Show pending approval backlog by operation type |
+| Oldest pending approval age | `shepherd_business_approval_pending_oldest_age_seconds` | Show long-running unhandled approvals |
+| Failed approvals | `shepherd:business_approval_failed:sum` | Show failed approval tickets by operation type |
+| Pending batch approvals | `shepherd:business_batch_approval_pending:sum` | Show pending batch approval backlog |
+| Batch approval failures | `shepherd:business_batch_approval_failed:sum` | Show failed batch approvals and failed child counts by batch type |
+| Approval failure audit actions | `shepherd:business_approval_failure_audit_actions:sum` | Show recent failure signals derived from approval audit actions |
+
+Single-value zero-state panels use `or vector(0)` where needed. Label-split
+time series avoid that fallback so Grafana does not render an extra unlabeled
+zero series when real labeled data exists.
 
 ## Provisioning
 
@@ -84,8 +97,10 @@ server.
 
 The following remain outside this baseline:
 
-* Business SLO dashboards for VM, approval, batch, provider, and notification
-  workflows.
+* Broad business SLO dashboards for VM, provider, and notification workflows.
 * Alertmanager receiver routing and escalation policy.
-* Deep tracing dashboards and trace/log correlation views.
+* Trace-specific Grafana dashboards, trace-aware exemplars, and trace/log
+  correlation views beyond the Shepherd administrator trace summary and the
+  embedded Tempo datasource.
+* Log backend installation, log-derived metrics, and log-based alert rules.
 * Grafana folder taxonomy beyond the starter `Shepherd` folder.

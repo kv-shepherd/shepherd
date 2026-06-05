@@ -25,6 +25,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/governance/ticketing"
 	"kv-shepherd.io/shepherd/internal/notification"
+	"kv-shepherd.io/shepherd/internal/observability"
 	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 	configcodec "kv-shepherd.io/shepherd/internal/provider/configcodec"
 	kubeconfigcodec "kv-shepherd.io/shepherd/internal/provider/kubeconfigcodec"
@@ -67,6 +68,8 @@ type Server struct {
 	refreshClusterHealth func(context.Context, string) error
 	riverClient          *river.Client[pgx.Tx]
 	notifier             *notification.Triggers // Optional: notification trigger service
+	traceSummaryProvider observability.TraceSummaryProvider
+	businessMetrics      observability.BusinessMetricsProvider
 }
 
 // ServerDeps holds all dependencies for creating a Server.
@@ -92,6 +95,8 @@ type ServerDeps struct {
 	RefreshClusterHealth     func(context.Context, string) error
 	RiverClient              *river.Client[pgx.Tx]  // ISSUE-001: needed for async VM delete/power operations
 	Notifier                 *notification.Triggers // Optional: notification trigger service
+	TraceSummaryProvider     observability.TraceSummaryProvider
+	BusinessMetrics          observability.BusinessMetricsProvider
 	PublicBaseURL            string
 	AllowedOrigins           []string
 	SessionConfig            config.SessionConfig
@@ -171,6 +176,8 @@ func NewServer(deps ServerDeps) *Server {
 		refreshClusterHealth: deps.RefreshClusterHealth,
 		riverClient:          deps.RiverClient,
 		notifier:             deps.Notifier,
+		traceSummaryProvider: deps.TraceSummaryProvider,
+		businessMetrics:      deps.BusinessMetrics,
 	}
 	srv.loadExternalAuthPlatformSetting(context.Background())
 	return srv

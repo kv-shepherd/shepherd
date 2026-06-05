@@ -6,10 +6,11 @@
 
 The baseline alert pack is a deployment-ready starter for the metrics accepted
 by ADR-0054. HTTP, OpenAPI, and River queue computed SLIs use the recording
-series accepted by ADR-0055. It is
-intentionally smaller than the full RFC-0010 observability stack: no
-Alertmanager routing, receiver configuration, tracing, or business SLO alerts
-are included.
+series accepted by ADR-0055. Approval/audit business alerts cover the first
+built-in business monitoring path for long-pending approvals and approval
+failures without introducing a log backend. It is intentionally smaller than
+the full RFC-0010 observability stack: no Alertmanager routing, receiver
+configuration, tracing, or broad business SLO alerting is included.
 
 Rule file:
 
@@ -33,6 +34,12 @@ baseline derived SLI alerts.
 | `ShepherdRiverQueueStatsScrapeFailed` | warning | River queue stats scrape success is `0` for 10 minutes | Detect broken queue-health collection before async alerts go silent |
 | `ShepherdRiverQueueBacklogAgeHigh` | warning | `shepherd_river_oldest_ready_job_age_seconds > 300` for 15 minutes | Detect ready async work waiting too long |
 | `ShepherdRiverJobsDiscarded` | critical | `shepherd:river_recent_discarded_jobs:sum > 0` for 5 minutes | Detect jobs that exhausted retries and reached River's discarded terminal state |
+| `ShepherdBusinessMetricsScrapeFailed` | warning | Business metrics scrape success is `0` for 10 minutes | Detect broken approval/audit business metric collection before business alerts go silent |
+| `ShepherdApprovalPendingTooLong` | warning | `shepherd_business_approval_pending_oldest_age_seconds > 86400` for 15 minutes | Detect approvals waiting more than 24 hours |
+| `ShepherdApprovalFailuresPresent` | warning | `shepherd:business_approval_failed:sum > 0` for 10 minutes | Detect approval tickets in failed workflow state |
+| `ShepherdBatchApprovalPendingTooLong` | warning | `shepherd_business_batch_approval_pending_oldest_age_seconds > 86400` for 15 minutes | Detect batch approvals waiting more than 24 hours |
+| `ShepherdBatchApprovalFailuresPresent` | warning | `shepherd:business_batch_approval_failed:sum > 0` for 10 minutes | Detect failed batch approvals or failed child work |
+| `ShepherdApprovalFailureAuditActionsRecent` | warning | `shepherd:business_approval_failure_audit_actions:sum > 0` for 10 minutes | Detect recent failure signals from approval audit actions |
 
 Each alert must include a `runbook_url` annotation pointing to its local runbook
 section in this document. That link contract is protected by
@@ -50,6 +57,12 @@ The baseline thresholds are conservative starter values:
   intentionally slow queues may tune the threshold in their deployment copy.
 * River discarded jobs alert on any recent discarded job because discarded jobs
   represent exhausted retry policy and usually require operator review.
+* Approval pending age uses a 24 hour starter threshold for both single and
+  batch approvals. Deployments with stricter operational commitments may lower
+  the threshold in their deployment copy.
+* Approval failure alerts fire on non-zero failed workflow state or recent
+  failure audit actions because approval failures usually need explicit
+  operator review or compensation.
 * The scrape availability rule assumes the Prometheus job label is `shepherd`.
   Deployments using a different scrape job name must adjust only that selector.
 
@@ -148,12 +161,52 @@ window. Discarded jobs exhausted retries; reconcile the affected ticket/event
 state before retrying or manually compensating. Do not add job args, IDs,
 payload fields, VM names, namespaces, or clusters as metric labels.
 
+### ShepherdBusinessMetricsScrapeFailed
+
+Verify `observability.business_metrics_enabled`, database connectivity, and
+permissions for reading `tickets`, `batch_tickets`, and `audit_logs`. This alert
+can hide approval backlog and failure alerts, so treat sustained failures as a
+monitoring issue even if HTTP health checks pass.
+
+### ShepherdApprovalPendingTooLong
+
+Use the `operation_type` label to identify the affected approval workflow. Open
+the built-in approval queue and audit view to identify concrete tickets. Do not
+add requester, approver, ticket ID, VM name, namespace, or cluster as metric
+labels.
+
+### ShepherdApprovalFailuresPresent
+
+Use the `operation_type` label to narrow the failed approval workflow. Inspect
+the ticket, related domain event, River state, and approval audit entries before
+retrying or manually compensating.
+
+### ShepherdBatchApprovalPendingTooLong
+
+Use the `batch_type` label to identify the affected batch workflow. Check the
+parent batch approval, child ticket status distribution, and recent approval
+audit entries.
+
+### ShepherdBatchApprovalFailuresPresent
+
+Use the `batch_type` label to identify failed batch workflow state. Inspect the
+parent `batch_tickets` projection and child tickets before retrying failed
+children or compensating partial results.
+
+### ShepherdApprovalFailureAuditActionsRecent
+
+Use the fixed `action` label to identify the failure path, then inspect the
+corresponding approval audit entries in the product UI. This is an audit-derived
+business signal, not log search; keep action labels fixed and avoid adding
+resource IDs or audit details to metric labels.
+
 ## Deferred Work
 
 The following remain outside this baseline:
 
 * Alertmanager receiver routing and escalation policy.
 * Advanced Grafana dashboard suites beyond the ADR-0055 starter dashboard.
-* Business SLO alerts for VM, approval, batch, provider, or notification flows.
+* Broad business SLO alerts for VM, provider, or notification flows beyond the
+  approval/audit starter alerts.
 * Per-job execution histograms from River event subscriptions.
-* Deep OpenTelemetry instrumentation and trace-aware exemplars.
+* Trace-aware exemplars and trace-derived alerting.

@@ -243,3 +243,37 @@ func TestNewServerDeps_WiresAuthSessionValidation(t *testing.T) {
 		t.Fatal("JWTCfg.ClaimsValidator was not wired")
 	}
 }
+
+func TestNewServerDeps_WiresObservabilityProviders(t *testing.T) {
+	t.Parallel()
+
+	pool := testutil.OpenPGXPool(t, "modules_observability_providers")
+
+	deps := NewServerDeps(&config.Config{
+		Observability: config.ObservabilityConfig{
+			TraceQueryEnabled:      true,
+			TraceQueryURL:          "http://tempo:3200",
+			TracingServiceName:     "shepherd",
+			BusinessMetricsEnabled: true,
+			BusinessMetricsTimeout: time.Second,
+			TraceQueryTimeout:      time.Second,
+			TraceQueryLimit:        25,
+			TraceQueryLookback:     time.Hour,
+		},
+		Session: config.SessionConfig{Lifetime: time.Hour},
+		Security: config.SecurityConfig{
+			SessionSecret:       "session-secret-1234567890123456789012",
+			EncryptionKey:       "3031323334353637383961626364656630313233343536373839616263646566",
+			JWTVerificationKeys: []string{"verify-a"},
+		},
+	}, &Infrastructure{
+		Pool: pool,
+	}, nil)
+
+	if deps.TraceSummaryProvider == nil {
+		t.Fatal("TraceSummaryProvider was not wired")
+	}
+	if deps.BusinessMetrics == nil {
+		t.Fatal("BusinessMetrics provider was not wired")
+	}
+}

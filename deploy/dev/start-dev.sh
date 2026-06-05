@@ -4,13 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/deploy/dev/docker-compose.yml"
+COMPOSE_PROJECT_NAME_EFFECTIVE="${COMPOSE_PROJECT_NAME:-$(basename "${SCRIPT_DIR}")}"
 GO_TOOLCHAIN_VERSION="${GO_TOOLCHAIN_VERSION:-$(awk '/^go [0-9]+\.[0-9]+\.[0-9]+$/ { print "go" $2; exit }' "${ROOT_DIR}/go.mod")}"
 HOST_USER_ID="${USER_ID:-$(id -u)}"
 HOST_GROUP_ID="${GROUP_ID:-$(id -g)}"
 DEV_ADMIN_PASSWORD="${DEV_ADMIN_PASSWORD:-admin}"
 NODE_MODULES_DIR="${ROOT_DIR}/web/node_modules"
 LOCK_HASH_FILE="${NODE_MODULES_DIR}/.package-lock.hash"
-SERVICES_TO_DELETE=("db" "server" "web" "nginx")
+SERVICES_TO_DELETE=("db" "server" "web" "prometheus" "tempo" "otel-collector" "nginx")
 COMPOSE_CMD=(docker compose -f "${COMPOSE_FILE}")
 HOST_E2E_SEED_BIN="${ROOT_DIR}/build/bin/e2e-seed"
 DEV_INCLUDE_E2E_SEED="${DEV_INCLUDE_E2E_SEED:-0}"
@@ -392,6 +393,69 @@ frontend_ready_status_code() {
     curl -sS -o /dev/null --max-time 2 -w '%{http_code}' "http://127.0.0.1:${DEV_FRONTEND_PORT}/login" 2>/dev/null || true
 }
 
+observability_metrics_enabled() {
+    case "${OBSERVABILITY_METRICS_ENABLED:-true}" in
+        true|1|yes|on)
+            return 0
+            ;;
+        false|0|no|off)
+            return 1
+            ;;
+        *)
+            echo "OBSERVABILITY_METRICS_ENABLED must be one of: true, false. Current value: ${OBSERVABILITY_METRICS_ENABLED}"
+            return 2
+            ;;
+    esac
+}
+
+verify_backend_metrics() {
+    local metrics_path="${OBSERVABILITY_METRICS_PATH:-/metrics}"
+    local metrics_url="http://127.0.0.1:8080${metrics_path}"
+    local metrics_body=""
+    local metrics_status=0
+
+    observability_metrics_enabled
+    metrics_status=$?
+    if [[ "${metrics_status}" == "1" ]]; then
+        echo "Skipping backend metrics check (OBSERVABILITY_METRICS_ENABLED=${OBSERVABILITY_METRICS_ENABLED:-false})."
+        return 0
+    fi
+    if [[ "${metrics_status}" != "0" ]]; then
+        return "${metrics_status}"
+    fi
+
+    echo "Verifying backend metrics (${metrics_url})..."
+    metrics_body="$(curl -fsS --max-time 5 "${metrics_url}")" || {
+        echo " backend metrics endpoint is not reachable"
+        "${COMPOSE_CMD[@]}" logs --tail=200 server || true
+        return 1
+    }
+    if grep -Eq '^(go_info|shepherd_http_requests_total)\b' <<<"${metrics_body}"; then
+        if [[ "${OBSERVABILITY_BUSINESS_METRICS_ENABLED:-true}" =~ ^(true|1|yes|on)$ ]] &&
+            ! grep -Eq '^shepherd_business_metrics_scrape_success\b' <<<"${metrics_body}"; then
+            echo " backend metrics endpoint did not expose business metrics"
+            return 1
+        fi
+        echo " backend metrics ready"
+        return 0
+    fi
+
+    echo " backend metrics endpoint did not expose expected Prometheus series"
+    return 1
+}
+
+remove_legacy_grafana_container() {
+    local ids
+    ids="$(docker ps -aq \
+        --filter "label=com.docker.compose.project=${COMPOSE_PROJECT_NAME_EFFECTIVE}" \
+        --filter "label=com.docker.compose.service=grafana" || true)"
+    if [[ -z "${ids}" ]]; then
+        return 0
+    fi
+    echo "  Removing legacy Grafana container(s) for compose project ${COMPOSE_PROJECT_NAME_EFFECTIVE}"
+    docker rm -f ${ids} >/dev/null || true
+}
+
 start_host_frontend() {
     local watch_mode="${1:-native}"
     local node_options="${DEV_FRONTEND_NODE_OPTIONS}"
@@ -694,10 +758,10 @@ if [[ "${DEV_FRONTEND_RUNTIME}" == "prod" && "${DEV_FRONTEND_MODE}" != "host" ]]
 fi
 
 WEB_UPSTREAM="host.docker.internal:${DEV_FRONTEND_PORT}"
-APP_COMPOSE_SERVICES=("server" "nginx")
+APP_COMPOSE_SERVICES=("server" "prometheus" "tempo" "otel-collector" "nginx")
 if [[ "${DEV_FRONTEND_MODE}" == "docker" ]]; then
     WEB_UPSTREAM="web:3000"
-    APP_COMPOSE_SERVICES=("server" "web" "nginx")
+    APP_COMPOSE_SERVICES=("server" "web" "prometheus" "tempo" "otel-collector" "nginx")
 fi
 
 echo "Checking development environment status..."
@@ -711,12 +775,13 @@ if [[ "${CLEAN_ALL}" == "1" ]]; then
     "${COMPOSE_CMD[@]}" down --volumes --remove-orphans >/dev/null 2>&1 || true
 else
     echo "Resetting development environment (preserve DB container/data)..."
-    for svc in server web nginx; do
+    for svc in server web nginx prometheus tempo otel-collector; do
         echo "  Removing service: $svc"
         "${COMPOSE_CMD[@]}" rm -s -f -v "$svc" || true
     done
     echo "  Preserving service: db"
 fi
+remove_legacy_grafana_container
 echo "Cleanup complete."
 
 echo "Building backend binaries on host (reuse local Go cache)..."
@@ -793,6 +858,7 @@ if [[ "${backend_ready}" != "true" ]]; then
     "${COMPOSE_CMD[@]}" logs --tail=200 server || true
     exit 1
 fi
+verify_backend_metrics
 
 if [[ "${SKIP_SEED}" == "1" ]]; then
     echo "Skipping development seed/bootstrap rotation (--skip-seed)."
@@ -822,9 +888,8 @@ for _ in {1..30}; do
     printf "."
     sleep 2
 done
-
 echo "Prewarming common routes..."
-for route in / /login /dashboard; do
+for route in / /login /dashboard /admin/observability; do
     curl -kfsS "https://localhost:${DEV_HTTPS_INGRESS_PORT}${route}" >/dev/null || true
 done
 echo " warmup complete"
@@ -834,6 +899,8 @@ echo "Development environment is UP"
 echo "  - Web (nginx redirect): http://localhost:${DEV_INGRESS_PORT}"
 echo "  - Web (nginx ingress):  https://localhost:${DEV_HTTPS_INGRESS_PORT}"
 echo "  - Backend direct:      http://localhost:8080"
+echo "  - Prometheus direct:   http://localhost:${DEV_PROMETHEUS_PORT:-9090}"
+echo "  - Tempo direct:        http://localhost:${DEV_TEMPO_PORT:-3200}"
 echo "  - DB:                  localhost:5432"
 echo "  - Frontend mode:       ${DEV_FRONTEND_MODE}"
 if [[ "${DEV_FRONTEND_MODE}" == "host" ]]; then

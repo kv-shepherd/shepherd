@@ -23,6 +23,11 @@ expected_records=(
   shepherd:openapi_validation_failures:rate5m
   shepherd:river_ready_jobs:sum
   shepherd:river_recent_discarded_jobs:sum
+  shepherd:business_approval_pending:sum
+  shepherd:business_approval_failed:sum
+  shepherd:business_batch_approval_pending:sum
+  shepherd:business_batch_approval_failed:sum
+  shepherd:business_approval_failure_audit_actions:sum
 )
 
 allowed_metrics=(
@@ -31,6 +36,10 @@ allowed_metrics=(
   shepherd_openapi_validation_failures_total
   shepherd_river_ready_jobs
   shepherd_river_recent_terminal_jobs
+  shepherd_business_approval_tickets
+  shepherd_business_batch_approval_tickets
+  shepherd_business_batch_approval_failed_children
+  shepherd_business_approval_failure_audit_actions_recent
   shepherd:http_requests:rate5m
   shepherd:http_requests_5xx:rate5m
   shepherd:http_5xx:ratio5m
@@ -38,6 +47,11 @@ allowed_metrics=(
   shepherd:openapi_validation_failures:rate5m
   shepherd:river_ready_jobs:sum
   shepherd:river_recent_discarded_jobs:sum
+  shepherd:business_approval_pending:sum
+  shepherd:business_approval_failed:sum
+  shepherd:business_batch_approval_pending:sum
+  shepherd:business_batch_approval_failed:sum
+  shepherd:business_approval_failure_audit_actions:sum
 )
 
 required_source_metrics=(
@@ -46,6 +60,10 @@ required_source_metrics=(
   shepherd_openapi_validation_failures_total
   shepherd_river_ready_jobs
   shepherd_river_recent_terminal_jobs
+  shepherd_business_approval_tickets
+  shepherd_business_batch_approval_tickets
+  shepherd_business_batch_approval_failed_children
+  shepherd_business_approval_failure_audit_actions_recent
 )
 
 contains_allowed_metric() {

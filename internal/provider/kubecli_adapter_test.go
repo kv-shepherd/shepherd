@@ -1,10 +1,19 @@
 package provider
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	oteltrace "go.opentelemetry.io/otel/trace"
+	"go.opentelemetry.io/otel/trace/noop"
 )
 
 type stubCachedClusterClient struct {
@@ -106,4 +115,52 @@ func TestKubeconfigClusterFactory_EvictsCachedClientWhenLoaderStartsFailing(t *t
 
 	require.NotSame(t, first, second)
 	require.Equal(t, 2, buildCount)
+}
+
+func TestStartKubeClientSpanUsesLowCardinalityAttributes(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(recorder),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		require.NoError(t, provider.Shutdown(context.Background()))
+		otel.SetTracerProvider(noop.NewTracerProvider())
+	})
+
+	errBoom := errors.New("kube api failed")
+	_, span := startKubeClientSpan(
+		context.Background(),
+		"List",
+		"VirtualMachines",
+		"team-a",
+		attribute.Int("k8s.response.items", 3),
+	)
+	endTraceSpan(span, errBoom)
+
+	spans := recorder.Ended()
+	require.Len(t, spans, 1)
+	got := spans[0]
+	require.Equal(t, "kubernetes.list.virtualmachines", got.Name())
+	require.Equal(t, oteltrace.SpanKindClient, got.SpanKind())
+	require.Equal(t, codes.Error, got.Status().Code)
+
+	attrs := make(map[string]string)
+	intAttrs := make(map[string]int64)
+	for _, attr := range got.Attributes() {
+		switch attr.Value.Type() {
+		case attribute.INT64:
+			intAttrs[string(attr.Key)] = attr.Value.AsInt64()
+		default:
+			attrs[string(attr.Key)] = attr.Value.AsString()
+		}
+	}
+	require.Equal(t, "kubevirt", attrs["shepherd.provider"])
+	require.Equal(t, "kubernetes", attrs["rpc.system"])
+	require.Equal(t, "kube-apiserver", attrs["rpc.service"])
+	require.Equal(t, "list", attrs["rpc.method"])
+	require.Equal(t, "virtualmachines", attrs["k8s.resource.resource"])
+	require.Equal(t, "team-a", attrs["k8s.namespace.name"])
+	require.Equal(t, int64(3), intAttrs["k8s.response.items"])
 }

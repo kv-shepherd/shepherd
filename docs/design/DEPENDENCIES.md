@@ -12,10 +12,10 @@ versions.
 
 | Item | Version | Source |
 |------|---------|--------|
-| Go toolchain | `1.25.10` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION`, `Dockerfile`, `deploy/prod/deploy-prod.sh` |
+| Go toolchain | `1.25.11` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION`, `Dockerfile`, `deploy/prod/deploy-prod.sh` |
 
 ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
-`1.25.10`.
+`1.25.11`.
 
 ## Core Dependencies
 
@@ -192,7 +192,11 @@ Defaults are defined in `internal/config/config.go` and shown in
 | `observability.metrics_path` | `/metrics` | `OBSERVABILITY_METRICS_PATH` |
 | `observability.database_metrics_enabled` | `true` | `OBSERVABILITY_DATABASE_METRICS_ENABLED` |
 | `observability.database_metrics_timeout` | `2s` | `OBSERVABILITY_DATABASE_METRICS_TIMEOUT` |
-| `observability.tracing_enabled` | `false` | `OBSERVABILITY_TRACING_ENABLED` |
+| `observability.river_metrics_enabled` | `true` | `OBSERVABILITY_RIVER_METRICS_ENABLED` |
+| `observability.river_metrics_timeout` | `2s` | `OBSERVABILITY_RIVER_METRICS_TIMEOUT` |
+| `observability.business_metrics_enabled` | `true` | `OBSERVABILITY_BUSINESS_METRICS_ENABLED` |
+| `observability.business_metrics_timeout` | `2s` | `OBSERVABILITY_BUSINESS_METRICS_TIMEOUT` |
+| `observability.tracing_enabled` | `true` | `OBSERVABILITY_TRACING_ENABLED` |
 | `observability.tracing_service_name` | `shepherd` | `OBSERVABILITY_TRACING_SERVICE_NAME` |
 | `observability.tracing_exporter` | `otlp_http` | `OBSERVABILITY_TRACING_EXPORTER` |
 | `observability.tracing_sample_ratio` | `0.10` | `OBSERVABILITY_TRACING_SAMPLE_RATIO` |
@@ -221,7 +225,7 @@ runtime-sensitive dependency families that must stay aligned:
 ```go
 module kv-shepherd.io/shepherd
 
-go 1.25.10
+go 1.25.11
 
 require (
     entgo.io/ent v0.14.6

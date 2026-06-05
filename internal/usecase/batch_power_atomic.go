@@ -7,8 +7,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
+	"go.opentelemetry.io/otel/attribute"
 
 	"kv-shepherd.io/shepherd/internal/jobs"
+	"kv-shepherd.io/shepherd/internal/observability"
 	sqlcrepo "kv-shepherd.io/shepherd/internal/repository/sqlc"
 )
 
@@ -62,15 +64,27 @@ type BatchPowerRetryChildInput struct {
 // CreateBatchPowerAndMaybeEnqueue atomically persists the batch parent, child
 // tickets/events, and direct-execution River jobs. River InsertTx keeps job
 // visibility tied to the same commit as the application rows.
-func (w *ApprovalAtomicWriter) CreateBatchPowerAndMaybeEnqueue(ctx context.Context, input BatchPowerSubmissionInput) error {
+func (w *ApprovalAtomicWriter) CreateBatchPowerAndMaybeEnqueue(ctx context.Context, input BatchPowerSubmissionInput) (err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.batch_power.submit",
+		attribute.String("shepherd.business.operation", "batch_power.submit"),
+		attribute.String("shepherd.batch.type", batchPowerType),
+		attribute.Bool("shepherd.approval.required", input.RequiresApproval),
+		attribute.Int("shepherd.batch.child_count", len(input.Children)),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	if w.pool == nil || w.queries == nil {
 		return fmt.Errorf("approval atomic writer is not initialized")
 	}
 	if !input.RequiresApproval && w.riverClient == nil {
 		return fmt.Errorf("approval atomic writer river client is not initialized")
 	}
-	if err := validateBatchPowerSubmissionInput(input); err != nil {
-		return err
+	if validationErr := validateBatchPowerSubmissionInput(input); validationErr != nil {
+		return validationErr
 	}
 
 	tx, err := w.pool.Begin(ctx)
@@ -213,12 +227,23 @@ func validateBatchPowerSubmissionInput(input BatchPowerSubmissionInput) error {
 
 // RetryBatchPowerAndEnqueue resets failed power children and inserts their
 // River jobs in one transaction.
-func (w *ApprovalAtomicWriter) RetryBatchPowerAndEnqueue(ctx context.Context, input BatchPowerRetryInput) error {
+func (w *ApprovalAtomicWriter) RetryBatchPowerAndEnqueue(ctx context.Context, input BatchPowerRetryInput) (err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.batch_power.retry",
+		attribute.String("shepherd.business.operation", "batch_power.retry"),
+		attribute.String("shepherd.batch.type", batchPowerType),
+		attribute.Int("shepherd.batch.child_count", len(input.Children)),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return fmt.Errorf("approval atomic writer is not initialized")
 	}
-	if err := validateBatchPowerRetryInput(input); err != nil {
-		return err
+	if validationErr := validateBatchPowerRetryInput(input); validationErr != nil {
+		return validationErr
 	}
 
 	tx, err := w.pool.Begin(ctx)

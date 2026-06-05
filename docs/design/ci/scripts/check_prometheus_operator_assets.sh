@@ -20,6 +20,11 @@ expected_records=(
   shepherd:openapi_validation_failures:rate5m
   shepherd:river_ready_jobs:sum
   shepherd:river_recent_discarded_jobs:sum
+  shepherd:business_approval_pending:sum
+  shepherd:business_approval_failed:sum
+  shepherd:business_batch_approval_pending:sum
+  shepherd:business_batch_approval_failed:sum
+  shepherd:business_approval_failure_audit_actions:sum
 )
 
 expected_alerts=(
@@ -32,6 +37,12 @@ expected_alerts=(
   ShepherdRiverQueueStatsScrapeFailed
   ShepherdRiverQueueBacklogAgeHigh
   ShepherdRiverJobsDiscarded
+  ShepherdBusinessMetricsScrapeFailed
+  ShepherdApprovalPendingTooLong
+  ShepherdApprovalFailuresPresent
+  ShepherdBatchApprovalPendingTooLong
+  ShepherdBatchApprovalFailuresPresent
+  ShepherdApprovalFailureAuditActionsRecent
 )
 
 [[ -f "${service_monitor}" ]] || fail "missing ${service_monitor}"

@@ -48,12 +48,12 @@ Current implementation facts:
 | Area | Current state |
 |------|---------------|
 | Backend module | `kv-shepherd.io/shepherd` |
-| Go baseline | Go `1.25.10` |
+| Go baseline | Go `1.25.11` |
 | Database | PostgreSQL 18, shared pgx pool for Ent + sqlc + River |
 | HTTP contract | OpenAPI `3.1.0`, 135 operationIds |
 | Ent schemas | 33 schema files |
 | KubeVirt baseline | `kubevirt.io/client-go` `v1.8.2` |
-| Observability | Prometheus metrics, River queue health metrics, HTTP request correlation logs, River worker correlation logs, config validation, recording rules, alert rules, Grafana starter dashboard with PromQL validation, and default-off OpenTelemetry HTTP tracing |
+| Observability | Prometheus metrics, River queue health metrics, approval/audit business metrics, HTTP request correlation logs, River worker correlation logs, config validation, recording rules, alert rules, Grafana starter dashboard with PromQL validation, OpenTelemetry tracing, OpenTelemetry Collector, Tempo, DB spans, River worker spans, and KubeVirt/provider spans |
 | Frontend | React 19.2 + Next.js 16.2 + Ant Design 5 |
 | Frontend route files | 29 App Router `page.tsx` files |
 
@@ -119,7 +119,7 @@ docs/design/
 
 | Component | Technology |
 |-----------|------------|
-| Language | Go 1.25.10 |
+| Language | Go 1.25.11 |
 | HTTP | Gin |
 | Database | PostgreSQL 18 |
 | ORM | Ent |

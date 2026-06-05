@@ -36,6 +36,19 @@ describe('getMenuRoutes', () => {
         expect(notifications?.hideInMenu).toBeUndefined();
     });
 
+    it('keeps observability inside administration navigation', () => {
+        const route = getMenuRoutes(t, false);
+        const observability = route.routes?.find((item: MenuRouteItem) => item.path === '/observability');
+
+        expect(observability).toBeUndefined();
+
+        const adminRoute = getMenuRoutes(t, (permissions) => permissions.includes('observability:read'));
+        const admin = adminRoute.routes?.find((item: MenuRouteItem) => item.key === 'admin');
+        const adminObservability = admin?.routes?.find((item: MenuRouteItem) => item.path === '/admin/observability');
+
+        expect(adminObservability?.name).toBe('nav.observability');
+    });
+
     it('surfaces admin approval tasks as a dedicated built-in route', () => {
         const route = getMenuRoutes(t, true);
         const admin = route.routes?.find((item: MenuRouteItem) => item.key === 'admin');
@@ -117,6 +130,7 @@ describe('getMenuRoutes', () => {
             '/admin/rbac',
             '/admin/rate-limits',
             '/admin/auth-providers',
+            '/admin/observability',
             '/admin/audit',
         ]));
     });

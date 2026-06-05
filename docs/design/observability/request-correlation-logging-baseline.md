@@ -5,9 +5,8 @@
 ## Scope
 
 This baseline adds one structured HTTP request completion log at the ingress
-boundary. It complements Prometheus metrics and default-off HTTP tracing without
-adding service-layer, database, River, KubeVirt, provider, frontend, or business
-spans.
+boundary. It complements Prometheus metrics and OpenTelemetry tracing without
+adding a log storage backend or log-derived alerting path.
 
 ## Runtime Contract
 
@@ -68,7 +67,6 @@ The following remain deferred until accepted by later ADRs:
 
 * context-aware logger migration inside individual services and workers beyond
   the River lifecycle log accepted by ADR-0057
-* database, River, KubeVirt, provider, and business spans
 * frontend tracing
 * log shipping, index templates, retention, and redaction policy
 * trace-aware metric exemplars

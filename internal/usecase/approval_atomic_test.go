@@ -8,6 +8,11 @@ import (
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 	"github.com/riverqueue/river/rivermigrate"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/codes"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace/noop"
 
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/testutil"
@@ -156,6 +161,51 @@ func TestApprovalAtomicWriterCreatePowerEventAndEnqueue_RequiresInitializedWrite
 	})
 	if err == nil {
 		t.Fatal("CreatePowerEventAndEnqueue() expected initialization error, got nil")
+	}
+}
+
+func TestApprovalAtomicWriterBusinessSpansRecordErrors(t *testing.T) {
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(
+		sdktrace.WithSpanProcessor(recorder),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+	otel.SetTracerProvider(provider)
+	t.Cleanup(func() {
+		if err := provider.Shutdown(context.Background()); err != nil {
+			t.Fatalf("shutdown tracer provider: %v", err)
+		}
+		otel.SetTracerProvider(noop.NewTracerProvider())
+	})
+
+	w := &ApprovalAtomicWriter{}
+	if err := w.ApprovePowerAndEnqueue(t.Context(), "ticket-1", "event-1", "admin-1", "start"); err == nil {
+		t.Fatal("ApprovePowerAndEnqueue() expected initialization error, got nil")
+	}
+	if err := w.CreateBatchPowerAndMaybeEnqueue(t.Context(), BatchPowerSubmissionInput{
+		ParentID: "batch-1",
+		Actor:    "user-1",
+	}); err == nil {
+		t.Fatal("CreateBatchPowerAndMaybeEnqueue() expected initialization error, got nil")
+	}
+
+	want := map[string]bool{
+		"business.approval.approve_power": false,
+		"business.batch_power.submit":     false,
+	}
+	for _, span := range recorder.Ended() {
+		if _, ok := want[span.Name()]; !ok {
+			continue
+		}
+		if span.Status().Code != codes.Error {
+			t.Fatalf("span %q status = %v, want error", span.Name(), span.Status().Code)
+		}
+		want[span.Name()] = true
+	}
+	for name, seen := range want {
+		if !seen {
+			t.Fatalf("span %q was not recorded", name)
+		}
 	}
 }
 

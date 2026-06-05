@@ -125,6 +125,12 @@ func TestLoad_Defaults(t *testing.T) {
 	if cfg.Observability.RiverMetricsTimeout != 2*time.Second {
 		t.Errorf("Observability.RiverMetricsTimeout = %v, want 2s", cfg.Observability.RiverMetricsTimeout)
 	}
+	if !cfg.Observability.BusinessMetricsEnabled {
+		t.Errorf("Observability.BusinessMetricsEnabled = %v, want true", cfg.Observability.BusinessMetricsEnabled)
+	}
+	if cfg.Observability.BusinessMetricsTimeout != 2*time.Second {
+		t.Errorf("Observability.BusinessMetricsTimeout = %v, want 2s", cfg.Observability.BusinessMetricsTimeout)
+	}
 	if cfg.Observability.TracingEnabled {
 		t.Errorf("Observability.TracingEnabled = %v, want false", cfg.Observability.TracingEnabled)
 	}
@@ -139,6 +145,21 @@ func TestLoad_Defaults(t *testing.T) {
 	}
 	if cfg.Observability.TracingShutdownTimeout != 5*time.Second {
 		t.Errorf("Observability.TracingShutdownTimeout = %v, want 5s", cfg.Observability.TracingShutdownTimeout)
+	}
+	if cfg.Observability.TraceQueryEnabled {
+		t.Errorf("Observability.TraceQueryEnabled = %v, want false", cfg.Observability.TraceQueryEnabled)
+	}
+	if cfg.Observability.TraceQueryURL != "" {
+		t.Errorf("Observability.TraceQueryURL = %q, want empty", cfg.Observability.TraceQueryURL)
+	}
+	if cfg.Observability.TraceQueryTimeout != 3*time.Second {
+		t.Errorf("Observability.TraceQueryTimeout = %v, want 3s", cfg.Observability.TraceQueryTimeout)
+	}
+	if cfg.Observability.TraceQueryLimit != 100 {
+		t.Errorf("Observability.TraceQueryLimit = %d, want 100", cfg.Observability.TraceQueryLimit)
+	}
+	if cfg.Observability.TraceQueryLookback != time.Hour {
+		t.Errorf("Observability.TraceQueryLookback = %v, want 1h", cfg.Observability.TraceQueryLookback)
 	}
 }
 
@@ -268,11 +289,18 @@ func TestLoad_ObservabilityFromEnv(t *testing.T) {
 	t.Setenv("OBSERVABILITY_DATABASE_METRICS_TIMEOUT", "5s")
 	t.Setenv("OBSERVABILITY_RIVER_METRICS_ENABLED", "false")
 	t.Setenv("OBSERVABILITY_RIVER_METRICS_TIMEOUT", "6s")
+	t.Setenv("OBSERVABILITY_BUSINESS_METRICS_ENABLED", "false")
+	t.Setenv("OBSERVABILITY_BUSINESS_METRICS_TIMEOUT", "8s")
 	t.Setenv("OBSERVABILITY_TRACING_ENABLED", "true")
 	t.Setenv("OBSERVABILITY_TRACING_SERVICE_NAME", "shepherd-api")
 	t.Setenv("OBSERVABILITY_TRACING_EXPORTER", "stdout")
 	t.Setenv("OBSERVABILITY_TRACING_SAMPLE_RATIO", "0.25")
 	t.Setenv("OBSERVABILITY_TRACING_SHUTDOWN_TIMEOUT", "7s")
+	t.Setenv("OBSERVABILITY_TRACE_QUERY_ENABLED", "true")
+	t.Setenv("OBSERVABILITY_TRACE_QUERY_URL", "https://tempo.example.internal")
+	t.Setenv("OBSERVABILITY_TRACE_QUERY_TIMEOUT", "4s")
+	t.Setenv("OBSERVABILITY_TRACE_QUERY_LIMIT", "25")
+	t.Setenv("OBSERVABILITY_TRACE_QUERY_LOOKBACK", "30m")
 
 	cfg, err := Load()
 	if err != nil {
@@ -296,6 +324,12 @@ func TestLoad_ObservabilityFromEnv(t *testing.T) {
 	if cfg.Observability.RiverMetricsTimeout != 6*time.Second {
 		t.Fatalf("Observability.RiverMetricsTimeout = %v, want 6s", cfg.Observability.RiverMetricsTimeout)
 	}
+	if cfg.Observability.BusinessMetricsEnabled {
+		t.Fatalf("Observability.BusinessMetricsEnabled = %v, want false", cfg.Observability.BusinessMetricsEnabled)
+	}
+	if cfg.Observability.BusinessMetricsTimeout != 8*time.Second {
+		t.Fatalf("Observability.BusinessMetricsTimeout = %v, want 8s", cfg.Observability.BusinessMetricsTimeout)
+	}
 	if !cfg.Observability.TracingEnabled {
 		t.Fatalf("Observability.TracingEnabled = %v, want true", cfg.Observability.TracingEnabled)
 	}
@@ -310,6 +344,21 @@ func TestLoad_ObservabilityFromEnv(t *testing.T) {
 	}
 	if cfg.Observability.TracingShutdownTimeout != 7*time.Second {
 		t.Fatalf("Observability.TracingShutdownTimeout = %v, want 7s", cfg.Observability.TracingShutdownTimeout)
+	}
+	if !cfg.Observability.TraceQueryEnabled {
+		t.Fatalf("Observability.TraceQueryEnabled = %v, want true", cfg.Observability.TraceQueryEnabled)
+	}
+	if cfg.Observability.TraceQueryURL != "https://tempo.example.internal" {
+		t.Fatalf("Observability.TraceQueryURL = %q, want configured Tempo URL", cfg.Observability.TraceQueryURL)
+	}
+	if cfg.Observability.TraceQueryTimeout != 4*time.Second {
+		t.Fatalf("Observability.TraceQueryTimeout = %v, want 4s", cfg.Observability.TraceQueryTimeout)
+	}
+	if cfg.Observability.TraceQueryLimit != 25 {
+		t.Fatalf("Observability.TraceQueryLimit = %d, want 25", cfg.Observability.TraceQueryLimit)
+	}
+	if cfg.Observability.TraceQueryLookback != 30*time.Minute {
+		t.Fatalf("Observability.TraceQueryLookback = %v, want 30m", cfg.Observability.TraceQueryLookback)
 	}
 }
 
@@ -350,6 +399,73 @@ func TestLoad_ObservabilityRiverMetricsTimeoutRejectsNegative(t *testing.T) {
 	}
 	if got := err.Error(); got != "validate config: observability.river_metrics_timeout must be >= 0" {
 		t.Fatalf("Load() error = %q", got)
+	}
+}
+
+func TestLoad_ObservabilityBusinessMetricsTimeoutRejectsNegative(t *testing.T) {
+	t.Setenv("OBSERVABILITY_BUSINESS_METRICS_TIMEOUT", "-1s")
+
+	_, err := Load()
+	if err == nil {
+		t.Fatal("Load() error = nil, want invalid business metrics timeout error")
+	}
+	if got := err.Error(); got != "validate config: observability.business_metrics_timeout must be >= 0" {
+		t.Fatalf("Load() error = %q", got)
+	}
+}
+
+func TestLoad_ObservabilityTraceQueryRejectsInvalidValues(t *testing.T) {
+	testCases := []struct {
+		name     string
+		envKey   string
+		envValue string
+		want     string
+	}{
+		{
+			name:     "negative timeout",
+			envKey:   "OBSERVABILITY_TRACE_QUERY_TIMEOUT",
+			envValue: "-1s",
+			want:     "observability.trace_query_timeout must be >= 0",
+		},
+		{
+			name:     "limit above max",
+			envKey:   "OBSERVABILITY_TRACE_QUERY_LIMIT",
+			envValue: "501",
+			want:     "observability.trace_query_limit must be between 0 and 500",
+		},
+		{
+			name:     "negative lookback",
+			envKey:   "OBSERVABILITY_TRACE_QUERY_LOOKBACK",
+			envValue: "-1s",
+			want:     "observability.trace_query_lookback must be >= 0",
+		},
+		{
+			name:     "invalid url",
+			envKey:   "OBSERVABILITY_TRACE_QUERY_URL",
+			envValue: "tempo:3200",
+			want:     "observability.trace_query_url must be an absolute http(s) URL",
+		},
+		{
+			name:     "unsupported url scheme",
+			envKey:   "OBSERVABILITY_TRACE_QUERY_URL",
+			envValue: "grpc://tempo:3200",
+			want:     "observability.trace_query_url must use http or https",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OBSERVABILITY_TRACE_QUERY_ENABLED", "true")
+			t.Setenv(tc.envKey, tc.envValue)
+
+			_, err := Load()
+			if err == nil {
+				t.Fatal("Load() error = nil, want invalid trace query config error")
+			}
+			if got := err.Error(); !strings.Contains(got, tc.want) {
+				t.Fatalf("Load() error = %q, want fragment %q", got, tc.want)
+			}
+		})
 	}
 }
 

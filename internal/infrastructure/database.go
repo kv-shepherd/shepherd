@@ -57,23 +57,9 @@ type DatabaseClients struct {
 
 // NewDatabaseClients creates database clients with shared connection pool.
 func NewDatabaseClients(ctx context.Context, cfg config.DatabaseConfig) (*DatabaseClients, error) {
-	dsn := cfg.DSN()
-
-	// Parse pool configuration
-	poolConfig, err := pgxpool.ParseConfig(dsn)
+	poolConfig, err := newDatabasePoolConfig(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("parse pool config: %w", err)
-	}
-	poolConfig.MaxConns = cfg.MaxConns
-	poolConfig.MinConns = cfg.MinConns
-	poolConfig.MaxConnLifetime = cfg.MaxConnLifetime
-	poolConfig.MaxConnIdleTime = cfg.MaxConnIdleTime
-	poolConfig.HealthCheckPeriod = time.Minute
-
-	// Set UTC timezone on each new connection (pgxpool best practice)
-	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
-		_, execErr := conn.Exec(ctx, "SET timezone = 'UTC'")
-		return execErr
+		return nil, err
 	}
 
 	// Create shared connection pool
@@ -119,6 +105,26 @@ func NewDatabaseClients(ctx context.Context, cfg config.DatabaseConfig) (*Databa
 		EntClient:  entClient,
 		WorkerPool: workerPool,
 	}, nil
+}
+
+func newDatabasePoolConfig(cfg config.DatabaseConfig) (*pgxpool.Config, error) {
+	poolConfig, err := pgxpool.ParseConfig(cfg.DSN())
+	if err != nil {
+		return nil, fmt.Errorf("parse pool config: %w", err)
+	}
+	poolConfig.MaxConns = cfg.MaxConns
+	poolConfig.MinConns = cfg.MinConns
+	poolConfig.MaxConnLifetime = cfg.MaxConnLifetime
+	poolConfig.MaxConnIdleTime = cfg.MaxConnIdleTime
+	poolConfig.HealthCheckPeriod = time.Minute
+	poolConfig.ConnConfig.Tracer = observability.NewPGXTracer()
+
+	// Set UTC timezone on each new connection (pgxpool best practice)
+	poolConfig.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
+		_, execErr := conn.Exec(ctx, "SET timezone = 'UTC'")
+		return execErr
+	}
+	return poolConfig, nil
 }
 
 // AutoMigrate runs Ent schema migration and River queue table migration.

@@ -12,6 +12,7 @@ export type AdminMenuRouteKey =
     | 'rbac'
     | 'rateLimits'
     | 'authProviders'
+    | 'observability'
     | 'audit';
 
 export const PLATFORM_ADMIN_PERMISSION = 'platform:admin';
@@ -36,6 +37,7 @@ export const ADMIN_MENU_ROUTE_PERMISSIONS: Record<AdminMenuRouteKey, readonly st
         'auth_provider:mapping_update',
         'auth_provider:mapping_delete',
     ],
+    observability: ['observability:read'],
     audit: ['audit:read'],
 };
 

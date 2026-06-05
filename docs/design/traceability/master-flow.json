@@ -52,6 +52,7 @@
       "examples": [
         ".github/workflows/release.yml",
         "config/config.yaml.example",
+        "docs/design/DEPENDENCIES.md#go-version",
         "docs/design/database/migrations.md#startup-migration-modes",
         "docs/design/frontend/FRONTEND.md",
         "ent/generate.go",

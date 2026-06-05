@@ -27,26 +27,35 @@ services:
       server:
         condition: service_started
 
-  grafana:
-    image: ${GRAFANA_IMAGE:?GRAFANA_IMAGE is required when monitoring overlay is enabled}
+  tempo:
+    image: ${TEMPO_IMAGE:?TEMPO_IMAGE is required when monitoring overlay is enabled}
     restart: unless-stopped
-    environment:
-      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required when monitoring overlay is enabled}
-      GF_USERS_ALLOW_SIGN_UP: "false"
+    command:
+      - -config.file=/etc/tempo/tempo.yml
     ports:
-      - "${GRAFANA_PORT:-3001}:3000"
+      - "${TEMPO_PORT:-3200}:3200"
     volumes:
-      - ../monitoring/grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
-      - ../monitoring/grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
-      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards/shepherd:ro
-      - shepherd_grafana_data:/var/lib/grafana
+      - ../monitoring/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - shepherd_tempo_data:/var/tempo
+
+  otel-collector:
+    image: ${OTEL_COLLECTOR_IMAGE:?OTEL_COLLECTOR_IMAGE is required when monitoring overlay is enabled}
+    restart: unless-stopped
+    command:
+      - --config=/etc/otelcol-contrib/otel-collector.yml
+    volumes:
+      - ../monitoring/otel-collector/otel-collector.yml:/etc/otelcol-contrib/otel-collector.yml:ro
     depends_on:
-      prometheus:
+      tempo:
+        condition: service_started
+
+  nginx:
+    depends_on:
+      otel-collector:
         condition: service_started
 
 volumes:
   shepherd_prometheus_data:
     driver: local
-  shepherd_grafana_data:
+  shepherd_tempo_data:
     driver: local

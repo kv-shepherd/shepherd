@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/riverqueue/river"
 	"github.com/riverqueue/river/rivertype"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
@@ -39,8 +42,9 @@ type RiverWorkerLogMiddleware struct {
 }
 
 type riverTraceMetadata struct {
-	TraceID string `json:"trace_id,omitempty"`
-	SpanID  string `json:"span_id,omitempty"`
+	TraceID    string `json:"trace_id,omitempty"`
+	SpanID     string `json:"span_id,omitempty"`
+	TraceFlags string `json:"trace_flags,omitempty"`
 }
 
 // NewRiverWorkerLogMiddleware creates the global River worker log middleware.
@@ -79,14 +83,39 @@ func (m *RiverWorkerLogMiddleware) Work(
 	doInner func(context.Context) error,
 ) error {
 	start := time.Now()
+	traceID, spanID, traceFlags := riverTraceFromMetadata(job)
+	if parent := riverSpanContext(traceID, spanID, traceFlags); parent.IsValid() {
+		ctx = trace.ContextWithRemoteSpanContext(ctx, parent)
+	}
+	ctx, span := StartSpanWithOptions(ctx,
+		riverWorkerSpanName(job),
+		trace.WithSpanKind(trace.SpanKindConsumer),
+		trace.WithAttributes(
+			attribute.String("messaging.system", "river"),
+			attribute.String("messaging.operation.name", "process"),
+			attribute.String("messaging.destination.name", riverJobQueue(job)),
+			attribute.String("messaging.message.type", riverJobKind(job)),
+			attribute.Int("messaging.message.receive_count", riverJobAttempt(job)),
+		),
+	)
 	err := doInner(ctx)
+	if err != nil {
+		RecordSpanError(span, err)
+	} else {
+		span.SetStatus(codes.Ok, "")
+	}
+	spanContext := span.SpanContext()
+	span.End()
 
 	fields := riverWorkerLogFields(job)
 	fields = append(fields,
 		zap.Int64("duration_ms", time.Since(start).Milliseconds()),
 		zap.String("result", riverWorkerResult(err)),
 	)
-	traceID, spanID := riverTraceFromMetadata(job)
+	if spanContext.IsValid() {
+		traceID = spanContext.TraceID().String()
+		spanID = spanContext.SpanID().String()
+	}
 	if traceID != "" {
 		fields = append(fields, zap.String("trace_id", traceID))
 	}
@@ -138,8 +167,9 @@ func riverMetadataWithTrace(metadata []byte, spanContext trace.SpanContext) []by
 	}
 
 	tracePayload, err := json.Marshal(riverTraceMetadata{
-		TraceID: spanContext.TraceID().String(),
-		SpanID:  spanContext.SpanID().String(),
+		TraceID:    spanContext.TraceID().String(),
+		SpanID:     spanContext.SpanID().String(),
+		TraceFlags: spanContext.TraceFlags().String(),
 	})
 	if err != nil {
 		return metadata
@@ -153,25 +183,74 @@ func riverMetadataWithTrace(metadata []byte, spanContext trace.SpanContext) []by
 	return encoded
 }
 
-func riverTraceFromMetadata(job *rivertype.JobRow) (traceID, spanID string) {
+func riverTraceFromMetadata(job *rivertype.JobRow) (traceID, spanID, traceFlags string) {
 	if job == nil || len(bytes.TrimSpace(job.Metadata)) == 0 {
-		return "", ""
+		return "", "", ""
 	}
 
 	var envelope map[string]json.RawMessage
 	if err := json.Unmarshal(job.Metadata, &envelope); err != nil {
-		return "", ""
+		return "", "", ""
 	}
 	rawTrace, ok := envelope[riverTraceMetadataKey]
 	if !ok {
-		return "", ""
+		return "", "", ""
 	}
 
 	var metadata riverTraceMetadata
 	if err := json.Unmarshal(rawTrace, &metadata); err != nil {
-		return "", ""
+		return "", "", ""
 	}
-	return strings.TrimSpace(metadata.TraceID), strings.TrimSpace(metadata.SpanID)
+	return strings.TrimSpace(metadata.TraceID), strings.TrimSpace(metadata.SpanID), strings.TrimSpace(metadata.TraceFlags)
+}
+
+func riverSpanContext(traceIDHex, spanIDHex, traceFlagsHex string) trace.SpanContext {
+	traceID, traceIDErr := trace.TraceIDFromHex(strings.TrimSpace(traceIDHex))
+	spanID, spanIDErr := trace.SpanIDFromHex(strings.TrimSpace(spanIDHex))
+	if traceIDErr != nil || spanIDErr != nil {
+		return trace.SpanContext{}
+	}
+	traceFlags := trace.FlagsSampled
+	if traceFlagsHex != "" {
+		if parsed, err := strconv.ParseUint(traceFlagsHex, 16, 8); err == nil {
+			traceFlags = trace.TraceFlags(byte(parsed))
+		}
+	}
+	return trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: traceFlags,
+		Remote:     true,
+	})
+}
+
+func riverWorkerSpanName(job *rivertype.JobRow) string {
+	kind := riverJobKind(job)
+	if kind == "" {
+		kind = unknownMetricLabel
+	}
+	return "river job " + kind
+}
+
+func riverJobKind(job *rivertype.JobRow) string {
+	if job == nil {
+		return ""
+	}
+	return strings.TrimSpace(job.Kind)
+}
+
+func riverJobQueue(job *rivertype.JobRow) string {
+	if job == nil {
+		return ""
+	}
+	return strings.TrimSpace(job.Queue)
+}
+
+func riverJobAttempt(job *rivertype.JobRow) int {
+	if job == nil {
+		return 0
+	}
+	return job.Attempt
 }
 
 func riverWorkerResult(err error) string {

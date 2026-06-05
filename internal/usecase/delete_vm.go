@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.opentelemetry.io/otel/attribute"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
@@ -23,6 +24,7 @@ import (
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
+	"kv-shepherd.io/shepherd/internal/observability"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
@@ -75,7 +77,16 @@ func (uc *DeleteVMUseCase) WithAuditLogger(al *audit.Logger) *DeleteVMUseCase {
 // Phase 1: Validates VM state and confirmation.
 // Phase 2: Creates DomainEvent + Ticket (operation_type=DELETE) in atomic transaction.
 // Phase 3: After admin approval, the core ticket service enqueues the River job for K8s deletion.
-func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (*DeleteVMOutput, error) {
+func (uc *DeleteVMUseCase) Execute(ctx context.Context, input DeleteVMInput) (output *DeleteVMOutput, err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.vm.request_delete",
+		attribute.String("shepherd.business.operation", "vm.request_delete"),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	// Step 1: Fetch VM and validate state.
 	vm, err := uc.entClient.VM.Get(ctx, input.VMID)
 	if err != nil {
