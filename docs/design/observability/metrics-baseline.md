@@ -23,6 +23,14 @@ changing product API contracts:
 | `shepherd_river_oldest_ready_job_age_seconds` | Gauge | `queue` | Age of the oldest due job in each River queue |
 | `shepherd_river_recent_terminal_jobs` | Gauge | `queue`, `state`, `kind` | Recent `cancelled` and `discarded` River jobs |
 | `shepherd_river_queue_stats_scrape_success` | Gauge | none | `1` when River queue stats collection succeeds, otherwise `0` |
+| `shepherd_business_metrics_scrape_success` | Gauge | none | `1` when business metrics collection succeeds, otherwise `0` |
+| `shepherd_business_approval_tickets` | Gauge | `status`, `operation_type` | Current approval tickets by workflow status and operation type |
+| `shepherd_business_approval_pending_oldest_age_seconds` | Gauge | `operation_type` | Oldest pending approval ticket age by operation type |
+| `shepherd_business_batch_approval_tickets` | Gauge | `status`, `batch_type` | Current batch approval tickets by workflow status and batch type |
+| `shepherd_business_batch_approval_pending_oldest_age_seconds` | Gauge | `batch_type` | Oldest pending batch approval age by batch type |
+| `shepherd_business_batch_approval_failed_children` | Gauge | `batch_type` | Failed child count on batch approvals by batch type |
+| `shepherd_business_approval_audit_actions_recent` | Gauge | `action` | Recent approval-related audit actions from `audit_logs` |
+| `shepherd_business_approval_failure_audit_actions_recent` | Gauge | `action` | Recent failure-related approval audit actions from `audit_logs` |
 | Go runtime metrics | Collector | upstream-defined | goroutines, GC, memory, scheduler |
 | Process metrics | Collector | upstream-defined | CPU, memory, file descriptors, process start |
 | Build info | Collector | upstream-defined | Go module build metadata |
@@ -37,6 +45,8 @@ observability:
   database_metrics_timeout: "2s"
   river_metrics_enabled: true
   river_metrics_timeout: "2s"
+  business_metrics_enabled: true
+  business_metrics_timeout: "2s"
 ```
 
 Environment overrides:
@@ -49,6 +59,8 @@ Environment overrides:
 | `OBSERVABILITY_DATABASE_METRICS_TIMEOUT` | Per-scrape PostgreSQL stats query timeout |
 | `OBSERVABILITY_RIVER_METRICS_ENABLED` | Enable or disable River queue health metrics |
 | `OBSERVABILITY_RIVER_METRICS_TIMEOUT` | Per-scrape River queue stats query timeout |
+| `OBSERVABILITY_BUSINESS_METRICS_ENABLED` | Enable or disable approval/audit business metrics |
+| `OBSERVABILITY_BUSINESS_METRICS_TIMEOUT` | Per-scrape business metrics query timeout |
 
 ## Routing Contract
 
@@ -92,6 +104,15 @@ Allowed OpenAPI validation labels:
 | `method` | `Request.Method` |
 | `route` | `gin.Context.FullPath()` with fallback to `unmatched` |
 
+Allowed business labels:
+
+| Label | Source |
+|-------|--------|
+| `status` | Ticket and batch-ticket enum status |
+| `operation_type` | Ticket enum operation type |
+| `batch_type` | Batch-ticket enum batch type |
+| `action` | Fixed audit action name such as `approval.validation_failed` |
+
 Forbidden HTTP labels:
 
 | Label source | Reason |
@@ -101,12 +122,14 @@ Forbidden HTTP labels:
 | Query strings and headers | Sensitive, unstable, and high-cardinality |
 | Validation reason text, schema locations, request/response bodies | Sensitive or high-cardinality |
 | River job args, job IDs, errors, tags, metadata, ticket IDs, VM names, namespaces, clusters | Sensitive or high-cardinality |
+| Business requester, approver, actor, ticket ID, resource ID, VM name, namespace, cluster | Sensitive or high-cardinality |
 
 ## Deferred Work
 
 The following remain outside the baseline:
 
-* Deep OpenTelemetry instrumentation beyond ADR-0057 HTTP ingress tracing.
-* VM, approval, batch, provider, and notification business SLO metrics.
+* Frontend OpenTelemetry instrumentation.
+* VM, provider, notification, and richer approval SLO metrics beyond the
+  approval/audit business baseline.
 * Advanced Grafana dashboard suites and alert routing.
-* Business SLO alert rules beyond the ADR-0055 starter rule pack.
+* Business burn-rate SLO alert rules beyond the starter approval/audit alerts.

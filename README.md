@@ -42,6 +42,8 @@ governance without tying the workflow to a specific commercial platform stack.
 - Platform RBAC plus System, Service, and VM membership inheritance
 - Environment-scoped global role bindings
 - Full audit trail for governed resource changes
+- Built-in administrator observability for API traces, audit-derived business
+  signals, and operational metrics
 - VNC and serial console entrypoints
 - Chinese and English UI
 - Auth provider plugin SDK for LDAP, OIDC, and custom integrations
@@ -127,8 +129,9 @@ Domain and external PostgreSQL inputs are optional. When needed, pass
 before `bash`.
 
 See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for external PostgreSQL 18,
-domain/TLS configuration, image version pinning, manual compose commands, and
-the optional Prometheus/Grafana monitoring overlay, and the security checklist.
+domain/TLS configuration, image version pinning, manual compose commands,
+the built-in `/metrics` endpoint, the optional Prometheus/Tempo/OpenTelemetry
+Collector monitoring overlay, and the security checklist.
 
 ### Local Development
 
@@ -142,7 +145,7 @@ git pull --ff-only origin main
 ./start-dev.sh
 ```
 
-Prerequisites: Git, Go 1.25.10 or newer, Node.js 22 or newer with npm, and
+Prerequisites: Git, Go 1.25.11 or newer, Node.js 22 or newer with npm, and
 Docker 24 or newer with Docker Compose v2.
 
 Default local endpoints:

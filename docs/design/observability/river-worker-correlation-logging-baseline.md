@@ -6,8 +6,10 @@
 
 This baseline adds centralized River worker completion logs and trace metadata
 propagation for jobs inserted under an active OpenTelemetry span context. It
-complements River queue health metrics and HTTP request correlation logs without
-adding business metrics, deep tracing, or per-worker custom log schemas.
+complements River queue health metrics and HTTP request correlation logs. The
+broader observability baseline now covers approval/audit business metrics and
+business, DB, River worker, and KubeVirt/provider spans; this document remains
+the logging contract for River lifecycle fields.
 
 ## Insert Contract
 
@@ -87,8 +89,7 @@ client wiring, and tests.
 
 The following remain deferred until accepted by later ADRs:
 
-* service-layer and provider spans
 * context-aware logger migration inside individual workers and services
-* River job duration metrics or trace-aware exemplars
+* River job duration metrics and trace-aware exemplars
 * frontend tracing
 * log shipping, index templates, retention, and redaction policy

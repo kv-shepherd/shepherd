@@ -27,6 +27,11 @@ The fixture covers every accepted baseline recording series:
 | `shepherd:openapi_validation_failures:rate5m` | Preserves only fixed `phase` and `code` labels |
 | `shepherd:river_ready_jobs:sum` | Calculates ready River jobs by `queue` |
 | `shepherd:river_recent_discarded_jobs:sum` | Calculates recently discarded River jobs by `queue` |
+| `shepherd:business_approval_pending:sum` | Calculates pending approval backlog by `operation_type` |
+| `shepherd:business_approval_failed:sum` | Calculates failed approval tickets by `operation_type` |
+| `shepherd:business_batch_approval_pending:sum` | Calculates pending batch approvals by `batch_type` |
+| `shepherd:business_batch_approval_failed:sum` | Calculates failed batch approvals by `batch_type` |
+| `shepherd:business_approval_failure_audit_actions:sum` | Calculates recent failure audit actions by fixed `action` |
 
 The fixture also covers every accepted baseline alert:
 
@@ -39,6 +44,12 @@ The fixture also covers every accepted baseline alert:
 * `ShepherdRiverQueueStatsScrapeFailed`
 * `ShepherdRiverQueueBacklogAgeHigh`
 * `ShepherdRiverJobsDiscarded`
+* `ShepherdBusinessMetricsScrapeFailed`
+* `ShepherdApprovalPendingTooLong`
+* `ShepherdApprovalFailuresPresent`
+* `ShepherdBatchApprovalPendingTooLong`
+* `ShepherdBatchApprovalFailuresPresent`
+* `ShepherdApprovalFailureAuditActionsRecent`
 
 ## Evaluation Order
 
@@ -103,5 +114,6 @@ structural fallback would be too weak.
 
 ## Deferred Work
 
-The baseline does not define business SLO tests, burn-rate alert tests, or
-deployment-specific alert routing tests. Those remain RFC-0010 follow-ups.
+The baseline does not define broad VM/provider/notification business SLO tests,
+burn-rate alert tests, or deployment-specific alert routing tests. Those remain
+RFC-0010 follow-ups.

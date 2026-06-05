@@ -399,11 +399,23 @@ rg -q "WithRiverQueueStats" internal/app/bootstrap.go \
 rg -q "river_metrics_enabled" config/config.yaml.example \
   || fail "config.yaml.example must expose observability.river_metrics_enabled"
 
+rg -q "business_metrics_enabled" config/config.yaml.example \
+  || fail "config.yaml.example must expose observability.business_metrics_enabled"
+
+rg -q "shepherd_business_metrics_scrape_success" internal/observability/business_metrics.go \
+  || fail "business_metrics.go must expose shepherd_business_metrics_scrape_success"
+
 rg -q "OBSERVABILITY_RIVER_METRICS_ENABLED" deploy/prod/.env.prod.example \
   || fail ".env.prod.example must expose OBSERVABILITY_RIVER_METRICS_ENABLED"
 
+rg -q "OBSERVABILITY_BUSINESS_METRICS_ENABLED" deploy/prod/.env.prod.example \
+  || fail ".env.prod.example must expose OBSERVABILITY_BUSINESS_METRICS_ENABLED"
+
 rg -q "OBSERVABILITY_RIVER_METRICS_ENABLED" deploy/prod/docker-compose.prod.yml \
   || fail "docker-compose.prod.yml must pass OBSERVABILITY_RIVER_METRICS_ENABLED"
+
+rg -q "OBSERVABILITY_BUSINESS_METRICS_ENABLED" deploy/prod/docker-compose.prod.yml \
+  || fail "docker-compose.prod.yml must pass OBSERVABILITY_BUSINESS_METRICS_ENABLED"
 
 rg -q "ADR-0057" docs/design/observability/request-correlation-logging-baseline.md \
   || fail "request-correlation-logging-baseline.md must reference ADR-0057"

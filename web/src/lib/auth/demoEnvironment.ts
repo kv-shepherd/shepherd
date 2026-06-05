@@ -11,6 +11,11 @@ export function isLocalDemoHost(hostname?: string): boolean {
     return normalized === 'localhost' || normalized === '127.0.0.1';
 }
 
+export function isHostedDemoHost(hostname?: string): boolean {
+    const normalized = (hostname ?? '').trim().toLowerCase();
+    return normalized === 'demo.kv-shepherd.io';
+}
+
 export function isLocalOrCodespacesDemoHost(hostname?: string): boolean {
     return isLocalDemoHost(hostname) || isCodespacesDemoHost(hostname);
 }

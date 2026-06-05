@@ -35,6 +35,12 @@ expected_alerts = {
     "ShepherdRiverQueueStatsScrapeFailed",
     "ShepherdRiverQueueBacklogAgeHigh",
     "ShepherdRiverJobsDiscarded",
+    "ShepherdBusinessMetricsScrapeFailed",
+    "ShepherdApprovalPendingTooLong",
+    "ShepherdApprovalFailuresPresent",
+    "ShepherdBatchApprovalPendingTooLong",
+    "ShepherdBatchApprovalFailuresPresent",
+    "ShepherdApprovalFailureAuditActionsRecent",
 }
 
 

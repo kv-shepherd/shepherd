@@ -35,3 +35,34 @@ groups:
           sum by (queue) (
             shepherd_river_recent_terminal_jobs{state="discarded"}
           )
+
+      - record: shepherd:business_approval_pending:sum
+        expr: |
+          sum by (operation_type) (
+            shepherd_business_approval_tickets{status="PENDING"}
+          )
+
+      - record: shepherd:business_approval_failed:sum
+        expr: |
+          sum by (operation_type) (
+            shepherd_business_approval_tickets{status="FAILED"}
+          )
+
+      - record: shepherd:business_batch_approval_pending:sum
+        expr: |
+          sum by (batch_type) (
+            shepherd_business_batch_approval_tickets{status="PENDING_APPROVAL"}
+          )
+
+      - record: shepherd:business_batch_approval_failed:sum
+        expr: |
+          sum by (batch_type) (
+            shepherd_business_batch_approval_tickets{status="FAILED"}
+            or shepherd_business_batch_approval_failed_children
+          )
+
+      - record: shepherd:business_approval_failure_audit_actions:sum
+        expr: |
+          sum by (action) (
+            shepherd_business_approval_failure_audit_actions_recent
+          )

@@ -70,3 +70,26 @@ func TestBuildRiverMiddlewareIncludesWorkerLogMiddleware(t *testing.T) {
 		t.Fatalf("middleware[0] = %T, want WorkerMiddleware", middleware[0])
 	}
 }
+
+func TestNewDatabasePoolConfigConfiguresPGXTracer(t *testing.T) {
+	t.Parallel()
+
+	poolConfig, err := newDatabasePoolConfig(config.DatabaseConfig{
+		URL:      "postgres://shepherd:shepherd@127.0.0.1:5432/shepherd_test?sslmode=disable",
+		MaxConns: 7,
+		MinConns: 1,
+	})
+	if err != nil {
+		t.Fatalf("newDatabasePoolConfig() error = %v", err)
+	}
+
+	if poolConfig.MaxConns != 7 || poolConfig.MinConns != 1 {
+		t.Fatalf("pool limits = (%d,%d), want (7,1)", poolConfig.MaxConns, poolConfig.MinConns)
+	}
+	if _, ok := poolConfig.ConnConfig.Tracer.(*observability.PGXTracer); !ok {
+		t.Fatalf("pool tracer = %T, want *observability.PGXTracer", poolConfig.ConnConfig.Tracer)
+	}
+	if poolConfig.AfterConnect == nil {
+		t.Fatal("AfterConnect must be configured to set UTC timezone")
+	}
+}

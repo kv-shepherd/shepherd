@@ -5,8 +5,9 @@
 ## Scope
 
 The Compose monitoring baseline provides an optional overlay for the production
-Docker Compose topology. It wires Prometheus and Grafana to the Shepherd server
-service without making either component a mandatory Shepherd runtime dependency.
+Docker Compose topology. It wires Prometheus, Tempo, and OpenTelemetry
+Collector to the Shepherd server service without making those components a
+mandatory Shepherd runtime dependency.
 
 Overlay:
 
@@ -18,10 +19,12 @@ deploy/prod/docker-compose.monitoring.yml
 
 | File | Purpose |
 |------|---------|
-| `deploy/prod/docker-compose.monitoring.yml` | Optional Prometheus + Grafana services |
+| `deploy/prod/docker-compose.monitoring.yml` | Optional Prometheus, Tempo, and OpenTelemetry Collector services |
 | `deploy/monitoring/prometheus/prometheus.yml` | Prometheus scrape and rule configuration |
-| `deploy/monitoring/grafana/provisioning/datasources/prometheus.yml` | Grafana Prometheus datasource |
-| `deploy/monitoring/grafana/dashboards/shepherd-overview.json` | Starter Shepherd dashboard |
+| `deploy/monitoring/grafana/provisioning/datasources/prometheus.yml` | Optional Grafana Prometheus and Tempo datasource example |
+| `deploy/monitoring/tempo/tempo.yml` | Tempo local trace backend configuration |
+| `deploy/monitoring/otel-collector/otel-collector.yml` | OpenTelemetry Collector OTLP receiver and Tempo exporter |
+| `deploy/monitoring/grafana/dashboards/shepherd-overview.json` | Optional starter Shepherd dashboard for manual import |
 
 ## Runtime Contract
 
@@ -42,8 +45,18 @@ rule_files:
   - /etc/prometheus/rules/shepherd-alerts.yml
 ```
 
-Grafana provisions a Prometheus datasource with UID `prometheus`, matching the
-starter dashboard datasource variable default.
+The optional Grafana provisioning example defines a Prometheus datasource with
+UID `prometheus` and a Tempo datasource with UID `tempo`. The Compose overlay
+does not start Grafana by default; operators who want Grafana can run their own
+instance and import the repository-owned dashboard JSON.
+
+Shepherd exports OTLP/HTTP traces to `otel-collector:4318`; the Collector batches traces and
+exports them to Tempo over OTLP/gRPC on `tempo:4317`.
+
+The Shepherd server also receives `OBSERVABILITY_TRACE_QUERY_ENABLED=true` and
+`OBSERVABILITY_TRACE_QUERY_URL=http://tempo:3200` so the protected
+`/admin/observability` page can render administrator trace summaries directly
+from Tempo.
 
 Prometheus config validation is governed separately by
 [prometheus-config-validation-baseline.md](./prometheus-config-validation-baseline.md).
@@ -57,8 +70,10 @@ Create or update `deploy/prod/.env.prod` with monitoring values:
 
 ```env
 PROMETHEUS_IMAGE=prom/prometheus:<version>
-GRAFANA_IMAGE=grafana/grafana:<version>
-GRAFANA_ADMIN_PASSWORD=<strong-password>
+TEMPO_IMAGE=grafana/tempo:<version>
+OTEL_COLLECTOR_IMAGE=otel/opentelemetry-collector-contrib:<version>
+OBSERVABILITY_TRACE_QUERY_ENABLED=true
+OBSERVABILITY_TRACE_QUERY_URL=http://tempo:3200
 ```
 
 Then run:
@@ -75,7 +90,7 @@ docker compose \
 
 The governance check
 `docs/design/ci/scripts/check_monitoring_compose_assets.sh` validates the
-Compose overlay, Prometheus config, and Grafana datasource provisioning. The
+Compose overlay, Prometheus config, and optional Grafana datasource/dashboard assets. The
 check always runs static structure validation. When Docker Compose is available,
 it also renders the merged production Compose configuration with dummy required
 environment values:
@@ -102,5 +117,6 @@ This baseline does not define:
 
 * Alertmanager routing or receiver configuration.
 * Remote write, long-term storage, or retention policy.
-* TLS or auth policy for Prometheus/Grafana UIs.
-* Production backup policy for Prometheus/Grafana volumes.
+* TLS or auth policy for Prometheus, Tempo, or any operator-managed Grafana UI.
+* Production backup policy for Prometheus/Tempo volumes.
+* Jaeger as an additional built-in trace query UI.

@@ -32,6 +32,28 @@ services:
       SERVER_ALLOW_CREDENTIALS: "true"
       SERVER_UNSAFE_ALLOW_ALL_ORIGINS: "false"
       RIVER_CONSUME_JOBS: "${RIVER_CONSUME_JOBS:-true}"
+      OBSERVABILITY_METRICS_ENABLED: "${OBSERVABILITY_METRICS_ENABLED:-true}"
+      OBSERVABILITY_METRICS_PATH: "${OBSERVABILITY_METRICS_PATH:-/metrics}"
+      OBSERVABILITY_DATABASE_METRICS_ENABLED: "${OBSERVABILITY_DATABASE_METRICS_ENABLED:-true}"
+      OBSERVABILITY_DATABASE_METRICS_TIMEOUT: "${OBSERVABILITY_DATABASE_METRICS_TIMEOUT:-2s}"
+      OBSERVABILITY_RIVER_METRICS_ENABLED: "${OBSERVABILITY_RIVER_METRICS_ENABLED:-true}"
+      OBSERVABILITY_RIVER_METRICS_TIMEOUT: "${OBSERVABILITY_RIVER_METRICS_TIMEOUT:-2s}"
+      OBSERVABILITY_BUSINESS_METRICS_ENABLED: "${OBSERVABILITY_BUSINESS_METRICS_ENABLED:-true}"
+      OBSERVABILITY_BUSINESS_METRICS_TIMEOUT: "${OBSERVABILITY_BUSINESS_METRICS_TIMEOUT:-2s}"
+      OBSERVABILITY_TRACING_ENABLED: "${OBSERVABILITY_TRACING_ENABLED:-true}"
+      OBSERVABILITY_TRACING_SERVICE_NAME: "${OBSERVABILITY_TRACING_SERVICE_NAME:-shepherd}"
+      OBSERVABILITY_TRACING_EXPORTER: "${OBSERVABILITY_TRACING_EXPORTER:-otlp_http}"
+      OBSERVABILITY_TRACING_SAMPLE_RATIO: "${OBSERVABILITY_TRACING_SAMPLE_RATIO:-0.10}"
+      OBSERVABILITY_TRACING_SHUTDOWN_TIMEOUT: "${OBSERVABILITY_TRACING_SHUTDOWN_TIMEOUT:-5s}"
+      OBSERVABILITY_TRACE_QUERY_ENABLED: "${OBSERVABILITY_TRACE_QUERY_ENABLED:-true}"
+      OBSERVABILITY_TRACE_QUERY_URL: "${OBSERVABILITY_TRACE_QUERY_URL:-http://tempo:3200}"
+      OBSERVABILITY_TRACE_QUERY_TIMEOUT: "${OBSERVABILITY_TRACE_QUERY_TIMEOUT:-3s}"
+      OBSERVABILITY_TRACE_QUERY_LIMIT: "${OBSERVABILITY_TRACE_QUERY_LIMIT:-100}"
+      OBSERVABILITY_TRACE_QUERY_LOOKBACK: "${OBSERVABILITY_TRACE_QUERY_LOOKBACK:-1h}"
+      OTEL_EXPORTER_OTLP_ENDPOINT: "${OTEL_EXPORTER_OTLP_ENDPOINT:-http://otel-collector:4318}"
+      OTEL_EXPORTER_OTLP_HEADERS: "${OTEL_EXPORTER_OTLP_HEADERS:-}"
+      OTEL_EXPORTER_OTLP_TRACES_ENDPOINT: "${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT:-http://otel-collector:4318/v1/traces}"
+      OTEL_EXPORTER_OTLP_TRACES_HEADERS: "${OTEL_EXPORTER_OTLP_TRACES_HEADERS:-}"
     depends_on:
       db:
         condition: service_healthy
@@ -50,6 +72,41 @@ services:
       - ../../web/node_modules:/app/node_modules
     depends_on:
       - server
+
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+    ports:
+      - "${DEV_PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ../monitoring/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus/shepherd-recording-rules.yml:/etc/prometheus/rules/shepherd-recording-rules.yml:ro
+      - ../monitoring/prometheus/shepherd-alerts.yml:/etc/prometheus/rules/shepherd-alerts.yml:ro
+    depends_on:
+      - server
+
+  tempo:
+    image: grafana/tempo:2.9.0
+    command:
+      - -config.file=/etc/tempo/tempo.yml
+    ports:
+      - "${DEV_TEMPO_PORT:-3200}:3200"
+    volumes:
+      - ../monitoring/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.139.0
+    command:
+      - --config=/etc/otelcol-contrib/otel-collector.yml
+    ports:
+      - "${DEV_OTEL_GRPC_PORT:-4317}:4317"
+      - "${DEV_OTEL_HTTP_PORT:-4318}:4318"
+    volumes:
+      - ../monitoring/otel-collector/otel-collector.yml:/etc/otelcol-contrib/otel-collector.yml:ro
+    depends_on:
+      - tempo
 
   nginx:
     image: nginx:1.27-alpine

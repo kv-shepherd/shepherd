@@ -10,6 +10,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/handlers"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/config"
+	"kv-shepherd.io/shepherd/internal/observability"
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 )
@@ -31,6 +32,8 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		}
 	}
 	authSessions := service.NewAuthSessionManager(infra.Pool, infra.EntClient, cfg.Session.IdleTimeout)
+	traceSummaryProvider := newTraceSummaryProvider(cfg)
+	businessMetricsProvider := newBusinessMetricsProvider(cfg, infra)
 	deps := handlers.ServerDeps{
 		EntClient: infra.EntClient,
 		Pool:      infra.Pool,
@@ -52,6 +55,8 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		PasswordPolicy:       cfg.Security.PasswordPolicy,
 		LoginRateLimitConfig: cfg.Security.LoginRateLimit,
 		AuthSessions:         authSessions,
+		TraceSummaryProvider: traceSummaryProvider,
+		BusinessMetrics:      businessMetricsProvider,
 	}
 	if authSessions != nil {
 		deps.JWTCfg.RevocationChecker = authSessions
@@ -68,6 +73,33 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 		contributor.ContributeServerDeps(&deps)
 	}
 	return deps
+}
+
+func newTraceSummaryProvider(cfg *config.Config) observability.TraceSummaryProvider {
+	if cfg == nil || !cfg.Observability.TraceQueryEnabled {
+		return nil
+	}
+	traceProvider, err := observability.NewTempoTraceQueryClient(observability.TempoTraceQueryOptions{
+		BaseURL:     cfg.Observability.EffectiveTraceQueryURL(),
+		ServiceName: cfg.Observability.EffectiveTracingServiceName(),
+		Timeout:     cfg.Observability.EffectiveTraceQueryTimeout(),
+		Limit:       cfg.Observability.EffectiveTraceQueryLimit(),
+		Lookback:    cfg.Observability.EffectiveTraceQueryLookback(),
+	})
+	if err != nil {
+		return nil
+	}
+	return traceProvider
+}
+
+func newBusinessMetricsProvider(cfg *config.Config, infra *Infrastructure) observability.BusinessMetricsProvider {
+	if cfg == nil || infra == nil || infra.Pool == nil {
+		return nil
+	}
+	return observability.NewPGXBusinessMetricsProvider(
+		infra.Pool,
+		cfg.Observability.EffectiveBusinessMetricsTimeout(),
+	)
 }
 
 func newClusterHealthRefresher(infra *Infrastructure) func(context.Context, string) error {

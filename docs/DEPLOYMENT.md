@@ -55,11 +55,15 @@ an external database.
 | **nginx** | `nginx:1.30.1-alpine` by default | TLS termination, reverse proxy, rate limiting |
 
 The production Compose path exposes the same `OBSERVABILITY_*` runtime
-configuration used by Helm. When `OBSERVABILITY_TRACING_ENABLED=true` and the
-exporter is `otlp_http`, set the standard `OTEL_EXPORTER_OTLP_*` endpoint and
-auth variables in the production env file. Enable
-`deploy/prod/docker-compose.monitoring.yml` when the host should also run
-Prometheus and Grafana locally.
+configuration used by Helm. The base Compose file keeps tracing and trace-query
+disabled unless you point Shepherd at an existing OpenTelemetry backend or also
+enable `deploy/prod/docker-compose.monitoring.yml`. For the bundled monitoring
+overlay, set `OBSERVABILITY_TRACING_ENABLED=true`,
+`OBSERVABILITY_TRACE_QUERY_ENABLED=true`, `OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318`,
+and `OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=http://otel-collector:4318/v1/traces`.
+Grafana is not part of the default Compose monitoring overlay; optional
+dashboard JSON and datasource examples remain under `deploy/monitoring/grafana/`
+for operators to import into their own Grafana instance.
 
 ## Docker Compose from Release Images
 

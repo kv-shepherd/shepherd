@@ -38,6 +38,18 @@ export const DashboardIcon = createMenuIcon(() => (
     </>
 ));
 
+export const ObservabilityIcon = createMenuIcon(() => (
+    <>
+        <path d="M4 19V5" />
+        <path d="M4 19h16" />
+        <path d="m7 15 3.5-4 3 2.5L19 7" />
+        <circle cx="7" cy="15" r="1" />
+        <circle cx="10.5" cy="11" r="1" />
+        <circle cx="13.5" cy="13.5" r="1" />
+        <circle cx="19" cy="7" r="1" />
+    </>
+));
+
 export const SystemsIcon = createMenuIcon(() => (
     <>
         <rect x="2" y="4" width="20" height="4" rx="1.5" />

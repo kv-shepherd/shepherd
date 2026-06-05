@@ -22,7 +22,7 @@ amends or supersedes the old decision.
 
 | Area | Current state |
 |------|---------------|
-| Go baseline | Go `1.25.10` |
+| Go baseline | Go `1.25.11` |
 | Backend stack | Gin, Ent, sqlc, pgx, River, zap |
 | Database | PostgreSQL 18 baseline; Ent, sqlc, and River share one pgx pool |
 | OpenAPI | `api/openapi.yaml` is OpenAPI `3.1.0` with 135 `operationId`s |
@@ -32,7 +32,7 @@ amends or supersedes the old decision.
 | Frontend stack | React 19.2, Next.js 16.2, Ant Design 5, TanStack Query 5, Zustand 5 |
 | Frontend route files | 29 App Router `page.tsx` files, including root and compatibility/alias routes |
 | Background workers | VM create/delete/modify/power/status sync, notification cleanup, domain-event archive, directory sync, directory enrichment scan |
-| Observability | Prometheus `/metrics` baseline with Go/process/build collectors, low-cardinality HTTP metrics, PostgreSQL/River bloat metrics, River queue health metrics, OpenAPI validation failure metrics, bounded HTTP request correlation logs, bounded River worker correlation logs, validated recording rules, rule-test fixtures, Prometheus config validation, Prometheus Operator rule parity validation, alert runbook link validation, Grafana dashboard PromQL validation, optional Prometheus Operator packaging, optional Compose monitoring packaging, a validated starter alert rule pack, a validated starter Grafana dashboard, and default-off OpenTelemetry HTTP ingress tracing |
+| Observability | Prometheus `/metrics` baseline with Go/process/build collectors, low-cardinality HTTP metrics, PostgreSQL/River bloat metrics, River queue health metrics, OpenAPI validation failure metrics, approval/audit business metrics, bounded HTTP request correlation logs, bounded River worker correlation logs, validated recording rules, rule-test fixtures, Prometheus config validation, Prometheus Operator rule parity validation, alert runbook link validation, Grafana dashboard PromQL validation, optional Prometheus Operator packaging, optional Compose monitoring packaging, a validated starter alert rule pack, a validated starter Grafana dashboard, OpenTelemetry tracing, OpenTelemetry Collector, Tempo, DB spans, River worker spans, and KubeVirt/provider spans |
 | Live E2E evidence | ADR-0058 evidence bundle design exists; runner implementation emits per-run result, evidence manifest, and Playwright structured artifacts for readiness/full live E2E runs |
 
 ## Implemented Capabilities
@@ -52,7 +52,7 @@ amends or supersedes the old decision.
 | Cluster policy | Explicit cluster policy controls for clone, image import, host devices, storage classes, and namespace scope |
 | Cluster credentials | DB-backed sanitized kubeconfig bytes protected with AES-256-GCM; upload/update rejects local file references, exec/auth-provider plugins, proxy URLs, and unsafe TLS settings |
 | VM status convergence | ADR-0038 adaptive polling with ResourceVersion caching and River scheduling |
-| Observability | ADR-0054 runtime Prometheus metrics, ADR-0055 starter Prometheus rules and Grafana assets, ADR-0056 optional monitoring deployment packaging, and ADR-0057 default-off tracing plus bounded HTTP/River correlation logs are implemented; business SLO metrics, deep tracing, advanced alert routing, and advanced dashboards remain RFC-0010 follow-ups |
+| Observability | ADR-0054 runtime Prometheus metrics, ADR-0055 starter Prometheus rules and Grafana assets, ADR-0056 optional monitoring deployment packaging, ADR-0057 tracing plus bounded HTTP/River correlation logs, approval/audit business monitoring, OpenTelemetry Collector, Tempo, DB spans, River worker spans, and KubeVirt/provider spans are implemented; broad business SLO metrics, advanced alert routing, advanced dashboards, frontend tracing, and log-search monitoring remain RFC-0010 follow-ups |
 
 ## Design Drift Decisions
 
@@ -95,7 +95,7 @@ No ADR changes are required for this sync:
 - OpenAPI validation failure metrics are covered by ADR-0054.
 - Minimal Prometheus alert rules are covered by ADR-0055.
 - Starter Grafana dashboard assets are covered by ADR-0055.
-- Default-off HTTP ingress tracing is covered by ADR-0057.
+- HTTP ingress tracing is covered by ADR-0057; deeper DB/River/KubeVirt/provider spans are covered by the observability design baseline.
 - Prometheus recording rules are covered by ADR-0055.
 - Prometheus rule unit tests are covered by ADR-0055.
 - Prometheus Operator packaging is covered by ADR-0056.

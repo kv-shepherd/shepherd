@@ -3,6 +3,7 @@
 import React from 'react';
 import {
     DashboardIcon,
+    ObservabilityIcon,
     NotificationsIcon,
     SystemsIcon,
     ServicesIcon,
@@ -161,6 +162,13 @@ export const getMenuRoutes = (
             path: '/admin/auth-providers',
             name: t('nav.auth_providers'),
             icon: <AuthProvidersIcon />,
+        },
+        {
+            routeKey: 'observability',
+            requiredPermissions: ADMIN_MENU_ROUTE_PERMISSIONS.observability,
+            path: '/admin/observability',
+            name: t('nav.observability'),
+            icon: <ObservabilityIcon />,
         },
         {
             routeKey: 'audit',

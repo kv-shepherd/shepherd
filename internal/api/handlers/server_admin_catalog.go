@@ -180,6 +180,7 @@ var permissionCatalog = map[string]string{
 	"instance_size:write":          "Create/update/delete instance sizes",
 	"namespace:read":               "Read namespace registry",
 	"namespace:write":              "Create/update/delete namespace registry entries",
+	"observability:read":           "Read administrator observability dashboards and signals",
 	"platform:admin":               "Full platform management capability",
 	"rate_limit:manage":            "Manage batch rate-limit policy overrides",
 	"rbac:manage":                  "Manage RBAC roles and bindings",

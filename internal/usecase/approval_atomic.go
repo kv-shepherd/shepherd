@@ -16,8 +16,10 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
+	"go.opentelemetry.io/otel/attribute"
 
 	"kv-shepherd.io/shepherd/internal/jobs"
+	"kv-shepherd.io/shepherd/internal/observability"
 	sqlcrepo "kv-shepherd.io/shepherd/internal/repository/sqlc"
 )
 
@@ -62,6 +64,16 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	placementEvaluation map[string]interface{},
 	modifiedSpec map[string]interface{},
 ) (vmID, vmName string, err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.approval.approve_create",
+		attribute.String("shepherd.business.operation", "approval.approve_create"),
+		attribute.String("shepherd.approval.operation_type", "CREATE"),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return "", "", fmt.Errorf("approval atomic writer is not initialized")
 	}
@@ -273,7 +285,17 @@ func snapshotStringSlice(values map[string]interface{}, key string) []string {
 func (w *ApprovalAtomicWriter) ApproveDeleteAndEnqueue(
 	ctx context.Context,
 	ticketID, eventID, approver, vmID string,
-) error {
+) (err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.approval.approve_delete",
+		attribute.String("shepherd.business.operation", "approval.approve_delete"),
+		attribute.String("shepherd.approval.operation_type", "DELETE"),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return fmt.Errorf("approval atomic writer is not initialized")
 	}
@@ -341,7 +363,17 @@ func (w *ApprovalAtomicWriter) ApproveModifyAndEnqueue(
 	ctx context.Context,
 	ticketID, eventID, approver string,
 	modifiedSpec map[string]interface{},
-) error {
+) (err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.approval.approve_modify",
+		attribute.String("shepherd.business.operation", "approval.approve_modify"),
+		attribute.String("shepherd.approval.operation_type", "MODIFY"),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return fmt.Errorf("approval atomic writer is not initialized")
 	}
@@ -406,7 +438,17 @@ func (w *ApprovalAtomicWriter) ApproveModifyAndEnqueue(
 func (w *ApprovalAtomicWriter) ApprovePowerAndEnqueue(
 	ctx context.Context,
 	ticketID, eventID, approver, operation string,
-) error {
+) (err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.approval.approve_power",
+		attribute.String("shepherd.business.operation", "approval.approve_power"),
+		attribute.String("shepherd.approval.operation_type", "POWER"),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return fmt.Errorf("approval atomic writer is not initialized")
 	}
@@ -452,7 +494,17 @@ func (w *ApprovalAtomicWriter) ApprovePowerAndEnqueue(
 // CreatePowerEventAndEnqueue atomically creates a no-approval power DomainEvent
 // and inserts the River job in the same pgx transaction. This mirrors River's
 // recommended InsertTx pattern so the worker can only observe a committed event.
-func (w *ApprovalAtomicWriter) CreatePowerEventAndEnqueue(ctx context.Context, input PowerEventInput) error {
+func (w *ApprovalAtomicWriter) CreatePowerEventAndEnqueue(ctx context.Context, input PowerEventInput) (err error) {
+	ctx, span := observability.StartSpan(ctx,
+		"business.vm.request_power",
+		attribute.String("shepherd.business.operation", "vm.request_power"),
+		attribute.String("shepherd.approval.operation_type", "POWER"),
+	)
+	defer func() {
+		observability.RecordSpanError(span, err)
+		span.End()
+	}()
+
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return fmt.Errorf("approval atomic writer is not initialized")
 	}

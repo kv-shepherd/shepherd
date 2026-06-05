@@ -100,3 +100,69 @@ groups:
           summary: Shepherd River jobs were discarded
           description: One or more Shepherd River jobs reached the discarded terminal state for queue={{ $labels.queue }}.
           runbook_url: docs/design/observability/alerts-baseline.md#shepherdriverjobsdiscarded
+
+      - alert: ShepherdBusinessMetricsScrapeFailed
+        expr: shepherd_business_metrics_scrape_success == 0
+        for: 10m
+        labels:
+          severity: warning
+          service: shepherd
+        annotations:
+          summary: Shepherd business metrics scrape failed
+          description: Shepherd cannot collect approval and audit-log business metrics.
+          runbook_url: docs/design/observability/alerts-baseline.md#shepherdbusinessmetricsscrapefailed
+
+      - alert: ShepherdApprovalPendingTooLong
+        expr: shepherd_business_approval_pending_oldest_age_seconds > 86400
+        for: 15m
+        labels:
+          severity: warning
+          service: shepherd
+        annotations:
+          summary: Shepherd approval has been pending too long
+          description: The oldest pending approval has waited more than 24 hours for operation_type={{ $labels.operation_type }}.
+          runbook_url: docs/design/observability/alerts-baseline.md#shepherdapprovalpendingtoolong
+
+      - alert: ShepherdApprovalFailuresPresent
+        expr: shepherd:business_approval_failed:sum > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: shepherd
+        annotations:
+          summary: Shepherd approval failures are present
+          description: One or more approval tickets are in FAILED status for operation_type={{ $labels.operation_type }}.
+          runbook_url: docs/design/observability/alerts-baseline.md#shepherdapprovalfailurespresent
+
+      - alert: ShepherdBatchApprovalPendingTooLong
+        expr: shepherd_business_batch_approval_pending_oldest_age_seconds > 86400
+        for: 15m
+        labels:
+          severity: warning
+          service: shepherd
+        annotations:
+          summary: Shepherd batch approval has been pending too long
+          description: The oldest pending batch approval has waited more than 24 hours for batch_type={{ $labels.batch_type }}.
+          runbook_url: docs/design/observability/alerts-baseline.md#shepherdbatchapprovalpendingtoolong
+
+      - alert: ShepherdBatchApprovalFailuresPresent
+        expr: shepherd:business_batch_approval_failed:sum > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: shepherd
+        annotations:
+          summary: Shepherd batch approval failures are present
+          description: One or more batch approvals or child tasks have failed for batch_type={{ $labels.batch_type }}.
+          runbook_url: docs/design/observability/alerts-baseline.md#shepherdbatchapprovalfailurespresent
+
+      - alert: ShepherdApprovalFailureAuditActionsRecent
+        expr: shepherd:business_approval_failure_audit_actions:sum > 0
+        for: 10m
+        labels:
+          severity: warning
+          service: shepherd
+        annotations:
+          summary: Shepherd approval failure audit actions were recorded
+          description: Approval-related failure audit actions were recorded recently for action={{ $labels.action }}.
+          runbook_url: docs/design/observability/alerts-baseline.md#shepherdapprovalfailureauditactionsrecent

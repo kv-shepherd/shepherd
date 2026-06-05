@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
 	authorizationv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
 	storagev1 "k8s.io/api/storage/v1"
@@ -180,11 +181,20 @@ type kubevirtVMClient struct {
 }
 
 func (c *kubevirtVMClient) Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*kubevirtv1.VirtualMachine, error) {
-	return c.client.VirtualMachine(namespace).Get(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "get", "virtualmachines", namespace)
+	result, err := c.client.VirtualMachine(namespace).Get(ctx, name, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 func (c *kubevirtVMClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*kubevirtv1.VirtualMachineList, error) {
-	return c.client.VirtualMachine(namespace).List(ctx, opts)
+	ctx, span := startKubeClientSpan(ctx, "list", "virtualmachines", namespace)
+	result, err := c.client.VirtualMachine(namespace).List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
 }
 
 func (c *kubevirtVMClient) Patch(
@@ -195,26 +205,48 @@ func (c *kubevirtVMClient) Patch(
 	opts k8smetav1.PatchOptions,
 	subresources ...string,
 ) (*kubevirtv1.VirtualMachine, error) {
-	return c.client.VirtualMachine(namespace).Patch(ctx, name, pt, data, opts, subresources...)
+	ctx, span := startKubeClientSpan(
+		ctx,
+		"patch",
+		"virtualmachines",
+		namespace,
+		attribute.String("k8s.patch.type", string(pt)),
+		attribute.Int("k8s.subresource.count", len(subresources)),
+	)
+	result, err := c.client.VirtualMachine(namespace).Patch(ctx, name, pt, data, opts, subresources...)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 // Create and Update are intentionally removed from the infrastructure-facing
 // contract for ADR-0011 full-manifest flows. Existing VM mutation uses Patch.
 
 func (c *kubevirtVMClient) Delete(ctx context.Context, namespace, name string, opts k8smetav1.DeleteOptions) error {
-	return c.client.VirtualMachine(namespace).Delete(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "delete", "virtualmachines", namespace)
+	err := c.client.VirtualMachine(namespace).Delete(ctx, name, opts)
+	endTraceSpan(span, err)
+	return err
 }
 
 func (c *kubevirtVMClient) Start(ctx context.Context, namespace, name string, opts *kubevirtv1.StartOptions) error {
-	return c.client.VirtualMachine(namespace).Start(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "start", "virtualmachines", namespace)
+	err := c.client.VirtualMachine(namespace).Start(ctx, name, opts)
+	endTraceSpan(span, err)
+	return err
 }
 
 func (c *kubevirtVMClient) Stop(ctx context.Context, namespace, name string, opts *kubevirtv1.StopOptions) error {
-	return c.client.VirtualMachine(namespace).Stop(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "stop", "virtualmachines", namespace)
+	err := c.client.VirtualMachine(namespace).Stop(ctx, name, opts)
+	endTraceSpan(span, err)
+	return err
 }
 
 func (c *kubevirtVMClient) Restart(ctx context.Context, namespace, name string, opts *kubevirtv1.RestartOptions) error {
-	return c.client.VirtualMachine(namespace).Restart(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "restart", "virtualmachines", namespace)
+	err := c.client.VirtualMachine(namespace).Restart(ctx, name, opts)
+	endTraceSpan(span, err)
+	return err
 }
 
 type kubevirtVMIClient struct {
@@ -222,19 +254,34 @@ type kubevirtVMIClient struct {
 }
 
 func (c *kubevirtVMIClient) Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*kubevirtv1.VirtualMachineInstance, error) {
-	return c.client.VirtualMachineInstance(namespace).Get(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "get", "virtualmachineinstances", namespace)
+	result, err := c.client.VirtualMachineInstance(namespace).Get(ctx, name, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 func (c *kubevirtVMIClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*kubevirtv1.VirtualMachineInstanceList, error) {
-	return c.client.VirtualMachineInstance(namespace).List(ctx, opts)
+	ctx, span := startKubeClientSpan(ctx, "list", "virtualmachineinstances", namespace)
+	result, err := c.client.VirtualMachineInstance(namespace).List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
 }
 
 func (c *kubevirtVMIClient) Pause(ctx context.Context, namespace, name string, opts *kubevirtv1.PauseOptions) error {
-	return c.client.VirtualMachineInstance(namespace).Pause(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "pause", "virtualmachineinstances", namespace)
+	err := c.client.VirtualMachineInstance(namespace).Pause(ctx, name, opts)
+	endTraceSpan(span, err)
+	return err
 }
 
 func (c *kubevirtVMIClient) Unpause(ctx context.Context, namespace, name string, opts *kubevirtv1.UnpauseOptions) error {
-	return c.client.VirtualMachineInstance(namespace).Unpause(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "unpause", "virtualmachineinstances", namespace)
+	err := c.client.VirtualMachineInstance(namespace).Unpause(ctx, name, opts)
+	endTraceSpan(span, err)
+	return err
 }
 
 func (c *kubevirtVMIClient) VNC(namespace, name string, preserveSession bool) (net.Conn, error) {
@@ -262,11 +309,20 @@ type kubevirtDataVolumeClient struct {
 }
 
 func (c *kubevirtDataVolumeClient) Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*cdiv1beta1.DataVolume, error) {
-	return c.client.CdiClient().CdiV1beta1().DataVolumes(namespace).Get(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "get", "datavolumes", namespace)
+	result, err := c.client.CdiClient().CdiV1beta1().DataVolumes(namespace).Get(ctx, name, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 func (c *kubevirtDataVolumeClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*cdiv1beta1.DataVolumeList, error) {
-	return c.client.CdiClient().CdiV1beta1().DataVolumes(namespace).List(ctx, opts)
+	ctx, span := startKubeClientSpan(ctx, "list", "datavolumes", namespace)
+	result, err := c.client.CdiClient().CdiV1beta1().DataVolumes(namespace).List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
 }
 
 type kubevirtStorageProfileClient struct {
@@ -274,7 +330,10 @@ type kubevirtStorageProfileClient struct {
 }
 
 func (c *kubevirtStorageProfileClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*cdiv1beta1.StorageProfile, error) {
-	return c.client.CdiClient().CdiV1beta1().StorageProfiles().Get(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "get", "storageprofiles", "")
+	result, err := c.client.CdiClient().CdiV1beta1().StorageProfiles().Get(ctx, name, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 type kubevirtPVCClient struct {
@@ -282,7 +341,10 @@ type kubevirtPVCClient struct {
 }
 
 func (c *kubevirtPVCClient) Get(ctx context.Context, namespace, name string, opts k8smetav1.GetOptions) (*corev1.PersistentVolumeClaim, error) {
-	return c.client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "get", "persistentvolumeclaims", namespace)
+	result, err := c.client.CoreV1().PersistentVolumeClaims(namespace).Get(ctx, name, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 type kubevirtStorageClassClient struct {
@@ -290,11 +352,20 @@ type kubevirtStorageClassClient struct {
 }
 
 func (c *kubevirtStorageClassClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*storagev1.StorageClass, error) {
-	return c.client.StorageV1().StorageClasses().Get(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "get", "storageclasses", "")
+	result, err := c.client.StorageV1().StorageClasses().Get(ctx, name, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 func (c *kubevirtStorageClassClient) List(ctx context.Context, opts k8smetav1.ListOptions) (*storagev1.StorageClassList, error) {
-	return c.client.StorageV1().StorageClasses().List(ctx, opts)
+	ctx, span := startKubeClientSpan(ctx, "list", "storageclasses", "")
+	result, err := c.client.StorageV1().StorageClasses().List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
 }
 
 type kubevirtEventClient struct {
@@ -302,7 +373,13 @@ type kubevirtEventClient struct {
 }
 
 func (c *kubevirtEventClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.EventList, error) {
-	return c.client.CoreV1().Events(namespace).List(ctx, opts)
+	ctx, span := startKubeClientSpan(ctx, "list", "events", namespace)
+	result, err := c.client.CoreV1().Events(namespace).List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
 }
 
 type kubevirtNamespaceClient struct {
@@ -310,7 +387,10 @@ type kubevirtNamespaceClient struct {
 }
 
 func (c *kubevirtNamespaceClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Namespace, error) {
-	return c.client.CoreV1().Namespaces().Get(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "get", "namespaces", "")
+	result, err := c.client.CoreV1().Namespaces().Get(ctx, name, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 type kubevirtNodeClient struct {
@@ -318,11 +398,20 @@ type kubevirtNodeClient struct {
 }
 
 func (c *kubevirtNodeClient) Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*corev1.Node, error) {
-	return c.client.CoreV1().Nodes().Get(ctx, name, opts)
+	ctx, span := startKubeClientSpan(ctx, "get", "nodes", "")
+	result, err := c.client.CoreV1().Nodes().Get(ctx, name, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 func (c *kubevirtNodeClient) List(ctx context.Context, opts k8smetav1.ListOptions) (*corev1.NodeList, error) {
-	return c.client.CoreV1().Nodes().List(ctx, opts)
+	ctx, span := startKubeClientSpan(ctx, "list", "nodes", "")
+	result, err := c.client.CoreV1().Nodes().List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
 }
 
 type kubevirtPodClient struct {
@@ -330,7 +419,13 @@ type kubevirtPodClient struct {
 }
 
 func (c *kubevirtPodClient) List(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*corev1.PodList, error) {
-	return c.client.CoreV1().Pods(namespace).List(ctx, opts)
+	ctx, span := startKubeClientSpan(ctx, "list", "pods", namespace)
+	result, err := c.client.CoreV1().Pods(namespace).List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
 }
 
 type kubevirtAuthorizationClient struct {
@@ -342,7 +437,10 @@ func (c *kubevirtAuthorizationClient) CreateSelfSubjectAccessReview(
 	review *authorizationv1.SelfSubjectAccessReview,
 	opts k8smetav1.CreateOptions,
 ) (*authorizationv1.SelfSubjectAccessReview, error) {
-	return c.client.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, opts)
+	ctx, span := startKubeClientSpan(ctx, "create", "selfsubjectaccessreviews", "")
+	result, err := c.client.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, review, opts)
+	endTraceSpan(span, err)
+	return result, err
 }
 
 // KubeVirt returns a KubeVirtCRClient that can read the cluster-level KubeVirt CR.
@@ -369,10 +467,12 @@ type kubevirtKVCRClient struct {
 // loadCR performs the single K8s GET for the KubeVirt CR, cached via sync.Once.
 func (c *kubevirtKVCRClient) loadCR(ctx context.Context) (*kubevirtv1.KubeVirt, error) {
 	c.crOnce.Do(func() {
-		c.crObj, c.crErr = c.client.KubeVirt(kubeVirtNamespace).Get(ctx, kubeVirtCRName, k8smetav1.GetOptions{})
+		traceCtx, span := startKubeClientSpan(ctx, "get", "kubevirts", kubeVirtNamespace)
+		c.crObj, c.crErr = c.client.KubeVirt(kubeVirtNamespace).Get(traceCtx, kubeVirtCRName, k8smetav1.GetOptions{})
 		if c.crErr != nil {
 			c.crErr = fmt.Errorf("get kubevirt CR %s/%s: %w", kubeVirtNamespace, kubeVirtCRName, c.crErr)
 		}
+		endTraceSpan(span, c.crErr)
 	})
 	return c.crObj, c.crErr
 }

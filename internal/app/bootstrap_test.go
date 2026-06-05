@@ -9,8 +9,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"kv-shepherd.io/shepherd/internal/app/modules"
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
 func init() {
@@ -94,6 +96,29 @@ func TestNewObservabilityTracingInvalidExporter(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, tracing)
 	require.Contains(t, err.Error(), "unsupported tracing exporter")
+}
+
+func TestNewObservabilityMetricsIncludesBusinessCollector(t *testing.T) {
+	t.Parallel()
+
+	pool := testutil.OpenPGXPool(t, "app_business_metrics")
+	metrics := newObservabilityMetrics(&config.Config{
+		Observability: config.ObservabilityConfig{
+			MetricsEnabled:         true,
+			BusinessMetricsEnabled: true,
+		},
+	}, &modules.Infrastructure{Pool: pool})
+
+	require.NotNil(t, metrics)
+	families, err := metrics.Gather()
+	require.NoError(t, err)
+
+	for _, family := range families {
+		if family.GetName() == "shepherd_business_metrics_scrape_success" {
+			return
+		}
+	}
+	t.Fatal("business metrics scrape success metric was not registered")
 }
 
 func TestApplication_Start_NoDependencies(t *testing.T) {

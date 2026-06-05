@@ -7330,6 +7330,97 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
 
+  # ── Admin Observability ────────────────────────────
+  /admin/observability/traces:
+    get:
+      tags: [admin, observability]
+      summary: Get administrator trace summary
+      operationId: getAdminTraceSummary
+      security:
+      - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+          - 'observability:read'
+      parameters:
+      - name: lookback_minutes
+        in: query
+        description: Trace search window in minutes
+        schema:
+          type: integer
+          minimum: 5
+          maximum: 1440
+          default: 60
+          example: 60
+        example: 60
+      - name: limit
+        in: query
+        description: Maximum trace search results to inspect
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 500
+          default: 100
+          example: 100
+        example: 100
+      - name: route
+        in: query
+        description: Optional normalized HTTP route filter, for example GET /api/v1/vms/:id
+        schema:
+          type: string
+          example: GET /api/v1/vms/:id
+        example: GET /api/v1/vms/:id
+      responses:
+        '200':
+          description: Administrator trace summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObservabilityTraceSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Trace query backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /admin/observability/audit-signals:
+    get:
+      tags: [admin, observability]
+      summary: Get administrator audit business signals
+      operationId: getAdminAuditSignals
+      security:
+      - BearerAuth: []
+      x-rbac:
+        authentication: bearer
+        platformAdminOverride: true
+        globalPermissions:
+          anyOf:
+          - 'observability:read'
+      responses:
+        '200':
+          description: Administrator audit business signal summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminObservabilityAuditSignalSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '503':
+          description: Audit signal backend unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
 components:
   # ── Security Schemes ────────────────────────────────
   securitySchemes:
@@ -14161,6 +14252,250 @@ components:
             page: 1
             per_page: 1
             total: 1
+    AdminObservabilityTraceSummary:
+      description: Administrator-facing trace route and dependency summary.
+      type: object
+      required: [generated_at, source, status, window_seconds, endpoints, slow_traces, dependencies]
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          example: '2026-06-04T08:00:00Z'
+        source:
+          type: string
+          example: tempo
+        status:
+          type: string
+          example: ok
+        window_seconds:
+          type: integer
+          format: int64
+          example: 3600
+        endpoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityTraceEndpoint'
+        slow_traces:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityTraceSample'
+        dependencies:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilitySpanGroup'
+    AdminObservabilityTraceEndpoint:
+      description: Aggregated HTTP server span summary for one normalized route.
+      type: object
+      required: [route, request_count, error_count, error_rate, p95_ms, avg_ms, max_ms, slowest_trace_id]
+      properties:
+        route:
+          type: string
+          example: GET /api/v1/vms/:id
+        request_count:
+          type: integer
+          example: 120
+        error_count:
+          type: integer
+          example: 2
+        error_rate:
+          type: number
+          format: double
+          example: 0.0167
+        p95_ms:
+          type: number
+          format: double
+          example: 184.22
+        avg_ms:
+          type: number
+          format: double
+          example: 62.41
+        max_ms:
+          type: number
+          format: double
+          example: 620.4
+        slowest_trace_id:
+          type: string
+          example: 4f359ef09312e0a1082b9d7460239ac6
+    AdminObservabilityTraceSample:
+      description: Slow or failed trace sample.
+      type: object
+      required: [trace_id, root_name, route, duration_ms, status_code, error, started_at]
+      properties:
+        trace_id:
+          type: string
+          example: 4f359ef09312e0a1082b9d7460239ac6
+        root_name:
+          type: string
+          example: GET /api/v1/vms/:id
+        route:
+          type: string
+          example: GET /api/v1/vms/:id
+        duration_ms:
+          type: number
+          format: double
+          example: 620.4
+        status_code:
+          type: integer
+          example: 500
+        error:
+          type: boolean
+          example: true
+        started_at:
+          type: string
+          format: date-time
+          example: '2026-06-04T08:00:00Z'
+    AdminObservabilitySpanGroup:
+      description: Aggregated non-ingress span summary for DB, KubeVirt, provider, worker, or business operations.
+      type: object
+      required: [category, name, span_count, error_count, p95_ms, max_ms]
+      properties:
+        category:
+          type: string
+          enum: [business, database, kubevirt, provider, worker, internal]
+          example: kubevirt
+        name:
+          type: string
+          example: kubernetes.get.virtualmachines
+        span_count:
+          type: integer
+          example: 42
+        error_count:
+          type: integer
+          example: 1
+        p95_ms:
+          type: number
+          format: double
+          example: 88.5
+        max_ms:
+          type: number
+          format: double
+          example: 311.2
+    AdminObservabilityAuditSignalSummary:
+      description: Administrator-facing audit and approval business signal summary.
+      type: object
+      required:
+      - generated_at
+      - status
+      - window_seconds
+      - approval_tickets
+      - approval_pending_ages
+      - batch_approval_tickets
+      - batch_approval_pending_ages
+      - batch_approval_failed_children
+      - approval_audit_actions
+      - approval_failure_audit_actions
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          example: '2026-06-04T08:00:00Z'
+        status:
+          type: string
+          example: ok
+        window_seconds:
+          type: integer
+          format: int64
+          example: 3600
+        approval_tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityApprovalTicketCount'
+        approval_pending_ages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityApprovalPendingAge'
+        batch_approval_tickets:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityBatchApprovalTicketCount'
+        batch_approval_pending_ages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityBatchApprovalPendingAge'
+        batch_approval_failed_children:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityBatchApprovalFailedChildCount'
+        approval_audit_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityAuditActionCount'
+        approval_failure_audit_actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminObservabilityAuditActionCount'
+    AdminObservabilityApprovalTicketCount:
+      type: object
+      required: [status, operation_type, count]
+      properties:
+        status:
+          type: string
+          example: PENDING
+        operation_type:
+          type: string
+          example: CREATE
+        count:
+          type: number
+          format: double
+          example: 4
+    AdminObservabilityApprovalPendingAge:
+      type: object
+      required: [operation_type, age_seconds]
+      properties:
+        operation_type:
+          type: string
+          example: CREATE
+        age_seconds:
+          type: number
+          format: double
+          example: 7200
+    AdminObservabilityBatchApprovalTicketCount:
+      type: object
+      required: [status, batch_type, count]
+      properties:
+        status:
+          type: string
+          example: PENDING_APPROVAL
+        batch_type:
+          type: string
+          example: CREATE
+        count:
+          type: number
+          format: double
+          example: 2
+    AdminObservabilityBatchApprovalPendingAge:
+      type: object
+      required: [batch_type, age_seconds]
+      properties:
+        batch_type:
+          type: string
+          example: CREATE
+        age_seconds:
+          type: number
+          format: double
+          example: 3600
+    AdminObservabilityBatchApprovalFailedChildCount:
+      type: object
+      required: [batch_type, count]
+      properties:
+        batch_type:
+          type: string
+          example: POWER
+        count:
+          type: number
+          format: double
+          example: 1
+    AdminObservabilityAuditActionCount:
+      type: object
+      required: [action, count]
+      properties:
+        action:
+          type: string
+          example: approval.validation_failed
+        count:
+          type: number
+          format: double
+          example: 3
     NamespaceRegistry:
       description: OpenAPI schema for Namespace Registry.
       type: object

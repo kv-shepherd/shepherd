@@ -25,6 +25,12 @@ expected_alerts=(
   ShepherdRiverQueueStatsScrapeFailed
   ShepherdRiverQueueBacklogAgeHigh
   ShepherdRiverJobsDiscarded
+  ShepherdBusinessMetricsScrapeFailed
+  ShepherdApprovalPendingTooLong
+  ShepherdApprovalFailuresPresent
+  ShepherdBatchApprovalPendingTooLong
+  ShepherdBatchApprovalFailuresPresent
+  ShepherdApprovalFailureAuditActionsRecent
 )
 
 allowed_metrics=(
@@ -32,10 +38,16 @@ allowed_metrics=(
   shepherd:http_request_duration_seconds:p95_5m
   shepherd:openapi_validation_failures:rate5m
   shepherd:river_recent_discarded_jobs:sum
+  shepherd:business_approval_failed:sum
+  shepherd:business_batch_approval_failed:sum
+  shepherd:business_approval_failure_audit_actions:sum
   shepherd_postgres_table_stats_scrape_success
   shepherd_river_dead_tuple_ratio
   shepherd_river_queue_stats_scrape_success
   shepherd_river_oldest_ready_job_age_seconds
+  shepherd_business_metrics_scrape_success
+  shepherd_business_approval_pending_oldest_age_seconds
+  shepherd_business_batch_approval_pending_oldest_age_seconds
 )
 
 required_metrics=(
@@ -43,10 +55,16 @@ required_metrics=(
   shepherd:http_request_duration_seconds:p95_5m
   shepherd:openapi_validation_failures:rate5m
   shepherd:river_recent_discarded_jobs:sum
+  shepherd:business_approval_failed:sum
+  shepherd:business_batch_approval_failed:sum
+  shepherd:business_approval_failure_audit_actions:sum
   shepherd_postgres_table_stats_scrape_success
   shepherd_river_dead_tuple_ratio
   shepherd_river_queue_stats_scrape_success
   shepherd_river_oldest_ready_job_age_seconds
+  shepherd_business_metrics_scrape_success
+  shepherd_business_approval_pending_oldest_age_seconds
+  shepherd_business_batch_approval_pending_oldest_age_seconds
 )
 
 extract_alert_block() {

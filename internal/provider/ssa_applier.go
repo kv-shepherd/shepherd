@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"go.opentelemetry.io/otel/attribute"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -100,14 +101,26 @@ func (a *KubevirtSSAApplier) applyYAML(
 	yamlData []byte,
 	dryRun bool,
 ) (*unstructured.Unstructured, error) {
+	ctx, span := startKubeClientSpan(
+		ctx,
+		"apply",
+		gvr.Resource,
+		namespace,
+		attribute.Bool("k8s.dry_run", dryRun),
+		attribute.String("k8s.group", gvr.Group),
+		attribute.String("k8s.version", gvr.Version),
+	)
 	obj, jsonData, err := a.decodeAndMarshal(yamlData)
 	if err != nil {
+		endTraceSpan(span, err)
 		return nil, err
 	}
 
 	name := obj.GetName()
 	if name == "" {
-		return nil, fmt.Errorf("resource name is required in yaml")
+		err := fmt.Errorf("resource name is required in yaml")
+		endTraceSpan(span, err)
+		return nil, err
 	}
 
 	namespaceableResource := a.dynamicClient.Resource(gvr)
@@ -134,8 +147,11 @@ func (a *KubevirtSSAApplier) applyYAML(
 		result, patchErr = namespaceableResource.Patch(ctx, name, types.ApplyPatchType, jsonData, patchOpts)
 	}
 	if patchErr != nil {
-		return nil, fmt.Errorf("ssa apply %s %s: %w", gvr.Resource, scopeLabel, patchErr)
+		err := fmt.Errorf("ssa apply %s %s: %w", gvr.Resource, scopeLabel, patchErr)
+		endTraceSpan(span, err)
+		return nil, err
 	}
+	endTraceSpan(span, nil)
 	return result, nil
 }
 

@@ -1,6 +1,6 @@
 module kv-shepherd.io/shepherd
 
-go 1.25.10
+go 1.25.11
 
 require (
 	ariga.io/atlas v1.2.0

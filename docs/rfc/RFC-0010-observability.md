@@ -1,6 +1,6 @@
 # RFC-0010: Observability Stack
 
-> **Status**: Accepted for minimal metrics baseline; advanced scope deferred
+> **Status**: Accepted for built-in metrics/tracing baseline; advanced scope deferred
 > **Priority**: P2  
 > **Trigger**: Metrics and tracing required for production monitoring
 
@@ -14,12 +14,14 @@ validation failures, PostgreSQL table health, and River queue health.
 ADR-0055 accepts starter Prometheus recording rules, alerts, rule tests,
 runbook-link checks, and a Grafana overview dashboard for those metrics.
 ADR-0056 accepts optional Compose and Prometheus Operator packaging for the
-baseline monitoring assets. ADR-0057 accepts default-off OpenTelemetry HTTP
-ingress tracing, W3C propagation, and bounded HTTP/River worker correlation
-logs.
+baseline monitoring assets. ADR-0057 accepts OpenTelemetry HTTP ingress tracing,
+W3C propagation, and bounded HTTP/River worker correlation logs. The current
+built-in monitoring path also includes approval/audit business metrics for
+approval backlog, approval failures, batch approval state, recent approval
+failure audit actions, and Tempo-backed tracing through OpenTelemetry Collector.
 Production deployments may still require:
-- Deep distributed tracing beyond HTTP ingress
-- Custom business metrics
+- Centralized log storage and log-based monitoring
+- Broader VM, provider, notification, and business SLO metrics
 - Advanced alert routing and dashboard contracts
 
 ---
@@ -54,15 +56,10 @@ var (
 ### OpenTelemetry Tracing
 
 ```go
-// Span propagation across services
+// Span propagation across business, DB, River, and KubeVirt/provider boundaries
 func (s *VMService) CreateVM(ctx context.Context, ...) error {
-    ctx, span := tracer.Start(ctx, "VMService.CreateVM")
+    ctx, span := tracer.Start(ctx, "business.vm.request_create")
     defer span.End()
-    
-    span.SetAttributes(
-        attribute.String("vm.name", name),
-        attribute.String("cluster", clusterName),
-    )
     // ...
 }
 ```
@@ -79,10 +76,13 @@ Starter Prometheus rules and Grafana assets are accepted by
 [ADR-0055](../adr/ADR-0055-prometheus-rules-and-grafana-dashboard-baseline.md).
 Optional monitoring deployment packaging is accepted by
 [ADR-0056](../adr/ADR-0056-observability-deployment-packaging-baseline.md).
-Default-off HTTP ingress tracing and bounded correlation logs are accepted by
+HTTP ingress tracing and bounded correlation logs are accepted by
 [ADR-0057](../adr/ADR-0057-opentelemetry-and-correlation-logging-baseline.md).
-Deep OpenTelemetry instrumentation, service/provider log correlation beyond
-the River lifecycle boundary, custom VM/business metrics, advanced alert
+OpenTelemetry Collector + Tempo trace storage/query, business spans, pgx DB
+spans, River worker spans, and KubeVirt/provider spans are implemented in the
+built-in Compose monitoring path. Service/provider log correlation beyond the
+River lifecycle boundary, centralized log storage, generic log-derived metrics
+and alerts, broader VM/provider/notification business SLOs, advanced alert
 routing, and advanced dashboard contracts remain deferred until their contracts
 are accepted.
 

@@ -124,7 +124,7 @@
 > **Purpose**: Ensure generated Go types use `omitzero` tag to eliminate pointer hell.    
 > **Status**: ADR-0028 **Accepted** ✅. See [ADR-0028](../../adr/ADR-0028-oapi-codegen-optional-field-strategy.md).
 
-- [x] `go.mod` requires Go 1.25+ (enables `omitzero` support) — *Go 1.25.10*
+- [x] `go.mod` requires Go 1.25+ (enables `omitzero` support) — *Go 1.25.11*
 - [x] `api/oapi-codegen.yaml` contains:
   - [x] `output-options.prefer-skip-optional-pointer-with-omitzero: true`
 - [x] **Generated types verification** (CI enforcement via `check_openapi_critical_contract.go`):

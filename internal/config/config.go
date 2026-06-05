@@ -170,11 +170,18 @@ type ObservabilityConfig struct {
 	DatabaseMetricsTimeout time.Duration `mapstructure:"database_metrics_timeout"`
 	RiverMetricsEnabled    bool          `mapstructure:"river_metrics_enabled"`
 	RiverMetricsTimeout    time.Duration `mapstructure:"river_metrics_timeout"`
+	BusinessMetricsEnabled bool          `mapstructure:"business_metrics_enabled"`
+	BusinessMetricsTimeout time.Duration `mapstructure:"business_metrics_timeout"`
 	TracingEnabled         bool          `mapstructure:"tracing_enabled"`
 	TracingServiceName     string        `mapstructure:"tracing_service_name"`
 	TracingExporter        string        `mapstructure:"tracing_exporter"`
 	TracingSampleRatio     float64       `mapstructure:"tracing_sample_ratio"`
 	TracingShutdownTimeout time.Duration `mapstructure:"tracing_shutdown_timeout"`
+	TraceQueryEnabled      bool          `mapstructure:"trace_query_enabled"`
+	TraceQueryURL          string        `mapstructure:"trace_query_url"`
+	TraceQueryTimeout      time.Duration `mapstructure:"trace_query_timeout"`
+	TraceQueryLimit        int           `mapstructure:"trace_query_limit"`
+	TraceQueryLookback     time.Duration `mapstructure:"trace_query_lookback"`
 }
 
 const (
@@ -183,10 +190,16 @@ const (
 	defaultMetricsPath                  = "/metrics"
 	defaultDatabaseMetricsTimeout       = 2 * time.Second
 	defaultRiverMetricsTimeout          = 2 * time.Second
+	defaultBusinessMetricsTimeout       = 2 * time.Second
 	defaultTracingServiceName           = "shepherd"
 	defaultTracingExporter              = "otlp_http"
 	defaultTracingSampleRatio           = 0.10
 	defaultTracingShutdownTimeout       = 5 * time.Second
+	defaultTraceQueryURL                = "http://tempo:3200"
+	defaultTraceQueryTimeout            = 3 * time.Second
+	defaultTraceQueryLimit              = 100
+	defaultTraceQueryLookback           = time.Hour
+	traceQueryLimitMax                  = 500
 )
 
 // Load reads configuration from file and environment variables.
@@ -337,6 +350,9 @@ func (c *Config) Validate() error {
 	if c.Observability.RiverMetricsTimeout < 0 {
 		return fmt.Errorf("observability.river_metrics_timeout must be >= 0")
 	}
+	if c.Observability.BusinessMetricsTimeout < 0 {
+		return fmt.Errorf("observability.business_metrics_timeout must be >= 0")
+	}
 	switch c.Observability.EffectiveTracingExporter() {
 	case "otlp_http", "stdout":
 	default:
@@ -350,6 +366,25 @@ func (c *Config) Validate() error {
 	}
 	if c.Observability.TracingShutdownTimeout < 0 {
 		return fmt.Errorf("observability.tracing_shutdown_timeout must be >= 0")
+	}
+	if c.Observability.TraceQueryTimeout < 0 {
+		return fmt.Errorf("observability.trace_query_timeout must be >= 0")
+	}
+	if c.Observability.TraceQueryLimit < 0 || c.Observability.TraceQueryLimit > traceQueryLimitMax {
+		return fmt.Errorf("observability.trace_query_limit must be between 0 and %d", traceQueryLimitMax)
+	}
+	if c.Observability.TraceQueryLookback < 0 {
+		return fmt.Errorf("observability.trace_query_lookback must be >= 0")
+	}
+	if c.Observability.TraceQueryEnabled {
+		traceQueryURL := c.Observability.EffectiveTraceQueryURL()
+		parsed, err := url.Parse(traceQueryURL)
+		if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+			return fmt.Errorf("observability.trace_query_url must be an absolute http(s) URL")
+		}
+		if parsed.Scheme != "http" && parsed.Scheme != "https" {
+			return fmt.Errorf("observability.trace_query_url must use http or https")
+		}
 	}
 	return nil
 }
@@ -466,11 +501,18 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("observability.database_metrics_timeout", defaultDatabaseMetricsTimeout.String())
 	v.SetDefault("observability.river_metrics_enabled", true)
 	v.SetDefault("observability.river_metrics_timeout", defaultRiverMetricsTimeout.String())
+	v.SetDefault("observability.business_metrics_enabled", true)
+	v.SetDefault("observability.business_metrics_timeout", defaultBusinessMetricsTimeout.String())
 	v.SetDefault("observability.tracing_enabled", false)
 	v.SetDefault("observability.tracing_service_name", defaultTracingServiceName)
 	v.SetDefault("observability.tracing_exporter", defaultTracingExporter)
 	v.SetDefault("observability.tracing_sample_ratio", defaultTracingSampleRatio)
 	v.SetDefault("observability.tracing_shutdown_timeout", defaultTracingShutdownTimeout.String())
+	v.SetDefault("observability.trace_query_enabled", false)
+	v.SetDefault("observability.trace_query_url", "")
+	v.SetDefault("observability.trace_query_timeout", defaultTraceQueryTimeout.String())
+	v.SetDefault("observability.trace_query_limit", defaultTraceQueryLimit)
+	v.SetDefault("observability.trace_query_lookback", defaultTraceQueryLookback.String())
 }
 
 func bindEnvKeys(v *viper.Viper) {
@@ -534,11 +576,18 @@ func bindEnvKeys(v *viper.Viper) {
 		"observability.database_metrics_timeout",
 		"observability.river_metrics_enabled",
 		"observability.river_metrics_timeout",
+		"observability.business_metrics_enabled",
+		"observability.business_metrics_timeout",
 		"observability.tracing_enabled",
 		"observability.tracing_service_name",
 		"observability.tracing_exporter",
 		"observability.tracing_sample_ratio",
 		"observability.tracing_shutdown_timeout",
+		"observability.trace_query_enabled",
+		"observability.trace_query_url",
+		"observability.trace_query_timeout",
+		"observability.trace_query_limit",
+		"observability.trace_query_lookback",
 	} {
 		if err := v.BindEnv(key); err != nil {
 			panic(fmt.Sprintf("bind env for %s: %v", key, err))
@@ -631,6 +680,14 @@ func (c ObservabilityConfig) EffectiveRiverMetricsTimeout() time.Duration {
 	return c.RiverMetricsTimeout
 }
 
+// EffectiveBusinessMetricsTimeout returns the business metrics scrape timeout or the default.
+func (c ObservabilityConfig) EffectiveBusinessMetricsTimeout() time.Duration {
+	if c.BusinessMetricsTimeout <= 0 {
+		return defaultBusinessMetricsTimeout
+	}
+	return c.BusinessMetricsTimeout
+}
+
 // EffectiveTracingServiceName returns the configured OpenTelemetry service name or the default.
 func (c ObservabilityConfig) EffectiveTracingServiceName() string {
 	name := strings.TrimSpace(c.TracingServiceName)
@@ -660,4 +717,37 @@ func (c ObservabilityConfig) EffectiveTracingShutdownTimeout() time.Duration {
 		return defaultTracingShutdownTimeout
 	}
 	return c.TracingShutdownTimeout
+}
+
+// EffectiveTraceQueryURL returns the Tempo query URL or the bundled runtime default.
+func (c ObservabilityConfig) EffectiveTraceQueryURL() string {
+	raw := strings.TrimSpace(c.TraceQueryURL)
+	if raw == "" {
+		return defaultTraceQueryURL
+	}
+	return raw
+}
+
+// EffectiveTraceQueryTimeout returns the administrator trace query timeout.
+func (c ObservabilityConfig) EffectiveTraceQueryTimeout() time.Duration {
+	if c.TraceQueryTimeout <= 0 {
+		return defaultTraceQueryTimeout
+	}
+	return c.TraceQueryTimeout
+}
+
+// EffectiveTraceQueryLimit returns the administrator trace search limit.
+func (c ObservabilityConfig) EffectiveTraceQueryLimit() int {
+	if c.TraceQueryLimit <= 0 {
+		return defaultTraceQueryLimit
+	}
+	return c.TraceQueryLimit
+}
+
+// EffectiveTraceQueryLookback returns the default administrator trace lookback window.
+func (c ObservabilityConfig) EffectiveTraceQueryLookback() time.Duration {
+	if c.TraceQueryLookback <= 0 {
+		return defaultTraceQueryLookback
+	}
+	return c.TraceQueryLookback
 }

@@ -16,7 +16,8 @@ informed: []
 
 Public deployments need a repeatable way to run the accepted observability
 baseline in local Compose and Kubernetes monitoring environments. Packaging must
-stay optional and must not make Prometheus, Grafana, or Prometheus Operator a
+stay optional and must not make Prometheus, Tempo, OpenTelemetry Collector,
+Grafana, or Prometheus Operator a
 mandatory runtime dependency for the Shepherd API.
 
 ## Decision Drivers
@@ -42,8 +43,10 @@ packaging without forcing a single monitoring stack into all installations.
 
 ### Normative Decisions
 
-* Docker Compose monitoring is an optional overlay that adds Prometheus and
-  Grafana around the Shepherd API service.
+* Docker Compose monitoring is an optional overlay that adds Prometheus, Tempo,
+  and OpenTelemetry Collector around the Shepherd API service.
+* Grafana dashboard and datasource assets remain repository-owned import
+  examples, but Grafana is not part of the default Compose overlay.
 * Compose packaging uses explicit image references, explicit ports, explicit
   volumes, and documented environment variables.
 * Prometheus Operator packaging is optional and limited to a `ServiceMonitor`
@@ -59,8 +62,8 @@ packaging without forcing a single monitoring stack into all installations.
 
 ### Consequences
 
-* Compose users can exercise Prometheus and Grafana without hand wiring all
-  assets.
+* Compose users can exercise Prometheus metrics and Tempo tracing without hand
+  wiring all assets.
 * Kubernetes users with Prometheus Operator can reuse the same rules through
   native CRDs.
 * CI catches rule parity and packaging drift before merge.
@@ -73,8 +76,8 @@ This ADR is implemented when:
 
 * `deploy/prod/docker-compose.monitoring.yml` renders with the production
   Compose files.
-* Prometheus config, rules, Grafana provisioning, and Operator manifests are
-  present under `deploy/monitoring/`.
+* Prometheus config, rules, optional Grafana import assets, Tempo/Collector
+  config, and Operator manifests are present under `deploy/monitoring/`.
 * CI validates Compose assets, Prometheus config loading, Operator asset shape,
   and Operator rule parity.
 * `PROMTOOL_REQUIRED=1 make ci-governance` and `PROMTOOL_REQUIRED=1 make pr`

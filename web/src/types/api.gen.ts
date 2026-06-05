@@ -1853,6 +1853,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/observability/traces": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get administrator trace summary */
+        get: operations["getAdminTraceSummary"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/observability/audit-signals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get administrator audit business signals */
+        get: operations["getAdminAuditSignals"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -7810,6 +7844,184 @@ export interface components {
              *     }
              */
             pagination?: components["schemas"]["Pagination"];
+        };
+        /** @description Administrator-facing trace route and dependency summary. */
+        AdminObservabilityTraceSummary: {
+            /**
+             * Format: date-time
+             * @example 2026-06-04T08:00:00Z
+             */
+            generated_at: string;
+            /** @example tempo */
+            source: string;
+            /** @example ok */
+            status: string;
+            /**
+             * Format: int64
+             * @example 3600
+             */
+            window_seconds: number;
+            endpoints: components["schemas"]["AdminObservabilityTraceEndpoint"][];
+            slow_traces: components["schemas"]["AdminObservabilityTraceSample"][];
+            dependencies: components["schemas"]["AdminObservabilitySpanGroup"][];
+        };
+        /** @description Aggregated HTTP server span summary for one normalized route. */
+        AdminObservabilityTraceEndpoint: {
+            /** @example GET /api/v1/vms/:id */
+            route: string;
+            /** @example 120 */
+            request_count: number;
+            /** @example 2 */
+            error_count: number;
+            /**
+             * Format: double
+             * @example 0.0167
+             */
+            error_rate: number;
+            /**
+             * Format: double
+             * @example 184.22
+             */
+            p95_ms: number;
+            /**
+             * Format: double
+             * @example 62.41
+             */
+            avg_ms: number;
+            /**
+             * Format: double
+             * @example 620.4
+             */
+            max_ms: number;
+            /** @example 4f359ef09312e0a1082b9d7460239ac6 */
+            slowest_trace_id: string;
+        };
+        /** @description Slow or failed trace sample. */
+        AdminObservabilityTraceSample: {
+            /** @example 4f359ef09312e0a1082b9d7460239ac6 */
+            trace_id: string;
+            /** @example GET /api/v1/vms/:id */
+            root_name: string;
+            /** @example GET /api/v1/vms/:id */
+            route: string;
+            /**
+             * Format: double
+             * @example 620.4
+             */
+            duration_ms: number;
+            /** @example 500 */
+            status_code: number;
+            /** @example true */
+            error: boolean;
+            /**
+             * Format: date-time
+             * @example 2026-06-04T08:00:00Z
+             */
+            started_at: string;
+        };
+        /** @description Aggregated non-ingress span summary for DB, KubeVirt, provider, worker, or business operations. */
+        AdminObservabilitySpanGroup: {
+            /**
+             * @example kubevirt
+             * @enum {string}
+             */
+            category: "business" | "database" | "kubevirt" | "provider" | "worker" | "internal";
+            /** @example kubernetes.get.virtualmachines */
+            name: string;
+            /** @example 42 */
+            span_count: number;
+            /** @example 1 */
+            error_count: number;
+            /**
+             * Format: double
+             * @example 88.5
+             */
+            p95_ms: number;
+            /**
+             * Format: double
+             * @example 311.2
+             */
+            max_ms: number;
+        };
+        /** @description Administrator-facing audit and approval business signal summary. */
+        AdminObservabilityAuditSignalSummary: {
+            /**
+             * Format: date-time
+             * @example 2026-06-04T08:00:00Z
+             */
+            generated_at: string;
+            /** @example ok */
+            status: string;
+            /**
+             * Format: int64
+             * @example 3600
+             */
+            window_seconds: number;
+            approval_tickets: components["schemas"]["AdminObservabilityApprovalTicketCount"][];
+            approval_pending_ages: components["schemas"]["AdminObservabilityApprovalPendingAge"][];
+            batch_approval_tickets: components["schemas"]["AdminObservabilityBatchApprovalTicketCount"][];
+            batch_approval_pending_ages: components["schemas"]["AdminObservabilityBatchApprovalPendingAge"][];
+            batch_approval_failed_children: components["schemas"]["AdminObservabilityBatchApprovalFailedChildCount"][];
+            approval_audit_actions: components["schemas"]["AdminObservabilityAuditActionCount"][];
+            approval_failure_audit_actions: components["schemas"]["AdminObservabilityAuditActionCount"][];
+        };
+        AdminObservabilityApprovalTicketCount: {
+            /** @example PENDING */
+            status: string;
+            /** @example CREATE */
+            operation_type: string;
+            /**
+             * Format: double
+             * @example 4
+             */
+            count: number;
+        };
+        AdminObservabilityApprovalPendingAge: {
+            /** @example CREATE */
+            operation_type: string;
+            /**
+             * Format: double
+             * @example 7200
+             */
+            age_seconds: number;
+        };
+        AdminObservabilityBatchApprovalTicketCount: {
+            /** @example PENDING_APPROVAL */
+            status: string;
+            /** @example CREATE */
+            batch_type: string;
+            /**
+             * Format: double
+             * @example 2
+             */
+            count: number;
+        };
+        AdminObservabilityBatchApprovalPendingAge: {
+            /** @example CREATE */
+            batch_type: string;
+            /**
+             * Format: double
+             * @example 3600
+             */
+            age_seconds: number;
+        };
+        AdminObservabilityBatchApprovalFailedChildCount: {
+            /** @example POWER */
+            batch_type: string;
+            /**
+             * Format: double
+             * @example 1
+             */
+            count: number;
+        };
+        AdminObservabilityAuditActionCount: {
+            /** @example approval.validation_failed */
+            action: string;
+            /**
+             * Format: double
+             * @example 3
+             */
+            count: number;
         };
         /**
          * @description OpenAPI schema for Namespace Registry.
@@ -15105,6 +15317,84 @@ export interface operations {
             };
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+        };
+    };
+    getAdminTraceSummary: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Trace search window in minutes
+                 * @example 60
+                 */
+                lookback_minutes?: number;
+                /**
+                 * @description Maximum trace search results to inspect
+                 * @example 100
+                 */
+                limit?: number;
+                /**
+                 * @description Optional normalized HTTP route filter, for example GET /api/v1/vms/:id
+                 * @example GET /api/v1/vms/:id
+                 */
+                route?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Administrator trace summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminObservabilityTraceSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Trace query backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    getAdminAuditSignals: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Administrator audit business signal summary */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AdminObservabilityAuditSignalSummary"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            /** @description Audit signal backend unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
 }

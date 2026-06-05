@@ -2,7 +2,7 @@
 # Stage 1: Build
 # Pin the builder to the host platform so multi-arch builds cross-compile
 # instead of running the Go toolchain under QEMU emulation.
-ARG GO_BUILDER_IMAGE=golang:1.25.10-bookworm
+ARG GO_BUILDER_IMAGE=golang:1.25.11-bookworm
 ARG ATLAS_IMAGE=arigaio/atlas:1.2.0
 
 FROM --platform=$BUILDPLATFORM ${GO_BUILDER_IMAGE} AS builder

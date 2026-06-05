@@ -12,7 +12,7 @@ docs/
 ├── adr/                      # Architecture Decision Records
 │   ├── README.md             # ADR index with status table
 │   ├── GLOSSARY.md           # Technical terminology
-│   └── ADR-0001 ~ ADR-0053   # Individual ADRs (superseded ones remain here)
+│   └── ADR-0001 ~ ADR-0057   # Individual ADRs (superseded ones remain here)
 │
 ├── rfc/                      # Request for Comments (Future Features)
 │   ├── README.md             # RFC index with priorities
@@ -107,6 +107,12 @@ Start with the [Design](./design/README.md) directory:
 1. [design/README.md](./design/README.md) - Project overview
 2. [Phase 00](./design/phases/00-prerequisites.md) - Project setup
 3. [Examples](./design/examples/README.md) - Reference implementations
+
+### For Operators
+
+Start with the production and observability docs:
+1. [DEPLOYMENT.md](./DEPLOYMENT.md) - Helm and Docker Compose deployment paths
+2. [design/observability/README.md](./design/observability/README.md) - Metrics, traces, audit-derived business signals, and monitoring assets
 
 ### For Future Planning
 

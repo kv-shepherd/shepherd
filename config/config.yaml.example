@@ -80,8 +80,15 @@ observability:
   database_metrics_timeout: "2s"
   river_metrics_enabled: true
   river_metrics_timeout: "2s"
-  tracing_enabled: false
+  business_metrics_enabled: true
+  business_metrics_timeout: "2s"
+  tracing_enabled: true
   tracing_service_name: "shepherd"
   tracing_exporter: "otlp_http"
   tracing_sample_ratio: 0.10
   tracing_shutdown_timeout: "5s"
+  trace_query_enabled: true
+  trace_query_url: "http://tempo:3200"
+  trace_query_timeout: "3s"
+  trace_query_limit: 100
+  trace_query_lookback: "1h"

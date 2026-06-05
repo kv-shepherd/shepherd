@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
     isCodespacesDemoHost,
+    isHostedDemoHost,
     isLocalDemoHost,
     isLocalOrCodespacesDemoHost,
 } from './demoEnvironment';
@@ -17,6 +18,12 @@ describe('demoEnvironment', () => {
         expect(isCodespacesDemoHost('fuzzy-space-3000.app.github.dev')).toBe(true);
         expect(isCodespacesDemoHost('demo-8080.github.dev')).toBe(true);
         expect(isCodespacesDemoHost('localhost')).toBe(false);
+    });
+
+    it('detects the hosted public demo host', () => {
+        expect(isHostedDemoHost('demo.kv-shepherd.io')).toBe(true);
+        expect(isHostedDemoHost('api.kv-shepherd.io')).toBe(false);
+        expect(isHostedDemoHost('localhost')).toBe(false);
     });
 
     it('combines local and Codespaces detection', () => {
