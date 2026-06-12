@@ -486,6 +486,7 @@ start_host_frontend() {
             NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE="1" \
             NEXT_PUBLIC_DEV_SECURE_ORIGIN="${DEV_PUBLIC_BASE_URL}" \
             NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT="${DEV_INGRESS_PORT}" \
+            SHEPHERD_PUBLIC_BASE_URL="${DEV_PUBLIC_BASE_URL}" \
             INTERNAL_API_URL="http://localhost:8080" \
             NEXT_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR}" \
             NODE_OPTIONS="${node_options}" \
@@ -504,6 +505,9 @@ start_host_frontend() {
             cd "${ROOT_DIR}/web"
             NEXT_PUBLIC_API_URL="/api/v1" \
             NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE="1" \
+            NEXT_PUBLIC_DEV_SECURE_ORIGIN="${DEV_PUBLIC_BASE_URL}" \
+            NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT="${DEV_INGRESS_PORT}" \
+            SHEPHERD_PUBLIC_BASE_URL="${DEV_PUBLIC_BASE_URL}" \
             INTERNAL_API_URL="http://localhost:8080" \
             NEXT_DIST_DIR="${DEV_FRONTEND_PROD_DIST_DIR}" \
             NODE_OPTIONS="${node_options}" \
@@ -545,6 +549,7 @@ start_host_frontend() {
         NEXT_PUBLIC_DEV_BROWSER_LOG_BRIDGE="1" \
         NEXT_PUBLIC_DEV_SECURE_ORIGIN="${DEV_PUBLIC_BASE_URL}" \
         NEXT_PUBLIC_DEV_HTTP_INGRESS_PORT="${DEV_INGRESS_PORT}" \
+        SHEPHERD_PUBLIC_BASE_URL="${DEV_PUBLIC_BASE_URL}" \
         INTERNAL_API_URL="http://localhost:8080" \
         WATCHPACK_POLLING="$([[ "${watch_mode}" == "polling" ]] && echo true || echo false)" \
         CHOKIDAR_USEPOLLING="$([[ "${watch_mode}" == "polling" ]] && echo 1 || echo 0)" \

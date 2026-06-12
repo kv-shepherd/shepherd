@@ -189,6 +189,23 @@ describe("proxy", () => {
     expect(response.headers.get("location")).toBe("https://shepherd.example.com/login");
   });
 
+  it("uses the dev public origin for local reverse-proxy redirects", () => {
+    vi.stubEnv("NEXT_PUBLIC_DEV_SECURE_ORIGIN", "https://test-shepherd.example.com");
+    process.env.NEXT_PUBLIC_LOGIN_ENTRY_PATH = "/enterprise-login";
+
+    const response = proxy(
+      makeRequest("https://test-shepherd.example.com:3101/admin/approval-tasks", undefined, {
+        host: "test-shepherd.example.com:3101",
+        "x-forwarded-proto": "https",
+      }),
+    );
+
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://test-shepherd.example.com/enterprise-login",
+    );
+  });
+
   it("forwards only allow-listed request headers plus CSP nonce", () => {
     const forwarded = buildForwardedRequestHeaders(
       new Headers({
