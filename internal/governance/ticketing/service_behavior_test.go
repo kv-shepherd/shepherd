@@ -235,6 +235,53 @@ func ptrFloat64(v float64) *float64 {
 	return &v
 }
 
+func TestResolveCreateRequestTargets_HugepagesAlignsMemoryRequestToLimit(t *testing.T) {
+	t.Parallel()
+
+	resolved := resolveCreateRequestTargets(&vmCreatePayload{}, &ent.InstanceSize{
+		CPUCores:          4,
+		CPURequest:        2,
+		MemoryGi:          16,
+		MemoryRequestGi:   8,
+		DiskGB:            80,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	})
+
+	if resolved.MemoryRequestGi != 16 {
+		t.Fatalf("MemoryRequestGi = %v, want 16", resolved.MemoryRequestGi)
+	}
+	if !resolved.AdjustedMemoryGiReq {
+		t.Fatalf("AdjustedMemoryGiReq = false, want true: %+v", resolved)
+	}
+}
+
+func TestValidateCreateHugepagesApprovalOverride_RejectsExplicitMismatch(t *testing.T) {
+	t.Parallel()
+
+	err := validateCreateHugepagesApprovalOverride(&vmCreatePayload{}, &ent.InstanceSize{
+		CPUCores:          4,
+		MemoryGi:          16,
+		DiskGB:            80,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	}, ExecutionOptions{
+		EnableOverride:  true,
+		MemoryLimitGi:   16,
+		MemoryRequestGi: 8,
+	})
+	if err == nil {
+		t.Fatal("validateCreateHugepagesApprovalOverride() error = nil, want mismatch error")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("validateCreateHugepagesApprovalOverride() err = %v, want AppError", err)
+	}
+	if appErr.Code != "HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED" {
+		t.Fatalf("appErr.Code = %q, want HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED", appErr.Code)
+	}
+}
+
 func TestServiceApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 	t.Parallel()
 
@@ -341,7 +388,7 @@ func TestBuildModifyApprovalSpec_RequiresRequestReviewWhenLimitDropsBelowCurrent
 		CurrentMemoryRequestGi: 8,
 		TargetCPUCores:         ptrFloat64(4),
 		TargetMemoryGi:         ptrFloat64(4),
-	}, ExecutionOptions{})
+	}, ExecutionOptions{}, false)
 	if err == nil {
 		t.Fatal("buildModifyApprovalSpec() error = nil, want validation error")
 	}
@@ -371,7 +418,7 @@ func TestBuildModifyApprovalSpec_StoresApprovedRequestOverrides(t *testing.T) {
 		EnableOverride:  true,
 		CPURequest:      4,
 		MemoryRequestGi: 4,
-	})
+	}, false)
 	if err != nil {
 		t.Fatalf("buildModifyApprovalSpec() error = %v", err)
 	}
@@ -389,6 +436,66 @@ func TestBuildModifyApprovalSpec_StoresApprovedRequestOverrides(t *testing.T) {
 	}
 	if got, ok := modifiedSpec["memory_request_gi"].(float64); !ok || got != 4 {
 		t.Fatalf("modifiedSpec[memory_request_gi] = %v, want 4", modifiedSpec["memory_request_gi"])
+	}
+}
+
+func TestBuildModifyApprovalSpec_HugepagesAlignsMemoryRequestToLimit(t *testing.T) {
+	t.Parallel()
+
+	_, memoryRequest, modifiedSpec, err := buildModifyApprovalSpec(&domain.VMModifyPayload{
+		CurrentCPUCores:        4,
+		CurrentMemoryGi:        8,
+		CurrentCPURequest:      2,
+		CurrentMemoryRequestGi: 4,
+		TargetMemoryGi:         ptrFloat64(16),
+	}, ExecutionOptions{}, true)
+	if err != nil {
+		t.Fatalf("buildModifyApprovalSpec() error = %v", err)
+	}
+	if memoryRequest == nil || *memoryRequest != 16 {
+		t.Fatalf("memoryRequest = %v, want 16", memoryRequest)
+	}
+	if got, ok := modifiedSpec["memory_request_gi"].(float64); !ok || got != 16 {
+		t.Fatalf("modifiedSpec[memory_request_gi] = %v, want 16", modifiedSpec["memory_request_gi"])
+	}
+}
+
+func TestBuildModifyApprovalSpec_HugepagesRejectsExplicitMemoryRequestMismatch(t *testing.T) {
+	t.Parallel()
+
+	_, _, _, err := buildModifyApprovalSpec(&domain.VMModifyPayload{
+		CurrentCPUCores:        4,
+		CurrentMemoryGi:        8,
+		CurrentCPURequest:      2,
+		CurrentMemoryRequestGi: 8,
+		TargetMemoryGi:         ptrFloat64(16),
+	}, ExecutionOptions{
+		EnableOverride:  true,
+		MemoryRequestGi: 8,
+	}, true)
+	if err == nil {
+		t.Fatal("buildModifyApprovalSpec() error = nil, want hugepages alignment error")
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		t.Fatalf("buildModifyApprovalSpec() err = %v, want AppError", err)
+	}
+	if appErr.Code != "HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED" {
+		t.Fatalf("appErr.Code = %q, want HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED", appErr.Code)
+	}
+}
+
+func TestModifyPayloadUsesHugepages_UsesPayloadFallback(t *testing.T) {
+	t.Parallel()
+
+	got, err := (&Service{}).modifyPayloadUsesHugepages(context.Background(), &domain.VMModifyPayload{
+		HugepagesPageSize: "2Mi",
+	}, &domain.VM{})
+	if err != nil {
+		t.Fatalf("modifyPayloadUsesHugepages() error = %v", err)
+	}
+	if !got {
+		t.Fatal("modifyPayloadUsesHugepages() = false, want true")
 	}
 }
 
@@ -525,6 +632,96 @@ func TestServiceApproveModify_DryRunsExactMutationAndStoresApprovedSnapshot(t *t
 	}
 	if !bytes.Equal(restored.Payload, stub.lastMutation.Payload) {
 		t.Fatalf("stored mutation payload = %q, want %q", restored.Payload, stub.lastMutation.Payload)
+	}
+}
+
+func TestServiceApproveModify_HugepagesAlignsMemoryRequestInApprovedMutation(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_modify_hugepages_align")
+	ctx := context.Background()
+
+	eventID := "event-modify-hugepages-align"
+	ticketID := "ticket-modify-hugepages-align"
+	payload, err := domain.VMModifyPayload{
+		VMID:                   "vm-1",
+		VMName:                 "vm-1",
+		ClusterID:              "cluster-1",
+		Namespace:              "team-a",
+		Actor:                  "user-1",
+		CurrentCPUCores:        4,
+		CurrentMemoryGi:        8,
+		CurrentCPURequest:      2,
+		CurrentMemoryRequestGi: 4,
+		HugepagesPageSize:      "2Mi",
+		TargetMemoryGi:         ptrFloat64(16),
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal modify payload: %v", err)
+	}
+	if _, err = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMModifyRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payload).
+		SetCreatedBy("user-1").
+		Save(ctx); err != nil {
+		t.Fatalf("create domain event: %v", err)
+	}
+	if _, err = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeMODIFY).
+		Save(ctx); err != nil {
+		t.Fatalf("create ticket: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	stub := newMutationDryRunProviderStub(nil)
+	stub.Seed([]*domain.VM{{
+		ID:        "vm-1",
+		Name:      "vm-1",
+		Namespace: "team-a",
+		Cluster:   "cluster-1",
+		Status:    domain.VMStatusRunning,
+		Spec: domain.VMSpec{
+			CPU:                      4,
+			CPURequest:               2,
+			MemoryGi:                 8,
+			MemoryRequestGi:          4,
+			HugepagesPageSize:        "2Mi",
+			CurrentCPUSockets:        1,
+			CurrentCPUCoresPerSocket: 4,
+			CurrentCPUThreads:        1,
+		},
+	}})
+
+	gw := NewService(client, nil, writer)
+	gw.SetVMService(service.NewVMService(stub))
+
+	if approveErr := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{}); approveErr != nil {
+		t.Fatalf("Approve() error = %v", approveErr)
+	}
+	if !writer.modifyCalled {
+		t.Fatal("atomic modify writer was not called")
+	}
+	if got, ok := writer.modifiedSpec["memory_request_gi"].(float64); !ok || got != 16 {
+		t.Fatalf("writer.modifiedSpec[memory_request_gi] = %v, want 16", writer.modifiedSpec["memory_request_gi"])
+	}
+	if stub.lastMutation == nil {
+		t.Fatal("DryRunVMMutation mutation = nil, want exact mutation")
+	}
+	for _, want := range []string{
+		`"guest":"16Gi"`,
+		`"limits":{"memory":"16Gi"}`,
+		`"requests":{"memory":"16Gi"}`,
+	} {
+		if !strings.Contains(string(stub.lastMutation.Payload), want) {
+			t.Fatalf("DryRunVMMutation payload missing %s:\n%s", want, string(stub.lastMutation.Payload))
+		}
 	}
 }
 
@@ -2546,6 +2743,32 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		}
 		if spec.DiskGB != 200 {
 			t.Errorf("spec.DiskGB = %d, want 200 (override)", spec.DiskGB)
+		}
+	})
+
+	t.Run("hugepages_memory_limit_override_aligns_request", func(t *testing.T) {
+		t.Parallel()
+		hugepagesSize := &ent.InstanceSize{
+			ID:                "size-hugepages",
+			CPUCores:          2.0,
+			MemoryGi:          4.0,
+			MemoryRequestGi:   4.0,
+			DiskGB:            50,
+			RequiresHugepages: true,
+			HugepagesSize:     "2Mi",
+		}
+		spec, err := gw.buildDryRunSpec(payload, tmpl, hugepagesSize, ExecutionOptions{
+			EnableOverride: true,
+			MemoryLimitGi:  16.0,
+		})
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() hugepages override error = %v", err)
+		}
+		if spec.MemoryGi != 16.0 {
+			t.Errorf("spec.MemoryGi = %f, want 16.0", spec.MemoryGi)
+		}
+		if spec.MemoryRequestGi != 16.0 {
+			t.Errorf("spec.MemoryRequestGi = %f, want 16.0", spec.MemoryRequestGi)
 		}
 	})
 

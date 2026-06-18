@@ -70,6 +70,45 @@ func TestExtractRequiredCapabilities_FromSpecOverrides(t *testing.T) {
 	require.ElementsMatch(t, []string{"gpu", "sriov", "hugepages", "hugepages:1gi"}, caps)
 }
 
+func TestInstanceSizeUsesHugepages(t *testing.T) {
+	testCases := []struct {
+		name string
+		size *ent.InstanceSize
+		want bool
+	}{
+		{
+			name: "flag",
+			size: &ent.InstanceSize{RequiresHugepages: true},
+			want: true,
+		},
+		{
+			name: "page size",
+			size: &ent.InstanceSize{HugepagesSize: "2Mi"},
+			want: true,
+		},
+		{
+			name: "spec override",
+			size: &ent.InstanceSize{
+				SpecOverrides: map[string]interface{}{
+					"spec.template.spec.domain.memory.hugepages.pageSize": "1Gi",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "absent",
+			size: &ent.InstanceSize{},
+			want: false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, instanceSizeUsesHugepages(tc.size))
+		})
+	}
+}
+
 func TestMissingCapabilities(t *testing.T) {
 	clusterCaps := buildClusterCapabilitySet([]string{
 		"nvidia.com/GA102GL_A10",

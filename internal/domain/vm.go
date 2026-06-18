@@ -48,6 +48,8 @@ type VMSpec struct {
 	// MemoryRequestGi is the K8s memory request in Gi (overcommit: request ≤ limit/MemoryGi).
 	// Zero means "use MemoryGi" (no overcommit). Set via admin resource override (Stage 5.B).
 	MemoryRequestGi float64 `json:"memory_request_gi,omitempty"`
+	// HugepagesPageSize is set when the VM uses hugepages-backed memory.
+	HugepagesPageSize string `json:"hugepages_page_size,omitempty"`
 
 	// SpecOverrides carries advanced KubeVirt spec path/value overrides (ADR-0018 Hybrid Model).
 	// Merge order: Template.spec_overrides → InstanceSize.spec_overrides → approval modified_spec.

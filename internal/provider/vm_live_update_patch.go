@@ -8,11 +8,12 @@ import (
 	"kv-shepherd.io/shepherd/internal/domain"
 )
 
-// VMLiveUpdateTargets carries the requested online resource expansions.
+// VMLiveUpdateTargets carries requested VM resource changes.
 //
 // Scope:
-//   - CPU: integer total vCPU expansion only, mapped to KubeVirt socket hotplug
-//   - Memory: 0.5 Gi steps via memory.guest + requests/limits
+//   - CPU: integer total vCPU values; running VM plans stage topology changes
+//     for restart instead of applying socket hotplug.
+//   - Memory: 0.5 Gi steps via memory.guest + requests/limits.
 //   - Disk: integer Gi expansion of the root DataVolume request
 type VMLiveUpdateTargets struct {
 	CPUCores        *float64
@@ -31,8 +32,10 @@ type VMResourceUpdatePlan struct {
 // RenderVMResourceUpdatePatch renders a VM resource patch using the safest
 // supported path for the current VM state.
 //
-// Running VMs use the strict live-update path. Stopped VMs can accept broader
-// CPU/memory reconfiguration while disk remains expansion-only.
+// Running VMs use the strict live-update path for memory/disk changes. CPU
+// topology changes are staged through PlanVMResourceUpdatePatch when restart is
+// required. Stopped VMs can accept broader CPU/memory reconfiguration while disk
+// remains expansion-only.
 func RenderVMResourceUpdatePatch(namespace string, current *domain.VM, target VMLiveUpdateTargets) (*domain.VMMutation, error) {
 	if current == nil {
 		return nil, fmt.Errorf("render vm resource update patch: current vm is nil")
@@ -56,6 +59,18 @@ func PlanVMResourceUpdatePatch(namespace string, current *domain.VM, target VMLi
 			Mutation:        rendered,
 			RequiresRestart: false,
 			ApplyMode:       "offline",
+		}, nil
+	}
+
+	if target.CPUCores != nil {
+		rendered, err := renderVMOfflineResourcePatch(namespace, current, target)
+		if err != nil {
+			return nil, err
+		}
+		return &VMResourceUpdatePlan{
+			Mutation:        rendered,
+			RequiresRestart: true,
+			ApplyMode:       "restart_required",
 		}, nil
 	}
 
@@ -365,19 +380,11 @@ func resolveOfflineCPUAllocation(current *domain.VM, targetTotal float64) (socke
 	if currentThreads <= 0 {
 		currentThreads = 1
 	}
-	currentCoresPerSocket := current.Spec.CurrentCPUCoresPerSocket
-	if currentCoresPerSocket <= 0 {
-		currentCoresPerSocket = 1
-	}
 
-	switch {
-	case target%(currentCoresPerSocket*currentThreads) == 0:
-		return target / (currentCoresPerSocket * currentThreads), currentCoresPerSocket, currentThreads, target, nil
-	case target%currentThreads == 0:
+	if target%currentThreads == 0 {
 		return 1, target / currentThreads, currentThreads, target, nil
-	default:
-		return target, 1, 1, target, nil
 	}
+	return target, 1, 1, target, nil
 }
 
 func newMergePatchMutation(specPatch map[string]interface{}) (*domain.VMMutation, error) {

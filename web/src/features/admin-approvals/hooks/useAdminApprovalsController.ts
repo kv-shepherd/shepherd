@@ -788,17 +788,35 @@ export function useAdminApprovalsController({
       );
       const targetCPULimit = payloadNumber(payload?.target_cpu_cores);
       const targetMemoryLimitGi = payloadNumber(payload?.target_memory_gi);
+      const effectiveMemoryLimitGi =
+        targetMemoryLimitGi ?? payloadNumber(payload?.current_memory_gi);
+      const usesHugepages =
+        normalizeOptionalString(payload?.hugepages_page_size) !== "" ||
+        payload?.requires_hugepages === true;
       const requestReviewRequired =
         (typeof currentCPURequest === "number" &&
           typeof targetCPULimit === "number" &&
           currentCPURequest > targetCPULimit) ||
         (typeof currentMemoryRequestGi === "number" &&
           typeof targetMemoryLimitGi === "number" &&
-          currentMemoryRequestGi > targetMemoryLimitGi);
+          currentMemoryRequestGi > targetMemoryLimitGi) ||
+        usesHugepages;
       approveForm.setFieldsValue({
         enable_override: requestReviewRequired,
-        cpu_request: currentCPURequest,
-        memory_request_gi: currentMemoryRequestGi,
+        cpu_request:
+          typeof currentCPURequest === "number" &&
+          typeof targetCPULimit === "number" &&
+          currentCPURequest > targetCPULimit
+            ? targetCPULimit
+            : currentCPURequest,
+        memory_request_gi:
+          usesHugepages && typeof effectiveMemoryLimitGi === "number"
+            ? effectiveMemoryLimitGi
+            : typeof currentMemoryRequestGi === "number" &&
+                typeof targetMemoryLimitGi === "number" &&
+                currentMemoryRequestGi > targetMemoryLimitGi
+              ? targetMemoryLimitGi
+              : currentMemoryRequestGi,
       });
     }
   };

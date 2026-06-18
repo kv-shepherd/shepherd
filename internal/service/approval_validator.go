@@ -210,6 +210,9 @@ func (v *ApprovalValidator) ValidateApproval(
 				memoryRequestGi = input.Override.MemoryRequestGi
 			}
 		}
+		if instanceSizeUsesHugepages(size) && memoryGi > 0 {
+			memoryRequestGi = memoryGi
+		}
 		if err := ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi, effectiveDedicatedCPU); err != nil {
 			return err
 		}
@@ -478,6 +481,9 @@ func (v *ApprovalValidator) resolveValidationContext(
 			if input.Override.MemoryRequestGi > 0 {
 				resolved.memoryRequestGi = input.Override.MemoryRequestGi
 			}
+		}
+		if instanceSizeUsesHugepages(size) && resolved.memoryGi > 0 {
+			resolved.memoryRequestGi = resolved.memoryGi
 		}
 		if err := ValidateOvercommit(
 			resolved.cpuCores,
@@ -761,6 +767,17 @@ func ExtractRequiredCapabilities(size *ent.InstanceSize) []string {
 	}
 	sort.Strings(out)
 	return out
+}
+
+func instanceSizeUsesHugepages(size *ent.InstanceSize) bool {
+	if size == nil {
+		return false
+	}
+	hugepagesSize := normalizeHugepagesSize(size.HugepagesSize)
+	if hugepagesSize == "" {
+		hugepagesSize = normalizeHugepagesSize(extractHugepagesSize(size.SpecOverrides))
+	}
+	return size.RequiresHugepages || hugepagesSize != ""
 }
 
 // MissingCapabilities returns capabilities required by InstanceSize but unavailable on cluster.

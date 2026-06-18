@@ -689,6 +689,31 @@ describe("AdminApprovalsContent", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("warns before approving production modify requests with overcommit", () => {
+    controllerState.overrides = {
+      approveModal: {
+        id: "ticket-modify-prod",
+        event_id: "event-modify-prod",
+        status: "PENDING",
+        operation_type: "MODIFY",
+        requester: "alice",
+        ticket_payload: {
+          current_cpu_request: 2,
+          current_memory_request_gi: 4,
+          target_cpu_cores: 4,
+          target_memory_gi: 8,
+          cluster_environment: "prod",
+        },
+      },
+    };
+
+    render(<AdminApprovalsContent />);
+
+    expect(
+      screen.getByText("Production request review recommended"),
+    ).toBeInTheDocument();
+  });
+
   it("shows cluster compatibility query errors instead of silently rendering an empty list", () => {
     controllerState.overrides = {
       clusterQueryError: {
