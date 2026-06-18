@@ -54,6 +54,16 @@ function parseBooleanEnv(value: string | undefined): boolean | undefined {
   }
 }
 
+function resolveRawPublicBaseURL(): string {
+  return (
+    process.env.SHEPHERD_PUBLIC_BASE_URL ||
+    process.env.SERVER_PUBLIC_BASE_URL ||
+    process.env.DEV_PUBLIC_BASE_URL ||
+    process.env.NEXT_PUBLIC_DEV_SECURE_ORIGIN ||
+    ""
+  ).trim();
+}
+
 export function shouldSendHTTPSOnlyHeaders(): boolean {
   const isProduction = process.env.NODE_ENV === "production";
   if (!isProduction) {
@@ -65,11 +75,7 @@ export function shouldSendHTTPSOnlyHeaders(): boolean {
     return explicit;
   }
 
-  const rawPublicBaseURL = (
-    process.env.SHEPHERD_PUBLIC_BASE_URL ||
-    process.env.SERVER_PUBLIC_BASE_URL ||
-    ""
-  ).trim();
+  const rawPublicBaseURL = resolveRawPublicBaseURL();
   if (!rawPublicBaseURL) {
     return true;
   }
@@ -82,11 +88,7 @@ export function shouldSendHTTPSOnlyHeaders(): boolean {
 }
 
 function resolveConfiguredPublicURL(protocol?: "http" | "https"): URL | undefined {
-  const rawPublicBaseURL = (
-    process.env.SHEPHERD_PUBLIC_BASE_URL ||
-    process.env.SERVER_PUBLIC_BASE_URL ||
-    ""
-  ).trim();
+  const rawPublicBaseURL = resolveRawPublicBaseURL();
   if (!rawPublicBaseURL) {
     return undefined;
   }
