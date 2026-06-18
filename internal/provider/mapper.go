@@ -298,6 +298,9 @@ func mapVMSpec(vm *kubevirtv1.VirtualMachine) domain.VMSpec {
 	} else if limit, ok := domainRes.Limits[corev1.ResourceMemory]; ok {
 		spec.MemoryGi = float64(limit.Value()) / (1024 * 1024 * 1024)
 	}
+	if domainSpec.Memory != nil && domainSpec.Memory.Hugepages != nil {
+		spec.HugepagesPageSize = strings.TrimSpace(domainSpec.Memory.Hugepages.PageSize)
+	}
 
 	mapVMLiveDiskSpec(vm, &spec)
 

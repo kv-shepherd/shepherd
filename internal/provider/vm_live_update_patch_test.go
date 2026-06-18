@@ -181,3 +181,47 @@ func TestPlanVMResourceUpdatePatch_RunningShrinkFallsBackToRestartRequired(t *te
 		t.Fatalf("plan.Mutation.Payload unexpectedly includes requests block:\n%s", string(plan.Mutation.Payload))
 	}
 }
+
+func TestPlanVMResourceUpdatePatch_RunningCPUResizePatchesCoresAfterRestart(t *testing.T) {
+	t.Parallel()
+
+	targetCPU := 8.0
+
+	plan, err := PlanVMResourceUpdatePatch("prod-ns", &domain.VM{
+		Name:      "vm-a",
+		Namespace: "prod-ns",
+		Status:    domain.VMStatusRunning,
+		Spec: domain.VMSpec{
+			CPU:                      4,
+			MemoryGi:                 8,
+			CurrentCPUSockets:        1,
+			CurrentCPUCoresPerSocket: 4,
+			CurrentCPUThreads:        1,
+		},
+	}, VMLiveUpdateTargets{
+		CPUCores: &targetCPU,
+	})
+	if err != nil {
+		t.Fatalf("PlanVMResourceUpdatePatch returned error: %v", err)
+	}
+	if !plan.RequiresRestart {
+		t.Fatal("plan.RequiresRestart = false, want true")
+	}
+	if plan.ApplyMode != "restart_required" {
+		t.Fatalf("plan.ApplyMode = %q, want restart_required", plan.ApplyMode)
+	}
+	patchPayload := string(plan.Mutation.Payload)
+	for _, want := range []string{
+		"\"sockets\":1",
+		"\"cores\":8",
+		"\"threads\":1",
+		"\"cpu\":\"8\"",
+	} {
+		if !strings.Contains(patchPayload, want) {
+			t.Fatalf("plan.Mutation.Payload missing %q:\n%s", want, patchPayload)
+		}
+	}
+	if strings.Contains(patchPayload, "\"sockets\":2") {
+		t.Fatalf("plan.Mutation.Payload used socket hotplug topology unexpectedly:\n%s", patchPayload)
+	}
+}

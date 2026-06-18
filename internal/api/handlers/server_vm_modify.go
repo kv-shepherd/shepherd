@@ -337,6 +337,7 @@ func (s *Server) buildVMModifyPayload(
 		CurrentDiskGB:          liveVM.Spec.DiskGB,
 		CurrentCPURequest:      liveVM.Spec.CPURequest,
 		CurrentMemoryRequestGi: liveVM.Spec.MemoryRequestGi,
+		HugepagesPageSize:      liveVM.Spec.HugepagesPageSize,
 		TargetCPUCores:         targetCPU,
 		TargetMemoryGi:         targetMemory,
 		TargetDiskGB:           targetDisk,

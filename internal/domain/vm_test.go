@@ -29,6 +29,25 @@ func TestVMSpecJSON_ExposeRootVolumeDVFields(t *testing.T) {
 	}
 }
 
+func TestVMSpecJSON_ExposesHugepagesPageSize(t *testing.T) {
+	t.Parallel()
+
+	raw, err := json.Marshal(VMSpec{
+		Name:              "vm-hugepages",
+		CPU:               4,
+		MemoryGi:          8,
+		HugepagesPageSize: "2Mi",
+	})
+	if err != nil {
+		t.Fatalf("Marshal(VMSpec) error = %v", err)
+	}
+
+	body := string(raw)
+	if !strings.Contains(body, `"hugepages_page_size":"2Mi"`) {
+		t.Fatalf("Marshal(VMSpec) = %s, want hugepages_page_size", body)
+	}
+}
+
 func TestVMSpecJSON_HidesLiveUpdateInternalFields(t *testing.T) {
 	t.Parallel()
 
@@ -69,17 +88,18 @@ func TestVMModifyPayloadJSON_PreservesTargetResources(t *testing.T) {
 	targetDisk := 40
 
 	raw, err := json.Marshal(VMModifyPayload{
-		VMID:            "vm-1",
-		VMName:          "vm-one",
-		ClusterID:       "cluster-a",
-		Namespace:       "prod-ns",
-		Actor:           "owner-1",
-		CurrentCPUCores: 2,
-		CurrentMemoryGi: 4,
-		CurrentDiskGB:   20,
-		TargetCPUCores:  &targetCPU,
-		TargetMemoryGi:  &targetMemory,
-		TargetDiskGB:    &targetDisk,
+		VMID:              "vm-1",
+		VMName:            "vm-one",
+		ClusterID:         "cluster-a",
+		Namespace:         "prod-ns",
+		Actor:             "owner-1",
+		CurrentCPUCores:   2,
+		CurrentMemoryGi:   4,
+		CurrentDiskGB:     20,
+		HugepagesPageSize: "2Mi",
+		TargetCPUCores:    &targetCPU,
+		TargetMemoryGi:    &targetMemory,
+		TargetDiskGB:      &targetDisk,
 	})
 	if err != nil {
 		t.Fatalf("Marshal(VMModifyPayload) error = %v", err)
@@ -90,6 +110,7 @@ func TestVMModifyPayloadJSON_PreservesTargetResources(t *testing.T) {
 		`"target_cpu_cores":4`,
 		`"target_memory_gi":8`,
 		`"target_disk_gb":40`,
+		`"hugepages_page_size":"2Mi"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("Marshal(VMModifyPayload) = %s, want %s", body, want)

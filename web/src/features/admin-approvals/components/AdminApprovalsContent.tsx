@@ -646,6 +646,19 @@ export function AdminApprovalsContent() {
   const modifyTargetMemoryLimitGi =
     approvals.approveModal?.summary?.target_memory_gi ??
     payloadNumber(approveModalPayload?.target_memory_gi);
+  const modifyHugepagesPageSize =
+    typeof approveModalPayload?.hugepages_page_size === "string"
+      ? approveModalPayload.hugepages_page_size.trim()
+      : "";
+  const modifyUsesHugepages =
+    modifyHugepagesPageSize !== "" ||
+    payloadBool(approveModalPayload?.requires_hugepages) === true;
+  const modifyClusterEnvironment =
+    typeof approvals.approveModal?.summary?.cluster_environment === "string"
+      ? approvals.approveModal.summary.cluster_environment
+      : typeof approveModalPayload?.cluster_environment === "string"
+        ? approveModalPayload.cluster_environment
+        : "";
   const modifyCPURequestNeedsReview =
     typeof modifyCurrentCPURequest === "number" &&
     typeof modifyTargetCPULimit === "number" &&
@@ -654,6 +667,15 @@ export function AdminApprovalsContent() {
     typeof modifyCurrentMemoryRequestGi === "number" &&
     typeof modifyTargetMemoryLimitGi === "number" &&
     modifyCurrentMemoryRequestGi > modifyTargetMemoryLimitGi;
+  const modifyProductionRequestWarning =
+    !modifyUsesHugepages &&
+    modifyClusterEnvironment.trim().toLowerCase() === "prod" &&
+    ((typeof modifyCurrentCPURequest === "number" &&
+      typeof modifyTargetCPULimit === "number" &&
+      modifyCurrentCPURequest !== modifyTargetCPULimit) ||
+      (typeof modifyCurrentMemoryRequestGi === "number" &&
+        typeof modifyTargetMemoryLimitGi === "number" &&
+        modifyCurrentMemoryRequestGi !== modifyTargetMemoryLimitGi));
 
   // Removed legacy columns definition to use custom List rendering
 
@@ -1592,7 +1614,8 @@ export function AdminApprovalsContent() {
                 <Alert
                   type={
                     modifyCPURequestNeedsReview ||
-                    modifyMemoryRequestNeedsReview
+                    modifyMemoryRequestNeedsReview ||
+                    modifyUsesHugepages
                       ? "warning"
                       : "info"
                   }
@@ -1616,6 +1639,21 @@ export function AdminApprovalsContent() {
                     },
                   )}
                 />
+                {modifyProductionRequestWarning && (
+                  <Alert
+                    type="warning"
+                    showIcon
+                    style={{ marginBottom: 16 }}
+                    message={t(
+                      "approve_modal.modify_prod_request_warning_title",
+                      "Production request review recommended",
+                    )}
+                    description={t(
+                      "approve_modal.modify_prod_request_warning_description",
+                      "This production VM can run with request values below limits, but keeping requests aligned with approved limits is recommended unless overcommit is intentional.",
+                    )}
+                  />
+                )}
                 <Form.Item
                   name="enable_override"
                   valuePropName="checked"

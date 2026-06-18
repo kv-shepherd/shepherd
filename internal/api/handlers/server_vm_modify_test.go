@@ -129,6 +129,46 @@ func TestCreateVMModifyRequest_CreatesPendingModifyTicket(t *testing.T) {
 	}
 }
 
+func TestCreateVMModifyRequest_PreservesHugepagesContext(t *testing.T) {
+	t.Parallel()
+
+	srv, client, vmID := newVMModifyTestServerWithSpec(t, entvm.StatusRUNNING, domain.VMStatusRunning, func(spec *domain.VMSpec) {
+		spec.HugepagesPageSize = "2Mi"
+	})
+
+	body := mustJSON(t, generated.VMModifyRequest{
+		Reason:         "scale hugepages memory",
+		TargetMemoryGi: 8,
+	})
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/"+vmID+"/modify-request", body, "owner-1", []string{"vm:operate", "platform:admin"})
+	srv.CreateVMModifyRequest(c, vmID)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var resp generated.TicketResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	ticket, err := client.Ticket.Get(t.Context(), resp.TicketId)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	event, err := client.DomainEvent.Get(t.Context(), ticket.EventID)
+	if err != nil {
+		t.Fatalf("query domain event: %v", err)
+	}
+
+	var payload domain.VMModifyPayload
+	if err := json.Unmarshal(event.Payload, &payload); err != nil {
+		t.Fatalf("decode event payload: %v", err)
+	}
+	if payload.HugepagesPageSize != "2Mi" {
+		t.Fatalf("payload.HugepagesPageSize = %q, want 2Mi", payload.HugepagesPageSize)
+	}
+}
+
 func TestCreateVMModifyRequest_AllowsRunningShrinkAndMarksRestartRequired(t *testing.T) {
 	t.Parallel()
 
@@ -206,6 +246,15 @@ func newVMModifyTestServer(t *testing.T) (*Server, *ent.Client, string) {
 }
 
 func newVMModifyTestServerWithStatus(t *testing.T, dbStatus entvm.Status, liveStatus domain.VMStatus) (*Server, *ent.Client, string) {
+	return newVMModifyTestServerWithSpec(t, dbStatus, liveStatus, nil)
+}
+
+func newVMModifyTestServerWithSpec(
+	t *testing.T,
+	dbStatus entvm.Status,
+	liveStatus domain.VMStatus,
+	mutateSpec func(*domain.VMSpec),
+) (*Server, *ent.Client, string) {
 	t.Helper()
 
 	client := testutil.OpenEntPostgres(t, "server_vm_modify")
@@ -245,23 +294,28 @@ func newVMModifyTestServerWithStatus(t *testing.T, dbStatus entvm.Status, liveSt
 		t.Fatalf("create vm: %v", err)
 	}
 
+	liveSpec := domain.VMSpec{
+		CPU:                      2,
+		MemoryGi:                 4,
+		DiskGB:                   20,
+		RootDataVolumeName:       "rootdisk",
+		DiskHotplugSupported:     true,
+		CurrentCPUSockets:        1,
+		CurrentCPUCoresPerSocket: 2,
+		CurrentCPUThreads:        1,
+	}
+	if mutateSpec != nil {
+		mutateSpec(&liveSpec)
+	}
+
 	mock := provider.NewMockProvider()
 	mock.Seed([]*domain.VM{{
-		ID:        vmID,
-		Name:      vmName,
-		Namespace: "prod-ns",
-		Cluster:   clusterID,
-		Status:    liveStatus,
-		Spec: domain.VMSpec{
-			CPU:                      2,
-			MemoryGi:                 4,
-			DiskGB:                   20,
-			RootDataVolumeName:       "rootdisk",
-			DiskHotplugSupported:     true,
-			CurrentCPUSockets:        1,
-			CurrentCPUCoresPerSocket: 2,
-			CurrentCPUThreads:        1,
-		},
+		ID:              vmID,
+		Name:            vmName,
+		Namespace:       "prod-ns",
+		Cluster:         clusterID,
+		Status:          liveStatus,
+		Spec:            liveSpec,
 		ResourceVersion: "rv-modify-1",
 	}})
 

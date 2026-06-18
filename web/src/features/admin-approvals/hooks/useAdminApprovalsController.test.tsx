@@ -1468,8 +1468,33 @@ describe("useAdminApprovalsController", () => {
 
     expect(approveFormState.setFieldsValue).toHaveBeenCalledWith({
       enable_override: true,
-      cpu_request: 8,
-      memory_request_gi: 8,
+      cpu_request: 4,
+      memory_request_gi: 4,
+    });
+  });
+
+  it("prefills modify memory request to target limit when hugepages are enabled", () => {
+    const { result } = renderHook(() => useAdminApprovalsController({ t }));
+
+    act(() => {
+      result.current.openApproveModal({
+        id: "ticket-modify-hugepages",
+        operation_type: "MODIFY",
+        status: "PENDING",
+        requester: "alice",
+        ticket_payload: {
+          current_memory_gi: 8,
+          current_memory_request_gi: 4,
+          target_memory_gi: 16,
+          hugepages_page_size: "2Mi",
+        },
+      } as never);
+    });
+
+    expect(approveFormState.setFieldsValue).toHaveBeenCalledWith({
+      enable_override: true,
+      cpu_request: undefined,
+      memory_request_gi: 16,
     });
   });
 

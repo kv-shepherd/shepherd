@@ -223,6 +223,7 @@ type VMModifyPayload struct {
 	CurrentDiskGB          int     `json:"current_disk_gb,omitempty"`
 	CurrentCPURequest      float64 `json:"current_cpu_request,omitempty"`
 	CurrentMemoryRequestGi float64 `json:"current_memory_request_gi,omitempty"`
+	HugepagesPageSize      string  `json:"hugepages_page_size,omitempty"`
 
 	TargetCPUCores  *float64 `json:"target_cpu_cores,omitempty"`
 	TargetMemoryGi  *float64 `json:"target_memory_gi,omitempty"`

@@ -250,6 +250,9 @@ func (g *Service) approveCreateWithConfig(
 	if err != nil {
 		return fmt.Errorf("get instance size %s for ticket %s: %w", effectiveInstanceSizeID, ticketID, err)
 	}
+	if validationErr := validateCreateHugepagesApprovalOverride(payload, instanceSizeEntity, opts); validationErr != nil {
+		return validationErr
+	}
 
 	var placementEvaluation map[string]interface{}
 	if g.validator != nil {
@@ -769,10 +772,6 @@ func (g *Service) prepareModifyApproval(
 	if err := json.Unmarshal(event.Payload, &payload); err != nil {
 		return nil, fmt.Errorf("parse modify event payload: %w", err)
 	}
-	overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts)
-	if validationErr != nil {
-		return nil, validationErr
-	}
 
 	if g.vmService == nil {
 		return nil, apperrors.New(
@@ -791,6 +790,14 @@ func (g *Service) prepareModifyApproval(
 	}
 	if liveVM == nil {
 		return nil, fmt.Errorf("live vm is unavailable for modify approval %s", ticketID)
+	}
+	usesHugepages, err := g.modifyPayloadUsesHugepages(ctx, &payload, liveVM)
+	if err != nil {
+		return nil, err
+	}
+	overrideCPURequest, overrideMemoryRequest, modifySpec, validationErr := buildModifyApprovalSpec(&payload, opts, usesHugepages)
+	if validationErr != nil {
+		return nil, validationErr
 	}
 
 	plan, err := vmmutationplan.PlanVMResourceUpdatePatch(payload.Namespace, liveVM, vmmutationplan.VMLiveUpdateTargets{
@@ -849,6 +856,7 @@ func isNonConsumingApprovalError(err error) bool {
 func buildModifyApprovalSpec(
 	payload *domain.VMModifyPayload,
 	opts ExecutionOptions,
+	usesHugepages bool,
 ) (overrideCPURequest, overrideMemoryRequest *float64, modifiedSpec map[string]interface{}, err error) {
 	if payload == nil {
 		return nil, nil, nil, fmt.Errorf("modify payload is required")
@@ -878,6 +886,16 @@ func buildModifyApprovalSpec(
 			effectiveMemoryRequest = opts.MemoryRequestGi
 			overrideMemoryRequest = &effectiveMemoryRequest
 			modifiedSpec["memory_request_gi"] = opts.MemoryRequestGi
+		}
+	}
+	if usesHugepages {
+		if opts.EnableOverride && opts.MemoryRequestGi > 0 && !float64Equal(opts.MemoryRequestGi, targetMemoryLimitGi) {
+			return nil, nil, nil, hugepagesMemoryRequestAlignmentError(opts.MemoryRequestGi, targetMemoryLimitGi)
+		}
+		if targetMemoryLimitGi > 0 {
+			effectiveMemoryRequest = targetMemoryLimitGi
+			overrideMemoryRequest = &effectiveMemoryRequest
+			modifiedSpec["memory_request_gi"] = targetMemoryLimitGi
 		}
 	}
 
@@ -912,6 +930,74 @@ func buildModifyApprovalSpec(
 		return nil, nil, nil, nil
 	}
 	return overrideCPURequest, overrideMemoryRequest, modifiedSpec, nil
+}
+
+func (g *Service) modifyPayloadUsesHugepages(ctx context.Context, payload *domain.VMModifyPayload, liveVM *domain.VM) (bool, error) {
+	if liveVM != nil && strings.TrimSpace(liveVM.Spec.HugepagesPageSize) != "" {
+		return true, nil
+	}
+	if payload != nil && strings.TrimSpace(payload.HugepagesPageSize) != "" {
+		return true, nil
+	}
+	if payload == nil || strings.TrimSpace(payload.InstanceSizeID) == "" {
+		return false, nil
+	}
+	size, err := g.client.InstanceSize.Get(ctx, strings.TrimSpace(payload.InstanceSizeID))
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("get instance size %s for modify approval: %w", payload.InstanceSizeID, err)
+	}
+	return instanceSizeUsesHugepages(size), nil
+}
+
+func validateCreateHugepagesApprovalOverride(payload *vmCreatePayload, size *ent.InstanceSize, opts ExecutionOptions) error {
+	if !instanceSizeUsesHugepages(size) || !opts.EnableOverride || opts.MemoryRequestGi <= 0 {
+		return nil
+	}
+	resolved := resolveCreateRequestTargets(payload, size)
+	targetMemoryLimitGi := resolved.MemoryLimitGi
+	if opts.MemoryLimitGi > 0 {
+		targetMemoryLimitGi = opts.MemoryLimitGi
+	}
+	if targetMemoryLimitGi <= 0 || float64Equal(opts.MemoryRequestGi, targetMemoryLimitGi) {
+		return nil
+	}
+	return hugepagesMemoryRequestAlignmentError(opts.MemoryRequestGi, targetMemoryLimitGi)
+}
+
+func instanceSizeUsesHugepages(size *ent.InstanceSize) bool {
+	if size == nil {
+		return false
+	}
+	for _, capability := range service.ExtractRequiredCapabilities(size) {
+		if capability == "hugepages" || strings.HasPrefix(capability, "hugepages:") {
+			return true
+		}
+	}
+	return false
+}
+
+func hugepagesMemoryRequestAlignmentError(request, limit float64) error {
+	return apperrors.BadRequest(
+		"HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED",
+		"hugepages-backed memory requires memory request to equal memory limit",
+	).WithParams(map[string]interface{}{
+		"memory_request_gi": request,
+		"memory_limit_gi":   limit,
+	}).WithFieldErrors([]apperrors.FieldError{{
+		Field:   "memory_request_gi",
+		Code:    "HUGEPAGES_REQUIRES_LIMIT_ALIGNMENT",
+		Message: "hugepages-backed memory requires memory request to equal memory limit",
+	}})
+}
+
+func float64Equal(a, b float64) bool {
+	if a > b {
+		return a-b < 1e-9
+	}
+	return b-a < 1e-9
 }
 
 func withApprovedVMMutation(modifiedSpec map[string]interface{}, plan *vmmutationplan.VMResourceUpdatePlan) map[string]interface{} {
@@ -1790,6 +1876,9 @@ func (g *Service) buildDryRunSpec(
 	} else if opts.DiskGB > 0 {
 		spec.DiskGB = opts.DiskGB
 	}
+	if instanceSizeUsesHugepages(size) && spec.MemoryGi > 0 {
+		spec.MemoryRequestGi = spec.MemoryGi
+	}
 
 	return spec, nil
 }
@@ -1798,7 +1887,7 @@ func resolveCreateRequestTargets(
 	payload *vmCreatePayload,
 	size *ent.InstanceSize,
 ) service.ResolvedVMRequestTargets {
-	return service.ResolveVMRequestTargets(
+	resolved := service.ResolveVMRequestTargets(
 		size.CPUCores,
 		size.CPURequest,
 		size.MemoryGi,
@@ -1810,6 +1899,13 @@ func resolveCreateRequestTargets(
 			TargetDiskGB:   payload.TargetDiskGB,
 		},
 	)
+	if instanceSizeUsesHugepages(size) &&
+		resolved.MemoryLimitGi > 0 &&
+		!float64Equal(resolved.MemoryRequestGi, resolved.MemoryLimitGi) {
+		resolved.MemoryRequestGi = resolved.MemoryLimitGi
+		resolved.AdjustedMemoryGiReq = true
+	}
+	return resolved
 }
 
 func buildCreateApprovalOverride(
@@ -1843,6 +1939,9 @@ func buildCreateApprovalOverride(
 		}
 	} else if opts.DiskGB > 0 {
 		override.DiskGB = opts.DiskGB
+	}
+	if instanceSizeUsesHugepages(size) && override.MemoryLimitGi > 0 {
+		override.MemoryRequestGi = override.MemoryLimitGi
 	}
 	return &override
 }
