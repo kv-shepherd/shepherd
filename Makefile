@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion project-completion-readiness test-backend-docker-pg master-flow-strict-docker-pg live-e2e-readiness ci-live-e2e-evidence ci-live-e2e-latest-evidence pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract ci-prometheus-config ci-prometheus-alert-runbooks ci-prometheus-operator-rule-parity ci-prometheus-rules ci-grafana-dashboard-promql ci-monitoring-assets govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion project-completion-readiness test-backend-docker-pg master-flow-strict-docker-pg live-e2e-readiness ci-live-e2e-evidence ci-live-e2e-latest-evidence postgres-ops-check postgres-ops-apply pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract ci-prometheus-config ci-prometheus-alert-runbooks ci-prometheus-operator-rule-parity ci-prometheus-rules ci-grafana-dashboard-promql ci-monitoring-assets govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.11
@@ -292,6 +292,14 @@ ci-live-e2e-latest-evidence:
 	@set -e; \
 	manifest="$$(node docs/design/ci/scripts/find_latest_live_e2e_full_evidence.mjs .run/live-e2e)"; \
 	bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh --require-full-pass --require-existing-artifacts "$${manifest}"
+
+## postgres-ops-check: Validate production PostgreSQL/River autovacuum settings. Requires DATABASE_URL or POSTGRES_OPS_DATABASE_URL.
+postgres-ops-check:
+	@DATABASE_URL="$${POSTGRES_OPS_DATABASE_URL:-$${DATABASE_URL:-}}" bash scripts/check_postgres_ops.sh
+
+## postgres-ops-apply: Apply and validate production PostgreSQL/River autovacuum settings. Requires DATABASE_URL or POSTGRES_OPS_DATABASE_URL.
+postgres-ops-apply:
+	@DATABASE_URL="$${POSTGRES_OPS_DATABASE_URL:-$${DATABASE_URL:-}}" bash scripts/check_postgres_ops.sh --apply-autovacuum
 
 ## ci-go-lint: Run the Go lint target set used by the required CI Lint job
 ci-go-lint: lint-version-check
