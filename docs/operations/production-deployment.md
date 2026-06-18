@@ -74,7 +74,12 @@ cluster kubeconfigs and console bootstrap material.
    [platform-admin-sop.md](./platform-admin-sop.md).
 
 6. Apply and verify PostgreSQL/River autovacuum tuning using
-   [database-operations.md](./database-operations.md).
+   [database-operations.md](./database-operations.md):
+
+   ```bash
+   DATABASE_URL='postgres://shepherd:<password>@<host>:5432/shepherd_db?sslmode=require' \
+     make postgres-ops-apply
+   ```
 
 ## Optional Monitoring Overlay
 
@@ -172,6 +177,7 @@ Before declaring a production deployment ready:
    ```bash
    bash docs/design/ci/scripts/check_prometheus_config.sh
    make ci-monitoring-assets
+   make postgres-ops-check
    bash docs/design/ci/scripts/check_design_doc_governance.sh
    bash scripts/run_e2e_live.sh --preflight-only
    bash docs/design/ci/scripts/check_live_e2e_no_mock.sh

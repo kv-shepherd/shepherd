@@ -38,6 +38,24 @@ ALTER TABLE domain_events SET (
 );
 ```
 
+The repository also provides a guarded operational helper. By default it is
+read-only and fails when required table reloptions are missing or mismatched:
+
+```bash
+DATABASE_URL='postgres://shepherd:<password>@<host>:5432/shepherd_db?sslmode=require' \
+  make postgres-ops-check
+```
+
+To apply the required reloptions and then verify them:
+
+```bash
+DATABASE_URL='postgres://shepherd:<password>@<host>:5432/shepherd_db?sslmode=require' \
+  make postgres-ops-apply
+```
+
+Use `POSTGRES_OPS_DATABASE_URL` instead of `DATABASE_URL` when the application
+runtime environment should not be reused by the operator shell.
+
 ### Verification Query
 
 Run this query periodically to check table health:
