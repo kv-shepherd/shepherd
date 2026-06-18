@@ -28,7 +28,7 @@ stateful resources.
 | KubeVirt-capable cluster | Yes | The cluster must support the provider operations under test |
 | Kubeconfig | Yes | Set `E2E_KUBECONFIG_B64` or place `k8s-admin.yaml` at the repository root |
 | `kubectl` | Yes | Required to resolve context, probe the Kubernetes API server, and prove KubeVirt API discovery |
-| Atlas CLI | Yes | Required for startup migrations; set `ATLAS_EXEC_PATH` or install `atlas` |
+| Atlas CLI | Yes | Required for startup migrations; set `ATLAS_EXEC_PATH`, install `atlas`, or run `make live-e2e-install-atlas` |
 | Node dependencies | Yes | `npm ci --prefix web` |
 | Playwright Chromium | Yes | `cd web && npx playwright install chromium` |
 | Admin bootstrap password | Defaulted | Runner uses `admin/admin` then `E2E_NEW_PASSWORD=admin123` unless overridden |
@@ -106,6 +106,46 @@ bash scripts/run_e2e_live.sh --foreground --no-db-wrapper
 
 The runner builds and starts a local backend server, seeds baseline data, seeds
 API-managed live fixtures, runs low-level E2E fixtures, then starts Playwright.
+
+## Manual GitHub Workflow
+
+After the workflow file is present on the default branch, maintainers can use
+the manual **Live E2E Evidence** GitHub Actions workflow for operator-controlled
+release evidence. It is a `workflow_dispatch` workflow only; it is not required
+CI and does not run for pull requests or normal pushes.
+
+Configure repository or organization secrets before dispatching the workflow:
+
+| Secret | Required | Notes |
+|--------|----------|-------|
+| `E2E_KUBECONFIG_B64` | Yes | Base64-encoded kubeconfig for the disposable validation cluster |
+| `E2E_ADMIN_USERNAME` | No | Overrides the default admin username |
+| `E2E_ADMIN_PASSWORD` | No | Overrides the default initial admin password |
+| `E2E_NEW_PASSWORD` | No | Overrides the default forced-change password |
+
+The workflow inputs are:
+
+| Input | Default | Notes |
+|-------|---------|-------|
+| `mode` | `full` | Use `preflight` for readiness only; use `full` for release evidence |
+| `namespace` | `e2e-live` | Disposable namespace used by the run |
+| `cleanup_namespace_vms` | `true` | Sets `E2E_CLEANUP_NAMESPACE_VMS` to clean up VMs on exit |
+
+The workflow provisions PostgreSQL as a GitHub Actions service, installs the
+go.mod-pinned Atlas CLI version with `make live-e2e-install-atlas`, installs
+frontend dependencies and Playwright Chromium, then runs:
+
+```bash
+bash scripts/run_e2e_live.sh --preflight-only --no-db-wrapper
+# or, for full release evidence:
+bash scripts/run_e2e_live.sh --foreground --no-db-wrapper
+make ci-live-e2e-latest-evidence
+```
+
+It uploads `.run/live-e2e/**` as a workflow artifact with hidden paths enabled
+because the evidence directory is under `.run/`. Use a disposable validation
+cluster and do not target an environment whose logs, resource names, or evidence
+bundle metadata cannot be retained in GitHub Actions artifacts.
 
 ## Targeted Runs
 
