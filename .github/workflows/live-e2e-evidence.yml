@@ -1,0 +1,117 @@
+# KubeVirt Shepherd live E2E evidence runner
+# ADR-0058: Manual release evidence outside required GitHub CI.
+# ADR-0029: Pin actions to commit SHA, use specific runner version.
+name: Live E2E Evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run preflight readiness only or full live E2E evidence"
+        required: true
+        default: "full"
+        type: choice
+        options:
+          - full
+          - preflight
+      namespace:
+        description: "Disposable namespace used by the live E2E run"
+        required: true
+        default: "e2e-live"
+        type: string
+      cleanup_namespace_vms:
+        description: "Delete live E2E VMs from the namespace on exit"
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  live-e2e:
+    name: Live E2E Evidence
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: shepherd
+          POSTGRES_PASSWORD: shepherd
+          POSTGRES_DB: shepherd_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgres://shepherd:shepherd@localhost:5432/shepherd_test?sslmode=disable
+      E2E_KUBECONFIG_B64: ${{ secrets.E2E_KUBECONFIG_B64 }}
+      E2E_NAMESPACE: ${{ inputs.namespace }}
+      E2E_CLEANUP_NAMESPACE_VMS: ${{ inputs.cleanup_namespace_vms && '1' || '0' }}
+      E2E_ADMIN_USERNAME: ${{ secrets.E2E_ADMIN_USERNAME }}
+      E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+      E2E_NEW_PASSWORD: ${{ secrets.E2E_NEW_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Setup Go
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: go.mod
+
+      - name: Setup Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: "web/package-lock.json"
+
+      - name: Install runner tools
+        run: sudo apt-get update && sudo apt-get install -y curl ripgrep
+
+      - name: Check live E2E inputs
+        run: test -n "${E2E_KUBECONFIG_B64:-}" || { echo "::error ::E2E_KUBECONFIG_B64 secret is required for live E2E evidence"; exit 1; }
+
+      - name: Check kubectl
+        run: command -v kubectl >/dev/null || { echo "::error ::kubectl is required on the live E2E runner"; exit 1; }
+
+      - name: Install Atlas CLI
+        run: make live-e2e-install-atlas
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix web
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+        working-directory: web
+
+      - name: Validate evidence fixture contract
+        run: make ci-live-e2e-evidence
+
+      - name: Run live E2E preflight
+        if: ${{ inputs.mode == 'preflight' }}
+        run: bash scripts/run_e2e_live.sh --preflight-only --no-db-wrapper
+
+      - name: Run full live E2E
+        if: ${{ inputs.mode == 'full' }}
+        run: bash scripts/run_e2e_live.sh --foreground --no-db-wrapper
+
+      - name: Validate latest full evidence
+        if: ${{ inputs.mode == 'full' && success() }}
+        run: make ci-live-e2e-latest-evidence
+
+      - name: Upload live E2E evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: live-e2e-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          path: .run/live-e2e/**
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+          compression-level: 6

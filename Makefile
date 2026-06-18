@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion project-completion-readiness test-backend-docker-pg master-flow-strict-docker-pg live-e2e-readiness ci-live-e2e-evidence ci-live-e2e-latest-evidence postgres-ops-check postgres-ops-apply pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract ci-prometheus-config ci-prometheus-alert-runbooks ci-prometheus-operator-rule-parity ci-prometheus-rules ci-grafana-dashboard-promql ci-monitoring-assets govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion project-completion-readiness test-backend-docker-pg master-flow-strict-docker-pg live-e2e-readiness live-e2e-install-atlas ci-live-e2e-evidence ci-live-e2e-latest-evidence postgres-ops-check postgres-ops-apply pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract ci-prometheus-config ci-prometheus-alert-runbooks ci-prometheus-operator-rule-parity ci-prometheus-rules ci-grafana-dashboard-promql ci-monitoring-assets govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.11
@@ -276,6 +276,20 @@ ci-e2e-smoke:
 ## live-e2e-readiness: Validate live E2E prerequisites without starting services. Set LIVE_E2E_PREFLIGHT_ARGS='--no-db-wrapper' when DATABASE_URL is already provided.
 live-e2e-readiness:
 	@bash scripts/run_e2e_live.sh --preflight-only $(LIVE_E2E_PREFLIGHT_ARGS)
+
+## live-e2e-install-atlas: Install the go.mod-pinned Atlas CLI into .run/tools/atlas.
+live-e2e-install-atlas:
+	@set -e; \
+	atlas_version="$$(go list -m -f '{{ .Version }}' ariga.io/atlas)"; \
+	atlas_image="arigaio/atlas:$${atlas_version#v}"; \
+	atlas_container="atlas-install-$$(date +%s)-$$$$"; \
+	mkdir -p .run/tools; \
+	docker rm -f "$${atlas_container}" >/dev/null 2>&1 || true; \
+	docker create --name "$${atlas_container}" "$${atlas_image}" >/dev/null; \
+	trap 'docker rm -f "$${atlas_container}" >/dev/null 2>&1 || true' EXIT; \
+	docker cp "$${atlas_container}:/atlas" .run/tools/atlas; \
+	chmod 0755 .run/tools/atlas; \
+	.run/tools/atlas version
 
 ## ci-live-e2e-evidence: Validate ADR-0058 live E2E evidence manifest fixtures. Set LIVE_E2E_EVIDENCE_FILE to validate a real manifest.
 ci-live-e2e-evidence:
