@@ -14,6 +14,7 @@ import (
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	"go.opentelemetry.io/otel/trace/noop"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 )
 
 type stubCachedClusterClient struct {
@@ -115,6 +116,73 @@ func TestKubeconfigClusterFactory_EvictsCachedClientWhenLoaderStartsFailing(t *t
 
 	require.NotSame(t, first, second)
 	require.Equal(t, 2, buildCount)
+}
+
+func TestKubeVirtKVCRClientRetriesAfterFailedLoad(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	client := &kubevirtKVCRClient{
+		fetchCR: func(context.Context) (*kubevirtv1.KubeVirt, error) {
+			calls++
+			if calls == 1 {
+				return nil, errors.New("temporary kube api failure")
+			}
+			return &kubevirtv1.KubeVirt{
+				Status: kubevirtv1.KubeVirtStatus{ObservedKubeVirtVersion: "v1.8.4"},
+			}, nil
+		},
+	}
+
+	_, err := client.GetVersion(context.Background())
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "temporary kube api failure")
+
+	version, err := client.GetVersion(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "v1.8.4", version)
+	require.Equal(t, 2, calls)
+
+	version, err = client.GetVersion(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "v1.8.4", version)
+	require.Equal(t, 2, calls, "successful CR load should be cached")
+}
+
+func TestKubeVirtKVCRClientSharesSuccessfulLoadAcrossVersionAndFeatureGates(t *testing.T) {
+	t.Parallel()
+
+	calls := 0
+	client := &kubevirtKVCRClient{
+		fetchCR: func(context.Context) (*kubevirtv1.KubeVirt, error) {
+			calls++
+			return &kubevirtv1.KubeVirt{
+				Spec: kubevirtv1.KubeVirtSpec{
+					Configuration: kubevirtv1.KubeVirtConfiguration{
+						DeveloperConfiguration: &kubevirtv1.DeveloperConfiguration{
+							FeatureGates: []string{"CPUManager"},
+						},
+					},
+				},
+				Status: kubevirtv1.KubeVirtStatus{ObservedKubeVirtVersion: "v1.8.4"},
+			}, nil
+		},
+	}
+
+	version, err := client.GetVersion(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "v1.8.4", version)
+
+	gates, err := client.GetFeatureGates(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"CPUManager"}, gates)
+	require.Equal(t, 1, calls)
+
+	gates[0] = "mutated"
+	gates, err = client.GetFeatureGates(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, []string{"CPUManager"}, gates, "feature gates result should be a copy")
+	require.Equal(t, 1, calls)
 }
 
 func TestStartKubeClientSpanUsesLowCardinalityAttributes(t *testing.T) {

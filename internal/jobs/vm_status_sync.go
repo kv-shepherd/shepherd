@@ -61,10 +61,13 @@ const (
 // Job Args
 // ---------------------------------------------------------------------------
 
-// VMStatusSyncArgs carries only EventID (claim-check pattern, ADR-0009).
-// VM identity is resolved from DB at runtime: EventID -> Ticket -> VM row.
+// VMStatusSyncArgs carries claim-check identifiers only (ADR-0009). VM identity
+// is resolved from DB at runtime: EventID -> Ticket -> VM row. JobID is an
+// internal scheduling token used to deduplicate one next-poll insert per
+// running River job without carrying VM business data in args.
 type VMStatusSyncArgs struct {
-	EventID string `json:"event_id"`
+	EventID string `json:"event_id" river:"unique"`
+	JobID   string `json:"job_id,omitempty" river:"unique"`
 }
 
 // Kind returns the job kind identifier for VM status sync.
@@ -115,6 +118,7 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 	if eventID == "" {
 		return river.JobCancel(fmt.Errorf("vm_status_sync: empty event_id"))
 	}
+	nextJobID := vmStatusSyncNextJobID(job)
 
 	// Step 1: Resolve VM row from EventID (claim-check).
 	vmRow, err := w.resolveVMByEventID(ctx, eventID)
@@ -136,7 +140,7 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 		logger.Debug("vm_status_sync: VM has no cluster_id, skipping poll",
 			zap.String("vm_id", vmID),
 		)
-		return w.scheduleNext(ctx, eventID, lowTierIntervalSec)
+		return w.scheduleNext(ctx, eventID, nextJobID, lowTierIntervalSec)
 	}
 
 	// Terminal states: stop the poll chain entirely.
@@ -169,6 +173,9 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 		SkipVMIEnrichment: true, // status sync polls only VM status; avoid extra VMI List load.
 	})
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		// ADR-0038: if resourceVersion is expired (410 Gone), clear the cached RV so
 		// next poll re-establishes the baseline with resourceVersion="".
 		if k8serrors.IsResourceExpired(err) || k8serrors.IsGone(err) {
@@ -179,12 +186,19 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 				zap.Error(err),
 			)
 			if _, saveErr := w.entClient.VM.UpdateOneID(vmID).
+				Where(vm.StatusNEQ(vm.StatusDELETING)).
 				ClearLastK8sRv().
 				SetLastPolledAt(time.Now()).
 				Save(ctx); saveErr != nil {
+				if ent.IsNotFound(saveErr) {
+					return nil
+				}
+				if ctxErr := jobContextErr(ctx, saveErr); ctxErr != nil {
+					return ctxErr
+				}
 				return fmt.Errorf("vm_status_sync: clear stale resourceVersion for vm %s: %w", vmID, saveErr)
 			}
-			return w.scheduleNext(ctx, eventID, vmRow.PollIntervalSec)
+			return w.scheduleNext(ctx, eventID, nextJobID, vmRow.PollIntervalSec)
 		}
 
 		// K8s unreachable or API failure — log and retry.
@@ -194,7 +208,7 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 			zap.Error(err),
 		)
 		// Reschedule at the same interval — transient failures should not change tier.
-		return w.scheduleNext(ctx, eventID, vmRow.PollIntervalSec)
+		return w.scheduleNext(ctx, eventID, nextJobID, vmRow.PollIntervalSec)
 	}
 	now := time.Now()
 	if vmList == nil || len(vmList.Items) == 0 || vmList.Items[0] == nil {
@@ -212,6 +226,7 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 		)
 
 		update := w.entClient.VM.UpdateOneID(vmID).
+			Where(vm.StatusNEQ(vm.StatusDELETING)).
 			SetStatus(newStatus).
 			SetPollingTier(newTier).
 			SetPollIntervalSec(newInterval).
@@ -225,10 +240,16 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 		}
 
 		if _, err := update.Save(ctx); err != nil {
+			if ent.IsNotFound(err) {
+				return nil
+			}
+			if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+				return ctxErr
+			}
 			return fmt.Errorf("vm_status_sync: persist missing-vm status for vm %s: %w", vmID, err)
 		}
 
-		return w.scheduleNext(ctx, eventID, newInterval)
+		return w.scheduleNext(ctx, eventID, nextJobID, newInterval)
 	}
 	domainVM := vmList.Items[0]
 
@@ -255,6 +276,7 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 
 	// Step 4: Persist updates to DB.
 	update := w.entClient.VM.UpdateOneID(vmID).
+		Where(vm.StatusNEQ(vm.StatusDELETING)).
 		SetStatus(newStatus).
 		SetPollingTier(newTier).
 		SetPollIntervalSec(newInterval).
@@ -273,6 +295,12 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 	}
 
 	if _, err := update.Save(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			return nil
+		}
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("vm_status_sync: persist status for vm %s: %w", vmID, err)
 	}
 
@@ -287,11 +315,24 @@ func (w *VMStatusSyncWorker) Work(ctx context.Context, job *river.Job[VMStatusSy
 	)
 
 	// Step 5: Schedule next poll.
-	return w.scheduleNext(ctx, eventID, newInterval)
+	return w.scheduleNext(ctx, eventID, nextJobID, newInterval)
+}
+
+func vmStatusSyncNextJobID(job *river.Job[VMStatusSyncArgs]) string {
+	if job == nil {
+		return ""
+	}
+	if job.JobRow == nil {
+		return strings.TrimSpace(job.Args.JobID)
+	}
+	return fmt.Sprint(job.ID)
 }
 
 // scheduleNext inserts the next VMStatusSyncArgs job with ScheduledAt.
-func (w *VMStatusSyncWorker) scheduleNext(ctx context.Context, eventID string, intervalSec int) error {
+func (w *VMStatusSyncWorker) scheduleNext(ctx context.Context, eventID, jobID string, intervalSec int) error {
+	if ctxErr := jobContextErr(ctx, nil); ctxErr != nil {
+		return ctxErr
+	}
 	if w == nil || w.riverClientProvider == nil {
 		// Graceful degradation: if River client provider is not wired, skip rescheduling.
 		logger.Warn("vm_status_sync: river client provider is nil, cannot schedule next poll",
@@ -309,18 +350,17 @@ func (w *VMStatusSyncWorker) scheduleNext(ctx context.Context, eventID string, i
 	}
 
 	scheduledAt := time.Now().Add(time.Duration(intervalSec) * time.Second)
-	_, err := riverClient.Insert(ctx, VMStatusSyncArgs{EventID: eventID}, &river.InsertOpts{
+	_, err := riverClient.Insert(ctx, VMStatusSyncArgs{EventID: eventID, JobID: jobID}, &river.InsertOpts{
 		Queue:       VMStatusSyncJobKind,
 		MaxAttempts: 3,
 		ScheduledAt: scheduledAt,
 		UniqueOpts: river.UniqueOpts{
 			ByArgs:  true,
 			ByQueue: true,
-			// Explicit ByState per River best practice: prevent implicit default
-			// confusion. Include all active states so a scheduled/pending/running
-			// job for the same EventID blocks duplicate inserts. Completed jobs
-			// are excluded so the next poll cycle can always be scheduled after
-			// the current one finishes.
+			// River requires running jobs to participate in custom unique states.
+			// JobID keeps the currently running poll and the next scheduled poll
+			// distinct while still deduplicating duplicate inserts for the same
+			// EventID+JobID.
 			ByState: []rivertype.JobState{
 				rivertype.JobStateAvailable,
 				rivertype.JobStatePending,

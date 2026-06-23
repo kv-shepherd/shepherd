@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/05-auth-api-frontend.md](../phases/05-auth-api-frontend.md)
 >
-> **Implementation Status**: ✅ Complete for current scope (2026-05-08) — Backend + frontend feature-complete for current scope (135 endpoints, 29 App Router page files including compatibility/alias routes), login/protected API and admin CRUD mock E2E verified
+> **Implementation Status**: ✅ Complete for current scope (2026-05-08) — Backend + frontend feature-complete for current scope (140 endpoints, 32 App Router page files including compatibility/alias routes), login/protected API and admin CRUD mock E2E verified
 >
 > **Gate Checklist**: [../ci/GATE_HARDENING_CHECKLIST.md](../ci/GATE_HARDENING_CHECKLIST.md)
 
@@ -10,8 +10,8 @@
 
 ## Current Runtime Alignment
 
-- Current OpenAPI contract has 135 `operationId`s.
-- Current frontend tree has 29 `page.tsx` files under `web/src/app`, including the root redirect and compatibility/alias routes.
+- Current OpenAPI contract has 140 `operationId`s.
+- Current frontend tree has 32 `page.tsx` files under `web/src/app`, including the root redirect and compatibility/alias routes.
 - Canonical auth middleware paths are `internal/api/middleware/jwt.go` and `internal/api/middleware/rbac.go`.
 - Canonical auth handler path is `internal/api/handlers/server_auth.go`; route registration is generated from OpenAPI and wired by `internal/app/router.go`.
 
@@ -55,7 +55,7 @@
 ## API Contract-First Code Generation (ADR-0021)
 
 - [x] `api/oapi-codegen.yaml` v2 format with gin-server + models generation
-- [x] `internal/api/generated/server.gen.go` — 135 endpoints (omitzero value types via ADR-0028), all model types
+- [x] `internal/api/generated/server.gen.go` — 140 endpoints (omitzero value types via ADR-0028), all model types
 - [x] `make api-gen` Makefile target
 - [x] `make ent-gen` Makefile target
 - [x] `make generate` composite target (ent-gen + api-gen)
@@ -114,7 +114,7 @@
 - [x] **Form Validation**: Zod 4.x with localized Ant Design rule adapters for governance name fields
 - [x] **Internationalization**: react-i18next 16.x (en + zh-CN, 6 namespaces)
 - [x] **API Client**: openapi-typescript + openapi-fetch (type-safe from contract)
-- [x] **Pages feature-complete** for current scope (29 App Router page files exist, including compatibility/alias routes):
+- [x] **Pages feature-complete** for current scope (32 App Router page files exist, including compatibility/alias routes):
   - [x] Login page (with force password change flow)
   - [x] Dashboard / System overview (real API: health, stats)
   - [x] System CRUD management (GET/POST/DELETE with RFC 1035 validation)
@@ -129,6 +129,7 @@
   - [x] Users management page (admin) — user directory + system member CRUD (`web/src/app/(protected)/admin/users/page.tsx`)
   - [x] Auth Providers management page (admin) — schema-driven provider CRUD + test connection + sample fields + directory preview/sync + external cohort mappings
   - [x] External Approval Systems management page (admin) — webhook registry CRUD
+  - [x] Pending Adoptions management page (admin) — platform-admin review/adopt/reject workflow
   - [x] Rate Limits management page (admin) — exemptions/overrides admin management
   - [x] Permissions browser page (admin) — permission list
   - [x] RBAC management page (admin) — roles + role bindings
@@ -152,7 +153,7 @@
 ## Pre-Phase 6 Verification
 
 - [x] `go build ./...` passes
-- [x] Frontend `npm run build` passes for the current App Router surface (29 page files, zero type errors)
+- [x] Frontend `npm run build` passes for the current App Router surface (32 page files, zero type errors)
 - [x] API contract types match between Go server and TS client
 - [x] Login → JWT → Protected API flow works end-to-end (`web/tests/e2e/login-smoke.spec.ts`)
 - [x] All CRUD operations testable via UI

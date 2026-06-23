@@ -31,7 +31,10 @@ func NewServerDeps(cfg *config.Config, infra *Infrastructure, mods []Module) han
 			encryptionKey = decodedKey
 		}
 	}
-	authSessions := service.NewAuthSessionManager(infra.Pool, infra.EntClient, cfg.Session.IdleTimeout)
+	authSessions := infra.AuthSessions
+	if authSessions == nil {
+		authSessions = service.NewAuthSessionManager(infra.Pool, infra.EntClient, cfg.Session.IdleTimeout)
+	}
 	traceSummaryProvider := newTraceSummaryProvider(cfg)
 	businessMetricsProvider := newBusinessMetricsProvider(cfg, infra)
 	deps := handlers.ServerDeps{

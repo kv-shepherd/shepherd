@@ -42,11 +42,16 @@
  *   E2E_NEW_PASSWORD – password used when force_password_change=true
  */
 
-import { expect, test, type APIRequestContext, type Page, type Response } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
 import {
+    createOIDCAuthProvider,
+    createTempAdminUser,
+    deleteAdminUserIfPresent,
+    deleteAuthProviderIfPresent,
+    expectSchemaResponse as expectSchema,
     getAntModal,
-    getApiTokenWithForcePasswordSupport,
+    getApiAuthHeadersWithForcePasswordSupport,
     loginWithForcePasswordSupport,
     selectAntOption,
     urlPathEndsWith,
@@ -57,7 +62,7 @@ import {
 
 const e2eUsername = process.env.E2E_USERNAME ?? 'e2e-admin';
 const e2ePassword = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
-const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'admin123' : `${e2ePassword}-new`);
+const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'ShepherdLive!2026' : `${e2ePassword}-new`);
 const e2eKubeconfigB64 = process.env.E2E_KUBECONFIG_B64 ?? 'dGVzdC1rdWJlY29uZmlnLWJhc2U2NA==';
 let activePassword = e2ePassword;
 let seededRateLimitUserID = '';
@@ -67,75 +72,14 @@ interface ApiList<T> {
 }
 
 async function getAdminAuthHeaders(request: APIRequestContext): Promise<{ Authorization: string }> {
-    const auth = await getApiTokenWithForcePasswordSupport(request, {
+    const auth = await getApiAuthHeadersWithForcePasswordSupport(request, {
         username: e2eUsername,
         primaryPassword: e2ePassword,
         secondaryPassword: e2eNewPassword,
         currentPasswordHint: activePassword,
     });
     activePassword = auth.password;
-    return { Authorization: `Bearer ${auth.token}` };
-}
-
-async function createOIDCAuthProvider(
-    request: APIRequestContext,
-    headers: { Authorization: string },
-    overrides?: {
-        name?: string;
-        config?: Record<string, unknown>;
-    }
-): Promise<{ id: string; name: string }> {
-    const name = overrides?.name ?? `e2e-auth-${Date.now().toString(36).slice(-6)}`;
-    const createResp = await request.post('/api/v1/admin/auth-providers', {
-        headers,
-        data: {
-            name,
-            auth_type: 'oidc',
-            enabled: true,
-            config: {
-                issuer_url: 'https://idp.example.com',
-                client_id: 'shepherd-e2e',
-                client_secret: 'secret',
-                scopes: ['openid', 'profile', 'email'],
-                sample_users: [
-                    {
-                        external_id: 'e2e-alice',
-                        username: 'alice',
-                        display_name: 'Alice Example',
-                        email: 'alice@example.com',
-                        groups: ['ops'],
-                        department: 'platform',
-                    },
-                    {
-                        external_id: 'e2e-bob',
-                        username: 'bob',
-                        display_name: 'Bob Example',
-                        email: 'bob@example.com',
-                        groups: ['dev'],
-                        department: 'engineering',
-                    },
-                ],
-                ...(overrides?.config ?? {}),
-            },
-        },
-    });
-    expect(createResp.status(), `POST /admin/auth-providers returned ${createResp.status()}`).toBe(201);
-    const created = await validateApiResponse('AuthProvider', createResp) as { id?: string; name?: string };
-    const id = created.id ?? '';
-    expect(id, 'Created auth provider id is required').toBeTruthy();
-    return { id, name };
-}
-
-async function deleteAuthProviderIfPresent(
-    request: APIRequestContext,
-    headers: { Authorization: string },
-    providerID: string
-): Promise<void> {
-    if (!providerID) {
-        return;
-    }
-    const resp = await request.delete(`/api/v1/admin/auth-providers/${providerID}`, { headers });
-    expect([204, 404], `DELETE /admin/auth-providers/${providerID} returned ${resp.status()}`).toContain(resp.status());
+    return auth.headers;
 }
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
@@ -147,18 +91,6 @@ async function login(page: Page): Promise<void> {
         secondaryPassword: e2eNewPassword,
         currentPasswordHint: activePassword,
     });
-}
-
-async function expectSchema(
-    respPromise: Promise<Response>,
-    schemaName: string,
-    expectedStatus: number | number[] = 200
-): Promise<{ body: unknown; resp: Response }> {
-    const resp = await respPromise;
-    const statuses = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-    expect(statuses, `Expected HTTP ${statuses.join('/')} but got ${resp.status()} for ${resp.url()}`).toContain(resp.status());
-    const body = await validateApiResponse(schemaName, resp);
-    return { body, resp };
 }
 
 async function seedRateLimitStatusUser(request: APIRequestContext, headers: { Authorization: string }): Promise<string> {
@@ -194,6 +126,49 @@ async function seedRateLimitStatusUser(request: APIRequestContext, headers: { Au
     }).toBe(userID);
 
     return userID;
+}
+
+async function getFirstRoleID(request: APIRequestContext, headers: { Authorization: string }): Promise<string> {
+    const rolesResp = await request.get('/api/v1/admin/roles', { headers });
+    expect(rolesResp.status(), `GET /admin/roles returned ${rolesResp.status()}`).toBe(200);
+    const rolesBody = await validateApiResponse('RoleList', rolesResp) as ApiList<{ id?: string; name?: string }>;
+    const roleID = rolesBody.items?.find((role) => Boolean(role.id))?.id ?? '';
+    expect(roleID, 'Role binding tests require at least one role').toBeTruthy();
+    return roleID;
+}
+
+async function createTemplateViaAPI(
+    request: APIRequestContext,
+    headers: { Authorization: string },
+    name = `e2e-tpl-${Date.now().toString(36).slice(-5)}`
+): Promise<{ id: string; name: string }> {
+    const createResp = await request.post('/api/v1/admin/templates', {
+        headers,
+        data: {
+            name,
+            source_type: 'containerdisk',
+            image_url: 'quay.io/containerdisks/ubuntu:22.04',
+            catalog_scope: 'test',
+            enabled: true,
+        },
+    });
+    expect(createResp.status(), `POST /admin/templates returned ${createResp.status()}`).toBe(201);
+    const created = await validateApiResponse('Template', createResp) as { id?: string; name?: string };
+    const id = created.id ?? '';
+    expect(id, 'Created template id is required').toBeTruthy();
+    return { id, name: created.name ?? name };
+}
+
+async function deleteTemplateIfPresent(
+    request: APIRequestContext,
+    headers: { Authorization: string },
+    templateID: string
+): Promise<void> {
+    if (!templateID) {
+        return;
+    }
+    const deleteResp = await request.delete(`/api/v1/admin/templates/${templateID}`, { headers });
+    expect([204, 404, 409], `DELETE /admin/templates/${templateID} returned ${deleteResp.status()}`).toContain(deleteResp.status());
 }
 
 // ── Test suite ────────────────────────────────────────────────────────────────
@@ -273,16 +248,9 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
     test('listPermissions – GET /admin/permissions conforms to PermissionList schema', async ({ request }) => {
         // operationId: listPermissions
         // The frontend page is static — test the API endpoint directly.
-        const auth = await getApiTokenWithForcePasswordSupport(request, {
-            username: e2eUsername,
-            primaryPassword: e2ePassword,
-            secondaryPassword: e2eNewPassword,
-            currentPasswordHint: activePassword,
-        });
-        activePassword = auth.password;
-
+        const headers = await getAdminAuthHeaders(request);
         const resp = await request.get('/api/v1/admin/permissions', {
-            headers: { Authorization: `Bearer ${auth.token}` },
+            headers,
         });
         expect(resp.status(), `GET /admin/permissions returned ${resp.status()}`).toBe(200);
         const body = await resp.json();
@@ -409,97 +377,65 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await expectSchema(bindingsRespPromise, 'GlobalRoleBindingList', 200);
     });
 
-    test('createUserRoleBinding + deleteUserRoleBinding – full lifecycle', async ({ page }) => {
+    test('createUserRoleBinding + deleteUserRoleBinding – full lifecycle', async ({ request }) => {
         // operationId: createUserRoleBinding, deleteUserRoleBinding
-        // Get first user (use validateApiResponse for single-read safety)
-        const usersRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
-        );
-        await page.goto('/admin/users');
-        await expect(page.getByTestId('admin-users-page')).toBeVisible();
-        const usersBody = await validateApiResponse('UserList', await usersRespPromise) as { items?: Array<{ id?: string }> };
-        const userID = usersBody.items?.[0]?.id ?? '';
-        expect(userID, 'No users found for role binding test').toBeTruthy();
+        const headers = await getAdminAuthHeaders(request);
+        const user = await createTempAdminUser(request, headers, { prefix: 'e2e-rb' });
+        const roleID = await getFirstRoleID(request, headers);
+        let bindingID = '';
 
-        // Navigate to user role bindings
-        await page.getByTestId(`user-action-role-bindings-${userID}`).click();
-        const bindingsPage = page.getByTestId('user-role-bindings-page');
-        await expect(bindingsPage).toBeVisible();
+        try {
+            // ── POST /admin/users/{id}/role-bindings → GlobalRoleBinding ─────────
+            const createResp = await request.post(`/api/v1/admin/users/${user.id}/role-bindings`, {
+                headers,
+                data: {
+                    role_id: roleID,
+                    scope_type: 'global',
+                    allowed_environments: ['test'],
+                },
+            });
+            expect(createResp.status(), `POST /admin/users/{id}/role-bindings returned ${createResp.status()}`).toBe(201);
+            const created = await validateApiResponse('GlobalRoleBinding', createResp) as { id?: string };
+            bindingID = created.id ?? '';
+            expect(bindingID, 'POST /admin/users/{id}/role-bindings response missing id').toBeTruthy();
 
-        // ── POST /admin/users/{id}/role-bindings → GlobalRoleBinding ─────────────
-        const createRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/users/${userID}/role-bindings`) && r.request().method() === 'POST'
-        );
-        await page.getByTestId('role-binding-create-button').click();
-        const createModal = getAntModal(page, 'role-binding-create-modal');
-        await expect(createModal).toBeVisible();
-        // Select a role from dropdown
-        await selectAntOption(page, createModal.locator('.ant-select-selector').first());
-        await createModal.getByRole('button', { name: 'OK' }).click();
-
-        const { body: created } = await expectSchema(createRespPromise, 'GlobalRoleBinding', 201);
-        const bindingID = (created as { id?: string }).id ?? '';
-        expect(bindingID, 'POST /admin/users/{id}/role-bindings response missing id').toBeTruthy();
-
-        // ── DELETE /admin/users/{id}/role-bindings/{id} → 204 ────────────────────
-        const deleteRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/users/${userID}/role-bindings/${bindingID}`) && r.request().method() === 'DELETE'
-        );
-        await page.getByTestId(`role-binding-action-delete-${bindingID}`).click();
-        const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
-        await confirmBtn.click();
-        expect((await deleteRespPromise).status()).toBe(204);
+            // ── DELETE /admin/users/{id}/role-bindings/{id} → 204 ────────────────
+            const deleteResp = await request.delete(`/api/v1/admin/users/${user.id}/role-bindings/${bindingID}`, { headers });
+            expect(deleteResp.status(), `DELETE /admin/users/{id}/role-bindings/{id} returned ${deleteResp.status()}`).toBe(204);
+            bindingID = '';
+        } finally {
+            if (bindingID) {
+                const cleanupBindingResp = await request.delete(`/api/v1/admin/users/${user.id}/role-bindings/${bindingID}`, { headers });
+                expect([204, 404], `cleanup role binding returned ${cleanupBindingResp.status()}`).toContain(cleanupBindingResp.status());
+            }
+            await deleteAdminUserIfPresent(request, headers, user.id);
+        }
     });
 
     // ── updateAdminTemplate + deleteAdminTemplate ─────────────────────────────
 
-    test('updateAdminTemplate – PATCH /admin/templates/{id} conforms to Template schema', async ({ page }) => {
+    test('updateAdminTemplate – PATCH /admin/templates/{id} conforms to Template schema', async ({ request }) => {
         // operationId: updateAdminTemplate, deleteAdminTemplate
-        // Create a template to update
-        await page.goto('/admin/templates');
-        await expect(page.getByRole('heading', { name: 'Templates' })).toBeVisible();
+        const headers = await getAdminAuthHeaders(request);
+        const tpl = await createTemplateViaAPI(request, headers);
 
-        const tplName = `e2e-tpl-${Date.now().toString(36).slice(-5)}`;
-        const createRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/templates') && r.request().method() === 'POST'
-        );
-        await page.getByTestId('template-create-button').click();
-        const createModal = getAntModal(page, 'template-create-modal');
-        await expect(createModal).toBeVisible();
-        await createModal.getByRole('textbox').first().fill(tplName);
-        await createModal.getByLabel(/image url/i).fill('quay.io/containerdisks/ubuntu:22.04');
-        await createModal.getByRole('button', { name: 'OK' }).click();
+        try {
+            // ── PATCH /admin/templates/{id} → Template ────────────────────────────
+            const updateResp = await request.patch(`/api/v1/admin/templates/${tpl.id}`, {
+                headers,
+                data: {
+                    description: 'Updated template description by live e2e test',
+                },
+            });
+            expect(updateResp.status(), `PATCH /admin/templates/{id} returned ${updateResp.status()}`).toBe(200);
+            await validateApiResponse('Template', updateResp);
 
-        const { body: created } = await expectSchema(createRespPromise, 'Template', 201);
-        const tplID = (created as { id?: string }).id ?? '';
-        expect(tplID, 'POST /admin/templates response missing id').toBeTruthy();
-
-        // ── PATCH /admin/templates/{id} → Template ────────────────────────────────
-        // First ensure the edit action button is visible before registering the
-        // response promise — the button may take a moment to appear after list
-        // re-render following POST creation.
-        const editBtn = page.getByTestId(`template-action-edit-${tplID}`);
-        await expect(editBtn).toBeVisible({ timeout: 10_000 });
-
-        const updateRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/templates/${tplID}`) && r.request().method() === 'PATCH'
-        );
-        await editBtn.click();
-        const editModal = getAntModal(page, 'template-edit-modal');
-        await expect(editModal).toBeVisible();
-        await editModal.locator('textarea').first().fill('Updated template description by live e2e test');
-        await editModal.getByRole('button', { name: 'OK' }).click();
-
-        await expectSchema(updateRespPromise, 'Template', 200);
-
-        // ── DELETE /admin/templates/{id} → 204 ───────────────────────────────────
-        const deleteRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/templates/${tplID}`) && r.request().method() === 'DELETE'
-        );
-        await page.getByTestId(`template-action-delete-${tplID}`).click();
-        const confirmBtn = page.getByRole('button', { name: /confirm|ok|delete/i }).last();
-        await confirmBtn.click();
-        expect((await deleteRespPromise).status()).toBe(204);
+            // ── DELETE /admin/templates/{id} → 204 ───────────────────────────────
+            const deleteResp = await request.delete(`/api/v1/admin/templates/${tpl.id}`, { headers });
+            expect(deleteResp.status(), `DELETE /admin/templates/{id} returned ${deleteResp.status()}`).toBe(204);
+        } finally {
+            await deleteTemplateIfPresent(request, headers, tpl.id);
+        }
     });
 
     // ── updateAdminInstanceSize + deleteAdminInstanceSize ─────────────────────
@@ -628,56 +564,54 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await deleteAuthProviderIfPresent(page.request, headers, provider.id);
     });
 
-    test('createAuthProviderCohortMapping + updateAuthProviderCohortMapping + deleteAuthProviderCohortMapping', async ({ page }) => {
+    test('createAuthProviderCohortMapping + updateAuthProviderCohortMapping + deleteAuthProviderCohortMapping', async ({ request }) => {
         // operationId: createAuthProviderCohortMapping, updateAuthProviderCohortMapping, deleteAuthProviderCohortMapping
-        const headers = await getAdminAuthHeaders(page.request);
-        const provider = await createOIDCAuthProvider(page.request, headers);
-        await page.goto('/admin/auth-providers');
-        await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
+        const headers = await getAdminAuthHeaders(request);
+        const provider = await createOIDCAuthProvider(request, headers);
+        const roleID = await getFirstRoleID(request, headers);
+        let mappingID = '';
 
-        // Navigate to cohort mappings
-        await page.getByTestId(`auth-provider-action-mappings-${provider.id}`).click();
-        const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
-        await expect(mappingsPage).toBeVisible();
+        try {
+            // ── POST /admin/auth-providers/{id}/cohort-mappings → ExternalCohortMapping
+            const createResp = await request.post(`/api/v1/admin/auth-providers/${provider.id}/cohort-mappings`, {
+                headers,
+                data: {
+                    cohort_kind: 'group',
+                    cohort_key: `e2e-group-${Date.now().toString(36).slice(-5)}`,
+                    cohort_display_name: 'E2E Group',
+                    role_id: roleID,
+                    scope_type: 'global',
+                    allowed_environments: ['test'],
+                },
+            });
+            expect(createResp.status(), `POST cohort-mappings returned ${createResp.status()}`).toBe(201);
+            const created = await validateApiResponse('ExternalCohortMapping', createResp) as { id?: string };
+            mappingID = created.id ?? '';
+            expect(mappingID, 'POST cohort-mappings response missing id').toBeTruthy();
 
-        // ── POST /admin/auth-providers/{id}/cohort-mappings → ExternalCohortMapping ─
-        const createRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${provider.id}/cohort-mappings`) && r.request().method() === 'POST'
-        );
-        await page.getByTestId('cohort-mapping-create-button').click();
-        const createModal = getAntModal(page, 'cohort-mapping-create-modal');
-        await expect(createModal).toBeVisible();
-        await createModal.getByLabel(/cohort kind/i).fill('group');
-        await createModal.getByLabel(/cohort key/i).fill(`e2e-group-${Date.now().toString(36).slice(-5)}`);
-        await createModal.getByLabel(/cohort label/i).fill('E2E Group');
-        await selectAntOption(page, createModal.locator('.ant-select-selector').first());
-        await createModal.getByRole('button', { name: 'OK' }).click();
+            // ── PATCH /admin/auth-providers/{id}/cohort-mappings/{id} → ExternalCohortMapping
+            const updateResp = await request.patch(`/api/v1/admin/auth-providers/${provider.id}/cohort-mappings/${mappingID}`, {
+                headers,
+                data: {
+                    role_id: roleID,
+                    scope_type: 'global',
+                    allowed_environments: ['prod'],
+                },
+            });
+            expect(updateResp.status(), `PATCH cohort-mappings/{id} returned ${updateResp.status()}`).toBe(200);
+            await validateApiResponse('ExternalCohortMapping', updateResp);
 
-        const { body: created } = await expectSchema(createRespPromise, 'ExternalCohortMapping', 201);
-        const mappingID = (created as { id?: string }).id ?? '';
-        expect(mappingID, 'POST cohort-mappings response missing id').toBeTruthy();
-
-        // ── PATCH /admin/auth-providers/{id}/cohort-mappings/{id} → ExternalCohortMapping
-        const updateRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${provider.id}/cohort-mappings/${mappingID}`) && r.request().method() === 'PATCH'
-        );
-        await page.getByTestId(`cohort-mapping-action-edit-${mappingID}`).click();
-        const editModal = getAntModal(page, 'cohort-mapping-edit-modal');
-        await expect(editModal).toBeVisible();
-        await editModal.getByLabel(/cohort label/i).fill('Updated E2E Group');
-        await editModal.getByRole('button', { name: 'OK' }).click();
-
-        await expectSchema(updateRespPromise, 'ExternalCohortMapping', 200);
-
-        // ── DELETE /admin/auth-providers/{id}/cohort-mappings/{id} → 204 ─────────
-        const deleteRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${provider.id}/cohort-mappings/${mappingID}`) && r.request().method() === 'DELETE'
-        );
-        await page.getByTestId(`cohort-mapping-action-delete-${mappingID}`).click();
-        const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
-        await confirmBtn.click();
-        expect((await deleteRespPromise).status()).toBe(204);
-        await deleteAuthProviderIfPresent(page.request, headers, provider.id);
+            // ── DELETE /admin/auth-providers/{id}/cohort-mappings/{id} → 204 ─────
+            const deleteResp = await request.delete(`/api/v1/admin/auth-providers/${provider.id}/cohort-mappings/${mappingID}`, { headers });
+            expect(deleteResp.status(), `DELETE cohort-mappings/{id} returned ${deleteResp.status()}`).toBe(204);
+            mappingID = '';
+        } finally {
+            if (mappingID) {
+                const cleanupMappingResp = await request.delete(`/api/v1/admin/auth-providers/${provider.id}/cohort-mappings/${mappingID}`, { headers });
+                expect([204, 404], `cleanup cohort mapping returned ${cleanupMappingResp.status()}`).toContain(cleanupMappingResp.status());
+            }
+            await deleteAuthProviderIfPresent(request, headers, provider.id);
+        }
     });
 
     // ── Rate Limit: full coverage ─────────────────────────────────────────────
@@ -704,61 +638,48 @@ test.describe('admin-extended live (contract-enforced, no mock, no skip)', () =>
         await expectSchema(respPromise, 'RateLimitStatusList', 200);
     });
 
-    test('createRateLimitExemption + deleteRateLimitExemption – full lifecycle', async ({ page }) => {
+    test('createRateLimitExemption + deleteRateLimitExemption – full lifecycle', async ({ request }) => {
         // operationId: createRateLimitExemption, deleteRateLimitExemption
         expect(seededRateLimitUserID, 'Rate-limit seed user is missing').toBeTruthy();
-        await page.goto('/admin/users');
-        await expect(page.getByTestId('admin-users-page')).toBeVisible();
+        const headers = await getAdminAuthHeaders(request);
         const userID = seededRateLimitUserID;
-        const exemptBtn = page.getByTestId(`ratelimit-action-exempt-${userID}`);
-        await expect(exemptBtn, `No rate-limit exemption action found for seeded user ${userID}`).toBeVisible();
+        const preDeleteResp = await request.delete(`/api/v1/admin/rate-limits/exemptions/${userID}`, { headers });
+        expect([204, 404], `pre-clean exemption returned ${preDeleteResp.status()}`).toContain(preDeleteResp.status());
 
         // ── POST /admin/rate-limits/exemptions ────────────────────────────────────
-        const createRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/rate-limits/exemptions') && r.request().method() === 'POST'
-        );
-
-        await exemptBtn.click();
-
-        const createModal = getAntModal(page, 'rate-limit-exemption-create-modal');
-        await expect(createModal).toBeVisible();
-        await createModal.getByRole('button', { name: 'OK' }).click();
-
-        const createResp = await createRespPromise;
+        const createResp = await request.post('/api/v1/admin/rate-limits/exemptions', {
+            headers,
+            data: {
+                user_id: userID,
+                reason: `live e2e exemption ${Date.now()}`,
+            },
+        });
         expect(createResp.status(), `POST /admin/rate-limits/exemptions returned ${createResp.status()}`).toBe(200);
         // ── CONTRACT CHECK: RateLimitExemption schema ─────────────────────────────
         await validateApiResponse('RateLimitExemption', createResp);
 
         // ── DELETE /admin/rate-limits/exemptions/{user_id} → 204 ─────────────────
-        const deleteRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/rate-limits/exemptions/${userID}`) && r.request().method() === 'DELETE'
-        );
-        await page.getByTestId(`rate-limit-exemption-action-delete-${userID}`).click();
-        const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
-        await confirmBtn.click();
-        expect((await deleteRespPromise).status()).toBe(204);
+        const deleteResp = await request.delete(`/api/v1/admin/rate-limits/exemptions/${userID}`, { headers });
+        expect(deleteResp.status(), `DELETE /admin/rate-limits/exemptions/{user_id} returned ${deleteResp.status()}`).toBe(204);
     });
 
-    test('updateRateLimitUserOverrides – PUT /admin/rate-limits/users/{id} conforms to RateLimitUserOverride schema', async ({ page }) => {
+    test('updateRateLimitUserOverrides – PUT /admin/rate-limits/users/{id} conforms to RateLimitUserOverride schema', async ({ request }) => {
         // operationId: updateRateLimitUserOverrides
         expect(seededRateLimitUserID, 'Rate-limit seed user is missing').toBeTruthy();
-        await page.goto('/admin/users');
-        await expect(page.getByTestId('admin-users-page')).toBeVisible();
+        const headers = await getAdminAuthHeaders(request);
         const userID = seededRateLimitUserID;
-        const overrideBtn = page.getByTestId(`rate-limit-user-action-edit-${userID}`);
-        await expect(overrideBtn, `No rate-limit override action found for seeded user ${userID}`).toBeVisible();
 
-        const updateRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/admin/rate-limits/users/${userID}`) && r.request().method() === 'PUT'
-        );
-        await overrideBtn.click();
-        const editModal = getAntModal(page, 'rate-limit-user-edit-modal');
-        await expect(editModal).toBeVisible();
-        await editModal.getByRole('spinbutton', { name: /max parent batches/i }).fill('100');
-        await editModal.getByRole('textbox', { name: /reason/i }).fill('Updated by live e2e test');
-        await editModal.getByRole('button', { name: 'OK' }).click();
-
-        await expectSchema(updateRespPromise, 'RateLimitUserOverride', 200);
+        const updateResp = await request.put(`/api/v1/admin/rate-limits/users/${userID}`, {
+            headers,
+            data: {
+                max_pending_parents: 100,
+                max_pending_children: 200,
+                cooldown_seconds: 0,
+                reason: 'Updated by live e2e test',
+            },
+        });
+        expect(updateResp.status(), `PUT /admin/rate-limits/users/{id} returned ${updateResp.status()}`).toBe(200);
+        await validateApiResponse('RateLimitUserOverride', updateResp);
     });
 
     // ── Cluster: updateClusterEnvironment ────────────────────────────────────

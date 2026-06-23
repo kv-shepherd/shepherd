@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -104,6 +105,7 @@ type openAPIRuntimeValidator struct {
 	validateResponse      bool
 	exposeValidationError bool
 	schemaCache           validatorcache.SchemaCache
+	validationMu          sync.Mutex
 	metrics               OpenAPIValidationMetrics
 }
 
@@ -117,7 +119,16 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 	}
 
 	requestIgnorePaths := requestStrictIgnorePaths(c.Request, v.basePath)
+	v.validationMu.Lock()
 	requestValidator, err := v.newValidator(requestIgnorePaths...)
+	var requestValid bool
+	var requestErrs []*validatorerrors.ValidationError
+	if err == nil {
+		restorePath := applyValidationPath(c.Request, v.basePath)
+		requestValid, requestErrs = requestValidator.ValidateHttpRequest(c.Request)
+		restorePath()
+	}
+	v.validationMu.Unlock()
 	if err != nil {
 		logger.Error("OpenAPI validator setup failed",
 			zap.String("method", c.Request.Method),
@@ -131,10 +142,6 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 		})
 		return
 	}
-
-	restorePath := applyValidationPath(c.Request, v.basePath)
-	requestValid, requestErrs := requestValidator.ValidateHttpRequest(c.Request)
-	restorePath()
 	if requestBodyTooLarge(c) {
 		c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
 			"code":    "REQUEST_TOO_LARGE",
@@ -194,7 +201,20 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 	// subtrees declared by the OpenAPI contract on selected endpoints.
 	responseIgnorePaths := responseStrictIgnorePaths(c.Request, v.basePath)
 
+	v.validationMu.Lock()
 	responseValidator, err := v.newValidator(responseIgnorePaths...)
+	var responseValid bool
+	var responseErrs []*validatorerrors.ValidationError
+	response := buildValidationResponse(c.Request, buffered)
+	if err == nil {
+		restorePath := applyValidationPath(c.Request, v.basePath)
+		responseValid, responseErrs = responseValidator.ValidateHttpResponse(c.Request, response)
+		restorePath()
+	}
+	v.validationMu.Unlock()
+	if response.Body != nil {
+		_ = response.Body.Close()
+	}
 	if err != nil {
 		logger.Error("OpenAPI validator setup failed for response validation",
 			zap.String("method", c.Request.Method),
@@ -206,27 +226,18 @@ func (v *openAPIRuntimeValidator) middleware(c *gin.Context) {
 			"code":    openAPIValidatorUnavailableCode,
 			"message": "OpenAPI validator could not be initialized",
 		})
-	} else {
-		restorePath = applyValidationPath(c.Request, v.basePath)
-		response := buildValidationResponse(c.Request, buffered)
-		responseValid, responseErrs := responseValidator.ValidateHttpResponse(c.Request, response)
-		if response.Body != nil {
-			_ = response.Body.Close()
-		}
-		restorePath()
-		if !responseValid && !allPathMissing(responseErrs) {
-			logger.Error("OpenAPI response validation failed",
-				zap.String("method", c.Request.Method),
-				zap.String("path", c.Request.URL.Path),
-				zap.Int("status", buffered.Status()),
-				zap.String("reason", summarizeValidationErrors(responseErrs)),
-			)
-			v.recordValidationFailure(c, openAPIValidationPhaseResponse, openAPIResponseInvalidCode)
-			buffered.ResetJSON(http.StatusInternalServerError, map[string]string{
-				"code":    openAPIResponseInvalidCode,
-				"message": openAPIResponseValidationMessage,
-			})
-		}
+	} else if !responseValid && !allPathMissing(responseErrs) {
+		logger.Error("OpenAPI response validation failed",
+			zap.String("method", c.Request.Method),
+			zap.String("path", c.Request.URL.Path),
+			zap.Int("status", buffered.Status()),
+			zap.String("reason", summarizeValidationErrors(responseErrs)),
+		)
+		v.recordValidationFailure(c, openAPIValidationPhaseResponse, openAPIResponseInvalidCode)
+		buffered.ResetJSON(http.StatusInternalServerError, map[string]string{
+			"code":    openAPIResponseInvalidCode,
+			"message": openAPIResponseValidationMessage,
+		})
 	}
 
 	if _, err := buffered.FlushToOriginal(); err != nil {

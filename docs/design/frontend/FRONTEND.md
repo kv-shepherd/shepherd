@@ -7,17 +7,17 @@
 
 ## Technology Stack
 
-| Component | Technology | Version | Notes |
-|-----------|------------|---------|-------|
-| Core Library | React | 19.x | Required by Next.js 16 |
-| Framework | Next.js | 16.x | App Router (server components) |
-| Language | TypeScript | 5.8+ | Strict mode |
-| UI Library | Ant Design | 5.x | Enterprise UI components |
-| State Management | Zustand | 5.x | Lightweight state |
-| Data Fetching | TanStack Query | 5.x | Server state management |
-| i18n | react-i18next | 16.x | Internationalization |
-| Form Validation | Zod | 4.x | Schema validation with Ant Design rule adapters |
-| Styling | Tailwind CSS | 4.x | Utility-first CSS |
+| Component | Technology | Notes |
+|-----------|------------|-------|
+| Core Library | React | Pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime) |
+| Framework | Next.js | App Router (server components); pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime) |
+| Language | TypeScript | Strict mode; pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-and-test-tooling) |
+| UI Library | Ant Design | Enterprise UI components; pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime) |
+| State Management | Zustand | Lightweight state; pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime) |
+| Data Fetching | TanStack Query | Server state management; pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime) |
+| i18n | react-i18next | Internationalization; pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime) |
+| Form Validation | Zod | Schema validation with Ant Design rule adapters; pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime) |
+| Styling | Tailwind CSS | Utility-first CSS; pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime) |
 
 > **Version Source**: Always refer to [DEPENDENCIES.md](../DEPENDENCIES.md) for pinned versions.
 
@@ -189,7 +189,7 @@ Frontend translates using these codes:
 
 ### Form Validation
 
-Frontend forms use Zod 4 schemas for reusable field validation and adapt them to
+Frontend forms use Zod schemas for reusable field validation and adapt them to
 Ant Design `Form.Item` rules with async validators. Field-specific messages
 come from `react-i18next` instead of global Zod locale state, so each form can
 render validation errors in the active UI language.
@@ -446,10 +446,10 @@ NEXT_PUBLIC_DEFAULT_LOCALE=en
 
 | Layer | Tool | Purpose |
 |-------|------|---------|
-| **Unit/Component** | Vitest 3.x + React Testing Library 16.x | Fast unit tests, user-centric component testing |
+| **Unit/Component** | Vitest + React Testing Library | Fast unit tests, user-centric component testing; versions in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-and-test-tooling) |
 | **Browser Environment** | jsdom | DOM simulation (stable, comprehensive API coverage) |
-| **E2E Testing** | Playwright 1.5x | Cross-browser automation, Server Component testing |
-| **API Mocking** | MSW 2.x | Service Worker-based API mocking |
+| **E2E Testing** | Playwright | Cross-browser automation, Server Component testing; version in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-and-test-tooling) |
+| **API Mocking** | MSW | Service Worker-based API mocking |
 | **Coverage** | v8 (via Vitest) | Native V8 coverage, fastest option |
 
 ### CI Quality Gates (Mandatory)

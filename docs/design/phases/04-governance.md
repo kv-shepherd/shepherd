@@ -96,7 +96,7 @@ The following features are **explicitly out of scope** for V1:
 | Notification Handlers | `internal/api/handlers/server_notification.go` | ✅ | List/UnreadCount/MarkRead/MarkAllRead; triggers/sender integrated; retention cleanup scheduled |
 | Admin Handlers | `internal/api/handlers/server_admin.go` | ✅ | Clusters/Templates/InstanceSizes CRUD + UpdateClusterEnvironment (omitzero adapted) |
 | SSAApplier | `internal/provider/ssa_applier.go` | ✅ | SSA apply + dry-run implementation present |
-| OpenAPI Spec | `api/openapi.yaml` | ✅ | 135 operationIds; includes Namespace/Notification/Batch/VNC/AuthProvider/ClusterPolicy/ExternalApproval scope |
+| OpenAPI Spec | `api/openapi.yaml` | ✅ | 140 operationIds; includes Namespace/Notification/Batch/VNC/AuthProvider/ClusterPolicy/ExternalApproval/PendingAdoption scope |
 
 ---
 
@@ -630,6 +630,13 @@ Admin approves request
     └── Proceed with VM creation
 ```
 
+**User Request View**:
+
+`GET /api/v1/tickets?mine=true` is the V1 "My Requests" API. It only requires
+an authenticated actor, applies `ticket.requester == actor` server-side, and
+does not require the global `ticket:view` permission. Requests without
+`mine=true` remain admin/operator views and require `ticket:view`.
+
 ### Validation Rules
 
 | Check | Enforcement |
@@ -885,7 +892,7 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 | VM delete approval ticket flow | ✅ Done | DeleteVM use case creates `operation_type=DELETE` ticket and routes through approval gateway |
 | VM tombstone cleanup policy | ✅ Done | K8s delete success hard-deletes the VM row; stale `DELETING` tombstones are retried by daily River cleanup |
 
-> **Remaining**: Batch Stage 5.E baseline is implemented end-to-end (backend + frontend queue UX + `status_url` polling + 429 cooldown + affected-child feedback + `aria-live`). Stage 6 VNC baseline, shared PostgreSQL replay marker, and AES-256-GCM token envelope are implemented; noVNC proxy internals and active revocation remain V2+ work.
+> **Remaining**: Batch Stage 5.E baseline is implemented end-to-end (backend + frontend queue UX + `status_url` polling + 429 cooldown + affected-child feedback + `aria-live`). Stage 6 VNC baseline, shared PostgreSQL replay marker, and AES-256-GCM token envelope are implemented; noVNC proxy internals and VNC active revocation remain V2+ work.
 
 ---
 
@@ -1453,7 +1460,7 @@ ResourceVersion values.
 | Managed VM status convergence | ✅ ADR-0038 adaptive polling worker |
 | ResourceVersion cache reset on 410/Gone | ✅ Clear cached RV and reschedule |
 | Missing managed VM handling | ✅ Persist reconciled status and continue polling at the derived tier |
-| Resource adoption compensation | ✅ `pending_adoptions` schema only |
+| Resource adoption compensation | ✅ `pending_adoptions` schema + discovery job + platform-admin API/UI adoption workflow |
 | Generic ghost/orphan dry-run report | Deferred |
 | Mark-only reconciler mode | Deferred |
 | Delete reconciler mode | Deferred |
@@ -1536,11 +1543,11 @@ cluster resources.
 | §15 Cluster Visibility | ✅ Done | Section 6 (this doc) | Namespace/cluster env matching enforced in approval+worker; `allowed_environments` visibility filtering enforced in namespace/VM query-read path |
 | §16 Global Naming | ✅ Done | [01-contracts.md §1.1](01-contracts.md#11-naming-constraints-adr-0019) | RFC 1035 + ADR-0019 extension |
 | §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
-| §18 VNC Permissions | ⚠️ V1 Baseline | Section 6.2 (this doc) | Request/status/open + approval + audit + AES-256-GCM encrypted single-use credential implemented; proxy internals + active revocation remain V2+ |
+| §18 VNC Permissions | ⚠️ V1 Baseline | Section 6.2 (this doc) | Request/status/open + approval + audit + AES-256-GCM encrypted single-use credential implemented; proxy internals + VNC active revocation remain V2+ |
 | §19 Batch Operations | ✅ V1 Baseline | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` + frontend queue UX and JSON result export implemented |
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |
 | §21 Scope Exclusions | 📋 Reference | ADR-0015 | Lists deferred items |
-| §22 Authentication | ✅ Done | Section 8 (this doc) | Local/JWT, external provider runtime, JIT provisioning, directory sync, and cohort mapping implemented; active session revocation remains RFC-0008 |
+| §22 Authentication | ✅ Done | Section 8 (this doc) | Local/JWT, session-version revocation, external provider runtime, JIT provisioning, directory sync, and cohort mapping implemented; session listing/admin APIs remain RFC-0008 |
 | External Approval Systems | ✅ Webhook Registry + Signed Ingestion | Section 9 (this doc) | Built-in provider fallback, outbound webhook adapter, registry schema, admin API/UI, runtime wiring, signed callback decision ingestion, and signed polling-mode decision ingestion implemented; native connectors remain RFC-0004 follow-up |
 
 > **Legend**: ✅ Done = Implemented in V1 | ✅ V1 Baseline = V1 product baseline implemented with optional enhancements deferred

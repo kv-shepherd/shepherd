@@ -10,12 +10,14 @@ func TestBuildClusterCompatibilityFilter_IncludesExplicitRootVolumeMode(t *testi
 	t.Parallel()
 
 	input, hasFilter := buildClusterCompatibilityFilter(generated.ListClustersParams{
-		Namespace:             "prod-a",
-		TemplateId:            "tpl-1",
-		InstanceSizeId:        "sz-1",
-		SelectedStorageClass:  "rook-ceph",
-		SelectedDvAccessModes: []string{"ReadWriteMany"},
-		SelectedDvVolumeMode:  generated.ListClustersParamsSelectedDvVolumeMode("Block"),
+		Namespace:            "prod-a",
+		TemplateId:           "tpl-1",
+		InstanceSizeId:       "sz-1",
+		SelectedStorageClass: "rook-ceph",
+		SelectedDvAccessModes: []generated.ListClustersParamsSelectedDvAccessModes{
+			generated.ListClustersParamsSelectedDvAccessModes("ReadWriteMany"),
+		},
+		SelectedDvVolumeMode: generated.ListClustersParamsSelectedDvVolumeMode("Block"),
 	})
 
 	if !hasFilter {

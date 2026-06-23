@@ -130,7 +130,7 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 		return "", "", fmt.Errorf("set event %s to PROCESSING: %w", eventID, err)
 	}
 	if affected == 0 {
-		return "", "", fmt.Errorf("domain event %s not found", eventID)
+		return "", "", fmt.Errorf("domain event %s not found or not pending", eventID)
 	}
 
 	allocated, err := qtx.AllocateServiceInstance(ctx, serviceID)
@@ -147,7 +147,7 @@ func (w *ApprovalAtomicWriter) ApproveCreateAndEnqueue(
 	}
 	vmID = vmUUID.String()
 
-	rootVolumeAccessModes := snapshotStringSlice(instanceSizeSnapshot, "dv_access_modes")
+	rootVolumeAccessModes := snapshotStringSlice(instanceSizeSnapshot)
 	rootVolumeVolumeMode := snapshotString(instanceSizeSnapshot, "dv_volume_mode")
 	rootVolumeAccessModesBytes, err := marshalJSONArrayOrNull(rootVolumeAccessModes)
 	if err != nil {
@@ -240,11 +240,11 @@ func snapshotString(values map[string]interface{}, key string) string {
 	return strings.TrimSpace(text)
 }
 
-func snapshotStringSlice(values map[string]interface{}, key string) []string {
+func snapshotStringSlice(values map[string]interface{}) []string {
 	if len(values) == 0 {
 		return nil
 	}
-	raw, ok := values[key]
+	raw, ok := values["dv_access_modes"]
 	if !ok {
 		return nil
 	}
@@ -280,7 +280,7 @@ func snapshotStringSlice(values map[string]interface{}, key string) []string {
 // ApproveDeleteAndEnqueue atomically:
 // 1) marks ticket APPROVED,
 // 2) marks event PROCESSING,
-// 3) marks VM DELETING (best effort),
+// 3) marks VM DELETING,
 // 4) inserts River vm_delete job via InsertTx.
 func (w *ApprovalAtomicWriter) ApproveDeleteAndEnqueue(
 	ctx context.Context,
@@ -299,7 +299,10 @@ func (w *ApprovalAtomicWriter) ApproveDeleteAndEnqueue(
 	if w.pool == nil || w.riverClient == nil || w.queries == nil {
 		return fmt.Errorf("approval atomic writer is not initialized")
 	}
-	if strings.TrimSpace(ticketID) == "" || strings.TrimSpace(eventID) == "" || strings.TrimSpace(approver) == "" {
+	if strings.TrimSpace(ticketID) == "" ||
+		strings.TrimSpace(eventID) == "" ||
+		strings.TrimSpace(approver) == "" ||
+		strings.TrimSpace(vmID) == "" {
 		return fmt.Errorf("approve delete input is incomplete")
 	}
 
@@ -331,16 +334,18 @@ func (w *ApprovalAtomicWriter) ApproveDeleteAndEnqueue(
 		return fmt.Errorf("set event %s to PROCESSING: %w", eventID, err)
 	}
 	if affected == 0 {
-		return fmt.Errorf("domain event %s not found", eventID)
+		return fmt.Errorf("domain event %s not found or not pending", eventID)
 	}
 
-	if strings.TrimSpace(vmID) != "" {
-		if _, err := qtx.SetVMStatus(ctx, sqlcrepo.SetVMStatusParams{
-			ID:     vmID,
-			Status: "DELETING",
-		}); err != nil {
-			return fmt.Errorf("set vm %s status to DELETING: %w", vmID, err)
-		}
+	affected, err = qtx.SetVMStatus(ctx, sqlcrepo.SetVMStatusParams{
+		ID:     strings.TrimSpace(vmID),
+		Status: "DELETING",
+	})
+	if err != nil {
+		return fmt.Errorf("set vm %s status to DELETING: %w", vmID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("vm %s not found while setting status to DELETING", vmID)
 	}
 
 	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMDeleteArgs{
@@ -414,7 +419,7 @@ func (w *ApprovalAtomicWriter) ApproveModifyAndEnqueue(
 		return fmt.Errorf("set event %s to PROCESSING: %w", eventID, err)
 	}
 	if affected == 0 {
-		return fmt.Errorf("domain event %s not found", eventID)
+		return fmt.Errorf("domain event %s not found or not pending", eventID)
 	}
 
 	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMModifyArgs{
@@ -477,6 +482,17 @@ func (w *ApprovalAtomicWriter) ApprovePowerAndEnqueue(
 	}
 	if affected == 0 {
 		return fmt.Errorf("approve power ticket %s: not pending or operation type mismatch", ticketID)
+	}
+
+	affected, err = qtx.SetDomainEventStatus(ctx, sqlcrepo.SetDomainEventStatusParams{
+		ID:     eventID,
+		Status: "PENDING",
+	})
+	if err != nil {
+		return fmt.Errorf("confirm event %s is PENDING: %w", eventID, err)
+	}
+	if affected == 0 {
+		return fmt.Errorf("domain event %s not found or not pending", eventID)
 	}
 
 	if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMPowerArgs{

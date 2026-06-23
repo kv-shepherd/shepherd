@@ -904,6 +904,57 @@ export interface paths {
         patch: operations["updateCluster"];
         trace?: never;
     };
+    "/admin/pending-adoptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List pending resource adoption candidates */
+        get: operations["listPendingAdoptions"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/pending-adoptions/{pending_adoption_id}/reject": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Reject a pending adoption candidate */
+        post: operations["rejectPendingAdoption"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/pending-adoptions/{pending_adoption_id}/adopt": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Adopt a pending resource adoption candidate into VM inventory */
+        post: operations["adoptPendingAdoption"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -2268,7 +2319,7 @@ export interface components {
          */
         SystemUpdateRequest: {
             /**
-             * @description Markdown supported
+             * @description Required replacement system description. Markdown supported.
              * @example Example description
              */
             description: string;
@@ -2414,12 +2465,12 @@ export interface components {
          */
         ServiceCreateRequest: {
             /**
-             * @description RFC 1035 compliant name with no consecutive hyphens (ADR-0019)
+             * @description RFC 1035 compliant service name with no consecutive hyphens (ADR-0019)
              * @example example-resourc
              */
             name: string;
             /**
-             * @description Markdown supported
+             * @description Optional service description. Markdown supported.
              * @example Example description
              */
             description?: string;
@@ -2432,7 +2483,7 @@ export interface components {
          */
         ServiceUpdateRequest: {
             /**
-             * @description Markdown supported
+             * @description Required replacement service description. Markdown supported.
              * @example Example description
              */
             description: string;
@@ -3218,18 +3269,18 @@ export interface components {
             service_id?: string;
             /**
              * Format: uuid
-             * @description Required for CREATE operation
+             * @description Required source template identifier for CREATE operation
              * @example template-001
              */
             template_id?: string;
             /**
              * Format: uuid
-             * @description Required for CREATE operation
+             * @description Required sizing profile identifier for CREATE operation
              * @example instance-size-001
              */
             instance_size_id?: string;
             /**
-             * @description Required for CREATE operation
+             * @description Required target Kubernetes namespace for CREATE operation
              * @example example-namespace
              */
             namespace?: string;
@@ -3284,7 +3335,7 @@ export interface components {
             /** @example CREATE */
             operation: components["schemas"]["VMBatchOperation"];
             /**
-             * @description Client idempotency key
+             * @description Client idempotency key for the batch power request
              * @example request-001
              */
             request_id?: string;
@@ -3650,12 +3701,12 @@ export interface components {
             /** @example example-user */
             approver_username?: string;
             /**
-             * @description Preferred human-readable owner label for the target VM or requested VM.
+             * @description Preferred human-readable owner label for the aggregate ticket summary.
              * @example Example User
              */
             owner_display_name?: string;
             /**
-             * @description Owner username when available.
+             * @description Owner username in the aggregate ticket summary when available.
              * @example example-user
              */
             owner_username?: string;
@@ -3664,17 +3715,17 @@ export interface components {
             /** @example example-vm */
             vm_name?: string;
             /**
-             * @description VM status captured when the approval request was created.
+             * @description VM status captured when the aggregate approval request was created.
              * @example ACTIVE
              */
             request_vm_status?: string;
             /**
-             * @description Latest VM status resolved when the ticket was fetched.
+             * @description Latest VM status resolved for the aggregate ticket when fetched.
              * @example ACTIVE
              */
             latest_vm_status?: string;
             /**
-             * @description Deprecated alias for latest_vm_status.
+             * @description Deprecated alias for latest_vm_status on the aggregate ticket summary.
              * @example ACTIVE
              */
             vm_status?: string;
@@ -3856,7 +3907,7 @@ export interface components {
              */
             status: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
             /**
-             * @description Type of operation this ticket represents (ADR-0015)
+             * @description Operation type recorded on this persisted ticket (ADR-0015)
              * @example CREATE
              * @enum {string}
              */
@@ -3864,24 +3915,24 @@ export interface components {
             /** @example example */
             requester: string;
             /**
-             * @description Preferred human-readable requester label, typically display name or username.
+             * @description Preferred requester label on the persisted ticket, typically display name or username.
              * @example Example User
              */
             requester_display_name?: string;
             /**
-             * @description Requester username when available.
+             * @description Requester username on the persisted ticket when available.
              * @example example-user
              */
             requester_username?: string;
             /** @example example */
             approver?: string;
             /**
-             * @description Preferred human-readable approver label, typically display name or username.
+             * @description Preferred approver label on the persisted ticket, typically display name or username.
              * @example Example User
              */
             approver_display_name?: string;
             /**
-             * @description Approver username when available.
+             * @description Approver username on the persisted ticket when available.
              * @example example-user
              */
             approver_username?: string;
@@ -4697,7 +4748,7 @@ export interface components {
             /** @example Example description */
             description?: string;
             /**
-             * @description Catalog visibility scope only. Not scheduling environment.
+             * @description Requested template catalog visibility scope only. Not scheduling environment.
              * @example unclassified
              * @enum {string}
              */
@@ -4799,7 +4850,7 @@ export interface components {
             /** @example example */
             os_version?: string;
             /**
-             * @description Platform-defined compatibility labels. Omit or send an empty array for the generic `os:any` default. Templates may require only one concrete OS label.
+             * @description Replacement platform-defined compatibility labels. Omit or send an empty array to keep the generic `os:any` default. Templates may require only one concrete OS label.
              * @example [
              *       "os:linux"
              *     ]
@@ -4912,7 +4963,7 @@ export interface components {
             /** @example Example description */
             description?: string;
             /**
-             * @description Catalog visibility scope only. Not scheduling environment.
+             * @description Instance size catalog visibility scope only. Not scheduling environment.
              * @example unclassified
              * @enum {string}
              */
@@ -4997,7 +5048,7 @@ export interface components {
             /** @example Example description */
             description?: string;
             /**
-             * @description Catalog visibility scope only. Not scheduling environment.
+             * @description Requested instance size catalog visibility scope only. Not scheduling environment.
              * @example unclassified
              * @enum {string}
              */
@@ -7662,11 +7713,111 @@ export interface components {
              * @example redacted
              */
             old_password: string;
-            /**
-             * Format: password
-             * @example redacted
-             */
+            /** Format: password */
             new_password: string;
+        };
+        /**
+         * @description Lifecycle status for a discovered resource adoption candidate.
+         * @example PENDING
+         * @enum {string}
+         */
+        PendingAdoptionStatus: "PENDING" | "ADOPTED" | "REJECTED" | "EXPIRED";
+        /**
+         * @description Kubernetes resource kind supported by the pending adoption workflow.
+         * @example VirtualMachine
+         * @enum {string}
+         */
+        PendingAdoptionResourceType: "VirtualMachine";
+        /**
+         * @description Administrator-facing resource adoption candidate.
+         * @example {
+         *       "id": "pending-adoption-001",
+         *       "cluster_id": "cluster-001",
+         *       "namespace": "team-a",
+         *       "resource_name": "vm-prod-01",
+         *       "resource_type": "VirtualMachine",
+         *       "status": "PENDING",
+         *       "discovered_by": "system:vm-adoption-discovery",
+         *       "labels": {
+         *         "shepherd.io/service-id": "service-001"
+         *       },
+         *       "created_at": "2026-01-01T00:00:00Z",
+         *       "updated_at": "2026-01-01T00:00:00Z"
+         *     }
+         */
+        PendingAdoption: {
+            /** @example pending-adoption-001 */
+            id: string;
+            /** @example cluster-001 */
+            cluster_id: string;
+            /** @example team-a */
+            namespace: string;
+            /** @example vm-prod-01 */
+            resource_name: string;
+            /** @example VirtualMachine */
+            resource_type: components["schemas"]["PendingAdoptionResourceType"];
+            status: components["schemas"]["PendingAdoptionStatus"];
+            /** @example system:vm-adoption-discovery */
+            discovered_by?: string;
+            /**
+             * @example {
+             *       "shepherd.io/service-id": "service-001"
+             *     }
+             */
+            labels: {
+                [key: string]: string;
+            };
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @example 2026-01-01T00:00:00Z
+             */
+            updated_at: string;
+        };
+        /** @description Paginated pending adoption candidate list. */
+        PendingAdoptionList: {
+            /**
+             * @example [
+             *       {
+             *         "id": "pending-adoption-001",
+             *         "cluster_id": "cluster-001",
+             *         "namespace": "team-a",
+             *         "resource_name": "vm-prod-01",
+             *         "resource_type": "VirtualMachine",
+             *         "status": "PENDING",
+             *         "discovered_by": "system:vm-adoption-discovery",
+             *         "labels": {
+             *           "shepherd.io/service-id": "service-001"
+             *         },
+             *         "created_at": "2026-01-01T00:00:00Z",
+             *         "updated_at": "2026-01-01T00:00:00Z"
+             *       }
+             *     ]
+             */
+            items: components["schemas"]["PendingAdoption"][];
+            pagination: components["schemas"]["Pagination"];
+        };
+        /** @description Administrator decision payload for rejecting an adoption candidate. */
+        PendingAdoptionRejectRequest: {
+            /** @example Resource belongs to another owner */
+            reason?: string;
+        };
+        /** @description Administrator decision payload for adopting an existing Kubernetes resource into VM inventory. */
+        PendingAdoptionAdoptRequest: {
+            /** @example Recover DB inventory after successful K8s create */
+            reason?: string;
+        };
+        /** @description Result of adopting a pending Kubernetes VM resource into DB inventory. */
+        PendingAdoptionAdoptResponse: {
+            pending_adoption: components["schemas"]["PendingAdoption"];
+            /** @example vm-001 */
+            vm_id: string;
+            /** @example vm-prod-01 */
+            vm_name: string;
         };
         /**
          * @description OpenAPI schema for Audit Log.
@@ -7861,8 +8012,47 @@ export interface components {
              * @example 3600
              */
             window_seconds: number;
+            /**
+             * @example [
+             *       {
+             *         "route": "GET /api/v1/vms/:id",
+             *         "request_count": 120,
+             *         "error_count": 2,
+             *         "error_rate": 0.0167,
+             *         "p95_ms": 184.22,
+             *         "avg_ms": 62.41,
+             *         "max_ms": 620.4,
+             *         "slowest_trace_id": "4f359ef09312e0a1082b9d7460239ac6"
+             *       }
+             *     ]
+             */
             endpoints: components["schemas"]["AdminObservabilityTraceEndpoint"][];
+            /**
+             * @example [
+             *       {
+             *         "trace_id": "4f359ef09312e0a1082b9d7460239ac6",
+             *         "root_name": "GET /api/v1/vms/:id",
+             *         "route": "GET /api/v1/vms/:id",
+             *         "duration_ms": 620.4,
+             *         "status_code": 500,
+             *         "error": true,
+             *         "started_at": "2026-06-04T08:00:00Z"
+             *       }
+             *     ]
+             */
             slow_traces: components["schemas"]["AdminObservabilityTraceSample"][];
+            /**
+             * @example [
+             *       {
+             *         "category": "kubevirt",
+             *         "name": "kubernetes.get.virtualmachines",
+             *         "span_count": 42,
+             *         "error_count": 1,
+             *         "p95_ms": 88.5,
+             *         "max_ms": 311.2
+             *       }
+             *     ]
+             */
             dependencies: components["schemas"]["AdminObservabilitySpanGroup"][];
         };
         /** @description Aggregated HTTP server span summary for one normalized route. */
@@ -7957,14 +8147,73 @@ export interface components {
              * @example 3600
              */
             window_seconds: number;
+            /**
+             * @example [
+             *       {
+             *         "status": "PENDING",
+             *         "operation_type": "CREATE",
+             *         "count": 4
+             *       }
+             *     ]
+             */
             approval_tickets: components["schemas"]["AdminObservabilityApprovalTicketCount"][];
+            /**
+             * @example [
+             *       {
+             *         "operation_type": "CREATE",
+             *         "age_seconds": 7200
+             *       }
+             *     ]
+             */
             approval_pending_ages: components["schemas"]["AdminObservabilityApprovalPendingAge"][];
+            /**
+             * @example [
+             *       {
+             *         "status": "PENDING_APPROVAL",
+             *         "batch_type": "CREATE",
+             *         "count": 2
+             *       }
+             *     ]
+             */
             batch_approval_tickets: components["schemas"]["AdminObservabilityBatchApprovalTicketCount"][];
+            /**
+             * @example [
+             *       {
+             *         "batch_type": "CREATE",
+             *         "age_seconds": 3600
+             *       }
+             *     ]
+             */
             batch_approval_pending_ages: components["schemas"]["AdminObservabilityBatchApprovalPendingAge"][];
+            /**
+             * @example [
+             *       {
+             *         "batch_type": "POWER",
+             *         "count": 1
+             *       }
+             *     ]
+             */
             batch_approval_failed_children: components["schemas"]["AdminObservabilityBatchApprovalFailedChildCount"][];
+            /**
+             * @example [
+             *       {
+             *         "action": "approval.validation_failed",
+             *         "count": 3
+             *       }
+             *     ]
+             */
             approval_audit_actions: components["schemas"]["AdminObservabilityAuditActionCount"][];
+            /**
+             * @example [
+             *       {
+             *         "action": "approval.other",
+             *         "count": 1
+             *       }
+             *     ]
+             */
             approval_failure_audit_actions: components["schemas"]["AdminObservabilityAuditActionCount"][];
         };
+        /** @description Approval ticket count grouped by ticket status and operation type. */
         AdminObservabilityApprovalTicketCount: {
             /** @example PENDING */
             status: string;
@@ -7976,6 +8225,7 @@ export interface components {
              */
             count: number;
         };
+        /** @description Oldest pending approval ticket age grouped by operation type. */
         AdminObservabilityApprovalPendingAge: {
             /** @example CREATE */
             operation_type: string;
@@ -7985,6 +8235,7 @@ export interface components {
              */
             age_seconds: number;
         };
+        /** @description Batch approval ticket count grouped by batch status and batch type. */
         AdminObservabilityBatchApprovalTicketCount: {
             /** @example PENDING_APPROVAL */
             status: string;
@@ -7996,6 +8247,7 @@ export interface components {
              */
             count: number;
         };
+        /** @description Oldest pending batch approval age grouped by batch type. */
         AdminObservabilityBatchApprovalPendingAge: {
             /** @example CREATE */
             batch_type: string;
@@ -8005,6 +8257,7 @@ export interface components {
              */
             age_seconds: number;
         };
+        /** @description Failed child operation count grouped by batch type. */
         AdminObservabilityBatchApprovalFailedChildCount: {
             /** @example POWER */
             batch_type: string;
@@ -8014,8 +8267,12 @@ export interface components {
              */
             count: number;
         };
+        /** @description Approval audit event count grouped by low-cardinality action label. */
         AdminObservabilityAuditActionCount: {
-            /** @example approval.validation_failed */
+            /**
+             * @description Low-cardinality approval audit action label. Built-in allowlisted approval actions keep their exact value; unknown, blank, future, or external-provider action names are aggregated as `approval.other`.
+             * @example approval.validation_failed
+             */
             action: string;
             /**
              * Format: double
@@ -8609,10 +8866,20 @@ export interface components {
          */
         SystemMemberIDFilter: string;
         /**
-         * @description Field to sort by
-         * @example example
+         * @description Field to sort systems by
+         * @example created_at
          */
-        SortBy: string;
+        SystemsSortBy: "created_at" | "name" | "created_by";
+        /**
+         * @description Field to sort VMs by
+         * @example created_at
+         */
+        VMSortBy: "created_at" | "name" | "namespace" | "status";
+        /**
+         * @description Field to sort VM batches by
+         * @example created_at
+         */
+        VMBatchesSortBy: "created_at" | "status" | "child_count" | "success_count" | "failed_count" | "pending_count";
         /**
          * @description Sort direction
          * @example asc
@@ -8903,10 +9170,10 @@ export interface operations {
                  */
                 member_id?: components["parameters"]["SystemMemberIDFilter"];
                 /**
-                 * @description Field to sort by
-                 * @example example
+                 * @description Field to sort systems by
+                 * @example created_at
                  */
-                sort_by?: components["parameters"]["SortBy"];
+                sort_by?: components["parameters"]["SystemsSortBy"];
                 /**
                  * @description Sort direction
                  * @example asc
@@ -9488,6 +9755,11 @@ export interface operations {
                  * @example 1
                  */
                 per_page?: components["parameters"]["PerPage"];
+                /**
+                 * @description Case-insensitive search text
+                 * @example example
+                 */
+                search?: components["parameters"]["Search"];
             };
             header?: never;
             path: {
@@ -9797,10 +10069,10 @@ export interface operations {
                  */
                 per_page?: components["parameters"]["PerPage"];
                 /**
-                 * @description Field to sort by
-                 * @example example
+                 * @description Field to sort VMs by
+                 * @example created_at
                  */
-                sort_by?: components["parameters"]["SortBy"];
+                sort_by?: components["parameters"]["VMSortBy"];
                 /**
                  * @description Sort direction
                  * @example asc
@@ -9818,9 +10090,9 @@ export interface operations {
                 namespace?: string;
                 /**
                  * @description Filter VMs by lifecycle or provisioning status.
-                 * @example ACTIVE
+                 * @example RUNNING
                  */
-                status?: string;
+                status?: "CREATING" | "STARTING" | "RUNNING" | "STOPPING" | "STOPPED" | "DELETING" | "FAILED" | "PENDING" | "MIGRATING" | "PAUSED" | "UNKNOWN" | "NOT_FOUND";
                 /**
                  * @description Filter VMs by hosting cluster identifier.
                  * @example cluster-001
@@ -9986,6 +10258,7 @@ export interface operations {
                     "application/json": components["schemas"]["VMRequestContext"];
                 };
             };
+            400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
         };
@@ -10048,10 +10321,10 @@ export interface operations {
                  */
                 per_page?: components["parameters"]["PerPage"];
                 /**
-                 * @description Field to sort by
-                 * @example example
+                 * @description Field to sort VM batches by
+                 * @example created_at
                  */
-                sort_by?: components["parameters"]["SortBy"];
+                sort_by?: components["parameters"]["VMBatchesSortBy"];
                 /**
                  * @description Sort direction
                  * @example asc
@@ -10161,7 +10434,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Rate limit exceeded */
+            /** @description Batch power request rate limit exceeded */
             429: {
                 headers: {
                     [name: string]: unknown;
@@ -10697,6 +10970,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     stopVM: {
@@ -10733,6 +11007,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     restartVM: {
@@ -10769,6 +11044,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
         };
     };
     powerVM: {
@@ -11020,7 +11296,7 @@ export interface operations {
                  */
                 status?: "PENDING" | "APPROVED" | "REJECTED" | "CANCELLED" | "EXECUTING" | "SUCCESS" | "FAILED";
                 /**
-                 * @description Filter by a built-in status group.
+                 * @description Filter approval tasks by a built-in status group.
                  * @example ACTIVE
                  */
                 status_group?: "ACTIVE" | "TERMINAL" | "ATTENTION";
@@ -11036,12 +11312,12 @@ export interface operations {
                  */
                 operation_type?: "CREATE" | "MODIFY" | "DELETE" | "POWER" | "VNC_ACCESS";
                 /**
-                 * @description Filter by the cluster selected during CREATE execution planning.
+                 * @description Filter approval tasks by the cluster selected during CREATE execution planning.
                  * @example selected-cluster-001
                  */
                 selected_cluster_id?: string;
                 /**
-                 * @description Filter by details from placement_evaluation.advisory_code persisted on CREATE tickets.
+                 * @description Filter approval tasks by placement_evaluation.advisory_code persisted on CREATE tickets.
                  * @example example_code
                  */
                 placement_advisory_code?: string;
@@ -11324,7 +11600,7 @@ export interface operations {
             query?: never;
             header: {
                 /**
-                 * @description External approval system id registered in Shepherd.
+                 * @description External approval system id registered in Shepherd for the ticket decision endpoint.
                  * @example external-approval-001
                  */
                 "X-External-Approval-System-ID": string;
@@ -11406,7 +11682,7 @@ export interface operations {
             query?: never;
             header: {
                 /**
-                 * @description External approval system id registered in Shepherd.
+                 * @description External approval system id registered in Shepherd for the callback endpoint.
                  * @example external-approval-001
                  */
                 "X-External-Approval-System-ID": string;
@@ -11452,7 +11728,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description External decision accepted */
+            /** @description External callback decision accepted */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -11562,10 +11838,10 @@ export interface operations {
                 /**
                  * @description Optional explicit CDI DataVolume PVC accessModes selected during approval when root volume auto resolution is ambiguous.
                  * @example [
-                 *       "example"
+                 *       "ReadWriteOnce"
                  *     ]
                  */
-                selected_dv_access_modes?: string[];
+                selected_dv_access_modes?: ("ReadWriteOnce" | "ReadOnlyMany" | "ReadWriteMany" | "ReadWriteOncePod")[];
                 /**
                  * @description Optional explicit CDI DataVolume PVC volumeMode selected during approval when root volume auto resolution is ambiguous.
                  * @example Block
@@ -11762,6 +12038,158 @@ export interface operations {
                      *     }
                      */
                     "application/json": components["schemas"]["Cluster"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    listPendingAdoptions: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Page number (1-indexed)
+                 * @example 1
+                 */
+                page?: components["parameters"]["Page"];
+                /**
+                 * @description Items per page
+                 * @example 1
+                 */
+                per_page?: components["parameters"]["PerPage"];
+                /** @description Filter adoption candidates by workflow status. */
+                status?: components["schemas"]["PendingAdoptionStatus"];
+                /**
+                 * @description Filter adoption candidates by cluster identifier.
+                 * @example cluster-001
+                 */
+                cluster_id?: string;
+                /**
+                 * @description Filter adoption candidates by namespace.
+                 * @example team-a
+                 */
+                namespace?: string;
+                /**
+                 * @description Filter adoption candidates by Kubernetes resource type.
+                 * @example VirtualMachine
+                 */
+                resource_type?: components["schemas"]["PendingAdoptionResourceType"];
+                /**
+                 * @description Case-insensitive search over cluster, namespace, resource name, resource type, and discovery actor.
+                 * @example vm-prod
+                 */
+                search?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Pending adoption candidate list */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "items": [
+                     *         {
+                     *           "id": "pending-adoption-001",
+                     *           "cluster_id": "cluster-001",
+                     *           "namespace": "team-a",
+                     *           "resource_name": "vm-prod-01",
+                     *           "resource_type": "VirtualMachine",
+                     *           "status": "PENDING",
+                     *           "discovered_by": "system:vm-adoption-discovery",
+                     *           "labels": {
+                     *             "shepherd.io/service-id": "service-001"
+                     *           },
+                     *           "created_at": "2026-01-01T00:00:00Z",
+                     *           "updated_at": "2026-01-01T00:00:00Z"
+                     *         }
+                     *       ],
+                     *       "pagination": {
+                     *         "page": 1,
+                     *         "per_page": 20,
+                     *         "total": 1
+                     *       }
+                     *     }
+                     */
+                    "application/json": components["schemas"]["PendingAdoptionList"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+        };
+    };
+    rejectPendingAdoption: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Pending adoption candidate identifier to reject.
+                 * @example pending-adoption-001
+                 */
+                pending_adoption_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Optional administrator reason for rejecting the adoption candidate. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PendingAdoptionRejectRequest"];
+            };
+        };
+        responses: {
+            /** @description Adoption candidate rejected */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingAdoption"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            409: components["responses"]["Conflict"];
+        };
+    };
+    adoptPendingAdoption: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /**
+                 * @description Pending adoption candidate identifier.
+                 * @example pending-adoption-001
+                 */
+                pending_adoption_id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Optional administrator reason for adopting the existing Kubernetes resource. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PendingAdoptionAdoptRequest"];
+            };
+        };
+        responses: {
+            /** @description Adoption candidate adopted into VM inventory */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PendingAdoptionAdoptResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
@@ -13130,6 +13558,21 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description Auth provider is disabled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "AUTH_PROVIDER_DISABLED",
+                     *       "message": "auth provider is disabled"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Auth provider does not implement directory sync preview */
             501: {
                 headers: {
@@ -13195,6 +13638,21 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description Auth provider is disabled */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "AUTH_PROVIDER_DISABLED",
+                     *       "message": "auth provider is disabled"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Auth provider does not expose directory sync job history */
             501: {
                 headers: {
@@ -13808,14 +14266,14 @@ export interface operations {
                 os_family?: string;
                 /**
                  * @description Exact template source type filter
-                 * @example example
+                 * @example cdi_pvc_clone
                  */
-                source_type?: string;
+                source_type?: "containerdisk" | "cdi_image_import" | "cdi_pvc_clone";
                 /**
                  * @description Exact catalog scope filter
-                 * @example example
+                 * @example test
                  */
-                catalog_scope?: string;
+                catalog_scope?: "unclassified" | "test" | "prod" | "all";
                 /**
                  * @description Filter by enabled state
                  * @example true
@@ -13828,7 +14286,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Template list */
+            /** @description User-visible template list */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -14035,7 +14493,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description Instance size list */
+            /** @description User-visible instance size list */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -14729,7 +15187,7 @@ export interface operations {
                  */
                 environment?: "test" | "prod";
                 /**
-                 * @description Filter by enabled state
+                 * @description Filter namespaces by enabled state
                  * @example true
                  */
                 enabled?: boolean;
@@ -15350,6 +15808,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "generated_at": "2026-06-04T08:00:00Z",
+                     *       "source": "tempo",
+                     *       "status": "ok",
+                     *       "window_seconds": 3600,
+                     *       "endpoints": [
+                     *         {
+                     *           "route": "GET /api/v1/vms/:id",
+                     *           "request_count": 120,
+                     *           "error_count": 2,
+                     *           "error_rate": 0.0167,
+                     *           "p95_ms": 184.22,
+                     *           "avg_ms": 62.41,
+                     *           "max_ms": 620.4,
+                     *           "slowest_trace_id": "4f359ef09312e0a1082b9d7460239ac6"
+                     *         }
+                     *       ],
+                     *       "slow_traces": [
+                     *         {
+                     *           "trace_id": "4f359ef09312e0a1082b9d7460239ac6",
+                     *           "root_name": "GET /api/v1/vms/:id",
+                     *           "route": "GET /api/v1/vms/:id",
+                     *           "duration_ms": 620.4,
+                     *           "status_code": 500,
+                     *           "error": true,
+                     *           "started_at": "2026-06-04T08:00:00Z"
+                     *         }
+                     *       ],
+                     *       "dependencies": [
+                     *         {
+                     *           "category": "kubevirt",
+                     *           "name": "kubernetes.get.virtualmachines",
+                     *           "span_count": 42,
+                     *           "error_count": 1,
+                     *           "p95_ms": 88.5,
+                     *           "max_ms": 311.2
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["AdminObservabilityTraceSummary"];
                 };
             };
@@ -15381,6 +15880,57 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
+                    /**
+                     * @example {
+                     *       "generated_at": "2026-06-04T08:00:00Z",
+                     *       "status": "ok",
+                     *       "window_seconds": 3600,
+                     *       "approval_tickets": [
+                     *         {
+                     *           "status": "PENDING",
+                     *           "operation_type": "CREATE",
+                     *           "count": 4
+                     *         }
+                     *       ],
+                     *       "approval_pending_ages": [
+                     *         {
+                     *           "operation_type": "CREATE",
+                     *           "age_seconds": 7200
+                     *         }
+                     *       ],
+                     *       "batch_approval_tickets": [
+                     *         {
+                     *           "status": "PENDING_APPROVAL",
+                     *           "batch_type": "CREATE",
+                     *           "count": 2
+                     *         }
+                     *       ],
+                     *       "batch_approval_pending_ages": [
+                     *         {
+                     *           "batch_type": "CREATE",
+                     *           "age_seconds": 3600
+                     *         }
+                     *       ],
+                     *       "batch_approval_failed_children": [
+                     *         {
+                     *           "batch_type": "POWER",
+                     *           "count": 1
+                     *         }
+                     *       ],
+                     *       "approval_audit_actions": [
+                     *         {
+                     *           "action": "approval.validation_failed",
+                     *           "count": 3
+                     *         }
+                     *       ],
+                     *       "approval_failure_audit_actions": [
+                     *         {
+                     *           "action": "approval.other",
+                     *           "count": 1
+                     *         }
+                     *       ]
+                     *     }
+                     */
                     "application/json": components["schemas"]["AdminObservabilityAuditSignalSummary"];
                 };
             };

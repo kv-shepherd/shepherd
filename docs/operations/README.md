@@ -6,6 +6,7 @@ local development.
 | Guide | Purpose |
 |-------|---------|
 | [production-deployment.md](./production-deployment.md) | Production Compose deployment, monitoring overlay, upgrade, rollback, and go-live checks |
+| [production-deployment-evidence.example.json](./production-deployment-evidence.example.json) | Machine-readable production go-live evidence manifest template |
 | [live-e2e-validation.md](./live-e2e-validation.md) | Real backend and real KubeVirt live E2E validation procedure |
 | [database-operations.md](./database-operations.md) | PostgreSQL and River table maintenance requirements |
 | [platform-admin-sop.md](./platform-admin-sop.md) | Initial platform-admin handoff and recurring access review |

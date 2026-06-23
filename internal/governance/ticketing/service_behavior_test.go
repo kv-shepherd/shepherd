@@ -8,24 +8,42 @@ import (
 	"strings"
 	"testing"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
+	"github.com/riverqueue/river/rivermigrate"
+
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/auditlog"
+	entbatchticket "kv-shepherd.io/shepherd/ent/batchticket"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	"kv-shepherd.io/shepherd/ent/enttest"
+	enthook "kv-shepherd.io/shepherd/ent/hook"
+	"kv-shepherd.io/shepherd/ent/instancesize"
 	entnamespaceregistry "kv-shepherd.io/shepherd/ent/namespaceregistry"
+	enttemplate "kv-shepherd.io/shepherd/ent/template"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
+	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
+	"kv-shepherd.io/shepherd/internal/jobs"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
+	"kv-shepherd.io/shepherd/internal/usecase"
 )
 
 type fakeAtomicWriter struct {
 	called       bool
 	modifyCalled bool
+	deleteCalled bool
 	powerCalled  bool
 	createCalls  int
 
@@ -41,6 +59,8 @@ type fakeAtomicWriter struct {
 	modifiedSpec map[string]interface{}
 	powerOp      string
 	afterCreate  func()
+	afterDelete  func()
+	deleteErr    error
 }
 
 func init() {
@@ -74,7 +94,11 @@ func (f *fakeAtomicWriter) ApproveCreateAndEnqueue(
 }
 
 func (f *fakeAtomicWriter) ApproveDeleteAndEnqueue(_ context.Context, _, _, _, _ string) error {
-	return nil
+	f.deleteCalled = true
+	if f.afterDelete != nil {
+		f.afterDelete()
+	}
+	return f.deleteErr
 }
 
 func (f *fakeAtomicWriter) ApproveModifyAndEnqueue(_ context.Context, ticketID, eventID, approver string, modifiedSpec map[string]interface{}) error {
@@ -1589,7 +1613,7 @@ func TestServiceApproveCreate_PersistsPlacementEvaluationToAuditAndAtomicWriter(
 	}
 }
 
-func TestServiceApproveVNC_TransitionsTicketAndEventWithoutAtomicWriter(t *testing.T) {
+func TestServiceApproveVNC_CompletesTicketAndEventWithoutAtomicWriter(t *testing.T) {
 	t.Parallel()
 
 	client := testutil.OpenEntPostgres(t, "gateway_behavior_vnc_approve")
@@ -1632,14 +1656,146 @@ func TestServiceApproveVNC_TransitionsTicketAndEventWithoutAtomicWriter(t *testi
 	if err != nil {
 		t.Fatalf("query ticket: %v", err)
 	}
-	if ticket.Status != entticket.StatusAPPROVED {
-		t.Fatalf("ticket status = %s, want %s", ticket.Status, entticket.StatusAPPROVED)
+	if ticket.Status != entticket.StatusSUCCESS {
+		t.Fatalf("ticket status = %s, want %s", ticket.Status, entticket.StatusSUCCESS)
 	}
 	if ticket.Approver != "admin-1" {
 		t.Fatalf("ticket approver = %s, want admin-1", ticket.Approver)
 	}
 
 	event, err := client.DomainEvent.Get(context.Background(), eventID)
+	if err != nil {
+		t.Fatalf("query event: %v", err)
+	}
+	if event.Status != domainevent.StatusCOMPLETED {
+		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusCOMPLETED)
+	}
+}
+
+func TestServiceApproveVNC_RollsBackTicketWhenEventCompletionFails(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_vnc_approve_event_fail")
+	ctx := context.Background()
+
+	eventID := "event-vnc-approve-fail-1"
+	ticketID := "ticket-vnc-approve-fail-1"
+	payloadRaw, _ := json.Marshal(map[string]interface{}{
+		"vm_id":        "vm-1",
+		"cluster_id":   "cluster-a",
+		"namespace":    "team-a",
+		"requester_id": "user-1",
+	})
+	_, _ = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVNCAccessRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy("user-1").
+		Save(ctx)
+	_, _ = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeVNC_ACCESS).
+		SetReason("vnc access request").
+		Save(ctx)
+	client.DomainEvent.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("event completion unavailable")),
+		ent.OpUpdate,
+	))
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	err := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() expected event completion error, got nil")
+	}
+	if !strings.Contains(err.Error(), "event completion unavailable") {
+		t.Fatalf("Approve() error = %v, want event completion failure", err)
+	}
+	if writer.called {
+		t.Fatal("atomic writer called for VNC ticket, want no call")
+	}
+
+	ticket, err := client.Ticket.Get(ctx, ticketID)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want %s after rollback", ticket.Status, entticket.StatusPENDING)
+	}
+	if ticket.Approver != "" {
+		t.Fatalf("ticket approver = %q, want empty after rollback", ticket.Approver)
+	}
+
+	event, err := client.DomainEvent.Get(ctx, eventID)
+	if err != nil {
+		t.Fatalf("query event: %v", err)
+	}
+	if event.Status != domainevent.StatusPENDING {
+		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusPENDING)
+	}
+}
+
+func TestServiceApproveVNC_RejectsAlreadyTerminalEvent(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_vnc_approve_terminal_event")
+	ctx := context.Background()
+
+	eventID := "event-vnc-terminal-1"
+	ticketID := "ticket-vnc-terminal-1"
+	payloadRaw, _ := json.Marshal(map[string]interface{}{
+		"vm_id":        "vm-1",
+		"vm_name":      "vm-1",
+		"namespace":    "team-a",
+		"requester_id": "user-1",
+	})
+	_, _ = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVNCAccessRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy("user-1").
+		SetStatus(domainevent.StatusCOMPLETED).
+		Save(ctx)
+	_, _ = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeVNC_ACCESS).
+		SetReason("vnc access request").
+		Save(ctx)
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	err := gw.Approve(ctx, ticketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() expected non-pending event error, got nil")
+	}
+	if !strings.Contains(err.Error(), "is not pending") {
+		t.Fatalf("Approve() error = %v, want non-pending event failure", err)
+	}
+	if writer.called {
+		t.Fatal("atomic writer called for VNC ticket, want no call")
+	}
+
+	ticket, err := client.Ticket.Get(ctx, ticketID)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want %s after rejected stale event", ticket.Status, entticket.StatusPENDING)
+	}
+	if ticket.Approver != "" {
+		t.Fatalf("ticket approver = %q, want empty", ticket.Approver)
+	}
+	event, err := client.DomainEvent.Get(ctx, eventID)
 	if err != nil {
 		t.Fatalf("query event: %v", err)
 	}
@@ -1753,6 +1909,133 @@ func TestServiceReject_TransitionsTicketAndEvent(t *testing.T) {
 	}
 }
 
+func TestServiceReject_RollsBackTicketWhenEventCancellationFails(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_reject_event_fail")
+	ctx := context.Background()
+
+	eventID := "event-reject-fail-1"
+	ticketID := "ticket-reject-fail-1"
+	payloadRaw, _ := json.Marshal(map[string]interface{}{
+		"requester_id":     "user-1",
+		"service_id":       "svc-1",
+		"template_id":      "tpl-1",
+		"instance_size_id": "size-1",
+		"namespace":        "team-a",
+	})
+	_, _ = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy("user-1").
+		Save(ctx)
+	_, _ = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(ctx)
+	client.DomainEvent.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("event cancellation unavailable")),
+		ent.OpUpdate,
+	))
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Reject(ctx, ticketID, "admin-1", "policy mismatch")
+	if err == nil {
+		t.Fatal("Reject() expected event cancellation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "event cancellation unavailable") {
+		t.Fatalf("Reject() error = %v, want event cancellation failure", err)
+	}
+
+	ticket, err := client.Ticket.Get(ctx, ticketID)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want %s after rollback", ticket.Status, entticket.StatusPENDING)
+	}
+	if ticket.Approver != "" {
+		t.Fatalf("ticket approver = %q, want empty after rollback", ticket.Approver)
+	}
+	if ticket.RejectReason != "" {
+		t.Fatalf("ticket reject reason = %q, want empty after rollback", ticket.RejectReason)
+	}
+
+	event, err := client.DomainEvent.Get(ctx, eventID)
+	if err != nil {
+		t.Fatalf("query event: %v", err)
+	}
+	if event.Status != domainevent.StatusPENDING {
+		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusPENDING)
+	}
+}
+
+func TestServiceReject_RejectsAlreadyTerminalEvent(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_reject_terminal_event")
+	ctx := context.Background()
+
+	eventID := "event-reject-terminal-1"
+	ticketID := "ticket-reject-terminal-1"
+	payloadRaw, _ := json.Marshal(map[string]interface{}{
+		"requester_id":     "user-1",
+		"service_id":       "svc-1",
+		"template_id":      "tpl-1",
+		"instance_size_id": "size-1",
+		"namespace":        "team-a",
+	})
+	_, _ = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy("user-1").
+		SetStatus(domainevent.StatusCOMPLETED).
+		Save(ctx)
+	_, _ = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("user-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(ctx)
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Reject(ctx, ticketID, "admin-1", "policy mismatch")
+	if err == nil {
+		t.Fatal("Reject() expected non-pending event error, got nil")
+	}
+	if !strings.Contains(err.Error(), "is not pending") {
+		t.Fatalf("Reject() error = %v, want non-pending event failure", err)
+	}
+
+	ticket, err := client.Ticket.Get(ctx, ticketID)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want %s after rejected stale event", ticket.Status, entticket.StatusPENDING)
+	}
+	if ticket.Approver != "" || ticket.RejectReason != "" {
+		t.Fatalf("ticket decision fields = approver %q reason %q, want empty", ticket.Approver, ticket.RejectReason)
+	}
+	event, err := client.DomainEvent.Get(ctx, eventID)
+	if err != nil {
+		t.Fatalf("query event: %v", err)
+	}
+	if event.Status != domainevent.StatusCOMPLETED {
+		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusCOMPLETED)
+	}
+}
+
 func TestServiceCancel_OnlyRequesterCanCancel(t *testing.T) {
 	t.Parallel()
 
@@ -1841,6 +2124,866 @@ func TestServiceCancel_RequesterTransitionsTicketAndEvent(t *testing.T) {
 	}
 	if event.Status != domainevent.StatusCANCELLED {
 		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusCANCELLED)
+	}
+}
+
+func TestServiceCancel_RollsBackTicketWhenEventCancellationFails(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_cancel_event_fail")
+	ctx := context.Background()
+
+	eventID := "event-cancel-fail-1"
+	ticketID := "ticket-cancel-fail-1"
+	payloadRaw, _ := json.Marshal(map[string]interface{}{
+		"requester_id":     "requester-1",
+		"service_id":       "svc-1",
+		"template_id":      "tpl-1",
+		"instance_size_id": "size-1",
+		"namespace":        "team-a",
+	})
+	_, _ = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy("requester-1").
+		Save(ctx)
+	_, _ = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("requester-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(ctx)
+	client.DomainEvent.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("event cancellation unavailable")),
+		ent.OpUpdate,
+	))
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Cancel(ctx, ticketID, "requester-1")
+	if err == nil {
+		t.Fatal("Cancel() expected event cancellation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "event cancellation unavailable") {
+		t.Fatalf("Cancel() error = %v, want event cancellation failure", err)
+	}
+
+	ticket, err := client.Ticket.Get(ctx, ticketID)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want %s after rollback", ticket.Status, entticket.StatusPENDING)
+	}
+
+	event, err := client.DomainEvent.Get(ctx, eventID)
+	if err != nil {
+		t.Fatalf("query event: %v", err)
+	}
+	if event.Status != domainevent.StatusPENDING {
+		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusPENDING)
+	}
+}
+
+func TestServiceCancel_RejectsAlreadyTerminalEvent(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "gateway_behavior_cancel_terminal_event")
+	ctx := context.Background()
+
+	eventID := "event-cancel-terminal-1"
+	ticketID := "ticket-cancel-terminal-1"
+	payloadRaw, _ := json.Marshal(map[string]interface{}{
+		"requester_id":     "requester-1",
+		"service_id":       "svc-1",
+		"template_id":      "tpl-1",
+		"instance_size_id": "size-1",
+		"namespace":        "team-a",
+	})
+	_, _ = client.DomainEvent.Create().
+		SetID(eventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-1").
+		SetPayload(payloadRaw).
+		SetCreatedBy("requester-1").
+		SetStatus(domainevent.StatusCOMPLETED).
+		Save(ctx)
+	_, _ = client.Ticket.Create().
+		SetID(ticketID).
+		SetEventID(eventID).
+		SetRequester("requester-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(ctx)
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Cancel(ctx, ticketID, "requester-1")
+	if err == nil {
+		t.Fatal("Cancel() expected non-pending event error, got nil")
+	}
+	if !strings.Contains(err.Error(), "is not pending") {
+		t.Fatalf("Cancel() error = %v, want non-pending event failure", err)
+	}
+
+	ticket, err := client.Ticket.Get(ctx, ticketID)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %s, want %s after rejected stale event", ticket.Status, entticket.StatusPENDING)
+	}
+	event, err := client.DomainEvent.Get(ctx, eventID)
+	if err != nil {
+		t.Fatalf("query event: %v", err)
+	}
+	if event.Status != domainevent.StatusCOMPLETED {
+		t.Fatalf("event status = %s, want %s", event.Status, domainevent.StatusCOMPLETED)
+	}
+}
+
+type batchDecisionFixture struct {
+	parentEventID  string
+	parentTicketID string
+	childEventID   string
+	childTicketID  string
+}
+
+func seedBatchDecisionFixture(t *testing.T, dbName string) (*ent.Client, batchDecisionFixture) {
+	t.Helper()
+
+	client := testutil.OpenEntPostgres(t, dbName)
+	ctx := context.Background()
+
+	fixture := batchDecisionFixture{
+		parentEventID:  dbName + "-parent-event",
+		parentTicketID: dbName + "-parent-ticket",
+		childEventID:   dbName + "-child-event",
+		childTicketID:  dbName + "-child-ticket",
+	}
+	parentPayloadRaw, err := json.Marshal(map[string]interface{}{
+		"operation": "CREATE",
+		"items": []map[string]interface{}{
+			{
+				"service_id":       "svc-1",
+				"namespace":        "team-a",
+				"template_id":      "tpl-1",
+				"instance_size_id": "size-1",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal parent payload: %v", err)
+	}
+	childPayloadRaw, err := json.Marshal(map[string]interface{}{
+		"requester_id":     "requester-1",
+		"service_id":       "svc-1",
+		"template_id":      "tpl-1",
+		"instance_size_id": "size-1",
+		"namespace":        "team-a",
+	})
+	if err != nil {
+		t.Fatalf("marshal child payload: %v", err)
+	}
+
+	if _, err := client.DomainEvent.Create().
+		SetID(fixture.parentEventID).
+		SetEventType(string(domain.EventBatchCreateRequested)).
+		SetAggregateType("vm_batch").
+		SetAggregateID("svc-1").
+		SetPayload(parentPayloadRaw).
+		SetCreatedBy("requester-1").
+		Save(ctx); err != nil {
+		t.Fatalf("create parent event: %v", err)
+	}
+	if _, err := client.DomainEvent.Create().
+		SetID(fixture.childEventID).
+		SetEventType(string(domain.EventVMCreationRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("svc-1").
+		SetPayload(childPayloadRaw).
+		SetCreatedBy("requester-1").
+		Save(ctx); err != nil {
+		t.Fatalf("create child event: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID(fixture.parentTicketID).
+		SetEventID(fixture.parentEventID).
+		SetRequester("requester-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(ctx); err != nil {
+		t.Fatalf("create parent ticket: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID(fixture.childTicketID).
+		SetEventID(fixture.childEventID).
+		SetRequester("requester-1").
+		SetParentTicketID(fixture.parentTicketID).
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(ctx); err != nil {
+		t.Fatalf("create child ticket: %v", err)
+	}
+
+	return client, fixture
+}
+
+func seedBatchDeleteApprovalFixture(t *testing.T, dbName string) (*ent.Client, batchDecisionFixture) {
+	t.Helper()
+
+	client := testutil.OpenEntPostgres(t, dbName)
+	ctx := context.Background()
+
+	fixture := batchDecisionFixture{
+		parentEventID:  dbName + "-parent-event",
+		parentTicketID: dbName + "-parent-ticket",
+		childEventID:   dbName + "-child-event",
+		childTicketID:  dbName + "-child-ticket",
+	}
+	parentPayloadRaw, err := json.Marshal(map[string]interface{}{
+		"operation": "DELETE",
+		"items": []map[string]interface{}{
+			{
+				"vm_id":     "vm-1",
+				"vm_name":   "vm-1",
+				"namespace": "team-a",
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal parent payload: %v", err)
+	}
+	childPayloadRaw, err := domain.VMDeletePayload{
+		VMID:      "vm-1",
+		VMName:    "vm-1",
+		ClusterID: "cluster-a",
+		Namespace: "team-a",
+		Actor:     "requester-1",
+	}.ToJSON()
+	if err != nil {
+		t.Fatalf("marshal child payload: %v", err)
+	}
+
+	if _, err := client.DomainEvent.Create().
+		SetID(fixture.parentEventID).
+		SetEventType(string(domain.EventBatchDeleteRequested)).
+		SetAggregateType("vm_batch").
+		SetAggregateID("svc-1").
+		SetPayload(parentPayloadRaw).
+		SetCreatedBy("requester-1").
+		Save(ctx); err != nil {
+		t.Fatalf("create parent event: %v", err)
+	}
+	if _, err := client.DomainEvent.Create().
+		SetID(fixture.childEventID).
+		SetEventType(string(domain.EventVMDeletionRequested)).
+		SetAggregateType("vm").
+		SetAggregateID("vm-1").
+		SetPayload(childPayloadRaw).
+		SetCreatedBy("requester-1").
+		Save(ctx); err != nil {
+		t.Fatalf("create child event: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID(fixture.parentTicketID).
+		SetEventID(fixture.parentEventID).
+		SetRequester("requester-1").
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeDELETE).
+		Save(ctx); err != nil {
+		t.Fatalf("create parent ticket: %v", err)
+	}
+	if _, err := client.Ticket.Create().
+		SetID(fixture.childTicketID).
+		SetEventID(fixture.childEventID).
+		SetRequester("requester-1").
+		SetParentTicketID(fixture.parentTicketID).
+		SetStatus(entticket.StatusPENDING).
+		SetOperationType(entticket.OperationTypeDELETE).
+		Save(ctx); err != nil {
+		t.Fatalf("create child ticket: %v", err)
+	}
+
+	return client, fixture
+}
+
+func seedBatchDecisionProjection(t *testing.T, client *ent.Client, parentTicketID string) {
+	t.Helper()
+
+	if _, err := client.BatchTicket.Create().
+		SetID(parentTicketID).
+		SetBatchType(entbatchticket.BatchTypeBATCH_DELETE).
+		SetChildCount(1).
+		SetPendingCount(1).
+		SetStatus(entbatchticket.StatusPENDING_APPROVAL).
+		SetCreatedBy("requester-1").
+		SetReason("batch decision").
+		Save(context.Background()); err != nil {
+		t.Fatalf("create batch projection: %v", err)
+	}
+}
+
+func assertBatchDecisionFixturePending(t *testing.T, client *ent.Client, fixture batchDecisionFixture) {
+	t.Helper()
+	ctx := context.Background()
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s after rollback", parentTicket.Status, entticket.StatusPENDING)
+	}
+	if parentTicket.Approver != "" || parentTicket.RejectReason != "" {
+		t.Fatalf("parent decision fields = approver %q reason %q, want empty after rollback", parentTicket.Approver, parentTicket.RejectReason)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s after rollback", childTicket.Status, entticket.StatusPENDING)
+	}
+	if childTicket.Approver != "" || childTicket.RejectReason != "" {
+		t.Fatalf("child decision fields = approver %q reason %q, want empty after rollback", childTicket.Approver, childTicket.RejectReason)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("parent event status = %s, want %s after rollback", parentEvent.Status, domainevent.StatusPENDING)
+	}
+	childEvent, err := client.DomainEvent.Get(ctx, fixture.childEventID)
+	if err != nil {
+		t.Fatalf("query child event: %v", err)
+	}
+	if childEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("child event status = %s, want %s after rollback", childEvent.Status, domainevent.StatusPENDING)
+	}
+}
+
+func assertBatchDecisionFixturePendingExceptMissingChildEvent(t *testing.T, client *ent.Client, fixture batchDecisionFixture) {
+	t.Helper()
+	ctx := context.Background()
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s after rollback", parentTicket.Status, entticket.StatusPENDING)
+	}
+	if parentTicket.Approver != "" || parentTicket.RejectReason != "" {
+		t.Fatalf("parent decision fields = approver %q reason %q, want empty after rollback", parentTicket.Approver, parentTicket.RejectReason)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s after rollback", childTicket.Status, entticket.StatusPENDING)
+	}
+	if childTicket.Approver != "" || childTicket.RejectReason != "" {
+		t.Fatalf("child decision fields = approver %q reason %q, want empty after rollback", childTicket.Approver, childTicket.RejectReason)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("parent event status = %s, want %s after rollback", parentEvent.Status, domainevent.StatusPENDING)
+	}
+	_, err = client.DomainEvent.Get(ctx, fixture.childEventID)
+	if !ent.IsNotFound(err) {
+		t.Fatalf("child event err = %v, want not found", err)
+	}
+}
+
+func TestServiceApproveBatchParent_RejectsAlreadyTerminalParentEventBeforeChildDispatch(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDeleteApprovalFixture(t, "gateway_behavior_batch_approve_terminal_parent_event")
+	ctx := context.Background()
+	if _, err := client.DomainEvent.UpdateOneID(fixture.parentEventID).
+		SetStatus(domainevent.StatusCOMPLETED).
+		Save(ctx); err != nil {
+		t.Fatalf("set parent event completed: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	err := gw.Approve(ctx, fixture.parentTicketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() expected non-pending parent event error, got nil")
+	}
+	if !strings.Contains(err.Error(), "is not pending") {
+		t.Fatalf("Approve() error = %v, want non-pending parent event failure", err)
+	}
+	if writer.called || writer.deleteCalled || writer.powerCalled {
+		t.Fatal("atomic writer called before rejecting terminal parent event")
+	}
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s", parentTicket.Status, entticket.StatusPENDING)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s", childTicket.Status, entticket.StatusPENDING)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusCOMPLETED {
+		t.Fatalf("parent event status = %s, want %s", parentEvent.Status, domainevent.StatusCOMPLETED)
+	}
+	childEvent, err := client.DomainEvent.Get(ctx, fixture.childEventID)
+	if err != nil {
+		t.Fatalf("query child event: %v", err)
+	}
+	if childEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("child event status = %s, want %s", childEvent.Status, domainevent.StatusPENDING)
+	}
+}
+
+func TestServiceApproveBatchParent_RollsBackParentSummaryWhenParentEventUpdateFails(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDeleteApprovalFixture(t, "gateway_behavior_batch_approve_parent_event_fail")
+	ctx := context.Background()
+	client.DomainEvent.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("parent event summary unavailable")),
+		ent.OpUpdate,
+	))
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Approve(ctx, fixture.parentTicketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() expected parent event summary error, got nil")
+	}
+	if !strings.Contains(err.Error(), "parent event summary unavailable") {
+		t.Fatalf("Approve() error = %v, want parent event summary failure", err)
+	}
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s after rollback", parentTicket.Status, entticket.StatusPENDING)
+	}
+	if parentTicket.Approver != "" {
+		t.Fatalf("parent approver = %q, want empty after rollback", parentTicket.Approver)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("parent event status = %s, want %s after rollback", parentEvent.Status, domainevent.StatusPENDING)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s", childTicket.Status, entticket.StatusPENDING)
+	}
+	childEvent, err := client.DomainEvent.Get(ctx, fixture.childEventID)
+	if err != nil {
+		t.Fatalf("query child event: %v", err)
+	}
+	if childEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("child event status = %s, want %s", childEvent.Status, domainevent.StatusPENDING)
+	}
+}
+
+func TestServiceApproveBatchParent_RollsBackParentSummaryWhenParentEventTurnsTerminalAfterChildDispatch(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDeleteApprovalFixture(t, "gateway_behavior_batch_approve_parent_event_stale_after_child")
+	ctx := context.Background()
+	writer := &fakeAtomicWriter{
+		afterDelete: func() {
+			if _, err := client.DomainEvent.UpdateOneID(fixture.parentEventID).
+				SetStatus(domainevent.StatusCOMPLETED).
+				Save(ctx); err != nil {
+				t.Fatalf("set parent event completed after child dispatch: %v", err)
+			}
+		},
+	}
+
+	gw := NewService(client, nil, writer)
+	err := gw.Approve(ctx, fixture.parentTicketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() expected stale parent event row-count error, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected 1 row, got 0") {
+		t.Fatalf("Approve() error = %v, want zero-row parent event failure", err)
+	}
+	if !writer.deleteCalled {
+		t.Fatal("delete child dispatch was not called before stale parent event guard")
+	}
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s after rollback", parentTicket.Status, entticket.StatusPENDING)
+	}
+	if parentTicket.Approver != "" {
+		t.Fatalf("parent approver = %q, want empty after rollback", parentTicket.Approver)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusCOMPLETED {
+		t.Fatalf("parent event status = %s, want %s", parentEvent.Status, domainevent.StatusCOMPLETED)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s", childTicket.Status, entticket.StatusPENDING)
+	}
+}
+
+func TestServiceApproveBatchParent_StopsWhenChildFailurePersistenceFails(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDeleteApprovalFixture(t, "gateway_behavior_batch_child_failure_persist_fail")
+	ctx := context.Background()
+	client.DomainEvent.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("child failure event unavailable")),
+		ent.OpUpdate,
+	))
+
+	gw := NewService(client, nil, &fakeAtomicWriter{
+		deleteErr: fmt.Errorf("delete dispatch unavailable"),
+	})
+	err := gw.Approve(ctx, fixture.parentTicketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() expected child failure persistence error, got nil")
+	}
+	if !strings.Contains(err.Error(), "child failure event unavailable") {
+		t.Fatalf("Approve() error = %v, want child failure event persistence failure", err)
+	}
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s", parentTicket.Status, entticket.StatusPENDING)
+	}
+	if parentTicket.Approver != "" {
+		t.Fatalf("parent approver = %q, want empty", parentTicket.Approver)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("parent event status = %s, want %s", parentEvent.Status, domainevent.StatusPENDING)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s after rollback", childTicket.Status, entticket.StatusPENDING)
+	}
+	if childTicket.Approver != "" || childTicket.RejectReason != "" {
+		t.Fatalf("child decision fields = approver %q reason %q, want empty after rollback", childTicket.Approver, childTicket.RejectReason)
+	}
+	childEvent, err := client.DomainEvent.Get(ctx, fixture.childEventID)
+	if err != nil {
+		t.Fatalf("query child event: %v", err)
+	}
+	if childEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("child event status = %s, want %s after rollback", childEvent.Status, domainevent.StatusPENDING)
+	}
+}
+
+func TestServiceApproveBatchParent_RejectsStaleChildEventWhenMarkingDispatchFailure(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDeleteApprovalFixture(t, "gateway_behavior_batch_child_failure_stale_event")
+	ctx := context.Background()
+	if _, err := client.DomainEvent.UpdateOneID(fixture.childEventID).
+		SetStatus(domainevent.StatusCOMPLETED).
+		Save(ctx); err != nil {
+		t.Fatalf("set child event completed: %v", err)
+	}
+
+	gw := NewService(client, nil, &fakeAtomicWriter{
+		deleteErr: fmt.Errorf("delete dispatch unavailable"),
+	})
+	err := gw.Approve(ctx, fixture.parentTicketID, "admin-1", ExecutionOptions{})
+	if err == nil {
+		t.Fatal("Approve() expected stale child event persistence error, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected 1 row, got 0") {
+		t.Fatalf("Approve() error = %v, want zero-row child event failure", err)
+	}
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s", parentTicket.Status, entticket.StatusPENDING)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("parent event status = %s, want %s", parentEvent.Status, domainevent.StatusPENDING)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s after rollback", childTicket.Status, entticket.StatusPENDING)
+	}
+	if childTicket.Approver != "" || childTicket.RejectReason != "" {
+		t.Fatalf("child decision fields = approver %q reason %q, want empty after rollback", childTicket.Approver, childTicket.RejectReason)
+	}
+	childEvent, err := client.DomainEvent.Get(ctx, fixture.childEventID)
+	if err != nil {
+		t.Fatalf("query child event: %v", err)
+	}
+	if childEvent.Status != domainevent.StatusCOMPLETED {
+		t.Fatalf("child event status = %s, want %s", childEvent.Status, domainevent.StatusCOMPLETED)
+	}
+}
+
+func TestServiceRejectBatchParent_RollsBackParentAndChildrenWhenChildEventCancellationFails(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDecisionFixture(t, "gateway_behavior_batch_reject_event_fail")
+	ctx := context.Background()
+	client.DomainEvent.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("child event cancellation unavailable")),
+		ent.OpUpdate,
+	))
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Reject(ctx, fixture.parentTicketID, "admin-1", "batch policy mismatch")
+	if err == nil {
+		t.Fatal("Reject() expected child event cancellation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "child event cancellation unavailable") {
+		t.Fatalf("Reject() error = %v, want child event cancellation failure", err)
+	}
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s after rollback", parentTicket.Status, entticket.StatusPENDING)
+	}
+	if parentTicket.Approver != "" || parentTicket.RejectReason != "" {
+		t.Fatalf("parent decision fields = approver %q reason %q, want empty after rollback", parentTicket.Approver, parentTicket.RejectReason)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s after rollback", childTicket.Status, entticket.StatusPENDING)
+	}
+	if childTicket.Approver != "" || childTicket.RejectReason != "" {
+		t.Fatalf("child decision fields = approver %q reason %q, want empty after rollback", childTicket.Approver, childTicket.RejectReason)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("parent event status = %s, want %s after rollback", parentEvent.Status, domainevent.StatusPENDING)
+	}
+	childEvent, err := client.DomainEvent.Get(ctx, fixture.childEventID)
+	if err != nil {
+		t.Fatalf("query child event: %v", err)
+	}
+	if childEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("child event status = %s, want %s after rollback", childEvent.Status, domainevent.StatusPENDING)
+	}
+}
+
+func TestServiceRejectBatchParent_RollsBackWhenChildEventMissing(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDecisionFixture(t, "gateway_behavior_batch_reject_child_event_missing")
+	ctx := context.Background()
+	if err := client.DomainEvent.DeleteOneID(fixture.childEventID).Exec(ctx); err != nil {
+		t.Fatalf("delete child event: %v", err)
+	}
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Reject(ctx, fixture.parentTicketID, "admin-1", "batch policy mismatch")
+	if err == nil {
+		t.Fatal("Reject() expected missing child event row-count error, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected 1 row, got 0") {
+		t.Fatalf("Reject() error = %v, want zero-row child event failure", err)
+	}
+
+	assertBatchDecisionFixturePendingExceptMissingChildEvent(t, client, fixture)
+}
+
+func TestServiceRejectBatchParent_RollsBackParentAndChildrenWhenProjectionSyncFails(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDecisionFixture(t, "gateway_behavior_batch_reject_projection_fail")
+	ctx := context.Background()
+	seedBatchDecisionProjection(t, client, fixture.parentTicketID)
+	client.BatchTicket.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("batch projection unavailable")),
+		ent.OpUpdateOne,
+	))
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Reject(ctx, fixture.parentTicketID, "admin-1", "batch policy mismatch")
+	if err == nil {
+		t.Fatal("Reject() expected batch projection error, got nil")
+	}
+	if !strings.Contains(err.Error(), "batch projection unavailable") {
+		t.Fatalf("Reject() error = %v, want batch projection failure", err)
+	}
+
+	assertBatchDecisionFixturePending(t, client, fixture)
+	projection, err := client.BatchTicket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query batch projection: %v", err)
+	}
+	if projection.Status != entbatchticket.StatusPENDING_APPROVAL {
+		t.Fatalf("projection status = %s, want %s after rollback", projection.Status, entbatchticket.StatusPENDING_APPROVAL)
+	}
+	if projection.PendingCount != 1 || projection.ChildCount != 1 {
+		t.Fatalf("projection counts = child:%d pending:%d, want child:1 pending:1", projection.ChildCount, projection.PendingCount)
+	}
+}
+
+func TestServiceCancelBatchParent_RollsBackParentAndChildrenWhenChildEventCancellationFails(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDecisionFixture(t, "gateway_behavior_batch_cancel_event_fail")
+	ctx := context.Background()
+	client.DomainEvent.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("child event cancellation unavailable")),
+		ent.OpUpdate,
+	))
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Cancel(ctx, fixture.parentTicketID, "requester-1")
+	if err == nil {
+		t.Fatal("Cancel() expected child event cancellation error, got nil")
+	}
+	if !strings.Contains(err.Error(), "child event cancellation unavailable") {
+		t.Fatalf("Cancel() error = %v, want child event cancellation failure", err)
+	}
+
+	parentTicket, err := client.Ticket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query parent ticket: %v", err)
+	}
+	if parentTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("parent ticket status = %s, want %s after rollback", parentTicket.Status, entticket.StatusPENDING)
+	}
+	childTicket, err := client.Ticket.Get(ctx, fixture.childTicketID)
+	if err != nil {
+		t.Fatalf("query child ticket: %v", err)
+	}
+	if childTicket.Status != entticket.StatusPENDING {
+		t.Fatalf("child ticket status = %s, want %s after rollback", childTicket.Status, entticket.StatusPENDING)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, fixture.parentEventID)
+	if err != nil {
+		t.Fatalf("query parent event: %v", err)
+	}
+	if parentEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("parent event status = %s, want %s after rollback", parentEvent.Status, domainevent.StatusPENDING)
+	}
+	childEvent, err := client.DomainEvent.Get(ctx, fixture.childEventID)
+	if err != nil {
+		t.Fatalf("query child event: %v", err)
+	}
+	if childEvent.Status != domainevent.StatusPENDING {
+		t.Fatalf("child event status = %s, want %s after rollback", childEvent.Status, domainevent.StatusPENDING)
+	}
+}
+
+func TestServiceCancelBatchParent_RollsBackWhenChildEventMissing(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDecisionFixture(t, "gateway_behavior_batch_cancel_child_event_missing")
+	ctx := context.Background()
+	if err := client.DomainEvent.DeleteOneID(fixture.childEventID).Exec(ctx); err != nil {
+		t.Fatalf("delete child event: %v", err)
+	}
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Cancel(ctx, fixture.parentTicketID, "requester-1")
+	if err == nil {
+		t.Fatal("Cancel() expected missing child event row-count error, got nil")
+	}
+	if !strings.Contains(err.Error(), "expected 1 row, got 0") {
+		t.Fatalf("Cancel() error = %v, want zero-row child event failure", err)
+	}
+
+	assertBatchDecisionFixturePendingExceptMissingChildEvent(t, client, fixture)
+}
+
+func TestServiceCancelBatchParent_RollsBackParentAndChildrenWhenProjectionSyncFails(t *testing.T) {
+	t.Parallel()
+
+	client, fixture := seedBatchDecisionFixture(t, "gateway_behavior_batch_cancel_projection_fail")
+	ctx := context.Background()
+	seedBatchDecisionProjection(t, client, fixture.parentTicketID)
+	client.BatchTicket.Use(enthook.On(
+		enthook.FixedError(fmt.Errorf("batch projection unavailable")),
+		ent.OpUpdateOne,
+	))
+
+	gw := NewService(client, nil, &fakeAtomicWriter{})
+	err := gw.Cancel(ctx, fixture.parentTicketID, "requester-1")
+	if err == nil {
+		t.Fatal("Cancel() expected batch projection error, got nil")
+	}
+	if !strings.Contains(err.Error(), "batch projection unavailable") {
+		t.Fatalf("Cancel() error = %v, want batch projection failure", err)
+	}
+
+	assertBatchDecisionFixturePending(t, client, fixture)
+	projection, err := client.BatchTicket.Get(ctx, fixture.parentTicketID)
+	if err != nil {
+		t.Fatalf("query batch projection: %v", err)
+	}
+	if projection.Status != entbatchticket.StatusPENDING_APPROVAL {
+		t.Fatalf("projection status = %s, want %s after rollback", projection.Status, entbatchticket.StatusPENDING_APPROVAL)
+	}
+	if projection.PendingCount != 1 || projection.ChildCount != 1 {
+		t.Fatalf("projection counts = child:%d pending:%d, want child:1 pending:1", projection.ChildCount, projection.PendingCount)
 	}
 }
 
@@ -2351,6 +3494,179 @@ func TestServiceApproveCreate_DryRunGate_ValidSpecCallsAtomicWriter(t *testing.T
 	}
 }
 
+func TestVMServiceEndToEnd_CreateRequestApprovalAndWorker(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	client, pool := newTicketingE2EStore(t, "vm_service_e2e")
+	riverClient := newTicketingE2ERiverClient(t, pool)
+	mockProvider := provider.NewMockProvider()
+	vmSvc := service.NewVMService(mockProvider)
+
+	systemID := "sys-e2e"
+	serviceID := "svc-e2e"
+	templateID := "tpl-e2e"
+	instanceSizeID := "size-e2e"
+	namespace := "team-prod-e2e"
+	clusterID := "cluster-e2e"
+	requester := "requester-e2e"
+	approver := "approver-e2e"
+
+	if _, err := client.System.Create().
+		SetID(systemID).
+		SetName("shop").
+		SetCreatedBy("seed").
+		Save(ctx); err != nil {
+		t.Fatalf("create system: %v", err)
+	}
+	if _, err := client.Service.Create().
+		SetID(serviceID).
+		SetName("api").
+		SetSystemID(systemID).
+		Save(ctx); err != nil {
+		t.Fatalf("create service: %v", err)
+	}
+	if _, err := client.NamespaceRegistry.Create().
+		SetID("ns-e2e").
+		SetName(namespace).
+		SetEnvironment(entnamespaceregistry.EnvironmentProd).
+		SetCreatedBy("seed").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+	if _, err := client.Cluster.Create().
+		SetID(clusterID).
+		SetName("cluster-e2e").
+		SetDisplayName("Cluster E2E").
+		SetAPIServerURL("https://k8s.example.com").
+		SetEncryptedKubeconfig([]byte("fake-kubeconfig")).
+		SetEnvironment(entcluster.EnvironmentProd).
+		SetStatus(entcluster.StatusHEALTHY).
+		SetDefaultStorageClass("gold-sc").
+		SetEnabled(true).
+		SetCreatedBy("seed").
+		Save(ctx); err != nil {
+		t.Fatalf("create cluster: %v", err)
+	}
+	if _, err := client.Template.Create().
+		SetID(templateID).
+		SetName("ubuntu").
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/ubuntu:24.04").
+		SetCatalogScope(enttemplate.CatalogScopeProd).
+		SetCreatedBy("seed").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	if _, err := client.InstanceSize.Create().
+		SetID(instanceSizeID).
+		SetName("small").
+		SetCPUCores(2).
+		SetMemoryGi(4).
+		SetDiskGB(50).
+		SetCatalogScope(instancesize.CatalogScopeProd).
+		SetCreatedBy("seed").
+		SetEnabled(true).
+		Save(ctx); err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+
+	createUC := usecase.NewCreateVMUseCase(
+		client,
+		vmSvc,
+		service.NewInstanceSizeService(client),
+		service.NewTemplateService(client),
+	)
+	createOut, err := createUC.Execute(ctx, usecase.CreateVMInput{
+		ServiceID:      serviceID,
+		TemplateID:     templateID,
+		InstanceSizeID: instanceSizeID,
+		Namespace:      namespace,
+		Reason:         "end-to-end create",
+		RequestedBy:    requester,
+	})
+	if err != nil {
+		t.Fatalf("CreateVMUseCase.Execute() error = %v", err)
+	}
+
+	gw := NewService(client, nil, usecase.NewApprovalAtomicWriter(pool, riverClient))
+	gw.validator = nil
+	gw.SetVMService(vmSvc)
+	err = gw.Approve(ctx, createOut.TicketID, approver, ExecutionOptions{
+		ClusterID:    clusterID,
+		StorageClass: "gold-sc",
+	})
+	if err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+
+	assertRiverJobCount(t, pool, jobs.VMCreateArgs{}.Kind(), 1)
+	assertRiverJobCount(t, pool, jobs.VMStatusSyncJobKind, 1)
+
+	vmRow, err := client.VM.Query().
+		Where(entvm.TicketIDEQ(createOut.TicketID)).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("query approved VM row: %v", err)
+	}
+	if vmRow.Status != entvm.StatusCREATING {
+		t.Fatalf("approved VM status = %q, want %q", vmRow.Status, entvm.StatusCREATING)
+	}
+	if vmRow.ClusterID != clusterID || vmRow.Namespace != namespace {
+		t.Fatalf("approved VM scope = cluster:%q namespace:%q, want %q/%q", vmRow.ClusterID, vmRow.Namespace, clusterID, namespace)
+	}
+
+	worker := jobs.NewVMCreateWorker(client, vmSvc, nil)
+	err = worker.Work(ctx, &river.Job[jobs.VMCreateArgs]{
+		Args: jobs.VMCreateArgs{EventID: createOut.EventID},
+	})
+	if err != nil {
+		t.Fatalf("VMCreateWorker.Work() error = %v", err)
+	}
+
+	event, err := client.DomainEvent.Get(ctx, createOut.EventID)
+	if err != nil {
+		t.Fatalf("query event after worker: %v", err)
+	}
+	if event.Status != domainevent.StatusCOMPLETED {
+		t.Fatalf("event status = %q, want %q", event.Status, domainevent.StatusCOMPLETED)
+	}
+	ticket, err := client.Ticket.Get(ctx, createOut.TicketID)
+	if err != nil {
+		t.Fatalf("query ticket after worker: %v", err)
+	}
+	if ticket.Status != entticket.StatusSUCCESS {
+		t.Fatalf("ticket status = %q, want %q", ticket.Status, entticket.StatusSUCCESS)
+	}
+
+	vmRow, err = client.VM.Get(ctx, vmRow.ID)
+	if err != nil {
+		t.Fatalf("reload VM row after worker: %v", err)
+	}
+	if vmRow.Status != entvm.StatusCREATING {
+		t.Fatalf("worker VM status = %q, want %q from mock provider", vmRow.Status, entvm.StatusCREATING)
+	}
+	createdVM, err := mockProvider.GetVM(ctx, clusterID, namespace, vmRow.Name)
+	if err != nil {
+		t.Fatalf("mock provider VM missing after worker: %v", err)
+	}
+	if createdVM.Spec.Labels["shepherd.io/event-id"] != createOut.EventID {
+		t.Fatalf("created VM event label = %q, want %q", createdVM.Spec.Labels["shepherd.io/event-id"], createOut.EventID)
+	}
+	if createdVM.Spec.CPU != 2 || createdVM.Spec.MemoryGi != 4 || createdVM.Spec.DiskGB != 50 {
+		t.Fatalf("created VM resources = cpu:%v mem:%v disk:%d, want 2/4/50",
+			createdVM.Spec.CPU,
+			createdVM.Spec.MemoryGi,
+			createdVM.Spec.DiskGB,
+		)
+	}
+	if createdVM.Spec.StorageClass != "gold-sc" {
+		t.Fatalf("created VM storage_class = %q, want gold-sc", createdVM.Spec.StorageClass)
+	}
+}
+
 func TestServiceApproveCreate_DryRunGate_InvalidSpecBlocksEnqueue(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_dryrun_gate_invalid")
@@ -2598,6 +3914,46 @@ func TestServiceSetVMService_IsChainable(t *testing.T) {
 	returned := gw.SetVMService(nil)
 	if returned != gw {
 		t.Fatal("SetVMService() should return the same Service for method chaining")
+	}
+}
+
+func newTicketingE2EStore(t *testing.T, prefix string) (*ent.Client, *pgxpool.Pool) {
+	t.Helper()
+
+	pool := testutil.OpenPGXPool(t, prefix)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	return client, pool
+}
+
+func newTicketingE2ERiverClient(t *testing.T, pool *pgxpool.Pool) *river.Client[pgx.Tx] {
+	t.Helper()
+
+	migrator, err := rivermigrate.New(riverpgxv5.New(pool), nil)
+	if err != nil {
+		t.Fatalf("create river migrator: %v", err)
+	}
+	if _, migrateErr := migrator.Migrate(t.Context(), rivermigrate.DirectionUp, nil); migrateErr != nil {
+		t.Fatalf("migrate river schema: %v", migrateErr)
+	}
+	riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("create river client: %v", err)
+	}
+	return riverClient
+}
+
+func assertRiverJobCount(t *testing.T, pool *pgxpool.Pool, kind string, want int) {
+	t.Helper()
+
+	var got int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM river_job WHERE kind = $1`, kind).Scan(&got); err != nil {
+		t.Fatalf("query river job count for %s: %v", kind, err)
+	}
+	if got != want {
+		t.Fatalf("river job count for %s = %d, want %d", kind, got, want)
 	}
 }
 

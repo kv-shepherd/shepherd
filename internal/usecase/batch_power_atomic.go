@@ -259,20 +259,21 @@ func (w *ApprovalAtomicWriter) RetryBatchPowerAndEnqueue(ctx context.Context, in
 		eventID := strings.TrimSpace(child.EventID)
 		affected, err := qtx.ResetPowerRetryTicket(ctx, sqlcrepo.ResetPowerRetryTicketParams{
 			ID:             ticketID,
+			EventID:        eventID,
 			ParentTicketID: textOrNull(parentID),
 		})
 		if err != nil {
 			return fmt.Errorf("reset power retry ticket %s: %w", ticketID, err)
 		}
 		if affected == 0 {
-			return fmt.Errorf("reset power retry ticket %s: not found or not a power child", ticketID)
+			return fmt.Errorf("reset power retry ticket %s: not found, not retryable, or event mismatch", ticketID)
 		}
 		affected, err = qtx.ResetDomainEventForRetry(ctx, eventID)
 		if err != nil {
 			return fmt.Errorf("reset power retry event %s: %w", eventID, err)
 		}
 		if affected == 0 {
-			return fmt.Errorf("reset power retry event %s: not found", eventID)
+			return fmt.Errorf("reset power retry event %s: not found or not retryable", eventID)
 		}
 		if _, err := w.riverClient.InsertTx(ctx, tx, jobs.VMPowerArgs{
 			EventID: eventID,

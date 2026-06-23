@@ -92,6 +92,39 @@ func NewService(client *ent.Client, auditLogger *audit.Logger, atomicWriter Atom
 	}
 }
 
+func withDecisionTx(ctx context.Context, client *ent.Client, fn func(txClient *ent.Client) error) error {
+	tx, err := client.Tx(ctx)
+	if err != nil {
+		return fmt.Errorf("begin ticket decision transaction: %w", err)
+	}
+	defer func() {
+		if v := recover(); v != nil {
+			_ = tx.Rollback()
+			panic(v)
+		}
+	}()
+	if err := fn(tx.Client()); err != nil {
+		if rerr := tx.Rollback(); rerr != nil {
+			return fmt.Errorf("%w: rollback ticket decision transaction: %w", err, rerr)
+		}
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit ticket decision transaction: %w", err)
+	}
+	return nil
+}
+
+func requirePendingDecisionEvent(ticketID string, event *ent.DomainEvent) error {
+	if event == nil {
+		return fmt.Errorf("ticket %s requires a domain event", ticketID)
+	}
+	if event.Status != domainevent.StatusPENDING {
+		return fmt.Errorf("ticket %s domain event %s is not pending (current: %s)", ticketID, event.ID, event.Status)
+	}
+	return nil
+}
+
 // SetNotifier configures the notification trigger service.
 // This is a setter to avoid breaking the existing constructor signature.
 func (g *Service) SetNotifier(notifier *notification.Triggers) {
@@ -134,6 +167,9 @@ func (g *Service) Approve(ctx context.Context, ticketID, approver string, opts E
 	event, err := g.client.DomainEvent.Get(ctx, ticket.EventID)
 	if err != nil {
 		return fmt.Errorf("get domain event %s: %w", ticket.EventID, err)
+	}
+	if eventErr := requirePendingDecisionEvent(ticketID, event); eventErr != nil {
+		return eventErr
 	}
 	isBatchParent, err := g.isBatchParentTicket(ctx, ticket, event)
 	if err != nil {
@@ -1070,16 +1106,22 @@ func (g *Service) approveVNC(ctx context.Context, ticket *ent.Ticket, event *ent
 		return fmt.Errorf("ticket %s is VNC_ACCESS but domain event type is %s", ticketID, event.EventType)
 	}
 
-	if _, err := g.client.Ticket.UpdateOneID(ticketID).
-		SetStatus(entticket.StatusAPPROVED).
-		SetApprover(approver).
-		Save(ctx); err != nil {
-		return fmt.Errorf("approve vnc ticket %s: %w", ticketID, err)
-	}
-	if _, err := g.client.DomainEvent.UpdateOneID(ticket.EventID).
-		SetStatus(domainevent.StatusCOMPLETED).
-		Save(ctx); err != nil {
-		return fmt.Errorf("set domain event COMPLETED for vnc ticket %s: %w", ticketID, err)
+	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
+		if err := updatePendingTicketEventDecisionPair(
+			ctx,
+			txClient,
+			ticketID,
+			ticket.EventID,
+			entticket.StatusSUCCESS,
+			domainevent.StatusCOMPLETED,
+			approver,
+			"",
+		); err != nil {
+			return fmt.Errorf("approve vnc ticket %s: %w", ticketID, err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if g.auditLogger != nil {
@@ -1112,6 +1154,9 @@ func (g *Service) Reject(ctx context.Context, ticketID, approver, reason string)
 	if err != nil {
 		return fmt.Errorf("get domain event %s: %w", ticket.EventID, err)
 	}
+	if eventErr := requirePendingDecisionEvent(ticketID, event); eventErr != nil {
+		return eventErr
+	}
 	isBatchParent, err := g.isBatchParentTicket(ctx, ticket, event)
 	if err != nil {
 		return fmt.Errorf("resolve batch parent ticket %s: %w", ticketID, err)
@@ -1120,17 +1165,22 @@ func (g *Service) Reject(ctx context.Context, ticketID, approver, reason string)
 		return g.rejectBatchParent(ctx, ticket, approver, reason)
 	}
 
-	if _, err := g.client.Ticket.UpdateOneID(ticketID).
-		SetStatus(entticket.StatusREJECTED).
-		SetApprover(approver).
-		SetRejectReason(reason).
-		Save(ctx); err != nil {
-		return fmt.Errorf("reject ticket %s: %w", ticketID, err)
-	}
-	if _, err := g.client.DomainEvent.UpdateOneID(ticket.EventID).
-		SetStatus(domainevent.StatusCANCELLED).
-		Save(ctx); err != nil {
-		return fmt.Errorf("set domain event CANCELLED for rejected ticket %s: %w", ticketID, err)
+	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
+		if err := updatePendingTicketEventDecisionPair(
+			ctx,
+			txClient,
+			ticketID,
+			ticket.EventID,
+			entticket.StatusREJECTED,
+			domainevent.StatusCANCELLED,
+			approver,
+			reason,
+		); err != nil {
+			return fmt.Errorf("reject ticket %s: %w", ticketID, err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	// Audit log (master-flow.md Stage 5.B)
@@ -1180,6 +1230,9 @@ func (g *Service) Cancel(ctx context.Context, ticketID, requester string) error 
 	if err != nil {
 		return fmt.Errorf("get domain event %s: %w", ticket.EventID, err)
 	}
+	if eventErr := requirePendingDecisionEvent(ticketID, event); eventErr != nil {
+		return eventErr
+	}
 	isBatchParent, err := g.isBatchParentTicket(ctx, ticket, event)
 	if err != nil {
 		return fmt.Errorf("resolve batch parent ticket %s: %w", ticketID, err)
@@ -1188,15 +1241,22 @@ func (g *Service) Cancel(ctx context.Context, ticketID, requester string) error 
 		return g.cancelBatchParent(ctx, ticket, requester)
 	}
 
-	if _, err := g.client.Ticket.UpdateOneID(ticketID).
-		SetStatus(entticket.StatusCANCELLED).
-		Save(ctx); err != nil {
-		return fmt.Errorf("set ticket CANCELLED for canceled ticket %s: %w", ticketID, err)
-	}
-	if _, err := g.client.DomainEvent.UpdateOneID(ticket.EventID).
-		SetStatus(domainevent.StatusCANCELLED).
-		Save(ctx); err != nil {
-		return fmt.Errorf("set domain event CANCELLED for canceled ticket %s: %w", ticketID, err)
+	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
+		if err := updatePendingTicketEventDecisionPair(
+			ctx,
+			txClient,
+			ticketID,
+			ticket.EventID,
+			entticket.StatusCANCELLED,
+			domainevent.StatusCANCELLED,
+			"",
+			"",
+		); err != nil {
+			return fmt.Errorf("set ticket CANCELLED for canceled ticket %s: %w", ticketID, err)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 
 	if g.auditLogger != nil {
@@ -1264,7 +1324,9 @@ func (g *Service) approveBatchParent(
 			if firstErr == nil {
 				firstErr = preflightErr
 			}
-			g.markChildApprovalDispatchFailed(ctx, child, approver, preflightErr)
+			if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, preflightErr); persistErr != nil {
+				return persistErr
+			}
 			continue
 		}
 		dispatchReady[child.ID] = struct{}{}
@@ -1289,7 +1351,9 @@ func (g *Service) approveBatchParent(
 				childEvent, approveErr = g.client.DomainEvent.Get(ctx, child.EventID)
 				if approveErr != nil {
 					failedCount++
-					g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load modify child event %s: %w", child.EventID, approveErr))
+					if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load modify child event %s: %w", child.EventID, approveErr)); persistErr != nil {
+						return persistErr
+					}
 					continue
 				}
 			}
@@ -1302,7 +1366,9 @@ func (g *Service) approveBatchParent(
 				childEvent, approveErr = g.client.DomainEvent.Get(ctx, child.EventID)
 				if approveErr != nil {
 					failedCount++
-					g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load power child event %s: %w", child.EventID, approveErr))
+					if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load power child event %s: %w", child.EventID, approveErr)); persistErr != nil {
+						return persistErr
+					}
 					continue
 				}
 			}
@@ -1313,7 +1379,9 @@ func (g *Service) approveBatchParent(
 				childEvent, approveErr = g.client.DomainEvent.Get(ctx, child.EventID)
 				if approveErr != nil {
 					failedCount++
-					g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load vnc child event %s: %w", child.EventID, approveErr))
+					if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load vnc child event %s: %w", child.EventID, approveErr)); persistErr != nil {
+						return persistErr
+					}
 					continue
 				}
 			}
@@ -1329,7 +1397,9 @@ func (g *Service) approveBatchParent(
 			if firstErr == nil {
 				firstErr = approveErr
 			}
-			g.markChildApprovalDispatchFailed(ctx, child, approver, approveErr)
+			if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, approveErr); persistErr != nil {
+				return persistErr
+			}
 			continue
 		}
 		successCount++
@@ -1342,30 +1412,54 @@ func (g *Service) approveBatchParent(
 		parentEventStatus = domainevent.StatusPROCESSING
 	}
 
-	parentUpdater := g.client.Ticket.UpdateOneID(parent.ID).
-		SetStatus(parentStatus).
-		SetApprover(approver)
-	if parent.OperationType == entticket.OperationTypeCREATE && strings.TrimSpace(opts.ClusterID) != "" {
-		parentUpdater = parentUpdater.SetSelectedClusterID(opts.ClusterID)
-	}
-	if parent.OperationType == entticket.OperationTypeCREATE && strings.TrimSpace(opts.StorageClass) != "" {
-		parentUpdater = parentUpdater.SetSelectedStorageClass(opts.StorageClass)
-	}
-	if failedCount > 0 {
-		rejectReason := fmt.Sprintf("%d child approvals failed during dispatch", failedCount)
-		if firstErr != nil {
-			message := strings.TrimSpace(firstErr.Error())
-			if message != "" {
-				rejectReason = message
-			}
+	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
+		parentUpdater := txClient.Ticket.Update().
+			Where(
+				entticket.ID(parent.ID),
+				entticket.EventID(parent.EventID),
+				entticket.StatusEQ(entticket.StatusPENDING),
+			).
+			SetStatus(parentStatus).
+			SetApprover(approver)
+		if parent.OperationType == entticket.OperationTypeCREATE && strings.TrimSpace(opts.ClusterID) != "" {
+			parentUpdater = parentUpdater.SetSelectedClusterID(opts.ClusterID)
 		}
-		parentUpdater = parentUpdater.SetRejectReason(rejectReason)
-	}
-	if _, err := parentUpdater.Save(ctx); err != nil {
-		return fmt.Errorf("update batch parent ticket %s: %w", parent.ID, err)
-	}
-	if _, err := g.client.DomainEvent.UpdateOneID(parentEvent.ID).SetStatus(parentEventStatus).Save(ctx); err != nil {
-		return fmt.Errorf("update batch parent event %s: %w", parentEvent.ID, err)
+		if parent.OperationType == entticket.OperationTypeCREATE && strings.TrimSpace(opts.StorageClass) != "" {
+			parentUpdater = parentUpdater.SetSelectedStorageClass(opts.StorageClass)
+		}
+		if failedCount > 0 {
+			rejectReason := fmt.Sprintf("%d child approvals failed during dispatch", failedCount)
+			if firstErr != nil {
+				message := strings.TrimSpace(firstErr.Error())
+				if message != "" {
+					rejectReason = message
+				}
+			}
+			parentUpdater = parentUpdater.SetRejectReason(rejectReason)
+		}
+		affected, err := parentUpdater.Save(ctx)
+		if err != nil {
+			return fmt.Errorf("update batch parent ticket %s: %w", parent.ID, err)
+		}
+		if affected != 1 {
+			return fmt.Errorf("update batch parent ticket %s: expected 1 row, got %d", parent.ID, affected)
+		}
+		affected, err = txClient.DomainEvent.Update().
+			Where(
+				domainevent.ID(parentEvent.ID),
+				domainevent.StatusEQ(domainevent.StatusPENDING),
+			).
+			SetStatus(parentEventStatus).
+			Save(ctx)
+		if err != nil {
+			return fmt.Errorf("update batch parent event %s: %w", parentEvent.ID, err)
+		}
+		if affected != 1 {
+			return fmt.Errorf("update batch parent event %s: expected 1 row, got %d", parentEvent.ID, affected)
+		}
+		return g.syncBatchProjectionByParentIDWithClient(ctx, txClient, parent.ID)
+	}); err != nil {
+		return err
 	}
 
 	if g.auditLogger != nil {
@@ -1374,7 +1468,6 @@ func (g *Service) approveBatchParent(
 	if g.notifier != nil && successCount > 0 {
 		g.notifier.OnTicketApproved(ctx, parent.ID, parent.Requester, approver)
 	}
-	g.syncBatchProjectionByParentID(ctx, parent.ID)
 
 	if successCount == 0 {
 		if firstErr != nil {
@@ -1399,46 +1492,45 @@ func (g *Service) rejectBatchParent(
 	approver,
 	reason string,
 ) error {
-	if _, err := g.client.Ticket.UpdateOneID(parent.ID).
-		SetStatus(entticket.StatusREJECTED).
-		SetApprover(approver).
-		SetRejectReason(reason).
-		Save(ctx); err != nil {
-		return fmt.Errorf("reject batch parent ticket %s: %w", parent.ID, err)
-	}
-	if _, err := g.client.DomainEvent.UpdateOneID(parent.EventID).
-		SetStatus(domainevent.StatusCANCELLED).
-		Save(ctx); err != nil {
-		return fmt.Errorf("set batch parent event CANCELLED for ticket %s: %w", parent.ID, err)
-	}
+	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
+		if err := updatePendingTicketEventDecisionPair(
+			ctx,
+			txClient,
+			parent.ID,
+			parent.EventID,
+			entticket.StatusREJECTED,
+			domainevent.StatusCANCELLED,
+			approver,
+			reason,
+		); err != nil {
+			return fmt.Errorf("reject batch parent ticket %s: %w", parent.ID, err)
+		}
 
-	children, err := g.client.Ticket.Query().
-		Where(entticket.ParentTicketIDEQ(parent.ID)).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("list child tickets for batch reject %s: %w", parent.ID, err)
-	}
-	childEventIDs := make([]string, 0, len(children))
-	for _, child := range children {
-		if child.Status != entticket.StatusPENDING {
-			continue
+		children, err := txClient.Ticket.Query().
+			Where(entticket.ParentTicketIDEQ(parent.ID)).
+			All(ctx)
+		if err != nil {
+			return fmt.Errorf("list child tickets for batch reject %s: %w", parent.ID, err)
 		}
-		if _, err := g.client.Ticket.UpdateOneID(child.ID).
-			SetStatus(entticket.StatusREJECTED).
-			SetApprover(approver).
-			SetRejectReason(reason).
-			Save(ctx); err != nil {
-			return fmt.Errorf("reject child ticket %s: %w", child.ID, err)
+		for _, child := range children {
+			if child.Status != entticket.StatusPENDING {
+				continue
+			}
+			if err := updateBatchChildDecisionPair(
+				ctx,
+				txClient,
+				child,
+				entticket.StatusREJECTED,
+				domainevent.StatusCANCELLED,
+				approver,
+				reason,
+			); err != nil {
+				return fmt.Errorf("reject batch child %s: %w", child.ID, err)
+			}
 		}
-		childEventIDs = append(childEventIDs, child.EventID)
-	}
-	if len(childEventIDs) > 0 {
-		if _, err := g.client.DomainEvent.Update().
-			Where(domainevent.IDIn(childEventIDs...)).
-			SetStatus(domainevent.StatusCANCELLED).
-			Save(ctx); err != nil {
-			return fmt.Errorf("cancel child events for batch reject %s: %w", parent.ID, err)
-		}
+		return g.syncBatchProjectionByParentIDWithClient(ctx, txClient, parent.ID)
+	}); err != nil {
+		return err
 	}
 
 	if g.auditLogger != nil {
@@ -1447,53 +1539,121 @@ func (g *Service) rejectBatchParent(
 	if g.notifier != nil {
 		g.notifier.OnTicketRejected(ctx, parent.ID, parent.Requester, approver, reason)
 	}
-	g.syncBatchProjectionByParentID(ctx, parent.ID)
 	return nil
 }
 
 func (g *Service) cancelBatchParent(ctx context.Context, parent *ent.Ticket, requester string) error {
-	if _, err := g.client.Ticket.UpdateOneID(parent.ID).
-		SetStatus(entticket.StatusCANCELLED).
-		Save(ctx); err != nil {
-		return fmt.Errorf("set batch parent CANCELLED for ticket %s: %w", parent.ID, err)
-	}
-	if _, err := g.client.DomainEvent.UpdateOneID(parent.EventID).
-		SetStatus(domainevent.StatusCANCELLED).
-		Save(ctx); err != nil {
-		return fmt.Errorf("set batch parent event CANCELLED for ticket %s: %w", parent.ID, err)
-	}
+	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
+		if err := updatePendingTicketEventDecisionPair(
+			ctx,
+			txClient,
+			parent.ID,
+			parent.EventID,
+			entticket.StatusCANCELLED,
+			domainevent.StatusCANCELLED,
+			"",
+			"",
+		); err != nil {
+			return fmt.Errorf("set batch parent CANCELLED for ticket %s: %w", parent.ID, err)
+		}
 
-	children, err := g.client.Ticket.Query().
-		Where(entticket.ParentTicketIDEQ(parent.ID)).
-		All(ctx)
-	if err != nil {
-		return fmt.Errorf("list child tickets for batch cancel %s: %w", parent.ID, err)
-	}
-	childEventIDs := make([]string, 0, len(children))
-	for _, child := range children {
-		if child.Status != entticket.StatusPENDING {
-			continue
+		children, err := txClient.Ticket.Query().
+			Where(entticket.ParentTicketIDEQ(parent.ID)).
+			All(ctx)
+		if err != nil {
+			return fmt.Errorf("list child tickets for batch cancel %s: %w", parent.ID, err)
 		}
-		if _, err := g.client.Ticket.UpdateOneID(child.ID).
-			SetStatus(entticket.StatusCANCELLED).
-			Save(ctx); err != nil {
-			return fmt.Errorf("cancel child ticket %s: %w", child.ID, err)
+		for _, child := range children {
+			if child.Status != entticket.StatusPENDING {
+				continue
+			}
+			if err := updateBatchChildDecisionPair(
+				ctx,
+				txClient,
+				child,
+				entticket.StatusCANCELLED,
+				domainevent.StatusCANCELLED,
+				"",
+				"",
+			); err != nil {
+				return fmt.Errorf("cancel batch child %s: %w", child.ID, err)
+			}
 		}
-		childEventIDs = append(childEventIDs, child.EventID)
-	}
-	if len(childEventIDs) > 0 {
-		if _, err := g.client.DomainEvent.Update().
-			Where(domainevent.IDIn(childEventIDs...)).
-			SetStatus(domainevent.StatusCANCELLED).
-			Save(ctx); err != nil {
-			return fmt.Errorf("cancel child events for batch cancel %s: %w", parent.ID, err)
-		}
+		return g.syncBatchProjectionByParentIDWithClient(ctx, txClient, parent.ID)
+	}); err != nil {
+		return err
 	}
 
 	if g.auditLogger != nil {
 		_ = g.auditLogger.LogApproval(ctx, parent.ID, "batch_cancelled", requester)
 	}
-	g.syncBatchProjectionByParentID(ctx, parent.ID)
+	return nil
+}
+
+func updateBatchChildDecisionPair(
+	ctx context.Context,
+	txClient *ent.Client,
+	child *ent.Ticket,
+	ticketStatus entticket.Status,
+	eventStatus domainevent.Status,
+	approver string,
+	reason string,
+) error {
+	if child == nil {
+		return fmt.Errorf("batch child ticket is nil")
+	}
+	return updatePendingTicketEventDecisionPair(ctx, txClient, child.ID, child.EventID, ticketStatus, eventStatus, approver, reason)
+}
+
+func updatePendingTicketEventDecisionPair(
+	ctx context.Context,
+	txClient *ent.Client,
+	ticketID string,
+	eventID string,
+	ticketStatus entticket.Status,
+	eventStatus domainevent.Status,
+	approver string,
+	reason string,
+) error {
+	if strings.TrimSpace(ticketID) == "" {
+		return fmt.Errorf("ticket id is required")
+	}
+	if strings.TrimSpace(eventID) == "" {
+		return fmt.Errorf("event id is required")
+	}
+	ticketUpdate := txClient.Ticket.Update().
+		Where(
+			entticket.ID(ticketID),
+			entticket.EventID(eventID),
+			entticket.StatusEQ(entticket.StatusPENDING),
+		).
+		SetStatus(ticketStatus)
+	if strings.TrimSpace(approver) != "" {
+		ticketUpdate = ticketUpdate.SetApprover(approver)
+	}
+	if strings.TrimSpace(reason) != "" {
+		ticketUpdate = ticketUpdate.SetRejectReason(reason)
+	}
+	affected, err := ticketUpdate.Save(ctx)
+	if err != nil {
+		return fmt.Errorf("update ticket decision: %w", err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("update ticket decision: expected 1 row, got %d", affected)
+	}
+	affected, err = txClient.DomainEvent.Update().
+		Where(
+			domainevent.ID(eventID),
+			domainevent.StatusEQ(domainevent.StatusPENDING),
+		).
+		SetStatus(eventStatus).
+		Save(ctx)
+	if err != nil {
+		return fmt.Errorf("update event decision: %w", err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("update event decision: expected 1 row, got %d", affected)
+	}
 	return nil
 }
 
@@ -1502,9 +1662,9 @@ func (g *Service) markChildApprovalDispatchFailed(
 	child *ent.Ticket,
 	approver string,
 	cause error,
-) {
+) error {
 	if child == nil {
-		return
+		return nil
 	}
 	message := strings.TrimSpace(cause.Error())
 	if message == "" {
@@ -1513,24 +1673,21 @@ func (g *Service) markChildApprovalDispatchFailed(
 	if len(message) > 512 {
 		message = message[:512]
 	}
-	if _, err := g.client.Ticket.UpdateOneID(child.ID).
-		SetStatus(entticket.StatusFAILED).
-		SetApprover(approver).
-		SetRejectReason(message).
-		Save(ctx); err != nil {
-		logger.Warn("failed to mark child ticket dispatch failure",
-			zap.String("ticket_id", child.ID),
-			zap.Error(err),
-		)
-	}
-	if _, err := g.client.DomainEvent.UpdateOneID(child.EventID).
-		SetStatus(domainevent.StatusFAILED).
-		Save(ctx); err != nil {
-		logger.Warn("failed to mark child event dispatch failure",
-			zap.String("event_id", child.EventID),
-			zap.Error(err),
-		)
-	}
+	return withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
+		if err := updatePendingTicketEventDecisionPair(
+			ctx,
+			txClient,
+			child.ID,
+			child.EventID,
+			entticket.StatusFAILED,
+			domainevent.StatusFAILED,
+			approver,
+			message,
+		); err != nil {
+			return fmt.Errorf("mark child ticket %s dispatch failure: %w", child.ID, err)
+		}
+		return nil
+	})
 }
 
 func (g *Service) isBatchParentTicket(
@@ -1562,12 +1719,18 @@ func isBatchEventType(eventType string) bool {
 	}
 }
 
-func (g *Service) syncBatchProjectionByParentID(ctx context.Context, parentTicketID string) {
-	children, err := g.client.Ticket.Query().
+func (g *Service) syncBatchProjectionByParentIDWithClient(ctx context.Context, client *ent.Client, parentTicketID string) error {
+	if client == nil || strings.TrimSpace(parentTicketID) == "" {
+		return nil
+	}
+	children, err := client.Ticket.Query().
 		Where(entticket.ParentTicketIDEQ(parentTicketID)).
 		All(ctx)
-	if err != nil || len(children) == 0 {
-		return
+	if err != nil {
+		return fmt.Errorf("list child tickets for batch projection %s: %w", parentTicketID, err)
+	}
+	if len(children) == 0 {
+		return nil
 	}
 
 	var (
@@ -1603,18 +1766,23 @@ func (g *Service) syncBatchProjectionByParentID(ctx context.Context, parentTicke
 		status = entbatchticket.StatusFAILED
 	}
 
-	if _, err := g.client.BatchTicket.UpdateOneID(parentTicketID).
+	if _, err := client.BatchTicket.UpdateOneID(parentTicketID).
 		SetChildCount(len(children)).
 		SetSuccessCount(successCount).
 		SetFailedCount(failedCount).
 		SetPendingCount(activeCount).
 		SetStatus(status).
-		Save(ctx); err != nil && !ent.IsNotFound(err) {
+		Save(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			return nil
+		}
 		logger.Warn("failed to sync batch projection from gateway",
 			zap.String("parent_ticket_id", parentTicketID),
 			zap.Error(err),
 		)
+		return fmt.Errorf("sync batch projection %s: %w", parentTicketID, err)
 	}
+	return nil
 }
 
 // ListPending returns pending tickets sorted by creation time (oldest first).
@@ -1840,8 +2008,8 @@ func (g *Service) buildDryRunSpec(
 		StorageClass: strings.TrimSpace(opts.StorageClass),
 		CloudInit:    tmpl.CloudInit,
 		Labels: map[string]string{
-			"shepherd.io/service-id":  payload.ServiceID,
-			"shepherd.io/template-id": tmpl.ID,
+			domain.ShepherdServiceIDLabel:  payload.ServiceID,
+			domain.ShepherdTemplateIDLabel: tmpl.ID,
 		},
 		SpecOverrides:   cloneMap(size.SpecOverrides),
 		CPURequest:      requestedTargets.CPURequest,

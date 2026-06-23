@@ -1,2 +1,8 @@
 2026-05-09 security hardening: POST /external-approval/tickets/{ticket_id}/decision added the new required 'header' request parameter 'X-Shepherd-Timestamp'
 2026-05-09 security hardening: POST /webhooks/approval-callback added the new required 'header' request parameter 'X-Shepherd-Timestamp'
+2026-06-19 query validation hardening: GET /admin/templates the 'query' request parameter 'catalog_scope' was restricted to a list of enum values
+2026-06-19 query validation hardening: GET /admin/templates the 'query' request parameter 'source_type' was restricted to a list of enum values
+2026-06-19 query validation hardening: GET /systems the 'query' request parameter 'sort_by' was restricted to a list of enum values
+2026-06-19 query validation hardening: GET /vms the 'query' request parameter 'sort_by' was restricted to a list of enum values
+2026-06-19 query validation hardening: GET /vms the 'query' request parameter 'status' was restricted to a list of enum values
+2026-06-19 query validation hardening: GET /vms/batch the 'query' request parameter 'sort_by' was restricted to a list of enum values

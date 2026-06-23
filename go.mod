@@ -43,8 +43,8 @@ require (
 	k8s.io/apimachinery v0.34.3
 	k8s.io/client-go v0.34.3
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4
-	kubevirt.io/api v1.8.2
-	kubevirt.io/client-go v1.8.2
+	kubevirt.io/api v1.8.4
+	kubevirt.io/client-go v1.8.4
 	kubevirt.io/containerized-data-importer-api v1.64.0
 	sigs.k8s.io/yaml v1.6.0
 )
@@ -195,7 +195,7 @@ require (
 	sigs.k8s.io/structured-merge-diff/v6 v6.3.0 // indirect
 )
 
-// Lock Kubernetes core dependencies to match kubevirt.io/client-go v1.8.2 baseline.
+// Lock Kubernetes core dependencies to match kubevirt.io/client-go v1.8.4 baseline.
 replace (
 	k8s.io/api => k8s.io/api v0.34.3
 	k8s.io/apiextensions-apiserver => k8s.io/apiextensions-apiserver v0.34.3

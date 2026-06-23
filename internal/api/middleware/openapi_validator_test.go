@@ -15,6 +15,7 @@ import (
 
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/pkg/worker"
 )
 
 var (
@@ -1466,14 +1467,46 @@ func TestOpenAPIValidatorAllowsDynamicUserPreferenceValueInStrictMode(t *testing
 
 func TestOpenAPIValidatorAllowsDynamicTicketPayloadInStrictMode(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
-	router.GET("/api/v1/builtin-approval/tasks", func(c *gin.Context) {
+	handler := func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"items": []gin.H{
 				{
-					"id":        "ticket-1",
-					"event_id":  "evt-1",
-					"status":    "PENDING",
-					"requester": "u-1",
+					"id":                 "ticket-1",
+					"event_id":           "evt-1",
+					"status":             "PENDING",
+					"operation_type":     "CREATE",
+					"requester":          "u-1",
+					"requester_username": "admin",
+					"reason":             "live request",
+					"created_at":         time.Now().Format(time.RFC3339),
+					"summary": gin.H{
+						"system_id":          "sys-1",
+						"system_name":        "System",
+						"service_id":         "svc-1",
+						"service_name":       "Service",
+						"namespace":          "e2e",
+						"template_id":        "tpl-1",
+						"template_name":      "Ubuntu",
+						"instance_size_id":   "size-1",
+						"instance_size_name": "Small",
+					},
+					"request_prefill": gin.H{
+						"system_id":        "019ee930-399b-78ef-b864-e21e0f099bbe",
+						"service_id":       "019ee930-3b78-75c4-822a-0315ad2d403f",
+						"template_id":      "019ee930-3ca5-7c76-82d3-6ce05d19040a",
+						"instance_size_id": "019ee930-3ca5-7c76-82d3-6ce05d19040b",
+						"namespace":        "e2e",
+						"reason":           "live request",
+						"batch_count":      1,
+					},
+					"provisioning": gin.H{
+						"phase": "Pending",
+					},
+					"placement_evaluation": gin.H{
+						"selected_cluster_id": "cluster-1",
+						"eligible":            true,
+						"evaluated_at":        time.Now().Format(time.RFC3339),
+					},
 					"ticket_payload": gin.H{
 						"template_id":      "tpl-1",
 						"instance_size_id": "size-1",
@@ -1484,16 +1517,105 @@ func TestOpenAPIValidatorAllowsDynamicTicketPayloadInStrictMode(t *testing.T) {
 					},
 				},
 			},
+			"pagination": gin.H{
+				"page":     1,
+				"per_page": 20,
+				"total":    1,
+			},
+		})
+	}
+	router.GET("/api/v1/tickets", handler)
+	router.GET("/api/v1/builtin-approval/tasks", handler)
+
+	for _, path := range []string{"/api/v1/tickets", "/api/v1/builtin-approval/tasks"} {
+		t.Run(path, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, path, http.NoBody)
+			req.Header.Set("Authorization", "Bearer test-token")
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, req)
+
+			if resp.Code != http.StatusOK {
+				t.Fatalf("expected 200 for dynamic ticket payload, got %d body=%s", resp.Code, resp.Body.String())
+			}
+		})
+	}
+}
+
+func TestOpenAPIValidatorAllowsConcurrentTicketListResponses(t *testing.T) {
+	router := newOpenAPIValidatorTestRouter(t)
+	router.GET("/api/v1/tickets", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{
+			"items": []gin.H{
+				{
+					"id":             "ticket-1",
+					"event_id":       "evt-1",
+					"status":         "PENDING",
+					"operation_type": "CREATE",
+					"requester":      "u-1",
+					"created_at":     time.Now().Format(time.RFC3339),
+					"summary": gin.H{
+						"system_id":          "sys-1",
+						"system_name":        "System",
+						"service_id":         "svc-1",
+						"service_name":       "Service",
+						"namespace":          "e2e",
+						"template_id":        "tpl-1",
+						"template_name":      "Ubuntu",
+						"instance_size_id":   "size-1",
+						"instance_size_name": "Small",
+					},
+					"ticket_payload": gin.H{
+						"template_id": "tpl-1",
+						"nested": gin.H{
+							"name": "vm-dev-1",
+						},
+					},
+				},
+			},
+			"pagination": gin.H{
+				"page":     1,
+				"per_page": 20,
+				"total":    1,
+			},
 		})
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/v1/builtin-approval/tasks", http.NoBody)
-	req.Header.Set("Authorization", "Bearer test-token")
-	resp := httptest.NewRecorder()
-	router.ServeHTTP(resp, req)
+	const requestCount = 16
+	pools, err := worker.NewPools(context.Background(), worker.PoolConfig{
+		GeneralPoolSize: requestCount,
+		K8sPoolSize:     1,
+	})
+	if err != nil {
+		t.Fatalf("new worker pools: %v", err)
+	}
+	t.Cleanup(pools.Shutdown)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200 for dynamic ticket payload, got %d body=%s", resp.Code, resp.Body.String())
+	var wg sync.WaitGroup
+	errs := make(chan string, requestCount)
+	start := make(chan struct{})
+	for i := 0; i < requestCount; i++ {
+		wg.Add(1)
+		if err := pools.General.Submit(context.Background(), func(context.Context) {
+			defer wg.Done()
+			<-start
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/tickets", http.NoBody)
+			req.Header.Set("Authorization", "Bearer test-token")
+			resp := httptest.NewRecorder()
+			router.ServeHTTP(resp, req)
+			if resp.Code != http.StatusOK {
+				errs <- resp.Body.String()
+			}
+		}); err != nil {
+			wg.Done()
+			errs <- "submit concurrent ticket list validation worker: " + err.Error()
+		}
+	}
+	close(start)
+	wg.Wait()
+	close(errs)
+
+	for body := range errs {
+		t.Fatalf("expected all concurrent ticket list responses to pass validation, got body=%s", body)
 	}
 }
 

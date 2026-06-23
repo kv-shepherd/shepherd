@@ -31,16 +31,24 @@
  *   E2E_NEW_PASSWORD – new password for change-password test (default: e2e-admin-456)
  */
 
-import { expect, test, type APIRequestContext, type Locator, type Page, type Response } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
 import {
+    createTempAdminUser,
+    createTempService,
+    deleteAdminUserIfPresent,
+    deleteServiceIfPresent,
     ensureBatchSubmitPolicyForUser,
     ensureSeedSystemAndService,
+    expectSchemaResponse as expectSchema,
     fetchStatusWithStoredToken,
     getAntModal,
-    getApiTokenWithForcePasswordSupport,
+    getApiAuthHeadersWithForcePasswordSupport,
     loginWithForcePasswordSupport,
+    pickIDByPreferredName,
+    pickPreferredNamespace,
     selectAntOption,
+    selectServicesSystemFilter,
     urlPathEndsWith,
     urlPathIncludes,
 } from './lib/helpers';
@@ -49,11 +57,12 @@ import {
 
 const e2eUsername = process.env.E2E_USERNAME ?? 'e2e-admin';
 const e2ePassword = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
-const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'admin123' : `${e2ePassword}-new`);
+const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'ShepherdLive!2026' : `${e2ePassword}-new`);
 const e2eSystemName = process.env.E2E_SYSTEM ?? 'e2e-system';
 const e2eServiceName = process.env.E2E_SERVICE ?? 'e2e-service';
 const e2eNamespace = process.env.E2E_NAMESPACE ?? 'e2e-test';
 let activePassword = e2ePassword;
+let seedSystemID = '';
 
 // ── Auth helper ───────────────────────────────────────────────────────────────
 
@@ -66,58 +75,85 @@ async function login(page: Page): Promise<void> {
     });
 }
 
-async function expectSchema(
-    respPromise: Promise<Response>,
-    schemaName: string,
-    expectedStatus: number | number[] = 200
-): Promise<{ body: unknown; resp: Response }> {
-    const resp = await respPromise;
-    const statuses = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-    expect(statuses, `Expected HTTP ${statuses.join('/')} but got ${resp.status()} for ${resp.url()}`).toContain(resp.status());
-    const body = await validateApiResponse(schemaName, resp);
-    return { body, resp };
-}
-
 async function getApiAuthHeaders(request: APIRequestContext): Promise<{ Authorization: string }> {
-    const auth = await getApiTokenWithForcePasswordSupport(request, {
+    const auth = await getApiAuthHeadersWithForcePasswordSupport(request, {
         username: e2eUsername,
         primaryPassword: e2ePassword,
         secondaryPassword: e2eNewPassword,
         currentPasswordHint: activePassword,
     });
     activePassword = auth.password;
-    return { Authorization: `Bearer ${auth.token}` };
+    return auth.headers;
 }
 
-async function findTicketCancelButtonAcrossPages(
-    page: Page,
-    ticketID: string,
-    maxPages = 12
-): Promise<Locator | null> {
-    const targetTestId = `approval-action-cancel-${ticketID}`;
+async function resolveCreateVMRequestDataForService(
+    request: APIRequestContext,
+    headers: { Authorization: string },
+    serviceID: string
+): Promise<{ service_id: string; template_id: string; instance_size_id: string; namespace: string }> {
+    const contextResp = await request.get('/api/v1/vms/request-context', { headers });
+    expect(contextResp.status(), `GET /vms/request-context returned ${contextResp.status()}`).toBe(200);
+    const contextBody = await validateApiResponse('VMRequestContext', contextResp) as {
+        templates?: Array<{ id?: string; name?: string }>;
+        instance_sizes?: Array<{ id?: string; name?: string }>;
+        namespaces?: string[];
+    };
+    const templateID = pickIDByPreferredName(contextBody.templates, '');
+    const instanceSizeID = pickIDByPreferredName(contextBody.instance_sizes, '');
+    expect(serviceID, 'VM request service id is required').toBeTruthy();
+    expect(templateID, 'VM request requires at least one template').toBeTruthy();
+    expect(instanceSizeID, 'VM request requires at least one instance size').toBeTruthy();
 
-    for (let pageIndex = 0; pageIndex < maxPages; pageIndex += 1) {
-        const cancelBtn = page.getByTestId(targetTestId).first();
-        const visible = await cancelBtn.isVisible().catch(() => false);
-        if (visible) {
-            return cancelBtn;
+    return {
+        service_id: serviceID,
+        template_id: templateID,
+        instance_size_id: instanceSizeID,
+        namespace: pickPreferredNamespace(contextBody.namespaces, e2eNamespace),
+    };
+}
+
+async function restorePasswordViaApi(
+    request: APIRequestContext,
+    username: string,
+    currentPassword: string,
+    restoredPassword: string
+): Promise<void> {
+    const loginWithCurrent = await request.post('/api/v1/auth/login', {
+        data: { username, password: currentPassword },
+    });
+
+    if (loginWithCurrent.status() === 401 && currentPassword !== restoredPassword) {
+        const alreadyRestored = await request.post('/api/v1/auth/login', {
+            data: { username, password: restoredPassword },
+        });
+        if (alreadyRestored.status() === 200) {
+            return;
         }
-
-        const nextPageBtn = page
-            .locator('.ant-pagination-next:not(.ant-pagination-disabled) button, .ant-pagination-next:not(.ant-pagination-disabled) a')
-            .first();
-        if (await nextPageBtn.count() === 0) {
-            return null;
-        }
-
-        const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/tickets') && r.request().method() === 'GET'
-        );
-        await nextPageBtn.click();
-        await listRespPromise;
+        expect(alreadyRestored.status(), `POST /auth/login with restored password returned ${alreadyRestored.status()}`).toBe(200);
     }
 
-    return null;
+    expect(loginWithCurrent.status(), `POST /auth/login before password restore returned ${loginWithCurrent.status()}`).toBe(200);
+    const loginBody = await loginWithCurrent.json() as { token?: string };
+    const token = loginBody.token ?? '';
+    expect(token, 'LoginResponse.token is required for password restore').toBeTruthy();
+
+    if (currentPassword === restoredPassword) {
+        return;
+    }
+
+    const restoreResp = await request.post('/api/v1/auth/change-password', {
+        headers: { Authorization: `Bearer ${token}` },
+        data: {
+            old_password: currentPassword,
+            new_password: restoredPassword,
+        },
+    });
+    expect(restoreResp.status(), `Password restore failed with ${restoreResp.status()}`).toBe(204);
+
+    const verifyResp = await request.post('/api/v1/auth/login', {
+        data: { username, password: restoredPassword },
+    });
+    expect(verifyResp.status(), `POST /auth/login after password restore returned ${verifyResp.status()}`).toBe(200);
 }
 
 // ── Test suite ────────────────────────────────────────────────────────────────
@@ -134,6 +170,7 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
             serviceName: e2eServiceName,
         });
         activePassword = seed.password;
+        seedSystemID = seed.systemId;
 
         const setup = await ensureBatchSubmitPolicyForUser(request, {
             username: e2eUsername,
@@ -263,88 +300,33 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
     // ── cancelTicket: POST /tickets/{id}/cancel → 204 ────────────────────────
 
-    test('cancelTicket – POST /tickets/{id}/cancel returns 204', async ({ page }) => {
+    test('cancelTicket – POST /tickets/{id}/cancel returns 204', async ({ request }) => {
         // operationId: cancelTicket
-        // First submit a VM request to get a pending ticket
-        const uniqueSuffix = `${Date.now()}`;
-        const requestNamespace = e2eNamespace;
-        await page.goto('/vms');
-        await expect(page.getByRole('heading', { name: 'Virtual Machines' })).toBeVisible();
-        await page.getByRole('button', { name: 'Request VM' }).click();
-        await expect(page.getByText('Create VM Request')).toBeVisible();
-
-        const systemSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
-        await selectAntOption(page, systemSelect, e2eSystemName);
-        const serviceSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').nth(1);
-        await selectAntOption(page, serviceSelect, e2eServiceName);
-        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
-
-        const templateSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
-        await selectAntOption(page, templateSelect);
-        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
-
-        const sizeSelect = getAntModal(page, 'vm-request-wizard-modal').locator('[role="combobox"]').first();
-        await selectAntOption(page, sizeSelect);
-        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
-
-        await getAntModal(page, 'vm-request-wizard-modal').locator('#vm-request-wizard_namespace').fill(requestNamespace);
-        await getAntModal(page, 'vm-request-wizard-modal').locator('#vm-request-wizard_reason').fill(`cancel test request ${uniqueSuffix}`);
-        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Next' }).click();
-
-        const submitRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/vms/request') && r.request().method() === 'POST'
-        );
-        await getAntModal(page, 'vm-request-wizard-modal').getByRole('button', { name: 'Submit' }).click();
-        const submitResp = await submitRespPromise;
+        const headers = await getApiAuthHeaders(request);
+        expect(seedSystemID, 'Seed system id is required for cancelTicket').toBeTruthy();
+        const tempService = await createTempService(request, headers, seedSystemID, { prefix: 'can' });
         let ticketID = '';
-        if (submitResp.status() === 202) {
+
+        try {
+            const createReqData = await resolveCreateVMRequestDataForService(request, headers, tempService.id);
+            const submitResp = await request.post('/api/v1/vms/request', {
+                headers,
+                data: {
+                    ...createReqData,
+                    reason: `cancel test request ${Date.now()}`,
+                },
+            });
+            expect(submitResp.status(), `POST /vms/request returned ${submitResp.status()}`).toBe(202);
             const submitBody = await validateApiResponse('TicketResponse', submitResp) as { ticket_id?: string; id?: string };
             ticketID = submitBody.ticket_id ?? submitBody.id ?? '';
-        } else if (submitResp.status() === 400) {
-            const errBody = await validateApiResponse('Error', submitResp) as {
-                code?: string;
-                message?: string;
-                params?: Record<string, unknown>;
-            };
-            const existingTicketID =
-                typeof errBody.params?.existing_ticket_id === 'string' ? errBody.params.existing_ticket_id.trim() : '';
-            if (errBody.code === 'DUPLICATE_PENDING_REQUEST' && existingTicketID) {
-                ticketID = existingTicketID;
-            } else {
-                throw new Error(
-                    `POST /vms/request returned 400: ${errBody.code ?? 'UNKNOWN'} (${errBody.message ?? 'no message'})`
-                );
-            }
-        } else {
-            expect(submitResp.status(), `POST /vms/request returned ${submitResp.status()}`).toBe(202);
+            expect(ticketID, 'POST /vms/request response missing ticket_id/id field').toBeTruthy();
+
+            // ── POST /tickets/{id}/cancel → 204 ──────────────────────────────────
+            const cancelResp = await request.post(`/api/v1/tickets/${ticketID}/cancel`, { headers });
+            expect(cancelResp.status(), `POST /tickets/${ticketID}/cancel returned ${cancelResp.status()}`).toBe(204);
+        } finally {
+            await deleteServiceIfPresent(request, headers, seedSystemID, tempService.id);
         }
-        expect(ticketID, 'POST /vms/request response missing ticket_id/id field').toBeTruthy();
-
-        // ── POST /tickets/{id}/cancel → 204 ──────────────────────────────────────
-        const listRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/tickets') && r.request().method() === 'GET'
-        );
-        await page.goto('/tickets');
-        await listRespPromise;
-        await expect(page.getByRole('heading', { name: /request/i })).toBeVisible();
-
-        const cancelActionBtn = await findTicketCancelButtonAcrossPages(page, ticketID);
-        if (!cancelActionBtn) {
-            throw new Error(`Ticket ${ticketID} should be visible and cancellable in the ticket list`);
-        }
-        await expect(cancelActionBtn).toBeVisible({ timeout: 20000 });
-        await expect(cancelActionBtn).toBeEnabled();
-
-        const cancelRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), `/api/v1/tickets/${ticketID}/cancel`) && r.request().method() === 'POST'
-        );
-        await cancelActionBtn.click();
-        const confirmBtn = page.locator('.ant-popover:visible, .ant-modal-content:visible')
-            .getByRole('button', { name: /confirm|ok|yes/i }).first();
-        if (await confirmBtn.count() > 0) await confirmBtn.click();
-
-        const cancelResp = await cancelRespPromise;
-        expect(cancelResp.status(), `POST /tickets/${ticketID}/cancel returned ${cancelResp.status()}`).toBe(204);
     });
 
     // ── submitApprovalBatch: POST /vms/batch → VMBatchSubmitResponse ──────────
@@ -425,18 +407,9 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
     test('listServices – GET /systems/{id}/services conforms to ServiceList schema', async ({ page }) => {
         // operationId: listServices
-        const svcListRespPromise = page.waitForResponse(
-            (r) => {
-                if (r.request().method() !== 'GET') return false;
-                const path = new URL(r.url()).pathname;
-                return /\/api\/v1\/systems\/[^/]+\/services$/.test(path);
-            }
-        );
-        const [svcListResp] = await Promise.all([
-            svcListRespPromise,
-            page.goto('/services'),
-        ]);
+        await page.goto('/services');
         await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+        const svcListResp = await selectServicesSystemFilter(page, e2eSystemName);
 
         // ── CONTRACT CHECK: ServiceList schema ────────────────────────────────────
         await expectSchema(Promise.resolve(svcListResp), 'ServiceList', 200);
@@ -444,36 +417,16 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
     test('getService – GET /systems/{id}/services/{id} conforms to Service schema', async ({ page }) => {
         // operationId: getService
-        const readServiceListResponse = () => page.waitForResponse(
-            (r) => {
-                if (r.request().method() !== 'GET') return false;
-                const path = new URL(r.url()).pathname;
-                return /\/api\/v1\/systems\/[^/]+\/services$/.test(path);
-            }
-        );
-        let svcListResp: Response;
-        [svcListResp] = await Promise.all([
-            readServiceListResponse(),
-            page.goto('/services'),
-        ]);
+        await page.goto('/services');
         await expect(page.getByRole('heading', { name: 'Services' })).toBeVisible();
+        const svcListResp = await selectServicesSystemFilter(page, e2eSystemName);
 
-        let path = new URL(svcListResp.url()).pathname;
-        let pathMatch = path.match(/\/api\/v1\/systems\/([^/]+)\/services$/);
-        let systemID = pathMatch?.[1] ?? '';
+        const path = new URL(svcListResp.url()).pathname;
+        const pathMatch = path.match(/\/api\/v1\/systems\/([^/]+)\/services$/);
+        const systemID = pathMatch?.[1] ?? '';
         expect(systemID, `Could not parse system_id from URL path: ${path}`).toBeTruthy();
 
-        let svcListBody = await validateApiResponse('ServiceList', svcListResp) as { items?: Array<{ id?: string; name?: string }> };
-        if ((svcListBody.items?.length ?? 0) === 0) {
-            const svcListRespPromise = readServiceListResponse();
-            await selectAntOption(page, page.getByTestId('services-system-selector'), e2eSystemName);
-            svcListResp = await svcListRespPromise;
-            path = new URL(svcListResp.url()).pathname;
-            pathMatch = path.match(/\/api\/v1\/systems\/([^/]+)\/services$/);
-            systemID = pathMatch?.[1] ?? '';
-            expect(systemID, `Could not parse system_id from URL path: ${path}`).toBeTruthy();
-            svcListBody = await validateApiResponse('ServiceList', svcListResp) as { items?: Array<{ id?: string; name?: string }> };
-        }
+        const svcListBody = await validateApiResponse('ServiceList', svcListResp) as { items?: Array<{ id?: string; name?: string }> };
 
         const serviceID =
             svcListBody.items?.find((svc) => (svc.name ?? '').trim() === e2eServiceName)?.id
@@ -491,89 +444,71 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
 
     // ── System Member: addSystemMember + updateSystemMemberRole + deleteSystemMember
 
-    test('addSystemMember + updateSystemMemberRole + deleteSystemMember – full lifecycle', async ({ page }) => {
+    test('addSystemMember + updateSystemMemberRole + deleteSystemMember – full lifecycle', async ({ request }) => {
         // operationId: addSystemMember, updateSystemMemberRole, deleteSystemMember
-        // Create a temp system
-        await page.goto('/systems');
-        await expect(page.getByRole('heading', { name: 'Systems' })).toBeVisible();
+        const headers = await getApiAuthHeaders(request);
         const systemName = `e2emem${Date.now().toString(36).slice(-5)}`;
-        const createSysRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/systems') && r.request().method() === 'POST'
-        );
-        await page.getByTestId('system-create-button').click();
-        const createModal = getAntModal(page, 'system-create-modal');
-        await expect(createModal).toBeVisible();
-        await createModal.locator('input[maxlength="15"]').first().fill(systemName);
-        await createModal.getByRole('button', { name: 'OK' }).click();
-        const { body: sys } = await expectSchema(createSysRespPromise, 'System', 201);
-        const systemID = (sys as { id?: string }).id ?? '';
-        expect(systemID).toBeTruthy();
+        let systemID = '';
+        let targetUserID = '';
+        let memberAttached = false;
 
-        // Get a user to add as member
-        const usersRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/admin/users') && r.request().method() === 'GET'
-        );
-        const [usersResp] = await Promise.all([
-            usersRespPromise,
-            page.goto('/admin/users'),
-        ]);
-        await expect(page.getByTestId('admin-users-page')).toBeVisible();
-        const usersBody = await validateApiResponse('UserList', usersResp) as { items?: Array<{ id?: string; username?: string }> };
-        const targetUser = usersBody.items?.find((u) => u.username !== e2eUsername);
-        expect(targetUser, 'Need at least 2 users for member management test').toBeTruthy();
-        const targetUserID = targetUser?.id ?? '';
+        try {
+            const createSysResp = await request.post('/api/v1/systems', {
+                headers,
+                data: {
+                    name: systemName,
+                    description: 'temporary system for member lifecycle live e2e',
+                },
+            });
+            expect(createSysResp.status(), `POST /systems returned ${createSysResp.status()}`).toBe(201);
+            const sys = await validateApiResponse('System', createSysResp) as { id?: string };
+            systemID = sys.id ?? '';
+            expect(systemID, 'POST /systems response missing id').toBeTruthy();
 
-        // Navigate to system members
-        await page.goto('/systems');
-        await page.getByTestId(`system-action-members-${systemID}`).click();
-        const membersModal = getAntModal(page, 'system-members-modal');
-        await expect(membersModal).toBeVisible();
+            const targetUser = await createTempAdminUser(request, headers, {
+                prefix: 'e2e-member',
+                displayName: 'Live E2E Member',
+            });
+            targetUserID = targetUser.id;
 
-        // ── POST /systems/{id}/members → SystemMember ─────────────────────────────
-        const addRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), `/api/v1/systems/${systemID}/members`) && r.request().method() === 'POST'
-        );
-        await membersModal.getByTestId('member-add-button').click();
-        const addModal = getAntModal(page, 'member-add-modal');
-        await expect(addModal).toBeVisible();
-        await addModal.locator('#add-system-member_user_id').fill(targetUserID);
-        await selectAntOption(page, addModal.locator('.ant-select-selector').first(), /member|viewer|admin|owner/i);
-        await addModal.getByRole('button', { name: 'OK' }).click();
+            // ── POST /systems/{id}/members → SystemMember ────────────────────────
+            const addResp = await request.post(`/api/v1/systems/${systemID}/members`, {
+                headers,
+                data: {
+                    user_id: targetUserID,
+                    role: 'member',
+                },
+            });
+            expect(addResp.status(), `POST /systems/{id}/members returned ${addResp.status()}`).toBe(201);
+            const addedMember = await validateApiResponse('SystemMember', addResp) as { user_id?: string };
+            expect(addedMember.user_id, 'POST /systems/{id}/members missing user_id').toBeTruthy();
+            memberAttached = true;
 
-        const { body: addedMember } = await expectSchema(addRespPromise, 'SystemMember', 201);
-        expect((addedMember as { user_id?: string }).user_id, 'POST /systems/{id}/members missing user_id').toBeTruthy();
+            // ── PATCH /systems/{id}/members/{user_id} → SystemMember ─────────────
+            const updateResp = await request.patch(`/api/v1/systems/${systemID}/members/${targetUserID}`, {
+                headers,
+                data: {
+                    role: 'viewer',
+                },
+            });
+            expect(updateResp.status(), `PATCH /systems/{id}/members/{user_id} returned ${updateResp.status()}`).toBe(200);
+            await validateApiResponse('SystemMember', updateResp);
 
-        // ── PATCH /systems/{id}/members/{user_id} → SystemMember ─────────────────
-        const updateRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/members/${targetUserID}`) && r.request().method() === 'PATCH'
-        );
-        const roleSelector = membersModal.getByTestId(`member-action-edit-${targetUserID}`);
-        await expect(roleSelector).toBeVisible();
-        await selectAntOption(page, roleSelector, /viewer/i);
-
-        await expectSchema(updateRespPromise, 'SystemMember', 200);
-
-        // ── DELETE /systems/{id}/members/{user_id} → 204 ──────────────────────────
-        const deleteRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}/members/${targetUserID}`) && r.request().method() === 'DELETE'
-        );
-        await membersModal.getByTestId(`member-action-remove-${targetUserID}`).click();
-        const confirmBtn = page.getByRole('button', { name: /confirm|ok/i }).last();
-        await confirmBtn.click();
-        expect((await deleteRespPromise).status()).toBe(204);
-
-        // Close modal and cleanup system
-        await page.keyboard.press('Escape');
-        await page.goto('/systems');
-        await page.getByTestId(`system-action-delete-${systemID}`).click();
-        const deleteModal = getAntModal(page, 'system-delete-modal');
-        await expect(deleteModal).toBeVisible();
-        await deleteModal.getByRole('textbox').first().fill(systemName);
-        const deleteSysRespPromise = page.waitForResponse(
-            (r) => urlPathIncludes(r.url(), `/api/v1/systems/${systemID}`) && r.request().method() === 'DELETE'
-        );
-        await deleteModal.getByRole('button', { name: /delete/i }).click();
-        expect((await deleteSysRespPromise).status()).toBe(204);
+            // ── DELETE /systems/{id}/members/{user_id} → 204 ─────────────────────
+            const deleteMemberResp = await request.delete(`/api/v1/systems/${systemID}/members/${targetUserID}`, { headers });
+            expect(deleteMemberResp.status(), `DELETE /systems/{id}/members/{user_id} returned ${deleteMemberResp.status()}`).toBe(204);
+            memberAttached = false;
+        } finally {
+            if (memberAttached && systemID && targetUserID) {
+                const cleanupMemberResp = await request.delete(`/api/v1/systems/${systemID}/members/${targetUserID}`, { headers });
+                expect([204, 404], `cleanup delete member returned ${cleanupMemberResp.status()}`).toContain(cleanupMemberResp.status());
+            }
+            await deleteAdminUserIfPresent(request, headers, targetUserID);
+            if (systemID) {
+                const deleteSystemResp = await request.delete(`/api/v1/systems/${systemID}?confirm_name=${encodeURIComponent(systemName)}`, { headers });
+                expect([204, 404, 409], `cleanup delete system returned ${deleteSystemResp.status()}`).toContain(deleteSystemResp.status());
+            }
+        }
     });
 
     // ── getNamespace: GET /admin/namespaces/{id} → NamespaceRegistry ──────────
@@ -598,47 +533,41 @@ test.describe('user-selfservice live (contract-enforced, no mock, no skip)', () 
     // NOTE: This test changes the password and then changes it back.
     // If it fails mid-way, the account password will be in an unknown state.
 
-    test('changePassword – POST /auth/change-password returns 204 (changes and restores password)', async ({ page }) => {
+    test('changePassword – POST /auth/change-password returns 204 (changes and restores password)', async ({ page, request }) => {
         // operationId: changePassword
         await page.goto('/profile');
         await expect(page.locator('body')).toBeVisible();
         const originalPassword = activePassword;
-        const stablePassword = e2eNewPassword.length >= 8 ? e2eNewPassword : 'admin123';
+        const stablePassword = e2eNewPassword.length >= 8 ? e2eNewPassword : 'ShepherdLive!2026';
         let changedPassword = `${stablePassword}-tmp`;
         if (changedPassword === originalPassword) {
             changedPassword = `${stablePassword}-tmp2`;
         }
 
-        // ── POST /auth/change-password → 204 (change to new password) ────────────
-        const changeRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/auth/change-password') && r.request().method() === 'POST'
-        );
-        await page.getByTestId('change-password-button').click();
-        const changeModal = getAntModal(page, 'change-password-modal');
-        await expect(changeModal).toBeVisible();
-        await changeModal.getByTestId('change-password-current-input').fill(originalPassword);
-        await changeModal.getByTestId('change-password-new-input').fill(changedPassword);
-        await changeModal.getByTestId('change-password-confirm-input').fill(changedPassword);
-        await changeModal.getByRole('button', { name: 'OK' }).click();
+        let changed = false;
 
-        const changeResp = await changeRespPromise;
-        expect(changeResp.status(), `POST /auth/change-password returned ${changeResp.status()}`).toBe(204);
-        activePassword = changedPassword;
+        try {
+            // ── POST /auth/change-password → 204 (change to new password) ────────────
+            const changeRespPromise = page.waitForResponse(
+                (r) => urlPathEndsWith(r.url(), '/api/v1/auth/change-password') && r.request().method() === 'POST'
+            );
+            await page.getByTestId('change-password-button').click();
+            const changeModal = getAntModal(page, 'change-password-modal');
+            await expect(changeModal).toBeVisible();
+            await changeModal.getByTestId('change-password-current-input').fill(originalPassword);
+            await changeModal.getByTestId('change-password-new-input').fill(changedPassword);
+            await changeModal.getByTestId('change-password-confirm-input').fill(changedPassword);
+            await changeModal.getByRole('button', { name: 'OK' }).click();
 
-        // ── Restore stable password (must satisfy UI min length constraints) ─────
-        const restoreRespPromise = page.waitForResponse(
-            (r) => urlPathEndsWith(r.url(), '/api/v1/auth/change-password') && r.request().method() === 'POST'
-        );
-        await page.getByTestId('change-password-button').click();
-        const restoreModal = getAntModal(page, 'change-password-modal');
-        await expect(restoreModal).toBeVisible();
-        await restoreModal.getByTestId('change-password-current-input').fill(changedPassword);
-        await restoreModal.getByTestId('change-password-new-input').fill(stablePassword);
-        await restoreModal.getByTestId('change-password-confirm-input').fill(stablePassword);
-        await restoreModal.getByRole('button', { name: 'OK' }).click();
-
-        const restoreResp = await restoreRespPromise;
-        expect(restoreResp.status(), `Password restore failed with ${restoreResp.status()}`).toBe(204);
-        activePassword = stablePassword;
+            const changeResp = await changeRespPromise;
+            expect(changeResp.status(), `POST /auth/change-password returned ${changeResp.status()}`).toBe(204);
+            changed = true;
+            activePassword = changedPassword;
+        } finally {
+            if (changed) {
+                await restorePasswordViaApi(request, e2eUsername, changedPassword, stablePassword);
+                activePassword = stablePassword;
+            }
+        }
     });
 });

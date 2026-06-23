@@ -8,11 +8,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/riverqueue/river"
 	"github.com/robfig/cron/v3"
 	"go.uber.org/zap"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/authprovider"
 	entdirectorysyncjob "kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -53,6 +55,7 @@ func (DirectoryEnrichmentScheduleScanArgs) InsertOpts() river.InsertOpts {
 type DirectoryEnrichmentScheduleScanWorker struct {
 	river.WorkerDefaults[DirectoryEnrichmentScheduleScanArgs]
 	entClient           *ent.Client
+	pool                *pgxpool.Pool
 	riverClientProvider func() *river.Client[pgx.Tx]
 	auditLogger         *audit.Logger
 	configCodec         *configcodec.AuthProviderConfigCodec
@@ -60,12 +63,14 @@ type DirectoryEnrichmentScheduleScanWorker struct {
 
 func NewDirectoryEnrichmentScheduleScanWorker(
 	entClient *ent.Client,
+	pool *pgxpool.Pool,
 	riverClientProvider func() *river.Client[pgx.Tx],
 	auditLogger *audit.Logger,
 	encryptionKey []byte,
 ) *DirectoryEnrichmentScheduleScanWorker {
 	return &DirectoryEnrichmentScheduleScanWorker{
 		entClient:           entClient,
+		pool:                pool,
 		riverClientProvider: riverClientProvider,
 		auditLogger:         auditLogger,
 		configCodec:         configcodec.NewAuthProviderConfigCodec(encryptionKey),
@@ -73,18 +78,29 @@ func NewDirectoryEnrichmentScheduleScanWorker(
 }
 
 func (w *DirectoryEnrichmentScheduleScanWorker) Work(ctx context.Context, _ *river.Job[DirectoryEnrichmentScheduleScanArgs]) error {
-	if w == nil || w.entClient == nil || w.riverClientProvider == nil {
+	if w == nil || w.entClient == nil || w.pool == nil || w.riverClientProvider == nil {
 		return fmt.Errorf("directory enrichment schedule scan worker is not initialized")
 	}
 
-	providers, err := w.entClient.AuthProvider.Query().All(ctx)
+	providers, err := w.entClient.AuthProvider.Query().
+		Where(authprovider.EnabledEQ(true)).
+		All(ctx)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("list auth providers for scheduled enrichment: %w", err)
 	}
 
 	now := time.Now().UTC()
 	for _, authProviderRow := range providers {
+		if ctxErr := jobContextErr(ctx, nil); ctxErr != nil {
+			return ctxErr
+		}
 		if err := w.enqueueScheduledEnrichmentIfDue(ctx, authProviderRow, now); err != nil {
+			if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+				return ctxErr
+			}
 			logger.Warn("failed to evaluate scheduled directory enrichment plan",
 				zap.String("provider_id", authProviderRow.ID),
 				zap.String("auth_type", authProviderRow.AuthType),
@@ -101,7 +117,13 @@ func (w *DirectoryEnrichmentScheduleScanWorker) enqueueScheduledEnrichmentIfDue(
 	authProviderRow *ent.AuthProvider,
 	now time.Time,
 ) error {
+	if ctxErr := jobContextErr(ctx, nil); ctxErr != nil {
+		return ctxErr
+	}
 	if authProviderRow == nil {
+		return nil
+	}
+	if !authProviderRow.Enabled {
 		return nil
 	}
 	riverClient := w.riverClientProvider()
@@ -128,6 +150,9 @@ func (w *DirectoryEnrichmentScheduleScanWorker) enqueueScheduledEnrichmentIfDue(
 
 	plan, err := scheduledCapability.BuildScheduledDirectoryEnrichmentPlan(ctx, runtimeConfig)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("build scheduled enrichment plan: %w", err)
 	}
 	plan, location, err := directorycontract.NormalizeScheduledDirectoryEnrichmentPlan(plan)
@@ -140,6 +165,9 @@ func (w *DirectoryEnrichmentScheduleScanWorker) enqueueScheduledEnrichmentIfDue(
 
 	due, err := w.scheduledDirectoryEnrichmentDue(ctx, authProviderRow.ID, plan.ScheduleCron, location, now)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return err
 	}
 	if !due {
@@ -151,40 +179,31 @@ func (w *DirectoryEnrichmentScheduleScanWorker) enqueueScheduledEnrichmentIfDue(
 		return fmt.Errorf("generate directory enrichment job id: %w", err)
 	}
 
-	jobRow, err := w.entClient.DirectorySyncJob.Create().
-		SetID(jobID.String()).
-		SetAuthProviderID(authProviderRow.ID).
-		SetRequestSnapshot(cloneJSONMap(plan.ProviderRequest)).
-		SetConflictResolution(service.DirectoryConflictResolutionSkip).
-		SetSyncMode(service.DirectoryExecutionModeScheduledEnrichment).
-		SetJoinKeyType(string(plan.JoinKeyType)).
-		SetTriggeredBy(directoryEnrichmentSchedulerActor).
-		Save(ctx)
+	enqueueResult, err := CreateDirectorySyncJobAndEnqueue(ctx, w.pool, riverClient, DirectorySyncEnqueueInput{
+		JobID:              jobID.String(),
+		AuthProviderID:     authProviderRow.ID,
+		RequestSnapshot:    cloneJSONMap(plan.ProviderRequest),
+		ConflictResolution: service.DirectoryConflictResolutionSkip,
+		SyncMode:           service.DirectoryExecutionModeScheduledEnrichment,
+		JoinKeyType:        string(plan.JoinKeyType),
+		TriggeredBy:        directoryEnrichmentSchedulerActor,
+	})
 	if err != nil {
-		return fmt.Errorf("create scheduled directory enrichment job: %w", err)
-	}
-
-	if _, err := riverClient.Insert(ctx, DirectorySyncArgs{
-		JobID: jobRow.ID,
-	}, nil); err != nil {
-		_, _ = w.entClient.DirectorySyncJob.UpdateOneID(jobRow.ID).
-			SetStatus(entdirectorysyncjob.StatusFailed).
-			SetErrorCount(1).
-			SetErrors([]string{err.Error()}).
-			SetCompletedAt(time.Now().UTC()).
-			Save(ctx)
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("enqueue scheduled directory enrichment job: %w", err)
 	}
 
 	if w.auditLogger != nil {
-		if auditErr := w.auditLogger.LogAction(ctx, "auth_provider.directory_enrichment_scheduled", "directory_sync_job", jobRow.ID, directoryEnrichmentSchedulerActor, map[string]interface{}{
+		if auditErr := w.auditLogger.LogAction(ctx, "auth_provider.directory_enrichment_scheduled", "directory_sync_job", enqueueResult.JobID, directoryEnrichmentSchedulerActor, map[string]interface{}{
 			"auth_provider_id": authProviderRow.ID,
 			"sync_mode":        service.DirectoryExecutionModeScheduledEnrichment,
-			"join_key_type":    jobRow.JoinKeyType,
+			"join_key_type":    enqueueResult.JoinKeyType,
 		}); auditErr != nil {
 			logger.Warn("failed to write directory enrichment scheduler audit log",
 				zap.String("provider_id", authProviderRow.ID),
-				zap.String("job_id", jobRow.ID),
+				zap.String("job_id", enqueueResult.JobID),
 				zap.Error(auditErr),
 			)
 		}

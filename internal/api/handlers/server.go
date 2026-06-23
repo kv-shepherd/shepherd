@@ -10,6 +10,7 @@ package handlers
 import (
 	"context"
 	"sync"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,6 +33,8 @@ import (
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
+
+const defaultServerInitializationTimeout = 5 * time.Second
 
 // Compile-time check: Server must implement generated.ServerInterface.
 var _ generated.ServerInterface = (*Server)(nil)
@@ -141,9 +144,11 @@ func NewServer(deps ServerDeps) *Server {
 		fallback := approvalbuiltin.NewProvider(deps.TicketService)
 		var activeProvider approvalcontract.ApprovalProvider = fallback
 		if externalApprovalRegistry != nil {
-			if provider, err := externalApprovalRegistry.ActiveProvider(context.Background(), fallback); err == nil {
+			initCtx, cancel := serverInitializationContext()
+			if provider, err := externalApprovalRegistry.ActiveProvider(initCtx, fallback); err == nil {
 				activeProvider = provider
 			}
+			cancel()
 		}
 		approvalRouter = approval.NewApprovalProviderRouter(activeProvider)
 	}
@@ -179,6 +184,12 @@ func NewServer(deps ServerDeps) *Server {
 		traceSummaryProvider: deps.TraceSummaryProvider,
 		businessMetrics:      deps.BusinessMetrics,
 	}
-	srv.loadExternalAuthPlatformSetting(context.Background())
+	initCtx, cancel := serverInitializationContext()
+	srv.loadExternalAuthPlatformSetting(initCtx)
+	cancel()
 	return srv
+}
+
+func serverInitializationContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), defaultServerInitializationTimeout)
 }

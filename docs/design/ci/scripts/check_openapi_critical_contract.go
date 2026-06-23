@@ -20,6 +20,21 @@ const (
 	generatedServerPath   = "internal/api/generated/server.gen.go"
 )
 
+var allowedGeneratedOptionalPointerFields = map[string]bool{
+	`AuditLog.ActorSummary json:"actor_summary"`:                               true,
+	`AuditLog.PlacementSummary json:"placement_summary"`:                       true,
+	`AuditLog.ResourceSummary json:"resource_summary"`:                         true,
+	`AuditLog.TicketSummary json:"ticket_summary"`:                             true,
+	`Ticket.PlacementEvaluation json:"placement_evaluation"`:                   true,
+	`Ticket.Provisioning json:"provisioning"`:                                  true,
+	`Ticket.Summary json:"summary"`:                                            true,
+	`VM.ConsoleCapabilities json:"console_capabilities"`:                       true,
+	`VM.Provisioning json:"provisioning"`:                                      true,
+	`VMBatchChildStatus.Provisioning json:"provisioning"`:                      true,
+	`VMConsoleCapabilities.PreferredConsoleType json:"preferred_console_type"`: true,
+	`VMConsoleRequestInput.PreferredConsoleType json:"preferred_console_type"`: true,
+}
+
 type requiredPathContract struct {
 	path             string
 	op               string
@@ -498,6 +513,9 @@ func checkOapiCodegenOptionalFieldStrategy(violations *[]string) {
 			}
 			if hasOmitEmpty && !hasOmitZero && isPointerToBuiltinScalar(field.Type) {
 				*violations = append(*violations, fmt.Sprintf("%s must not use an unnecessary pointer to a builtin scalar", label))
+			}
+			if hasOmitEmpty && !hasOmitZero && isPointer && !allowedGeneratedOptionalPointerFields[label] {
+				*violations = append(*violations, fmt.Sprintf("%s is a new optional pointer field; either use omitzero value semantics or add an explicit ADR-0028 exception", label))
 			}
 		}
 		return false

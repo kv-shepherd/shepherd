@@ -876,15 +876,17 @@ func TestListClusters_CreateCompatibilityFilterResolvedRootVolumeKeepsModeOption
 		[]string{"platform:admin"},
 	)
 	srv.ListClusters(c, generated.ListClustersParams{
-		Page:                  1,
-		PerPage:               20,
-		Namespace:             "prod-a",
-		TemplateId:            "tpl-1",
-		InstanceSizeId:        "sz-1",
-		SelectedStorageClass:  "rook-ceph-block",
-		SelectedDvAccessModes: []string{"ReadWriteMany"},
-		SelectedDvVolumeMode:  generated.ListClustersParamsSelectedDvVolumeMode("Block"),
-		IncludeIncompatible:   true,
+		Page:                 1,
+		PerPage:              20,
+		Namespace:            "prod-a",
+		TemplateId:           "tpl-1",
+		InstanceSizeId:       "sz-1",
+		SelectedStorageClass: "rook-ceph-block",
+		SelectedDvAccessModes: []generated.ListClustersParamsSelectedDvAccessModes{
+			generated.ListClustersParamsSelectedDvAccessModes("ReadWriteMany"),
+		},
+		SelectedDvVolumeMode: generated.ListClustersParamsSelectedDvVolumeMode("Block"),
+		IncludeIncompatible:  true,
 	})
 	if w.Code != http.StatusOK {
 		t.Fatalf("list clusters status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
@@ -993,6 +995,54 @@ func TestListClusters_CreateCompatibilityFilterReturnsBadRequestForInvalidSpec(t
 	if apiErr.Message == "" {
 		t.Fatal("error.message = empty, want validation detail")
 	}
+}
+
+func TestListClusters_RejectsInvalidSelectedDVVolumeMode(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminIdentityTestServer(t)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/clusters?selected_dv_volume_mode=Raw",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListClusters(c, generated.ListClustersParams{
+		SelectedDvVolumeMode: generated.ListClustersParamsSelectedDvVolumeMode("Raw"),
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}
+
+func TestListClusters_RejectsInvalidSelectedDVAccessMode(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminIdentityTestServer(t)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/clusters?selected_dv_access_modes=ReadWriteSometimes",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListClusters(c, generated.ListClustersParams{
+		SelectedDvAccessModes: []generated.ListClustersParamsSelectedDvAccessModes{
+			generated.ListClustersParamsSelectedDvAccessModes("ReadWriteSometimes"),
+		},
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
 }
 
 func TestGetClusterPolicy_ReturnsPolicy(t *testing.T) {

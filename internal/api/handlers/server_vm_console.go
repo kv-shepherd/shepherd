@@ -788,10 +788,7 @@ func (s *Server) streamVMConsole(c *gin.Context, vm *ent.VM, claims *service.VNC
 		})
 	}
 
-	if err := proxyConsoleWebSocket(conn, backend); err != nil &&
-		!errors.Is(err, io.EOF) &&
-		!websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) &&
-		!websocket.IsUnexpectedCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway) {
+	if err := proxyConsoleWebSocket(c.Request.Context(), conn, backend); !isExpectedConsoleProxyClose(err) {
 		logger.Warn("console websocket proxy terminated with error",
 			zap.Error(err),
 			zap.String("vm_id", vm.ID),
@@ -840,14 +837,29 @@ func requestOriginForConsole(r *http.Request) string {
 	return scheme + "://" + strings.TrimSpace(r.Host)
 }
 
-func proxyConsoleWebSocket(ws *websocket.Conn, backend net.Conn) error {
+func isExpectedConsoleProxyClose(err error) bool {
+	return err == nil ||
+		errors.Is(err, context.Canceled) ||
+		errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrClosedPipe) ||
+		errors.Is(err, net.ErrClosed) ||
+		websocket.IsCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) ||
+		websocket.IsUnexpectedCloseError(err, websocket.CloseAbnormalClosure, websocket.CloseGoingAway)
+}
+
+func proxyConsoleWebSocket(ctx context.Context, ws *websocket.Conn, backend net.Conn) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
 	ws.SetReadLimit(vncWebSocketReadLimit)
 	_ = ws.SetReadDeadline(time.Now().Add(vncWebSocketPongWait))
 	ws.SetPongHandler(func(string) error {
 		return ws.SetReadDeadline(time.Now().Add(vncWebSocketPongWait))
 	})
 
-	proxyCtx, cancel := context.WithCancel(context.Background())
+	proxyCtx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
 	var shutdownOnce sync.Once
@@ -875,6 +887,11 @@ func proxyConsoleWebSocket(ws *websocket.Conn, backend net.Conn) error {
 	})
 	group.Go(func() error {
 		return pumpConsolePing(groupCtx, ws)
+	})
+	group.Go(func() error {
+		<-groupCtx.Done()
+		shutdown()
+		return ctx.Err()
 	})
 
 	err := group.Wait()

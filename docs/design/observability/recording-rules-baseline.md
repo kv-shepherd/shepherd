@@ -32,7 +32,7 @@ series.
 | `shepherd:business_approval_failed:sum` | `shepherd_business_approval_tickets{status="FAILED"}` | Failed approval tickets by `operation_type` |
 | `shepherd:business_batch_approval_pending:sum` | `shepherd_business_batch_approval_tickets{status="PENDING_APPROVAL"}` | Pending batch approvals by `batch_type` |
 | `shepherd:business_batch_approval_failed:sum` | `shepherd_business_batch_approval_tickets{status="FAILED"}` and `shepherd_business_batch_approval_failed_children` | Failed batch approvals and failed child work by `batch_type` |
-| `shepherd:business_approval_failure_audit_actions:sum` | `shepherd_business_approval_failure_audit_actions_recent` | Recent failure audit actions by fixed `action` |
+| `shepherd:business_approval_failure_audit_actions:sum` | `shepherd_business_approval_failure_audit_actions_recent` | Recent failure audit actions by fixed allowlisted `action`; unknown or future actions are aggregated as `approval.other` |
 
 ## Label Policy
 
@@ -42,7 +42,8 @@ Recording rules preserve the baseline low-cardinality policy:
 * OpenAPI validation failure rate keeps only fixed `phase` and `code` labels.
 * River queue recordings keep only the fixed `queue` label.
 * Approval/audit business recordings keep only fixed `operation_type`,
-  `batch_type`, and `action` labels.
+  `batch_type`, and allowlisted `action` labels; unknown action values must be
+  aggregated as `approval.other`.
 * Rules must not introduce user, role, session, ticket, VM, namespace, cluster,
   raw path, query, header, or payload-derived labels.
 

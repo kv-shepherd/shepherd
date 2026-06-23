@@ -39,12 +39,45 @@ const (
 	placementAdvisoryCodeHostAssistedClone = "PVC_CLONE_HOST_ASSISTED_FALLBACK_LIKELY"
 )
 
+var listVMStatusQueryValues = []string{
+	string(entvm.StatusCREATING),
+	string(entvm.StatusSTARTING),
+	string(entvm.StatusRUNNING),
+	string(entvm.StatusSTOPPING),
+	string(entvm.StatusSTOPPED),
+	string(entvm.StatusDELETING),
+	string(entvm.StatusFAILED),
+	string(entvm.StatusPENDING),
+	string(entvm.StatusMIGRATING),
+	string(entvm.StatusPAUSED),
+	string(entvm.StatusUNKNOWN),
+	string(entvm.StatusNOT_FOUND),
+}
+
 // ListVMs handles GET /vms.
 func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	ctx := c.Request.Context()
 	if !requireGlobalPermission(c, "vm:read") {
 		return
 	}
+	if rejectInvalidEnumQuery(
+		c,
+		"sort_order",
+		string(params.SortOrder),
+		string(generated.ListVMsParamsSortOrderAsc),
+		string(generated.ListVMsParamsSortOrderDesc),
+	) {
+		return
+	}
+	sortBy := strings.TrimSpace(string(params.SortBy))
+	if rejectInvalidEnumQuery(c, "sort_by", sortBy, queryFieldCreatedAt, queryFieldName, queryFieldNamespace, queryFieldStatus) {
+		return
+	}
+	statusFilter := strings.TrimSpace(string(params.Status))
+	if rejectInvalidEnumQuery(c, "status", statusFilter, listVMStatusQueryValues...) {
+		return
+	}
+	params.Status = generated.ListVMsParamsStatus(statusFilter)
 
 	query := s.client.VM.Query()
 	visibility, err := s.resolveVMQueryVisibility(ctx, c)
@@ -83,10 +116,23 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	osNameFilter := strings.TrimSpace(params.OsName)
 	ipAddressFilter := strings.TrimSpace(params.IpAddress)
 	requiresHydratedFiltering := searchText != "" || osNameFilter != "" || ipAddressFilter != ""
+	orderField := entvm.FieldCreatedAt
+	switch sortBy {
+	case queryFieldName:
+		orderField = entvm.FieldName
+	case queryFieldNamespace:
+		orderField = entvm.FieldNamespace
+	case queryFieldStatus:
+		orderField = entvm.FieldStatus
+	}
+	order := ent.Desc(orderField)
+	if params.SortOrder == generated.ListVMsParamsSortOrderAsc {
+		order = ent.Asc(orderField)
+	}
 
 	if requiresHydratedFiltering {
 		vms, listErr := query.
-			Order(ent.Desc(entvm.FieldCreatedAt)).
+			Order(order).
 			All(ctx)
 		if listErr != nil {
 			if isRequestContextCanceled(listErr) {
@@ -131,7 +177,7 @@ func (s *Server) ListVMs(c *gin.Context, params generated.ListVMsParams) {
 	vms, err := query.
 		Offset(offset).
 		Limit(perPage).
-		Order(ent.Desc(entvm.FieldCreatedAt)).
+		Order(order).
 		All(ctx)
 	if err != nil {
 		if isRequestContextCanceled(err) {
@@ -222,7 +268,7 @@ func (s *Server) GetVMFilterOptions(c *gin.Context) {
 
 func applyVMExactFilters(query *ent.VMQuery, params generated.ListVMsParams) *ent.VMQuery {
 	if params.Status != "" {
-		query = query.Where(entvm.StatusEQ(entvm.Status(params.Status)))
+		query = query.Where(entvm.StatusEQ(entvm.Status(string(params.Status))))
 	}
 	if params.Namespace != "" {
 		query = query.Where(entvm.NamespaceEQ(params.Namespace))
@@ -244,7 +290,7 @@ func applyVMExactFilters(query *ent.VMQuery, params generated.ListVMsParams) *en
 	}
 	// Exclude VM tombstones (DELETING status = K8s deleted, DB hard-delete failed)
 	// unless the user explicitly filters by DELETING status.
-	if params.Status == "" || entvm.Status(params.Status) != entvm.StatusDELETING {
+	if params.Status == "" || entvm.Status(string(params.Status)) != entvm.StatusDELETING {
 		query = query.Where(entvm.StatusNEQ(entvm.StatusDELETING))
 	}
 	return query

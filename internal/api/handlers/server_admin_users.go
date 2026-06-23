@@ -24,6 +24,8 @@ import (
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
+const externalCohortRoleBindingActor = "system:external-cohort-mapper"
+
 type userCreateRequest struct {
 	Username            string  `json:"username" binding:"required"`
 	Password            string  `json:"password" binding:"required"` //nolint:gosec // API contract requires the canonical JSON field name.
@@ -282,32 +284,30 @@ func (s *Server) DeleteUser(c *gin.Context, userID generated.UserID) {
 		return
 	}
 
-	if _, err := s.client.ExternalCohortGrant.Delete().Where(externalcohortgrant.UserIDEQ(userID)).Exec(ctx); err != nil {
-		logger.Error("failed to delete external cohort grants for user", zap.Error(err), zap.String("user_id", userID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if _, err := s.client.RoleBinding.Delete().Where(rolebinding.HasUserWith(entuser.IDEQ(userID))).Exec(ctx); err != nil {
-		logger.Error("failed to delete role bindings for user", zap.Error(err), zap.String("user_id", userID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if _, err := s.client.ResourceRoleBinding.Delete().Where(resourcerolebinding.UserIDEQ(userID)).Exec(ctx); err != nil {
-		logger.Error("failed to delete resource role bindings for user", zap.Error(err), zap.String("user_id", userID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if _, err := s.client.UserPreference.Delete().Where(entuserpreference.UserIDEQ(userID)).Exec(ctx); err != nil {
-		logger.Error("failed to delete user preferences for user", zap.Error(err), zap.String("user_id", userID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if err := s.client.User.DeleteOneID(userID).Exec(ctx); err != nil {
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		txClient := tx.Client()
+		if _, err := txClient.ExternalCohortGrant.Delete().Where(externalcohortgrant.UserIDEQ(userID)).Exec(ctx); err != nil {
+			return fmt.Errorf("delete external cohort grants: %w", err)
+		}
+		if _, err := txClient.RoleBinding.Delete().Where(rolebinding.HasUserWith(entuser.IDEQ(userID))).Exec(ctx); err != nil {
+			return fmt.Errorf("delete role bindings: %w", err)
+		}
+		if _, err := txClient.ResourceRoleBinding.Delete().Where(resourcerolebinding.UserIDEQ(userID)).Exec(ctx); err != nil {
+			return fmt.Errorf("delete resource role bindings: %w", err)
+		}
+		if _, err := txClient.UserPreference.Delete().Where(entuserpreference.UserIDEQ(userID)).Exec(ctx); err != nil {
+			return fmt.Errorf("delete user preferences: %w", err)
+		}
+		if err := txClient.User.DeleteOneID(userID).Exec(ctx); err != nil {
+			return fmt.Errorf("delete user: %w", err)
+		}
+		return s.revokeUserSessions(ctx, userID, "user_deleted")
+	}); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to delete user", zap.Error(err), zap.String("user_id", userID))
+		logger.Error("failed to delete user transactionally", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -370,13 +370,21 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userID generated.UserID) 
 		return
 	}
 
-	if _, err := s.client.User.Get(ctx, userID); err != nil {
+	userEnt, err := s.client.User.Get(ctx, userID)
+	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
 			return
 		}
 		logger.Error("failed to query user for role binding create", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !userEnt.Enabled {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "USER_DISABLED",
+			Message: "disabled users cannot receive new role bindings",
+		})
 		return
 	}
 
@@ -400,8 +408,15 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userID generated.UserID) 
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	if !roleEnt.Enabled {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "ROLE_DISABLED",
+			Message: "disabled roles cannot be assigned to users",
+		})
+		return
+	}
 
-	scopeType := "global"
+	scopeType := scopeTypeGlobal
 	if req.ScopeType != nil {
 		if v := strings.TrimSpace(*req.ScopeType); v != "" {
 			scopeType = v
@@ -540,6 +555,9 @@ func loadRoleNames(bindings []*ent.RoleBinding) []string {
 		if rb == nil || rb.Edges.Role == nil {
 			continue
 		}
+		if !rb.Edges.Role.Enabled {
+			continue
+		}
 		set[rb.Edges.Role.Name] = struct{}{}
 	}
 	roles := make([]string, 0, len(set))
@@ -586,7 +604,7 @@ func (s *Server) roleBindingToAPI(
 	if preferredRoleDisplay == "" {
 		preferredRoleDisplay = roleName
 	}
-	managed, managedSource := s.roleBindingManagedState(ctx, binding.ID)
+	managed, managedSource := s.roleBindingManagedState(ctx, binding.ID, userID)
 	return generated.GlobalRoleBinding{
 		Id:                  binding.ID,
 		UserId:              userID,
@@ -604,17 +622,25 @@ func (s *Server) roleBindingToAPI(
 	}
 }
 
-func (s *Server) roleBindingManagedState(ctx context.Context, bindingID string) (managed bool, managedSource string) {
-	_, err := s.client.ExternalCohortGrant.Query().
-		Where(externalcohortgrant.RoleBindingIDEQ(bindingID)).
-		Only(ctx)
-	if err == nil {
-		return true, "external_cohort"
-	}
-	if ent.IsNotFound(err) {
+func (s *Server) roleBindingManagedState(ctx context.Context, bindingID, userID string) (managed bool, managedSource string) {
+	managed, err := s.client.RoleBinding.Query().
+		Where(
+			rolebinding.IDEQ(bindingID),
+			rolebinding.CreatedByEQ(externalCohortRoleBindingActor),
+			rolebinding.HasUserWith(entuser.IDEQ(userID)),
+			rolebinding.HasExternalCohortGrantsWith(
+				externalcohortgrant.RoleBindingIDEQ(bindingID),
+				externalcohortgrant.UserIDEQ(userID),
+			),
+		).
+		Exist(ctx)
+	if err != nil {
+		logger.Warn("failed to resolve managed role binding state", zap.Error(err), zap.String("binding_id", bindingID))
 		return false, ""
 	}
-	logger.Warn("failed to resolve managed role binding state", zap.Error(err), zap.String("binding_id", bindingID))
+	if managed {
+		return true, "external_cohort"
+	}
 	return false, ""
 }
 
@@ -629,12 +655,12 @@ func (s *Server) resolveRoleBindingScopeDisplayName(
 	}
 
 	switch scopeType {
-	case "system":
+	case scopeTypeSystem:
 		systemEnt, err := s.client.System.Get(ctx, scopeID)
 		if err == nil {
 			return systemEnt.Name
 		}
-	case "service":
+	case scopeTypeService:
 		serviceEnt, err := s.client.Service.Query().
 			Where(service.IDEQ(scopeID)).
 			WithSystem().

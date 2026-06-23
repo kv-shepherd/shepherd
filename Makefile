@@ -1,7 +1,7 @@
 # KubeVirt Shepherd Makefile
 # ADR-0016: Module path kv-shepherd.io/shepherd
 
-.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen sqlc-gen master-flow-strict master-flow-completion project-completion-readiness test-backend-docker-pg master-flow-strict-docker-pg live-e2e-readiness live-e2e-install-atlas ci-live-e2e-evidence ci-live-e2e-latest-evidence postgres-ops-check postgres-ops-apply pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract ci-prometheus-config ci-prometheus-alert-runbooks ci-prometheus-operator-rule-parity ci-prometheus-rules ci-grafana-dashboard-promql ci-monitoring-assets govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
+.PHONY: all build test lint lint-arch lint-version-check build-shepherd-lint shepherd-lint test-shepherd-linter clean run seed docker help generate api-gen api-generate ent-gen master-flow-strict master-flow-completion project-completion-readiness test-backend-docker-pg master-flow-strict-docker-pg live-e2e-readiness live-e2e-status live-e2e-install-atlas ci-live-e2e-evidence ci-live-e2e-latest-evidence production-evidence-collect ci-production-evidence-schema postgres-ops-check postgres-ops-apply pr pr-ci pr-sequential ci-checks ci-prep ci-governance ci-ent-generated-sync ci-backend ci-frontend ci-api-sync ci-api-sync-local ci-e2e-smoke ci-go-lint ci-go-build ci-go-test ci-go-coverage-threshold ci-master-flow-backend ci-frontend-deadcode ci-frontend-unit ci-frontend-unit-local ci-api-lint ci-api-breaking ci-api-generated-sync ci-api-generated-sync-local ci-api-generated-sync-check ci-api-contract ci-prometheus-config ci-prometheus-alert-runbooks ci-prometheus-operator-rule-parity ci-prometheus-rules ci-grafana-dashboard-promql ci-monitoring-assets govulncheck frontend-deadcode-scan frontend-security-audit secrets-scan public-hygiene-scan supplemental-scans kubevirt-schema-check kubevirt-schema-upgrade kubevirt-schema-report authproviderplugin-sdk-smoke ci-parity dco-check api-changelog-comment
 
 # Go parameters
 GO_TOOLCHAIN_VERSION?=go1.25.11
@@ -25,6 +25,8 @@ GO_BUILD_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/... ./plugins/...
 GO_TEST_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/... ./plugins/...
 GO_VULN_TARGETS=./cmd/... ./ent/... ./internal/... ./pkg/... ./plugins/... \
 	./docs/design/ci/scripts
+GO_COVERAGE_THRESHOLD?=60.0
+LIVE_E2E_STATE_FILE?=.run/live-e2e/latest.env
 
 # Build directories
 BUILD_DIR=bin
@@ -214,7 +216,7 @@ ci-governance:
 	@go run docs/design/ci/scripts/check_test_assertions.go
 	@go run docs/design/ci/scripts/check_dead_tests.go
 	@go run docs/design/ci/scripts/check_repository_tests.go
-	@bash docs/design/ci/scripts/check_workflow_make_target_parity.sh
+	@go run docs/design/ci/scripts/check_workflow_make_parity.go
 	@$(MAKE) authproviderplugin-sdk-smoke
 	@$(MAKE) public-hygiene-scan
 	@$(MAKE) secrets-scan
@@ -277,6 +279,10 @@ ci-e2e-smoke:
 live-e2e-readiness:
 	@bash scripts/run_e2e_live.sh --preflight-only $(LIVE_E2E_PREFLIGHT_ARGS)
 
+## live-e2e-status: Poll a background live E2E run without streaming logs. Set LIVE_E2E_STATE_FILE=path/to/latest.env for non-default runs.
+live-e2e-status:
+	@bash scripts/run_e2e_live.sh --status --state-file "$(LIVE_E2E_STATE_FILE)"
+
 ## live-e2e-install-atlas: Install the go.mod-pinned Atlas CLI into .run/tools/atlas.
 live-e2e-install-atlas:
 	@set -e; \
@@ -304,8 +310,35 @@ ci-live-e2e-evidence:
 ## ci-live-e2e-latest-evidence: Manually validate the newest .run/live-e2e full evidence manifest as release evidence.
 ci-live-e2e-latest-evidence:
 	@set -e; \
-	manifest="$$(node docs/design/ci/scripts/find_latest_live_e2e_full_evidence.mjs .run/live-e2e)"; \
-	bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh --require-full-pass --require-existing-artifacts "$${manifest}"
+	latest_err="$$(mktemp)"; \
+	if ! manifest="$$(node docs/design/ci/scripts/find_latest_live_e2e_full_evidence.mjs .run/live-e2e 2>"$${latest_err}")"; then \
+		cat "$${latest_err}" >&2; \
+		rm -f "$${latest_err}"; \
+		echo "FAIL: no full live E2E release evidence is available." >&2; \
+		echo "      Run 'make live-e2e-readiness' with E2E_KUBECONFIG_B64 or k8s-admin.yaml, then run the full live E2E SOP." >&2; \
+		exit 1; \
+	fi; \
+	if [ -s "$${latest_err}" ]; then cat "$${latest_err}" >&2; fi; \
+	rm -f "$${latest_err}"; \
+	echo "Checking latest full live E2E release evidence: $${manifest}"; \
+	if ! bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh --require-full-pass --require-existing-artifacts "$${manifest}"; then \
+		echo "FAIL: latest full live E2E evidence is not valid release evidence: $${manifest}" >&2; \
+		exit 1; \
+	fi; \
+	echo "OK: latest full live E2E release evidence is valid: $${manifest}"
+
+## ci-production-evidence-schema: Validate production deployment evidence schema. Set PRODUCTION_EVIDENCE_FILE for a real deployment manifest.
+ci-production-evidence-schema:
+	@bash scripts/check_production_evidence.sh --self-test
+	@if [ -n "$(PRODUCTION_EVIDENCE_FILE)" ]; then \
+		bash scripts/check_production_evidence.sh --file "$(PRODUCTION_EVIDENCE_FILE)" --require-production-ready --require-existing-artifacts --require-live-e2e-pass; \
+	else \
+		bash scripts/check_production_evidence.sh; \
+	fi
+
+## production-evidence-collect: Collect production go-live evidence. Pass PRODUCTION_EVIDENCE_COLLECT_ARGS, PRODUCTION_EVIDENCE_REQUIRE_READY, PRODUCTION_EVIDENCE_DIR, LIVE_E2E_EVIDENCE_FILE, ROLLBACK_IMAGE_VERSION, DATABASE_URL, and SERVER_PUBLIC_BASE_URL.
+production-evidence-collect:
+	@bash scripts/collect_production_evidence.sh $(PRODUCTION_EVIDENCE_COLLECT_ARGS)
 
 ## postgres-ops-check: Validate production PostgreSQL/River autovacuum settings. Requires DATABASE_URL or POSTGRES_OPS_DATABASE_URL.
 postgres-ops-check:
@@ -335,6 +368,11 @@ ci-go-build:
 ## ci-go-test: Run the Go race-test target set used by the required CI Test job
 ci-go-test:
 	@$(GOCMD) test -race -coverprofile=coverage.out -covermode=atomic $(GO_TEST_TARGETS)
+	@$(MAKE) ci-go-coverage-threshold
+
+## ci-go-coverage-threshold: Enforce included handwritten Go coverage threshold
+ci-go-coverage-threshold:
+	@bash docs/design/ci/scripts/check_go_coverage_threshold.sh --profile coverage.out --min $(GO_COVERAGE_THRESHOLD)
 
 ## ci-master-flow-backend: Run the backend behavior suites used by the required Master-Flow Strict job
 ci-master-flow-backend:
@@ -488,6 +526,7 @@ secrets-scan:
 
 ## public-hygiene-scan: Block new public-source fixture leaks that gitleaks cannot classify.
 public-hygiene-scan:
+	@bash scripts/check_public_hygiene.sh --self-test
 	@bash scripts/check_public_hygiene.sh
 
 ## supplemental-scans: Run dedicated scanner gates alongside the core CI bundle
@@ -529,7 +568,8 @@ project-completion-readiness:
 	@$(MAKE) master-flow-completion
 	@$(MAKE) ci-monitoring-assets
 	@$(MAKE) ci-live-e2e-evidence
-	@echo "OK: project completion readiness check passed (static gates + monitoring assets + live E2E evidence schema)"
+	@$(MAKE) ci-production-evidence-schema
+	@echo "OK: project completion readiness check passed (static gates + monitoring assets + live E2E and production evidence schemas)"
 
 ## test-backend-docker-pg: Run backend PostgreSQL test suites against an isolated Docker PostgreSQL container
 test-backend-docker-pg:

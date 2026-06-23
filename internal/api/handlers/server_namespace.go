@@ -22,6 +22,15 @@ func (s *Server) ListNamespaces(c *gin.Context, params generated.ListNamespacesP
 	if !ok {
 		return
 	}
+	if rejectInvalidEnumQuery(
+		c,
+		"environment",
+		string(params.Environment),
+		string(generated.ListNamespacesParamsEnvironmentTest),
+		string(generated.ListNamespacesParamsEnvironmentProd),
+	) {
+		return
+	}
 
 	query := s.client.NamespaceRegistry.Query()
 	visibility, err := s.resolveNamespaceVisibility(c)

@@ -4,14 +4,19 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type fakeRiverQueueStatsProvider struct {
-	stats RiverQueueStats
-	err   error
+	stats   RiverQueueStats
+	err     error
+	inspect func(context.Context)
 }
 
-func (p fakeRiverQueueStatsProvider) RiverQueueStats(context.Context) (RiverQueueStats, error) {
+func (p fakeRiverQueueStatsProvider) RiverQueueStats(ctx context.Context) (RiverQueueStats, error) {
+	if p.inspect != nil {
+		p.inspect(ctx)
+	}
 	if p.err != nil {
 		return RiverQueueStats{}, p.err
 	}
@@ -94,5 +99,29 @@ func TestRiverQueueStatsCollectorReportsScrapeFailure(t *testing.T) {
 	success := findMetric(t, families, "shepherd_river_queue_stats_scrape_success", nil)
 	if got := success.GetGauge().GetValue(); got != 0 {
 		t.Fatalf("scrape success = %v, want 0", got)
+	}
+}
+
+func TestRiverQueueStatsCollectorPassesBoundedScrapeContext(t *testing.T) {
+	seenDeadline := false
+	metrics := NewMetrics(WithRiverQueueStatsProvider(fakeRiverQueueStatsProvider{
+		inspect: func(ctx context.Context) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("RiverQueueStats context missing deadline")
+			}
+			remaining := time.Until(deadline)
+			if remaining <= 0 || remaining > defaultCollectorScrapeTimeout {
+				t.Fatalf("RiverQueueStats context remaining deadline = %s, want within %s", remaining, defaultCollectorScrapeTimeout)
+			}
+			seenDeadline = true
+		},
+	}))
+
+	if _, err := metrics.Gather(); err != nil {
+		t.Fatalf("gather metrics: %v", err)
+	}
+	if !seenDeadline {
+		t.Fatal("RiverQueueStats provider was not called")
 	}
 }

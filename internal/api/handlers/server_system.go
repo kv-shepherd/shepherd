@@ -38,6 +38,19 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 	if !requireGlobalPermission(c, "system:read") {
 		return
 	}
+	if rejectInvalidEnumQuery(
+		c,
+		"sort_order",
+		string(params.SortOrder),
+		string(generated.ListSystemsParamsSortOrderAsc),
+		string(generated.ListSystemsParamsSortOrderDesc),
+	) {
+		return
+	}
+	sortBy := strings.TrimSpace(string(params.SortBy))
+	if rejectInvalidEnumQuery(c, "sort_by", sortBy, queryFieldCreatedAt, queryFieldName, queryFieldCreatedBy) {
+		return
+	}
 	actor := middleware.GetUserID(ctx)
 
 	query := s.client.System.Query()
@@ -73,6 +86,17 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 	// Pagination.
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage
+	orderField := entsystem.FieldCreatedAt
+	switch sortBy {
+	case queryFieldName:
+		orderField = entsystem.FieldName
+	case queryFieldCreatedBy:
+		orderField = entsystem.FieldCreatedBy
+	}
+	order := ent.Desc(orderField)
+	if params.SortOrder == generated.ListSystemsParamsSortOrderAsc {
+		order = ent.Asc(orderField)
+	}
 
 	total, err := query.Clone().Count(ctx)
 	if respondInternalUnlessCanceled(c, err, "failed to count systems") {
@@ -82,7 +106,7 @@ func (s *Server) ListSystems(c *gin.Context, params generated.ListSystemsParams)
 	systems, err := query.
 		Offset(offset).
 		Limit(perPage).
-		Order(ent.Desc(entsystem.FieldCreatedAt)).
+		Order(order).
 		All(ctx)
 	if respondInternalUnlessCanceled(c, err, "failed to list systems", zap.Int("page", page)) {
 		return
@@ -529,6 +553,16 @@ func (s *Server) ListServices(c *gin.Context, systemID generated.SystemID, param
 
 	query := s.client.Service.Query().
 		Where(entservice.HasSystemWith(entsystem.IDEQ(systemID)))
+	if search := strings.TrimSpace(params.Search); search != "" {
+		predicates := []entpredicate.Service{
+			entservice.NameContainsFold(search),
+			entservice.DescriptionContainsFold(search),
+		}
+		if nextIndex, err := strconv.Atoi(search); err == nil {
+			predicates = append(predicates, entservice.NextInstanceIndexEQ(nextIndex))
+		}
+		query = query.Where(entservice.Or(predicates...))
+	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage

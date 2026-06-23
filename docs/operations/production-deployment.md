@@ -58,6 +58,10 @@ cluster kubeconfigs and console bootstrap material.
    SHEPHERD_VERSION=<version> bash deploy/prod/deploy-prod.sh --release-images --with-seed
    ```
 
+   The seed command uses a 2 minute execution timeout by default. Set
+   `SEED_TIMEOUT` to a Go duration such as `5m` when a slow deployment database
+   needs a larger bootstrap window.
+
 4. Verify service health:
 
    ```bash
@@ -187,22 +191,69 @@ Before declaring a production deployment ready:
 2. Run live E2E against a real KubeVirt-capable cluster using
    [live-e2e-validation.md](./live-e2e-validation.md).
 
-3. Capture evidence:
+3. Capture machine-readable production evidence.
 
-   ```text
-   release version:
-   server image:
-   web image:
-   database topology:
-   monitoring overlay enabled:
-   live E2E evidence manifest:
-   live E2E result file:
-   manual live E2E evidence bundle:
-   Playwright JSON report:
-   backend log file:
-   Playwright report path:
-   rollback image version:
+   Prefer the collector so the evidence bundle, command logs, and manifest are
+   produced by one repeatable command:
+
+   ```bash
+   PRODUCTION_EVIDENCE_REQUIRE_READY=true \
+   LIVE_E2E_EVIDENCE_FILE=.run/live-e2e/<date>/<run>/live-e2e.evidence.json \
+   ROLLBACK_IMAGE_VERSION=<previous-version-or-image-tag> \
+   SERVER_PUBLIC_BASE_URL=https://<public-host> \
+     make production-evidence-collect
    ```
+
+   Set `PRODUCTION_EVIDENCE_DIR` to choose the bundle directory. Set
+   `DATABASE_URL` or `POSTGRES_OPS_DATABASE_URL` when it is not already present
+   in `deploy/prod/.env.prod`. Use `PRODUCTION_EVIDENCE_COLLECT_ARGS` when the
+   monitoring overlay or non-default Compose files are part of the deployment:
+
+   ```bash
+   PRODUCTION_EVIDENCE_REQUIRE_READY=true \
+   PRODUCTION_EVIDENCE_COLLECT_ARGS="--monitoring-overlay" \
+   LIVE_E2E_EVIDENCE_FILE=.run/live-e2e/<date>/<run>/live-e2e.evidence.json \
+   ROLLBACK_IMAGE_VERSION=<previous-version-or-image-tag> \
+   SERVER_PUBLIC_BASE_URL=https://<public-host> \
+     make production-evidence-collect
+   ```
+
+   The collector runs static governance, monitoring asset validation,
+   PostgreSQL/River operations validation, Compose `config --quiet`, Compose
+   `ps --all --format json`, Compose `images --format json`, live and ready
+   health checks, full live E2E evidence validation, and rollback-record
+   capture. It writes `production-deployment-evidence.json` into the evidence
+   directory. With `PRODUCTION_EVIDENCE_REQUIRE_READY=true`, the collector also
+   enforces `--require-production-ready`, `--require-existing-artifacts`, and
+   `--require-live-e2e-pass` before exiting successfully. It must include the
+   live E2E evidence manifest path and the manual live E2E evidence bundle
+   directory.
+
+   For a manual fallback, start from the checked-in schema example and fill it
+   with the release, image, database topology, health-check, full live E2E
+   evidence manifest, manual live E2E evidence bundle, and rollback artifact
+   paths:
+
+   ```bash
+   mkdir -p evidence
+   cp docs/operations/production-deployment-evidence.example.json \
+     evidence/production-deployment-evidence.json
+   ```
+
+   Validate the generated or manually completed manifest before declaring
+   go-live complete:
+
+   ```bash
+   PRODUCTION_EVIDENCE_FILE=evidence/production-<timestamp>/production-deployment-evidence.json \
+     make ci-production-evidence-schema
+   ```
+
+   The validator requires production-ready evidence to include a full live E2E
+   pass, existing artifacts, successful PostgreSQL/River ops validation, Compose
+   config validation, current Compose service/image output, health checks, and a
+   rollback record. The default `make ci-production-evidence-schema` invocation
+   runs the validator self-test and validates the checked-in schema example; it
+   does not claim production readiness.
 
 The roadmap item "Finish live E2E validation" is not complete until the live
 E2E result comes from a real backend and real KubeVirt cluster, with cleanup

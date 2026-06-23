@@ -80,6 +80,9 @@ func (w *VMTombstoneCleanupWorker) Work(ctx context.Context, _ *river.Job[VMTomb
 		Limit(vmTombstoneCleanupBatchSize).
 		All(ctx)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("list stale VM tombstones before %s: %w", cutoff.Format(time.RFC3339), err)
 	}
 
@@ -87,8 +90,14 @@ func (w *VMTombstoneCleanupWorker) Work(ctx context.Context, _ *river.Job[VMTomb
 	skippedActive := 0
 	failed := 0
 	for _, candidate := range candidates {
+		if ctxErr := jobContextErr(ctx, nil); ctxErr != nil {
+			return ctxErr
+		}
 		active, err := w.hasActiveDeleteEvent(ctx, candidate.ID)
 		if err != nil {
+			if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+				return ctxErr
+			}
 			return fmt.Errorf("check active delete event for VM tombstone %s: %w", candidate.ID, err)
 		}
 		if active {
@@ -96,6 +105,9 @@ func (w *VMTombstoneCleanupWorker) Work(ctx context.Context, _ *river.Job[VMTomb
 			continue
 		}
 		if err := w.entClient.VM.DeleteOneID(candidate.ID).Exec(ctx); err != nil {
+			if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+				return ctxErr
+			}
 			failed++
 			logger.Warn("failed to hard-delete stale VM tombstone",
 				zap.String("vm_id", candidate.ID),

@@ -233,6 +233,44 @@ func TestWeComTestConnection_UsesGetToken(t *testing.T) {
 	}
 }
 
+func TestWeComTestConnectionRejectsOversizedGetTokenResponse(t *testing.T) {
+	t.Parallel()
+
+	apiServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/cgi-bin/gettoken") {
+			_ = json.NewEncoder(w).Encode(map[string]interface{}{
+				"errcode":      0,
+				"errmsg":       "ok",
+				"access_token": strings.Repeat("x", int(wecomMaxResponseBodyBytes)+1),
+			})
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	defer apiServer.Close()
+
+	adapter := &wecomAuthProviderAdapter{
+		openBaseURL:  defaultWeComOpenBaseURL,
+		oauthBaseURL: defaultWeComOAuthBaseURL,
+		httpClient:   newWeComTestHTTPClient(t, apiServer),
+	}
+
+	ok, message, err := adapter.TestConnection(t.Context(), map[string]interface{}{
+		"corp_id":      "wwcorp",
+		"agent_id":     "1000002",
+		"agent_secret": "secret",
+	})
+	if err != nil {
+		t.Fatalf("TestConnection() error = %v", err)
+	}
+	if ok {
+		t.Fatal("TestConnection() success = true, want false for oversized response")
+	}
+	if !strings.Contains(message, "wecom response exceeds") {
+		t.Fatalf("message = %q, want oversized response failure", message)
+	}
+}
+
 func TestWeComDoesNotSupportDirectorySyncCapability(t *testing.T) {
 	t.Parallel()
 

@@ -71,8 +71,8 @@ func NewCapabilityDetector() *CapabilityDetector {
 //  3. Node allocatable hugepages resources: read from Nodes().List() and mapped to
 //     feature keys like hugepages-2Mi / hugepages-1Gi.
 //
-// Both are fetched from a single KubeVirt CR GET (the adapter layer caches the CR
-// object via sync.Once, so GetVersion() and GetFeatureGates() share one GET).
+// Both are fetched from a single successful KubeVirt CR GET (the adapter layer caches
+// a successfully loaded CR object, so GetVersion() and GetFeatureGates() share one GET).
 //
 // Graceful degradation:
 //   - If the CR GET fails (RBAC / unreachable), both version and gates degrade gracefully.
@@ -80,12 +80,12 @@ func NewCapabilityDetector() *CapabilityDetector {
 //   - Gates fall back to nil → GA-only detection.
 //   - Operator note: grant 'get kubevirts' on the 'kubevirt' namespace for full detection.
 //
-// Cost: exactly 1 KubeVirt CR GET per health check cycle per cluster
-// (sync.Once in kubecli_adapter.go ensures the second call reuses the cached CR).
-func (d *CapabilityDetector) Detect(ctx context.Context, client KubeVirtClusterClient) (*ClusterCapabilities, error) {
+// Cost: exactly 1 successful KubeVirt CR GET per health check cycle per cluster
+// (kubecli_adapter.go ensures the second call reuses the cached CR).
+func (d *CapabilityDetector) Detect(opCtx context.Context, client KubeVirtClusterClient) (*ClusterCapabilities, error) {
 	// Source 1: Observed running version → GA feature table (zero VM API calls).
 	// Non-fatal: if this fails (e.g., RBAC), version stays empty and GA table returns nil.
-	version, err := client.KubeVirt().GetVersion(ctx)
+	version, err := client.KubeVirt().GetVersion(opCtx)
 	if err != nil {
 		// Log-worthy but not blocking — degrade to no GA features.
 		version = ""
@@ -94,14 +94,14 @@ func (d *CapabilityDetector) Detect(ctx context.Context, client KubeVirtClusterC
 
 	// Source 2: Explicitly configured feature gates from KubeVirt CR spec.
 	// Non-fatal: if this fails (e.g., RBAC), we still return GA features.
-	explicitGates, err := client.KubeVirt().GetFeatureGates(ctx)
+	explicitGates, err := client.KubeVirt().GetFeatureGates(opCtx)
 	if err != nil {
 		// Log-worthy but not blocking — capability detection degrades gracefully.
 		// Caller (lifecycle.go via health_checker.go) receives partial result and stores what we have.
 		explicitGates = nil
 	}
 
-	hugepagesFeatures, err := detectHugepagesFeatures(ctx, client.Nodes())
+	hugepagesFeatures, err := detectHugepagesFeatures(opCtx, client.Nodes())
 	if err != nil {
 		// Non-fatal: a cluster may not allow node listing. Keep GA + feature gates only.
 		hugepagesFeatures = nil
@@ -200,11 +200,11 @@ func mergeUniqueFeatures(a, b []string) []string {
 	return result
 }
 
-func detectHugepagesFeatures(ctx context.Context, nodes NodeClient) ([]string, error) {
+func detectHugepagesFeatures(opCtx context.Context, nodes NodeClient) ([]string, error) {
 	if nodes == nil {
 		return nil, nil
 	}
-	list, err := nodes.List(ctx, k8smetav1.ListOptions{ResourceVersion: ""})
+	list, err := nodes.List(opCtx, k8smetav1.ListOptions{ResourceVersion: ""})
 	if err != nil {
 		return nil, err
 	}

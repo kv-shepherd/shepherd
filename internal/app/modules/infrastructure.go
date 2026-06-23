@@ -17,6 +17,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/provider"
 	infracontract "kv-shepherd.io/shepherd/internal/provider/infracontract"
 	kubeconfigcodec "kv-shepherd.io/shepherd/internal/provider/kubeconfigcodec"
+	"kv-shepherd.io/shepherd/internal/service"
 )
 
 // Infrastructure holds shared cross-cutting dependencies for all modules.
@@ -30,6 +31,7 @@ type Infrastructure struct {
 	Pool          *pgxpool.Pool
 	RiverClient   *river.Client[pgx.Tx]
 	AuditLogger   *audit.Logger
+	AuthSessions  *service.AuthSessionManager
 	VMProvider    infracontract.InfrastructureProvider
 	HealthCheck   *provider.ClusterHealthChecker
 }
@@ -76,6 +78,7 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 	}
 
 	entClient := db.EntClient
+	authSessions := service.NewAuthSessionManager(db.Pool, entClient, cfg.Session.IdleTimeout)
 	clusterKubeconfigCodec := kubeconfigcodec.NewClusterKubeconfigCodec(encryptionKey)
 	migrateLegacyClusterKubeconfigsOnStartup(entClient, clusterKubeconfigCodec)
 	vmClusterFactory := provider.NewClusterClientFactoryFromKubeconfigLoader(newClusterKubeconfigLoader(entClient, clusterKubeconfigCodec, true))
@@ -84,7 +87,11 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 		vmClusterFactory,
 		cfg.K8s.OperationTimeout,
 	)
-	healthChecker := provider.NewClusterHealthChecker(healthClusterFactory, 60*time.Second)
+	healthChecker := provider.NewClusterHealthCheckerWithTimeout(
+		healthClusterFactory,
+		60*time.Second,
+		cfg.K8s.OperationTimeout,
+	)
 
 	return &Infrastructure{
 		Config:        cfg,
@@ -95,6 +102,7 @@ func NewInfrastructure(ctx context.Context, cfg *config.Config) (*Infrastructure
 		Pool:          db.Pool,
 		RiverClient:   db.RiverClient,
 		AuditLogger:   audit.NewLogger(entClient),
+		AuthSessions:  authSessions,
 		VMProvider:    vmProvider,
 		HealthCheck:   healthChecker,
 	}, nil

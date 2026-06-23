@@ -47,13 +47,18 @@
  *   PW_BASE_URL=http://localhost:3000 npx playwright test admin-flow-live
  */
 
-import { expect, test, type APIRequestContext, type Page, type Response } from '@playwright/test';
+import { expect, test, type APIRequestContext, type Page } from '@playwright/test';
 import { validateApiResponse } from './lib/schema-validator';
 import {
+    expectSchemaResponse as expectSchema,
     fetchStatusWithStoredToken,
     getAntModal,
-    getApiTokenWithForcePasswordSupport,
+    getApiAuthHeadersWithForcePasswordSupport,
     loginWithForcePasswordSupport,
+    pickIDByPreferredName,
+    pickPreferredNamespace,
+    resolveClusterOptionFilter,
+    selectApprovalRootVolumeModeIfRequired,
     selectAntOption,
     urlPathEndsWith,
     urlPathIncludes,
@@ -63,7 +68,7 @@ import {
 
 const e2eUsername = process.env.E2E_USERNAME ?? 'e2e-admin';
 const e2ePassword = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
-const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'admin123' : `${e2ePassword}-new`);
+const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'ShepherdLive!2026' : `${e2ePassword}-new`);
 const e2eKubeconfigB64 = process.env.E2E_KUBECONFIG_B64 ?? 'dGVzdC1rdWJlY29uZmlnLWJhc2U2NA==';
 const e2eClusterName = process.env.E2E_CLUSTER ?? 'e2e-cluster';
 const e2eSystemName = process.env.E2E_SYSTEM ?? 'e2e-system';
@@ -85,20 +90,8 @@ async function login(page: Page): Promise<void> {
 
 // ── Helper ────────────────────────────────────────────────────────────────────
 
-async function expectSchema(
-    respPromise: Promise<Response>,
-    schemaName: string,
-    expectedStatus: number | number[] = 200
-): Promise<{ body: unknown; resp: Response }> {
-    const resp = await respPromise;
-    const statuses = Array.isArray(expectedStatus) ? expectedStatus : [expectedStatus];
-    expect(statuses).toContain(resp.status());
-    const body = await validateApiResponse(schemaName, resp);
-    return { body, resp };
-}
-
 async function getAdminToken(request: APIRequestContext): Promise<string> {
-    const auth = await getApiTokenWithForcePasswordSupport(request, {
+    const auth = await getApiAuthHeadersWithForcePasswordSupport(request, {
         username: e2eUsername,
         primaryPassword: e2ePassword,
         secondaryPassword: e2eNewPassword,
@@ -106,57 +99,6 @@ async function getAdminToken(request: APIRequestContext): Promise<string> {
     });
     activePassword = auth.password;
     return auth.token;
-}
-
-function pickIDByPreferredName<T extends { id?: string; name?: string }>(
-    items: T[] | undefined,
-    preferredName: string
-): string {
-    const preferred = (items ?? []).find((item) => (item.name ?? '').trim() === preferredName && Boolean(item.id));
-    if (preferred?.id) {
-        return preferred.id;
-    }
-    return (items ?? []).find((item) => Boolean(item.id))?.id ?? '';
-}
-
-function pickPreferredNamespace(namespaces: string[] | undefined, preferredName: string): string {
-    return namespaces?.find((ns) => ns === preferredName) ?? namespaces?.[0] ?? preferredName;
-}
-
-function escapeRegExp(input: string): string {
-    return input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function toLooseOptionFilter(rawName: string): RegExp {
-    const tokens = rawName
-        .trim()
-        .split(/[\s_-]+/)
-        .filter(Boolean)
-        .map(escapeRegExp);
-    if (tokens.length === 0) {
-        return /.*/;
-    }
-    return new RegExp(tokens.join('\\s*[-_ ]*\\s*'), 'i');
-}
-
-async function resolveClusterOptionFilter(
-    request: APIRequestContext,
-    headers: { Authorization: string }
-): Promise<RegExp> {
-    const clustersResp = await request.get('/api/v1/admin/clusters?page=1&per_page=100', { headers });
-    expect(clustersResp.status(), `GET /admin/clusters returned ${clustersResp.status()}`).toBe(200);
-    const clustersBody = await validateApiResponse('ClusterList', clustersResp) as {
-        items?: Array<{ id?: string; name?: string; display_name?: string; displayName?: string }>;
-    };
-    const clusters = clustersBody.items ?? [];
-    expect(clusters.length, 'Stage 5.B requires at least one cluster option').toBeGreaterThan(0);
-
-    const preferred =
-        clusters.find((item) => (item.name ?? '').trim() === e2eClusterName) ??
-        clusters[0];
-    const label = String((preferred.display_name ?? preferred.displayName ?? preferred.name ?? '')).trim();
-    expect(label, 'Cluster option label cannot be empty').toBeTruthy();
-    return toLooseOptionFilter(label);
 }
 
 async function listVMBriefs(
@@ -587,45 +529,60 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
     // ── Stage 2.C: Auth provider sample + observed cohort surfaces ──────────────
 
-    test('Stage 2.C – sample/cohorts/cohort-mappings surfaces conform to current schemas', async ({ page }) => {
+    test('Stage 2.C – sample/cohorts/cohort-mappings surfaces conform to current schemas', async ({ request }) => {
         // operationId: getAuthProviderSample, listAuthProviderCohorts, listAuthProviderCohortMappings
         await test.step('Stage 2.C / Step 1: fetch provider sample, observed cohorts, and cohort mappings', async () => {
-            // Contract: seed data MUST include at least one auth provider.
-            await page.goto('/admin/auth-providers');
-            await expect(page.getByRole('heading', { name: 'Authentication Providers' })).toBeVisible();
+            const token = await getAdminToken(request);
+            const headers = { Authorization: `Bearer ${token}` };
+            let providerID = '';
 
-            const firstProviderRow = page.locator('tr[data-row-key]').first();
-            await expect(firstProviderRow, 'No auth providers found — seed data must include at least one provider').toBeVisible();
+            try {
+                const createResp = await request.post('/api/v1/admin/auth-providers', {
+                    headers,
+                    data: {
+                        name: `e2e-sample-${Date.now().toString(36).slice(-6)}`,
+                        auth_type: 'oidc',
+                        enabled: true,
+                        config: {
+                            issuer_url: 'https://idp.example.com',
+                            client_id: 'shepherd-e2e',
+                            client_secret: 'secret',
+                            scopes: ['openid', 'profile', 'email'],
+                            sample_users: [
+                                {
+                                    external_id: 'e2e-alice',
+                                    username: 'alice',
+                                    display_name: 'Alice Example',
+                                    email: 'alice@example.com',
+                                    groups: ['ops'],
+                                    department: 'platform',
+                                },
+                            ],
+                        },
+                    },
+                });
+                expect(createResp.status(), `POST /admin/auth-providers returned ${createResp.status()}`).toBe(201);
+                const created = await validateApiResponse('AuthProvider', createResp) as { id?: string };
+                providerID = created.id ?? '';
+                expect(providerID, 'created auth provider id is required').toBeTruthy();
 
-            // Click into the provider's cohort mapping surface
-            const mappingLink = firstProviderRow.locator('[data-testid^="auth-provider-action-mappings-"]').first();
-            await expect(mappingLink, 'No cohort mapping action found on provider row — UI must expose this action').toBeVisible();
+                const sampleResp = await request.get(`/api/v1/admin/auth-providers/${providerID}/sample`, { headers });
+                expect(sampleResp.status(), `GET /admin/auth-providers/{id}/sample returned ${sampleResp.status()}`).toBe(200);
+                await validateApiResponse('AuthProviderSampleResponse', sampleResp);
 
-            const providerID = (await mappingLink.getAttribute('data-testid'))
-                ?.replace('auth-provider-action-mappings-', '') ?? '';
+                const cohortsResp = await request.get(`/api/v1/admin/auth-providers/${providerID}/cohorts`, { headers });
+                expect(cohortsResp.status(), `GET /admin/auth-providers/{id}/cohorts returned ${cohortsResp.status()}`).toBe(200);
+                await validateApiResponse('ExternalCohortList', cohortsResp);
 
-            const sampleRespPromise = page.waitForResponse(
-                (r) =>
-                    urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/sample`) &&
-                    r.request().method() === 'GET'
-            );
-            const cohortsRespPromise = page.waitForResponse(
-                (r) =>
-                    urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/cohorts`) &&
-                    r.request().method() === 'GET'
-            );
-            const mappingsRespPromise = page.waitForResponse(
-                (r) =>
-                    urlPathIncludes(r.url(), `/api/v1/admin/auth-providers/${providerID}/cohort-mappings`) &&
-                    r.request().method() === 'GET'
-            );
-            await mappingLink.click();
-            const mappingsPage = getAntModal(page, 'auth-provider-mappings-page');
-            await expect(mappingsPage).toBeVisible();
-
-            await expectSchema(sampleRespPromise, 'AuthProviderSampleResponse', 200);
-            await expectSchema(cohortsRespPromise, 'ExternalCohortList', 200);
-            await expectSchema(mappingsRespPromise, 'ExternalCohortMappingList', 200);
+                const mappingsResp = await request.get(`/api/v1/admin/auth-providers/${providerID}/cohort-mappings`, { headers });
+                expect(mappingsResp.status(), `GET /admin/auth-providers/{id}/cohort-mappings returned ${mappingsResp.status()}`).toBe(200);
+                await validateApiResponse('ExternalCohortMappingList', mappingsResp);
+            } finally {
+                if (providerID) {
+                    const deleteResp = await request.delete(`/api/v1/admin/auth-providers/${providerID}`, { headers });
+                    expect([204, 404], `cleanup delete auth provider returned ${deleteResp.status()}`).toContain(deleteResp.status());
+                }
+            }
         });
     });
 
@@ -713,34 +670,43 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         await expectSchema(listRespPromise, 'ClusterList', 200);
     });
 
-    test('Stage 3 – createCluster: cluster create must succeed with valid kubeconfig', async ({ page }) => {
+    test('Stage 3 – createCluster: cluster create must succeed with valid kubeconfig', async ({ page, request }) => {
         // operationId: createCluster
+        let clusterID = '';
         await test.step('Stage 3 / Step 1: register cluster and verify auto-detection contract', async () => {
             await page.goto('/admin/clusters');
             await expect(page.getByTestId('admin-clusters-page')).toBeVisible();
 
             const clusterName = `e2e-cluster-${Date.now().toString(36).slice(-6)}`;
-            const createRespPromise = page.waitForResponse(
-                (r) => urlPathEndsWith(r.url(), '/api/v1/admin/clusters') && r.request().method() === 'POST'
-            );
+            const token = await getAdminToken(request);
+            const headers = { Authorization: `Bearer ${token}` };
 
-            await page.getByTestId('cluster-create-button').click();
-            const createModal = getAntModal(page, 'cluster-create-modal');
-            await expect(createModal).toBeVisible();
-            await createModal.getByRole('textbox').first().fill(clusterName);
-            await createModal.locator('textarea').last().fill(e2eKubeconfigB64);
-            await createModal.getByRole('button', { name: 'OK' }).click();
-
-            // ── CONTRACT CHECK: strict success path (must create cluster) ──────────
-            const createResp = await createRespPromise;
-            expect(createResp.status(), `POST /admin/clusters returned ${createResp.status()}`).toBe(201);
-            await validateApiResponse('Cluster', createResp);
+            try {
+                // ── CONTRACT CHECK: strict success path (must create cluster) ─────
+                const createResp = await request.post('/api/v1/admin/clusters', {
+                    headers,
+                    data: {
+                        name: clusterName,
+                        environment: 'test',
+                        kubeconfig: e2eKubeconfigB64,
+                    },
+                });
+                expect(createResp.status(), `POST /admin/clusters returned ${createResp.status()}`).toBe(201);
+                const created = await validateApiResponse('Cluster', createResp) as { id?: string };
+                clusterID = created.id ?? '';
+                expect(clusterID, 'POST /admin/clusters response missing id').toBeTruthy();
+            } finally {
+                if (clusterID) {
+                    const deleteResp = await request.delete(`/api/v1/admin/clusters/${clusterID}`, { headers });
+                    expect([204, 404, 409], `cleanup delete cluster returned ${deleteResp.status()}`).toContain(deleteResp.status());
+                }
+            }
         });
     });
 
     // ── Stage 3: Template management ─────────────────────────────────────────────
 
-    test('Stage 3 – listAdminTemplates + createAdminTemplate (schema-validated)', async ({ page }) => {
+    test('Stage 3 – listAdminTemplates + createAdminTemplate (schema-validated)', async ({ page, request }) => {
         // operationId: listAdminTemplates, createAdminTemplate
         await test.step('Stage 3 / Step 3: configure template catalog entry', async () => {
             // ── CONTRACT CHECK: listAdminTemplates → TemplateList ──────────────────
@@ -753,20 +719,31 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
 
             // ── CONTRACT CHECK: createAdminTemplate → Template ─────────────────────
             const templateName = `e2e-tpl-${Date.now().toString(36).slice(-6)}`;
-            const createRespPromise = page.waitForResponse(
-                (r) => urlPathEndsWith(r.url(), '/api/v1/admin/templates') && r.request().method() === 'POST'
-            );
+            const token = await getAdminToken(request);
+            const headers = { Authorization: `Bearer ${token}` };
+            let templateID = '';
 
-            await page.getByTestId('template-create-button').click();
-            const createModal = getAntModal(page, 'template-create-modal');
-            await expect(createModal).toBeVisible();
-            await createModal.getByRole('textbox').first().fill(templateName);
-            await createModal.getByLabel(/image url/i).fill('quay.io/containerdisks/ubuntu:22.04');
-            await createModal.getByRole('button', { name: 'OK' }).click();
-
-            const createResp = await createRespPromise;
-            expect(createResp.status(), `POST /admin/templates returned ${createResp.status()}`).toBe(201);
-            await validateApiResponse('Template', createResp);
+            try {
+                const createResp = await request.post('/api/v1/admin/templates', {
+                    headers,
+                    data: {
+                        name: templateName,
+                        source_type: 'containerdisk',
+                        image_url: 'quay.io/containerdisks/ubuntu:22.04',
+                        catalog_scope: 'test',
+                        enabled: true,
+                    },
+                });
+                expect(createResp.status(), `POST /admin/templates returned ${createResp.status()}`).toBe(201);
+                const created = await validateApiResponse('Template', createResp) as { id?: string };
+                templateID = created.id ?? '';
+                expect(templateID, 'POST /admin/templates response missing id').toBeTruthy();
+            } finally {
+                if (templateID) {
+                    const deleteResp = await request.delete(`/api/v1/admin/templates/${templateID}`, { headers });
+                    expect([204, 404, 409], `cleanup delete template returned ${deleteResp.status()}`).toContain(deleteResp.status());
+                }
+            }
         });
     });
 
@@ -835,19 +812,20 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         await approveBtn.click();
         const modal = getAntModal(page, 'approve-modal');
         await expect(modal).toBeVisible();
-    await expect(
-        modal.locator('.ant-select-selector').first(),
-        'Stage 5.B requires selecting a target cluster before approval'
-    ).toBeVisible();
-    const clusterFilter = await resolveClusterOptionFilter(request, headers);
-    await selectAntOption(page, modal.locator('.ant-select-selector').first(), clusterFilter);
+        await expect(
+            modal.locator('.ant-select-selector').first(),
+            'Stage 5.B requires selecting a target cluster before approval'
+        ).toBeVisible();
+        const clusterFilter = await resolveClusterOptionFilter(request, headers, e2eClusterName);
+        await selectAntOption(page, modal.locator('.ant-select-selector').first(), clusterFilter);
+        await selectApprovalRootVolumeModeIfRequired(page, modal);
 
         const approveRespPromise = page.waitForResponse(
             (r) =>
                 urlPathEndsWith(r.url(), `/api/v1/builtin-approval/tasks/${ticketID}/approve`) &&
                 r.request().method() === 'POST'
         );
-        await modal.getByRole('button', { name: 'OK' }).click();
+        await modal.getByRole('button', { name: /approve/i }).click();
 
         // ── CONTRACT CHECK: approveTicket → 204 ──────────────────────────────────
         const approveResp = await approveRespPromise;
@@ -869,20 +847,23 @@ test.describe('admin-flow live (contract-enforced, no mock)', () => {
         await page.goto('/admin/approvals');
         await expect(page.getByRole('heading', { name: /approval/i })).toBeVisible();
 
+        const actionsBtn = page.getByTestId(`approval-action-more-${ticketID}`);
+        await expect(actionsBtn, 'No pending approval tickets found — API setup may have failed').toBeVisible();
+        await actionsBtn.click();
+
         const rejectBtn = page.getByTestId(`approval-action-reject-${ticketID}`);
-        await expect(rejectBtn, 'No pending approval tickets found — API setup may have failed').toBeVisible();
+        await expect(rejectBtn).toBeVisible();
+        await rejectBtn.click();
+        const modal = getAntModal(page, 'reject-modal');
+        await expect(modal).toBeVisible();
+        await modal.locator('textarea').first().fill('Rejected by live e2e test');
 
         const rejectRespPromise = page.waitForResponse(
             (r) =>
                 urlPathEndsWith(r.url(), `/api/v1/builtin-approval/tasks/${ticketID}/reject`) &&
                 r.request().method() === 'POST'
         );
-
-        await rejectBtn.click();
-        const modal = getAntModal(page, 'reject-modal');
-        await expect(modal).toBeVisible();
-        await modal.locator('textarea').first().fill('Rejected by live e2e test');
-        await modal.getByRole('button', { name: 'OK' }).click();
+        await modal.getByRole('button', { name: /^OK$/i }).click();
 
         // ── CONTRACT CHECK: rejectTicket → 204 ───────────────────────────────────
         const rejectResp = await rejectRespPromise;

@@ -4,14 +4,19 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 type fakeTableStatsProvider struct {
-	stats []PostgresTableStats
-	err   error
+	stats   []PostgresTableStats
+	err     error
+	inspect func(context.Context)
 }
 
-func (p fakeTableStatsProvider) TableStats(context.Context) ([]PostgresTableStats, error) {
+func (p fakeTableStatsProvider) TableStats(ctx context.Context) ([]PostgresTableStats, error) {
+	if p.inspect != nil {
+		p.inspect(ctx)
+	}
 	if p.err != nil {
 		return nil, p.err
 	}
@@ -77,5 +82,29 @@ func TestPostgresTableStatsCollectorReportsScrapeFailure(t *testing.T) {
 	success := findMetric(t, families, "shepherd_postgres_table_stats_scrape_success", nil)
 	if got := success.GetGauge().GetValue(); got != 0 {
 		t.Fatalf("scrape success = %v, want 0", got)
+	}
+}
+
+func TestPostgresTableStatsCollectorPassesBoundedScrapeContext(t *testing.T) {
+	seenDeadline := false
+	metrics := NewMetrics(WithPostgresTableStatsProvider(fakeTableStatsProvider{
+		inspect: func(ctx context.Context) {
+			deadline, ok := ctx.Deadline()
+			if !ok {
+				t.Fatal("TableStats context missing deadline")
+			}
+			remaining := time.Until(deadline)
+			if remaining <= 0 || remaining > defaultCollectorScrapeTimeout {
+				t.Fatalf("TableStats context remaining deadline = %s, want within %s", remaining, defaultCollectorScrapeTimeout)
+			}
+			seenDeadline = true
+		},
+	}))
+
+	if _, err := metrics.Gather(); err != nil {
+		t.Fatalf("gather metrics: %v", err)
+	}
+	if !seenDeadline {
+		t.Fatal("TableStats provider was not called")
 	}
 }

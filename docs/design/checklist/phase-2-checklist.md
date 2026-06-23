@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/02-providers.md](../phases/02-providers.md)
 >
-> **Implementation Status**: 🔄 Partial (~65%) — Basic VM CRUD + SSAApplier + VMRenderer + AuthProvider Admin done; Snapshot/Clone/Migration deferred. V1 status sync baseline is ADR-0038 adaptive polling; optional ResourceWatcher acceleration remains deferred
+> **Implementation Status**: 🔄 Partial (~73%) — Basic VM CRUD + SSAApplier + VMRenderer + AuthProvider Admin + KubeVirt instance type/preference catalog reads + label-based pending adoption discovery/periodic scan + admin adoption management, bounded provider K8s operation timeouts, provider unit test lane, V1 River queue concurrency, i18n, and Atlas baselines done; Snapshot/Clone/Migration deferred. V1 status sync baseline is ADR-0038 adaptive polling; optional ResourceWatcher acceleration remains deferred
 
 ---
 
@@ -11,7 +11,7 @@
 - [x] **Domain Model Definition** (`internal/domain/`):
   - [x] `vm.go` - VM domain model (decoupled from K8s VirtualMachine)
   - [x] `snapshot.go` - Snapshot domain model (in vm.go)
-  - [x] `VMStatus` internal enum (PENDING, RUNNING, STOPPED, FAILED, MIGRATING)
+  - [x] `VMStatus` internal enum (CREATING, STARTING, RUNNING, STOPPING, STOPPED, DELETING, FAILED, PENDING as K8s scheduler wait, MIGRATING, PAUSED, UNKNOWN, NOT_FOUND)
 - [x] **KubeVirtMapper** (`internal/provider/mapper.go`):
   - [x] `MapVM()` - Maps VirtualMachine + VMI to `domain.VM`
   - [x] `MapSnapshot()` - Maps VirtualMachineSnapshot to `domain.VMSnapshot`
@@ -20,11 +20,11 @@
   - [x] **Error Extraction**: Extract from Status.PrintableStatus and Conditions
 - [x] **Provider Integration**: All methods return `domain.*` types
 
-> ⚠️ **Master-Flow Alignment Issue (P0, audited 2026-02-10)**:
-> `domain/vm.go` declares `VMStatusError = "ERROR"` but master-flow state diagram uses `FAILED`.
-> Also missing `STOPPING` transitional state. `PENDING` status should not exist at VM domain level
-> (VM row is not created until approval per master-flow Stage 5.A).
-> **Fix**: Rename `ERROR` → `FAILED`, add `STOPPING`, remove domain-level `PENDING`.
+> ✅ **Master-Flow Alignment Resolved (audited 2026-06-19)**:
+> `domain/vm.go` now uses `FAILED` instead of `ERROR` and includes `STOPPING`,
+> `STARTING`, and `NOT_FOUND`. `PENDING` remains in the VM status enum only as a
+> K8s/KubeVirt scheduler-wait state; it is not used to model pre-approval VM
+> requests, because Stage 5.A creates a pending Ticket/DomainEvent without a VM row.
 
 ---
 
@@ -41,10 +41,10 @@
 
 > **Scope**: Basic Provider CRUD methods only. Advanced features (scheduled backup, retention policies) are defined in [RFC-0013](../../rfc/RFC-0013-vm-snapshot.md).
 
-- [ ] `CreateVMSnapshot` create snapshot
-- [ ] `GetVMSnapshot`, `ListVMSnapshots` query snapshots
-- [ ] `DeleteVMSnapshot` delete snapshot
-- [ ] `RestoreVMFromSnapshot` restore from snapshot
+- [ ] `CreateVMSnapshot` create snapshot (RFC-backed future scope; not V1 runtime)
+- [ ] `GetVMSnapshot`, `ListVMSnapshots` query snapshots (RFC-backed future scope; not V1 runtime)
+- [ ] `DeleteVMSnapshot` delete snapshot (RFC-backed future scope; not V1 runtime)
+- [ ] `RestoreVMFromSnapshot` restore from snapshot (RFC-backed future scope; not V1 runtime)
 
 ---
 
@@ -52,9 +52,9 @@
 
 > **Scope**: Basic Provider CRUD methods only. Advanced features (data masking, cross-cluster clone) are defined in [RFC-0014](../../rfc/RFC-0014-vm-clone.md).
 
-- [ ] `CloneVM` clone from VM
-- [ ] Support cloning from snapshot
-- [ ] `GetVMClone`, `ListVMClones` status query
+- [ ] `CloneVM` clone from VM (RFC-backed future scope; not V1 runtime)
+- [ ] Support cloning from snapshot (RFC-backed future scope; not V1 runtime)
+- [ ] `GetVMClone`, `ListVMClones` status query (RFC-backed future scope; not V1 runtime)
 
 ---
 
@@ -62,17 +62,17 @@
 
 > **Scope**: Basic Provider CRUD methods only. Advanced features (automated migration policies, maintenance mode) are defined in [RFC-0012](../../rfc/RFC-0012-kubevirt-advanced.md).
 
-- [ ] `MigrateVM` initiate migration
-- [ ] `GetVMMigration`, `ListVMMigrations` status query
-- [ ] `CancelVMMigration` cancel migration
+- [ ] `MigrateVM` initiate migration (RFC-backed future scope; not V1 runtime)
+- [ ] `GetVMMigration`, `ListVMMigrations` status query (RFC-backed future scope; not V1 runtime)
+- [ ] `CancelVMMigration` cancel migration (RFC-backed future scope; not V1 runtime)
 
 ---
 
 ## Instance Types and Preferences
 
-- [ ] `ListInstancetypes` list instance types
-- [ ] `ListClusterInstancetypes` list cluster-level instance types
-- [ ] `ListPreferences` list preferences
+- [x] `ListInstancetypes` list namespace-scoped instance types
+- [x] `ListClusterInstancetypes` list cluster-level instance types
+- [x] `ListPreferences` list namespace-scoped and cluster-level preferences
 
 ---
 
@@ -113,14 +113,14 @@
 > **Tracking**: Future watch acceleration is documented in
 > [RFC-0020](../../rfc/RFC-0020-k8s-watch-acceleration.md).
 
-- [ ] List-Watch pattern implemented (deferred V2 acceleration)
-- [ ] **410 Gone Complete Handling**:
-  - [ ] Clear `resourceVersion` (force full Re-list)
-  - [ ] Notify `CacheService` to invalidate cache
-  - [ ] Don't count toward circuit breaker
-  - [ ] **Read Request Degradation Strategy** implemented
-- [ ] Exponential backoff reconnect (with jitter)
-- [ ] Circuit breaker configured
+- [ ] List-Watch pattern implemented (RFC-backed future scope; deferred V2 acceleration)
+- [ ] **410 Gone Complete Handling** (RFC-backed future scope; deferred V2 acceleration):
+  - [ ] Clear `resourceVersion` (force full Re-list; RFC-backed future scope)
+  - [ ] Notify `CacheService` to invalidate cache (RFC-backed future scope)
+  - [ ] Don't count toward circuit breaker (RFC-backed future scope)
+  - [ ] **Read Request Degradation Strategy** implemented (RFC-backed future scope)
+- [ ] Exponential backoff reconnect (with jitter; RFC-backed future scope)
+- [ ] Circuit breaker configured (RFC-backed future scope)
 
 ---
 
@@ -146,20 +146,25 @@
 
 ## Resource Adoption Security
 
-- [ ] **Discovery Mechanism** (Label-based only) implemented
+- [x] **Discovery Mechanism** (Label-based only) implemented
 - [x] **PendingAdoption Table** schema complete
-- [ ] **Admin API** for adoption management
-- [ ] **Periodic Scan** configured
-- [ ] **Audit Log** for adoption operations
+- [x] **Admin API** for adoption management
+  - [x] List pending adoption resources with typed/validated V1 `VirtualMachine` resource-type filtering
+  - [x] Reject pending adoption resources
+  - [x] Adopt pending resources into VM DB records
+- [x] **Periodic Scan** configured
+- [x] **Audit Log** for adoption operations
+  - [x] Rejection audit events
+  - [x] Adoption execution audit events
 
 ---
 
 ## General
 
-- [ ] **Concurrency Control** with queue-wait mechanism
-- [ ] Context timeout handling
-- [ ] Cache service (Ent local query, no Redis)
-- [ ] i18n Standards verified
+- [x] **Concurrency Control** baseline — V1 uses River queue `MaxWorkers`; per-cluster queue-wait/semaphore remains deferred to [RFC-0015](../../rfc/RFC-0015-per-cluster-concurrency.md)
+- [x] Context timeout handling — provider-owned K8s operations and cluster health probes use bounded `k8s.operation_timeout` contexts, enforced by `shepherd-arch/k8stimeout`
+- [ ] Cache service (Ent local query, no Redis) — deferred; CacheService-based `CLUSTER_REBUILDING` UX is tracked in [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md)
+- [x] i18n Standards verified — frontend non-English literal and repository Chinese-character allowlist checks pass, with en/zh-CN locale catalogs as the approved i18n boundary
 
 ---
 
@@ -169,13 +174,13 @@
 - [x] Approval policy data model (Ent schema)
 - [x] State machine definition (PENDING → APPROVED/REJECTED/CANCELLED)
 - [x] Interface definitions (`ApprovalProvider` in `internal/provider/approvalcontract/contract.go`, thin re-export in `internal/provider/approval.go`)
-- [ ] Database migration scripts (Atlas — Phase 4)
+- [x] Database migration scripts (Atlas — Phase 4) — `migrations/atlas/atlas.hcl`, checked-in Atlas SQL, and startup migration tests are present
 
 ---
 
 ## Pre-Phase 3 Verification
 
-- [ ] KubeVirtProvider unit tests pass (using Mock Client) — requires testcontainers
+- [x] KubeVirtProvider unit tests pass (using fake/mock client interfaces) — verified 2026-06-19 with `go test -count=1 ./internal/provider`
 - [ ] ResourceWatcher `410 Gone` handling test passes — only required if optional watch accelerator is introduced later
 - [ ] Mapper defensive code test coverage > 80% — deferred
 - [x] `go vet ./...` passes

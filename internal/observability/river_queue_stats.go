@@ -303,7 +303,10 @@ func (c *riverQueueStatsCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	stats, err := c.provider.RiverQueueStats(context.Background())
+	ctx, cancel := collectorScrapeContext()
+	defer cancel()
+
+	stats, err := c.provider.RiverQueueStats(ctx)
 	if err != nil {
 		ch <- prometheus.MustNewConstMetric(c.queueStatsScrapeSuccess, prometheus.GaugeValue, 0)
 		return

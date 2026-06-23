@@ -96,8 +96,28 @@ export const resolveDefaultConsoleType = (
   return "VNC";
 };
 
-const normalizeConsolePath = (path: string): string =>
-  path.startsWith("/") ? path : `/${path}`;
+const absoluteURLPattern = /^[a-z][a-z0-9+.-]*:/i;
+
+const consolePathPatterns: Record<VMConsoleType, RegExp> = {
+  SERIAL: /^\/api\/v1\/vms\/[^/?#]+\/serial$/,
+  VNC: /^\/api\/v1\/vms\/[^/?#]+\/vnc$/,
+};
+
+const normalizeConsolePath = (
+  path: string,
+  consoleType: VMConsoleType,
+): string | null => {
+  const trimmed = path.trim();
+  if (
+    trimmed === "" ||
+    trimmed.startsWith("//") ||
+    absoluteURLPattern.test(trimmed)
+  ) {
+    return null;
+  }
+  const normalized = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return consolePathPatterns[consoleType].test(normalized) ? normalized : null;
+};
 
 export const resolveApprovedConsoleTarget = (
   payload?: ConsoleLaunchPayload | null,
@@ -105,19 +125,23 @@ export const resolveApprovedConsoleTarget = (
   const consolePath =
     typeof payload?.console_url === "string" ? payload.console_url.trim() : "";
   const consoleType = payload?.console_type;
-  if (consolePath !== "" && (consoleType === "SERIAL" || consoleType === "VNC")) {
-    return {
-      consoleType,
-      consolePath: normalizeConsolePath(consolePath),
-    };
+  if (consoleType === "SERIAL" || consoleType === "VNC") {
+    const normalizedConsolePath = normalizeConsolePath(consolePath, consoleType);
+    if (normalizedConsolePath) {
+      return {
+        consoleType,
+        consolePath: normalizedConsolePath,
+      };
+    }
   }
 
   const legacyVNCPath =
     typeof payload?.vnc_url === "string" ? payload.vnc_url.trim() : "";
-  if (legacyVNCPath !== "") {
+  const normalizedLegacyVNCPath = normalizeConsolePath(legacyVNCPath, "VNC");
+  if (normalizedLegacyVNCPath) {
     return {
       consoleType: "VNC",
-      consolePath: normalizeConsolePath(legacyVNCPath),
+      consolePath: normalizedLegacyVNCPath,
     };
   }
 

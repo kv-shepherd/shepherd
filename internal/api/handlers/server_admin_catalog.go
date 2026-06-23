@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -17,6 +19,7 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/authprovider"
 	"kv-shepherd.io/shepherd/ent/externalcohort"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
 	"kv-shepherd.io/shepherd/ent/instancesize"
 	"kv-shepherd.io/shepherd/ent/predicate"
@@ -28,6 +31,12 @@ import (
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	adminglobal "kv-shepherd.io/shepherd/internal/provider/adminglobal"
 	"kv-shepherd.io/shepherd/internal/service"
+)
+
+var (
+	errAuthProviderInUse             = errors.New("auth provider in use")
+	errAuthProviderNotFound          = errors.New("auth provider not found")
+	errExternalCohortMappingNotFound = errors.New("external cohort mapping not found")
 )
 
 type templateCreateRequest struct {
@@ -98,6 +107,9 @@ type instanceSizeCreateRequest struct {
 const (
 	envTest                   = "test"
 	envProd                   = "prod"
+	scopeTypeGlobal           = "global"
+	scopeTypeSystem           = "system"
+	scopeTypeService          = "service"
 	templateCatalogScopeAll   = "all"
 	templateSearchStateActive = "enabled"
 )
@@ -276,6 +288,29 @@ func (s *Server) ListAdminTemplates(c *gin.Context, params generated.ListAdminTe
 	if !ok {
 		return
 	}
+	sourceTypeFilter := service.NormalizeTemplateSourceType(string(params.SourceType))
+	if rejectInvalidEnumQuery(
+		c,
+		"source_type",
+		sourceTypeFilter,
+		service.TemplateSourceContainerDisk,
+		service.TemplateSourceCDIImageImport,
+		service.TemplateSourceCDIPVCClone,
+	) {
+		return
+	}
+	catalogScopeFilter := service.NormalizeCatalogScope(string(params.CatalogScope))
+	if rejectInvalidEnumQuery(
+		c,
+		"catalog_scope",
+		catalogScopeFilter,
+		service.CatalogScopeUnclassified,
+		service.CatalogScopeTest,
+		service.CatalogScopeProd,
+		service.CatalogScopeAll,
+	) {
+		return
+	}
 
 	page, perPage := defaultPagination(params.Page, params.PerPage)
 	offset := (page - 1) * perPage
@@ -316,12 +351,12 @@ func (s *Server) ListAdminTemplates(c *gin.Context, params generated.ListAdminTe
 	if osFamily := strings.TrimSpace(params.OsFamily); osFamily != "" {
 		query = query.Where(enttemplate.OsFamilyContainsFold(osFamily))
 	}
-	if sourceType := strings.TrimSpace(params.SourceType); sourceType != "" {
-		query = query.Where(enttemplate.SourceTypeEQ(service.NormalizeTemplateSourceType(sourceType)))
+	if sourceTypeFilter != "" {
+		query = query.Where(enttemplate.SourceTypeEQ(sourceTypeFilter))
 	}
-	if catalogScope := strings.TrimSpace(params.CatalogScope); catalogScope != "" {
+	if catalogScopeFilter != "" {
 		query = query.Where(enttemplate.CatalogScopeEQ(
-			enttemplate.CatalogScope(service.NormalizeCatalogScope(catalogScope)),
+			enttemplate.CatalogScope(catalogScopeFilter),
 		))
 	}
 	if _, hasEnabledFilter := c.GetQuery("enabled"); hasEnabledFilter {
@@ -1275,6 +1310,18 @@ func (s *Server) DeleteRole(c *gin.Context, roleID generated.RoleID) {
 		c.JSON(http.StatusConflict, generated.Error{Code: "ROLE_IN_USE"})
 		return
 	}
+	mappingExists, err := s.client.ExternalCohortMapping.Query().
+		Where(externalcohortmapping.RoleIDEQ(roleID)).
+		Exist(ctx)
+	if err != nil {
+		logger.Error("failed to check external cohort mapping role usage", zap.Error(err), zap.String("role_id", roleID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if mappingExists {
+		c.JSON(http.StatusConflict, generated.Error{Code: "ROLE_IN_USE"})
+		return
+	}
 
 	if err := s.client.Role.DeleteOneID(roleID).Exec(ctx); err != nil {
 		if ent.IsNotFound(err) {
@@ -1469,17 +1516,18 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 		return
 	}
 
-	update := s.client.AuthProvider.UpdateOneID(providerID)
+	nameValue := ""
 	if req.Name != nil {
-		name := strings.TrimSpace(*req.Name)
-		if name == "" {
+		nameValue = strings.TrimSpace(*req.Name)
+		if nameValue == "" {
 			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "name cannot be empty"})
 			return
 		}
-		update = update.SetName(name)
 	}
+	var mergedConfig map[string]interface{}
 	if req.Config != nil {
-		mergedConfig, mergeErr := s.authProviderConfig.MergeForUpdate(existing.AuthType, existing.Config, *req.Config)
+		var mergeErr error
+		mergedConfig, mergeErr = s.authProviderConfig.MergeForUpdate(existing.AuthType, existing.Config, *req.Config)
 		if mergeErr != nil {
 			logger.Error("failed to merge auth provider config update", zap.Error(mergeErr), zap.String("provider_id", providerID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -1495,17 +1543,39 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validateErr.Error()})
 			return
 		}
-		update = update.SetConfig(mergedConfig)
-	}
-	if req.Enabled != nil {
-		update = update.SetEnabled(*req.Enabled)
-	}
-	if req.SortOrder != nil {
-		update = update.SetSortOrder(*req.SortOrder)
 	}
 
-	provider, err := update.Save(ctx)
-	if err != nil {
+	revokeLinkedUserSessions := req.Enabled != nil && existing.Enabled && !*req.Enabled
+	var provider *ent.AuthProvider
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		txUpdate := tx.Client().AuthProvider.UpdateOneID(providerID)
+		if req.Name != nil {
+			txUpdate = txUpdate.SetName(nameValue)
+		}
+		if req.Config != nil {
+			txUpdate = txUpdate.SetConfig(mergedConfig)
+		}
+		if req.Enabled != nil {
+			txUpdate = txUpdate.SetEnabled(*req.Enabled)
+		}
+		if req.SortOrder != nil {
+			txUpdate = txUpdate.SetSortOrder(*req.SortOrder)
+		}
+
+		var saveErr error
+		provider, saveErr = txUpdate.Save(ctx)
+		if saveErr != nil {
+			return saveErr
+		}
+		if !revokeLinkedUserSessions {
+			return nil
+		}
+		linkedUserIDs, err := userIDsForAuthProviderWithClient(ctx, tx.Client(), providerID)
+		if err != nil {
+			return err
+		}
+		return s.revokeUsersSessions(ctx, linkedUserIDs, "auth_provider_disabled")
+	}); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
@@ -1539,19 +1609,37 @@ func (s *Server) DeleteAuthProvider(c *gin.Context, providerID generated.Provide
 		return
 	}
 
-	userCount, err := s.client.User.Query().Where(entuser.AuthProviderIDEQ(providerID)).Count(ctx)
-	if err != nil {
-		logger.Error("failed to count provider-linked users", zap.Error(err), zap.String("provider_id", providerID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if userCount > 0 {
-		c.JSON(http.StatusConflict, generated.Error{Code: "AUTH_PROVIDER_IN_USE"})
-		return
-	}
-
-	if err := s.client.AuthProvider.DeleteOneID(providerID).Exec(ctx); err != nil {
-		if ent.IsNotFound(err) {
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		txClient := tx.Client()
+		userCount, err := txClient.User.Query().Where(entuser.AuthProviderIDEQ(providerID)).Count(ctx)
+		if err != nil {
+			return fmt.Errorf("count provider-linked users: %w", err)
+		}
+		if userCount > 0 {
+			return errAuthProviderInUse
+		}
+		affectedUserIDs, err := cleanupAuthProviderExternalCohortState(ctx, txClient, providerID)
+		if err != nil {
+			return err
+		}
+		if len(affectedUserIDs) > 0 {
+			if err := s.revokeUsersSessions(ctx, affectedUserIDs, "auth_provider_deleted"); err != nil {
+				return err
+			}
+		}
+		if err := txClient.AuthProvider.DeleteOneID(providerID).Exec(ctx); err != nil {
+			if ent.IsNotFound(err) {
+				return errAuthProviderNotFound
+			}
+			return fmt.Errorf("delete auth provider: %w", err)
+		}
+		return nil
+	}); err != nil {
+		if errors.Is(err, errAuthProviderInUse) {
+			c.JSON(http.StatusConflict, generated.Error{Code: "AUTH_PROVIDER_IN_USE"})
+			return
+		}
+		if errors.Is(err, errAuthProviderNotFound) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
@@ -1565,6 +1653,33 @@ func (s *Server) DeleteAuthProvider(c *gin.Context, providerID generated.Provide
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func cleanupAuthProviderExternalCohortState(ctx context.Context, client *ent.Client, providerID string) ([]string, error) {
+	grants, err := client.ExternalCohortGrant.Query().
+		Where(externalcohortgrant.ProviderIDEQ(providerID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query external cohort grants for provider cleanup: %w", err)
+	}
+	affectedUserIDs := make([]string, 0, len(grants))
+	for _, grant := range grants {
+		affectedUserIDs = appendExternalCohortGrantUserID(affectedUserIDs, grant)
+		if err := deleteExternalCohortGrantAndManagedRoleBinding(ctx, client, grant); err != nil {
+			return nil, err
+		}
+	}
+	if _, err := client.ExternalCohortMapping.Delete().
+		Where(externalcohortmapping.ProviderIDEQ(providerID)).
+		Exec(ctx); err != nil {
+		return nil, fmt.Errorf("delete external cohort mappings for provider cleanup: %w", err)
+	}
+	if _, err := client.ExternalCohort.Delete().
+		Where(externalcohort.ProviderIDEQ(providerID)).
+		Exec(ctx); err != nil {
+		return nil, fmt.Errorf("delete external cohorts for provider cleanup: %w", err)
+	}
+	return compactExternalCohortGrantUserIDs(affectedUserIDs), nil
 }
 
 // TestAuthProviderConnection handles POST /admin/auth-providers/{provider_id}/test-connection.
@@ -1885,10 +2000,17 @@ func (s *Server) CreateAuthProviderCohortMapping(c *gin.Context, providerID gene
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	if !roleEnt.Enabled {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "ROLE_DISABLED",
+			Message: "disabled roles cannot be used for external cohort mappings",
+		})
+		return
+	}
 
 	scopeType := strings.TrimSpace(req.ScopeType)
 	if scopeType == "" {
-		scopeType = "global"
+		scopeType = scopeTypeGlobal
 	}
 	scopeID := strings.TrimSpace(req.ScopeId)
 	allowedEnvs := normalizeExternalCohortAllowedEnvironmentsCreate(req.AllowedEnvironments)
@@ -1941,8 +2063,8 @@ func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID gene
 		return
 	}
 
-	var req generated.ExternalCohortMappingUpdateRequest
-	if !bindAndValidateJSON(c, &req) {
+	req, fields, ok := bindExternalCohortMappingUpdateJSON(c)
+	if !ok {
 		return
 	}
 
@@ -1959,9 +2081,9 @@ func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID gene
 		return
 	}
 
-	update := mapping.Update()
 	roleName := ""
-	if roleID := strings.TrimSpace(req.RoleId); roleID != "" {
+	roleID := strings.TrimSpace(req.RoleId)
+	if roleID != "" {
 		roleEnt, roleErr := s.client.Role.Get(ctx, roleID)
 		if roleErr != nil {
 			if ent.IsNotFound(roleErr) {
@@ -1972,22 +2094,67 @@ func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID gene
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
-		update = update.SetRoleID(roleID)
+		if !roleEnt.Enabled {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "ROLE_DISABLED",
+				Message: "disabled roles cannot be used for external cohort mappings",
+			})
+			return
+		}
 		roleName = roleEnt.Name
 	}
 
-	if scopeType := strings.TrimSpace(req.ScopeType); scopeType != "" {
-		update = update.SetScopeType(scopeType)
-	}
-	if req.ScopeId != "" {
-		update = update.SetScopeID(strings.TrimSpace(req.ScopeId))
-	}
-	if req.AllowedEnvironments != nil {
-		update = update.SetAllowedEnvironments(normalizeExternalCohortAllowedEnvironmentsUpdate(req.AllowedEnvironments))
-	}
+	var updated *ent.ExternalCohortMapping
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		txClient := tx.Client()
+		update := txClient.ExternalCohortMapping.UpdateOneID(mapping.ID).
+			Where(externalcohortmapping.ProviderIDEQ(providerID))
+		if roleID != "" {
+			update = update.SetRoleID(roleID)
+		}
 
-	updated, err := update.Save(ctx)
-	if err != nil {
+		if _, exists := fields["scope_type"]; exists {
+			scopeType := strings.TrimSpace(req.ScopeType)
+			if scopeType == "" {
+				scopeType = scopeTypeGlobal
+			}
+			update = update.SetScopeType(scopeType)
+			if _, scopeIDProvided := fields["scope_id"]; !scopeIDProvided && scopeType == scopeTypeGlobal {
+				update = update.ClearScopeID()
+			}
+		}
+		if _, exists := fields["scope_id"]; exists {
+			if scopeID := strings.TrimSpace(req.ScopeId); scopeID != "" {
+				update = update.SetScopeID(scopeID)
+			} else {
+				update = update.ClearScopeID()
+			}
+		}
+		if _, exists := fields["allowed_environments"]; exists {
+			update = update.SetAllowedEnvironments(normalizeExternalCohortAllowedEnvironmentsUpdate(req.AllowedEnvironments))
+		}
+
+		saved, err := update.Save(ctx)
+		if err != nil {
+			if ent.IsNotFound(err) {
+				return errExternalCohortMappingNotFound
+			}
+			return err
+		}
+		updated = saved
+		affectedUserIDs, err := reconcileExternalCohortGrantsForUpdatedMapping(ctx, txClient, providerID, mapping, updated)
+		if err != nil {
+			return err
+		}
+		if len(affectedUserIDs) > 0 {
+			return s.revokeUsersSessions(ctx, affectedUserIDs, "external_cohort_mapping_updated")
+		}
+		return nil
+	}); err != nil {
+		if errors.Is(err, errExternalCohortMappingNotFound) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_NOT_FOUND"})
+			return
+		}
 		if ent.IsConstraintError(err) {
 			c.JSON(http.StatusConflict, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_EXISTS"})
 			return
@@ -2014,6 +2181,25 @@ func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID gene
 	c.JSON(http.StatusOK, externalCohortMappingToAPI(updated, roleName, cohortDisplayName))
 }
 
+func bindExternalCohortMappingUpdateJSON(c *gin.Context) (generated.ExternalCohortMappingUpdateRequest, map[string]json.RawMessage, bool) {
+	var req generated.ExternalCohortMappingUpdateRequest
+	raw, err := c.GetRawData()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+		return req, nil, false
+	}
+	if err := json.Unmarshal(raw, &req); err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+		return req, nil, false
+	}
+	fields := make(map[string]json.RawMessage)
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+		return req, nil, false
+	}
+	return req, fields, true
+}
+
 // DeleteAuthProviderCohortMapping handles DELETE /admin/auth-providers/{provider_id}/cohort-mappings/{mapping_id}.
 func (s *Server) DeleteAuthProviderCohortMapping(c *gin.Context, providerID generated.ProviderID, mappingID generated.MappingID) {
 	ctx, actor, ok := requireActorWithAnyGlobalPermission(c, "auth_provider:mapping_delete")
@@ -2021,16 +2207,32 @@ func (s *Server) DeleteAuthProviderCohortMapping(c *gin.Context, providerID gene
 		return
 	}
 
-	count, err := s.client.ExternalCohortMapping.Delete().
-		Where(externalcohortmapping.IDEQ(mappingID), externalcohortmapping.ProviderIDEQ(providerID)).
-		Exec(ctx)
-	if err != nil {
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		txClient := tx.Client()
+		count, deleteErr := txClient.ExternalCohortMapping.Delete().
+			Where(externalcohortmapping.IDEQ(mappingID), externalcohortmapping.ProviderIDEQ(providerID)).
+			Exec(ctx)
+		if deleteErr != nil {
+			return fmt.Errorf("delete external cohort mapping: %w", deleteErr)
+		}
+		if count == 0 {
+			return errExternalCohortMappingNotFound
+		}
+		affectedUserIDs, err := cleanupExternalCohortGrantsForDeletedMapping(ctx, txClient, providerID, mappingID)
+		if err != nil {
+			return err
+		}
+		if len(affectedUserIDs) > 0 {
+			return s.revokeUsersSessions(ctx, affectedUserIDs, "external_cohort_mapping_deleted")
+		}
+		return nil
+	}); err != nil {
+		if errors.Is(err, errExternalCohortMappingNotFound) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_NOT_FOUND"})
+			return
+		}
 		logger.Error("failed to delete external cohort mapping", zap.Error(err), zap.String("mapping_id", mappingID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if count == 0 {
-		c.JSON(http.StatusNotFound, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_NOT_FOUND"})
 		return
 	}
 
@@ -2041,6 +2243,283 @@ func (s *Server) DeleteAuthProviderCohortMapping(c *gin.Context, providerID gene
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func cleanupExternalCohortGrantsForDeletedMapping(ctx context.Context, client *ent.Client, providerID, mappingID string) ([]string, error) {
+	grants, err := client.ExternalCohortGrant.Query().
+		Where(externalcohortgrant.ProviderIDEQ(providerID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query external cohort grants for mapping cleanup: %w", err)
+	}
+
+	affectedUserIDs := make([]string, 0, len(grants))
+	for _, grant := range grants {
+		remainingSourceMappingIDs, affected := externalCohortGrantSourceMappingIDsAfterDelete(grant.SourceMappingIds, mappingID)
+		if !affected {
+			continue
+		}
+		affectedUserIDs = appendExternalCohortGrantUserID(affectedUserIDs, grant)
+		if len(remainingSourceMappingIDs) > 0 {
+			if _, err := client.ExternalCohortGrant.UpdateOneID(grant.ID).
+				SetSourceMappingIds(remainingSourceMappingIDs).
+				Save(ctx); err != nil {
+				return nil, fmt.Errorf("update external cohort grant %s source mappings: %w", grant.ID, err)
+			}
+			continue
+		}
+
+		if err := deleteExternalCohortGrantAndManagedRoleBinding(ctx, client, grant); err != nil {
+			return nil, err
+		}
+	}
+
+	return compactExternalCohortGrantUserIDs(affectedUserIDs), nil
+}
+
+func reconcileExternalCohortGrantsForUpdatedMapping(
+	ctx context.Context,
+	client *ent.Client,
+	providerID string,
+	before, after *ent.ExternalCohortMapping,
+) ([]string, error) {
+	oldBindingKey := externalCohortMappingBindingKey(before)
+	newBindingKey := externalCohortMappingBindingKey(after)
+	if oldBindingKey == newBindingKey {
+		return nil, nil
+	}
+
+	grants, err := client.ExternalCohortGrant.Query().
+		Where(externalcohortgrant.ProviderIDEQ(providerID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query external cohort grants for mapping update: %w", err)
+	}
+
+	affectedUserIDs := make([]string, 0, len(grants))
+	now := time.Now().UTC()
+	for _, grant := range grants {
+		remainingSourceMappingIDs, affected := externalCohortGrantSourceMappingIDsAfterDelete(grant.SourceMappingIds, after.ID)
+		if !affected || grant.BindingKey == newBindingKey {
+			continue
+		}
+
+		affectedUserIDs = appendExternalCohortGrantUserID(affectedUserIDs, grant)
+		if err := ensureExternalCohortGrantForUpdatedMapping(ctx, client, grant.UserID, providerID, after, newBindingKey, now); err != nil {
+			return nil, err
+		}
+		if len(remainingSourceMappingIDs) > 0 {
+			if _, err := client.ExternalCohortGrant.UpdateOneID(grant.ID).
+				SetSourceMappingIds(remainingSourceMappingIDs).
+				SetLastAppliedAt(now).
+				Save(ctx); err != nil {
+				return nil, fmt.Errorf("update external cohort grant %s source mappings after mapping update: %w", grant.ID, err)
+			}
+			continue
+		}
+
+		if err := deleteExternalCohortGrantAndManagedRoleBinding(ctx, client, grant); err != nil {
+			return nil, err
+		}
+	}
+
+	return compactExternalCohortGrantUserIDs(affectedUserIDs), nil
+}
+
+func ensureExternalCohortGrantForUpdatedMapping(
+	ctx context.Context,
+	client *ent.Client,
+	userID, providerID string,
+	mapping *ent.ExternalCohortMapping,
+	bindingKey string,
+	now time.Time,
+) error {
+	target, err := client.ExternalCohortGrant.Query().
+		Where(
+			externalcohortgrant.UserIDEQ(userID),
+			externalcohortgrant.ProviderIDEQ(providerID),
+			externalcohortgrant.BindingKeyEQ(bindingKey),
+		).
+		Only(ctx)
+	if err == nil {
+		sourceMappingIDs, changed := externalCohortGrantSourceMappingIDsWithMapping(target.SourceMappingIds, mapping.ID)
+		if !changed {
+			return nil
+		}
+		if _, updateErr := client.ExternalCohortGrant.UpdateOneID(target.ID).
+			SetSourceMappingIds(sourceMappingIDs).
+			SetLastAppliedAt(now).
+			Save(ctx); updateErr != nil {
+			return fmt.Errorf("merge external cohort grant %s source mappings after mapping update: %w", target.ID, updateErr)
+		}
+		return nil
+	}
+	if !ent.IsNotFound(err) {
+		return fmt.Errorf("query target external cohort grant after mapping update: %w", err)
+	}
+
+	roleBindingID, err := createExternalCohortManagedRoleBindingForMapping(ctx, client, userID, mapping)
+	if err != nil {
+		return err
+	}
+	id, err := uuid.NewV7()
+	if err != nil {
+		return fmt.Errorf("generate external cohort grant id: %w", err)
+	}
+	if _, err := client.ExternalCohortGrant.Create().
+		SetID(id.String()).
+		SetUserID(userID).
+		SetProviderID(providerID).
+		SetBindingKey(bindingKey).
+		SetRoleBindingID(roleBindingID).
+		SetSourceMappingIds([]string{mapping.ID}).
+		SetLastAppliedAt(now).
+		Save(ctx); err != nil {
+		return fmt.Errorf("create external cohort grant after mapping update: %w", err)
+	}
+	return nil
+}
+
+func createExternalCohortManagedRoleBindingForMapping(
+	ctx context.Context,
+	client *ent.Client,
+	userID string,
+	mapping *ent.ExternalCohortMapping,
+) (string, error) {
+	id, err := uuid.NewV7()
+	if err != nil {
+		return "", fmt.Errorf("generate role binding id: %w", err)
+	}
+
+	scopeType := strings.TrimSpace(mapping.ScopeType)
+	if scopeType == "" {
+		scopeType = scopeTypeGlobal
+	}
+	create := client.RoleBinding.Create().
+		SetID(id.String()).
+		SetUserID(userID).
+		SetRoleID(mapping.RoleID).
+		SetScopeType(scopeType).
+		SetCreatedBy(externalCohortRoleBindingActor)
+	if scopeID := strings.TrimSpace(mapping.ScopeID); scopeID != "" {
+		create = create.SetScopeID(scopeID)
+	}
+	if allowedEnvironments := normalizedExternalCohortRoleBindingEnvironments(mapping.AllowedEnvironments); len(allowedEnvironments) > 0 {
+		create = create.SetAllowedEnvironments(allowedEnvironments)
+	}
+
+	binding, err := create.Save(ctx)
+	if err != nil {
+		return "", fmt.Errorf("create managed role binding after mapping update: %w", err)
+	}
+	return binding.ID, nil
+}
+
+func deleteExternalCohortGrantAndManagedRoleBinding(ctx context.Context, client *ent.Client, grant *ent.ExternalCohortGrant) error {
+	if grant == nil {
+		return nil
+	}
+	if err := client.ExternalCohortGrant.DeleteOneID(grant.ID).Exec(ctx); err != nil && !ent.IsNotFound(err) {
+		return fmt.Errorf("delete external cohort grant %s: %w", grant.ID, err)
+	}
+	if grant.RoleBindingID == "" {
+		return nil
+	}
+	if err := client.RoleBinding.DeleteOneID(grant.RoleBindingID).
+		Where(
+			rolebinding.CreatedByEQ(externalCohortRoleBindingActor),
+			rolebinding.HasUserWith(entuser.IDEQ(grant.UserID)),
+		).
+		Exec(ctx); err != nil && !ent.IsNotFound(err) {
+		return fmt.Errorf("delete managed role binding %s: %w", grant.RoleBindingID, err)
+	}
+	return nil
+}
+
+func appendExternalCohortGrantUserID(userIDs []string, grant *ent.ExternalCohortGrant) []string {
+	if grant == nil {
+		return userIDs
+	}
+	userID := strings.TrimSpace(grant.UserID)
+	if userID == "" {
+		return userIDs
+	}
+	return append(userIDs, userID)
+}
+
+func compactExternalCohortGrantUserIDs(userIDs []string) []string {
+	if len(userIDs) == 0 {
+		return nil
+	}
+	normalized := userIDs[:0]
+	for _, userID := range userIDs {
+		userID = strings.TrimSpace(userID)
+		if userID == "" {
+			continue
+		}
+		normalized = append(normalized, userID)
+	}
+	slices.Sort(normalized)
+	return slices.Compact(normalized)
+}
+
+func externalCohortMappingBindingKey(mapping *ent.ExternalCohortMapping) string {
+	if mapping == nil {
+		return ""
+	}
+	normalizedEnvironments := normalizedExternalCohortRoleBindingEnvironments(mapping.AllowedEnvironments)
+	return strings.Join([]string{
+		strings.TrimSpace(mapping.RoleID),
+		strings.TrimSpace(mapping.ScopeType),
+		strings.TrimSpace(mapping.ScopeID),
+		strings.Join(normalizedEnvironments, ","),
+	}, "|")
+}
+
+func normalizedExternalCohortRoleBindingEnvironments(environments []string) []string {
+	normalized := make([]string, 0, len(environments))
+	for _, environment := range environments {
+		environment = strings.TrimSpace(environment)
+		if environment == "" {
+			continue
+		}
+		normalized = append(normalized, environment)
+	}
+	sort.Strings(normalized)
+	return normalized
+}
+
+func externalCohortGrantSourceMappingIDsAfterDelete(sourceMappingIDs []string, deletedMappingID string) ([]string, bool) {
+	remaining := make([]string, 0, len(sourceMappingIDs))
+	affected := false
+	for _, sourceMappingID := range sourceMappingIDs {
+		if sourceMappingID == deletedMappingID {
+			affected = true
+			continue
+		}
+		remaining = append(remaining, sourceMappingID)
+	}
+	return remaining, affected
+}
+
+func externalCohortGrantSourceMappingIDsWithMapping(sourceMappingIDs []string, mappingID string) ([]string, bool) {
+	seen := make(map[string]struct{}, len(sourceMappingIDs)+1)
+	merged := make([]string, 0, len(sourceMappingIDs)+1)
+	for _, sourceMappingID := range sourceMappingIDs {
+		if sourceMappingID == "" {
+			continue
+		}
+		if _, exists := seen[sourceMappingID]; exists {
+			continue
+		}
+		seen[sourceMappingID] = struct{}{}
+		merged = append(merged, sourceMappingID)
+	}
+	if _, exists := seen[mappingID]; !exists && mappingID != "" {
+		merged = append(merged, mappingID)
+	}
+	sort.Strings(merged)
+	return merged, !slices.Equal(sourceMappingIDs, merged)
 }
 
 func testAuthProviderConnection(ctx context.Context, authType string, config map[string]interface{}) (ok bool, message string, err error) {

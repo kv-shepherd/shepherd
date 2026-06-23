@@ -144,6 +144,7 @@ func TestRegisterPeriodicJobs_WiringContract(t *testing.T) {
 		"jobs.NotificationCleanupArgs{}",
 		"jobs.DomainEventArchiveArgs{}",
 		"jobs.VMTombstoneCleanupArgs{}",
+		"jobs.VMAdoptionDiscoveryScanArgs{}",
 		"jobs.DirectoryEnrichmentScheduleScanArgs{}",
 		"&river.PeriodicJobOpts{RunOnStart: true}",
 	}

@@ -96,8 +96,8 @@ func main() {
 				`"kv-shepherd.io/shepherd/internal/provider/infracontract"`,
 				"infra infracontract.InfrastructureProvider",
 				"opts infracontract.ListOptions",
-				"s.infra.(infracontract.ProvisioningQueryProvider)",
-				"s.infra.(infracontract.NamespaceProvisioner)",
+				"infra.(infracontract.ProvisioningQueryProvider)",
+				"infra.(infracontract.NamespaceProvisioner)",
 			},
 			forbiddenText: []string{
 				"provider.InfrastructureProvider",

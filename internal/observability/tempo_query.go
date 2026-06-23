@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"net/http"
 	"net/url"
@@ -21,8 +22,9 @@ const (
 	DefaultTraceQueryLimit    = 100
 	DefaultTraceQueryLookback = time.Hour
 
-	traceSourceTempo           = "tempo"
-	tempoTraceDetailConcurrent = 8
+	traceSourceTempo                  = "tempo"
+	tempoTraceDetailConcurrent        = 8
+	defaultTempoTraceMaxResponseBytes = int64(8 * 1024 * 1024)
 )
 
 // TraceSummaryFilter limits the trace summary query.
@@ -83,24 +85,26 @@ type TraceSpanGroupSummary struct {
 
 // TempoTraceQueryOptions configures the Tempo query client.
 type TempoTraceQueryOptions struct {
-	BaseURL     string
-	ServiceName string
-	Timeout     time.Duration
-	Limit       int
-	Lookback    time.Duration
-	HTTPClient  *http.Client
-	Now         func() time.Time
+	BaseURL          string
+	ServiceName      string
+	Timeout          time.Duration
+	Limit            int
+	Lookback         time.Duration
+	MaxResponseBytes int64
+	HTTPClient       *http.Client
+	Now              func() time.Time
 }
 
 // TempoTraceQueryClient queries Tempo's HTTP API and returns Shepherd trace summaries.
 type TempoTraceQueryClient struct {
-	baseURL     *url.URL
-	serviceName string
-	timeout     time.Duration
-	limit       int
-	lookback    time.Duration
-	httpClient  *http.Client
-	now         func() time.Time
+	baseURL          *url.URL
+	serviceName      string
+	timeout          time.Duration
+	limit            int
+	lookback         time.Duration
+	maxResponseBytes int64
+	httpClient       *http.Client
+	now              func() time.Time
 }
 
 // NewTempoTraceQueryClient creates a Tempo-backed trace summary provider.
@@ -132,6 +136,10 @@ func NewTempoTraceQueryClient(options TempoTraceQueryOptions) (*TempoTraceQueryC
 	if lookback <= 0 {
 		lookback = DefaultTraceQueryLookback
 	}
+	maxResponseBytes := options.MaxResponseBytes
+	if maxResponseBytes <= 0 {
+		maxResponseBytes = defaultTempoTraceMaxResponseBytes
+	}
 	serviceName := strings.TrimSpace(options.ServiceName)
 	if serviceName == "" {
 		serviceName = "shepherd"
@@ -146,13 +154,14 @@ func NewTempoTraceQueryClient(options TempoTraceQueryOptions) (*TempoTraceQueryC
 	}
 
 	return &TempoTraceQueryClient{
-		baseURL:     parsed,
-		serviceName: serviceName,
-		timeout:     timeout,
-		limit:       limit,
-		lookback:    lookback,
-		httpClient:  httpClient,
-		now:         now,
+		baseURL:          parsed,
+		serviceName:      serviceName,
+		timeout:          timeout,
+		limit:            limit,
+		lookback:         lookback,
+		maxResponseBytes: maxResponseBytes,
+		httpClient:       httpClient,
+		now:              now,
 	}, nil
 }
 
@@ -320,10 +329,24 @@ func (c *TempoTraceQueryClient) getJSON(ctx context.Context, rawURL string, dst 
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return fmt.Errorf("tempo returned HTTP %d", resp.StatusCode)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(dst); err != nil {
+	if err := decodeTempoJSONResponse(resp.Body, dst, c.maxResponseBytes); err != nil {
 		return err
 	}
 	return nil
+}
+
+func decodeTempoJSONResponse(r io.Reader, dst any, maxBytes int64) error {
+	if maxBytes <= 0 {
+		return fmt.Errorf("tempo response size limit must be positive")
+	}
+	payload, err := io.ReadAll(&io.LimitedReader{R: r, N: maxBytes + 1})
+	if err != nil {
+		return err
+	}
+	if int64(len(payload)) > maxBytes {
+		return fmt.Errorf("tempo response exceeds %d bytes", maxBytes)
+	}
+	return json.Unmarshal(payload, dst)
 }
 
 func (c *TempoTraceQueryClient) urlFor(path string) *url.URL {

@@ -2,7 +2,7 @@ package infrastructure
 
 import (
 	"context"
-	"os"
+	"encoding/hex"
 	"strings"
 	"testing"
 
@@ -36,9 +36,6 @@ func TestResolveBootstrapSecuritySecrets_PrefersExplicitValuesWithoutDB(t *testi
 func TestResolveBootstrapSecuritySecrets_LoadsPersistedValues(t *testing.T) {
 	t.Parallel()
 
-	if os.Getenv("TEST_DATABASE_URL") == "" && os.Getenv("DATABASE_URL") == "" {
-		t.Skip("PostgreSQL test DSN is required: set TEST_DATABASE_URL or DATABASE_URL")
-	}
 	pool := testutil.OpenPGXPool(t, "bootstrap_security_loads_persisted")
 	createSystemSecretsTable(t, pool)
 
@@ -62,9 +59,6 @@ func TestResolveBootstrapSecuritySecrets_LoadsPersistedValues(t *testing.T) {
 func TestResolveBootstrapSecuritySecrets_GeneratesAndPersistsMissingValues(t *testing.T) {
 	t.Parallel()
 
-	if os.Getenv("TEST_DATABASE_URL") == "" && os.Getenv("DATABASE_URL") == "" {
-		t.Skip("PostgreSQL test DSN is required: set TEST_DATABASE_URL or DATABASE_URL")
-	}
 	pool := testutil.OpenPGXPool(t, "bootstrap_security_generates")
 	createSystemSecretsTable(t, pool)
 
@@ -100,6 +94,112 @@ func TestResolveBootstrapSecuritySecrets_ReleaseModeRejectsDatabaseFallback(t *t
 	}
 	if !strings.Contains(err.Error(), "must be explicitly provided") {
 		t.Fatalf("ResolveBootstrapSecuritySecrets() error = %v, want explicit-secret message", err)
+	}
+}
+
+func TestResolveBootstrapSecuritySecrets_RejectsInvalidExplicitValuesWithoutDB(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		security config.SecurityConfig
+		wantErr  string
+	}{
+		{
+			name: "short session secret",
+			security: config.SecurityConfig{
+				SessionSecret: "too-short",
+			},
+			wantErr: "security.session_secret must be at least 32 characters",
+		},
+		{
+			name: "invalid encryption key hex",
+			security: config.SecurityConfig{
+				EncryptionKey: "not-hex",
+			},
+			wantErr: "encryption_key",
+		},
+		{
+			name: "wrong encryption key length",
+			security: config.SecurityConfig{
+				EncryptionKey: "30313233",
+			},
+			wantErr: "32 bytes",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := ResolveBootstrapSecuritySecrets(context.Background(), nil, tc.security)
+			if err == nil {
+				t.Fatal("ResolveBootstrapSecuritySecrets() error = nil, want validation error")
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("ResolveBootstrapSecuritySecrets() error = %v, want substring %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestResolveBootstrapSecuritySecrets_RequiresDatabaseForMissingSecret(t *testing.T) {
+	t.Parallel()
+
+	_, err := ResolveBootstrapSecuritySecrets(context.Background(), nil, config.SecurityConfig{
+		SessionSecret: "session-secret-1234567890123456789012",
+	})
+	if err == nil {
+		t.Fatal("ResolveBootstrapSecuritySecrets() error = nil, want database pool error")
+	}
+	if !strings.Contains(err.Error(), "requires a database pool") {
+		t.Fatalf("ResolveBootstrapSecuritySecrets() error = %v, want database pool message", err)
+	}
+}
+
+func TestStableBootstrapSecuritySecretID(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		keyName string
+		want    string
+	}{
+		{
+			name:    "session secret",
+			keyName: "SESSION_SECRET",
+			want:    "system-secret-session-secret",
+		},
+		{
+			name:    "encryption key trims whitespace",
+			keyName: " ENCRYPTION_KEY ",
+			want:    "system-secret-encryption-key",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := stableBootstrapSecuritySecretID(tc.keyName); got != tc.want {
+				t.Fatalf("stableBootstrapSecuritySecretID(%q) = %q, want %q", tc.keyName, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestGenerateSecureRandomHex(t *testing.T) {
+	t.Parallel()
+
+	got, err := generateSecureRandomHex(32)
+	if err != nil {
+		t.Fatalf("generateSecureRandomHex() error = %v", err)
+	}
+	if len(got) != 64 {
+		t.Fatalf("generateSecureRandomHex(32) length = %d, want 64", len(got))
+	}
+	decoded, err := hex.DecodeString(got)
+	if err != nil {
+		t.Fatalf("generateSecureRandomHex() returned invalid hex %q: %v", got, err)
+	}
+	if len(decoded) != 32 {
+		t.Fatalf("decoded random secret length = %d, want 32", len(decoded))
 	}
 }
 

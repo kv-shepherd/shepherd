@@ -16,6 +16,8 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"reflect"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1140,6 +1142,77 @@ func TestListApprovals_MineFiltersByRequesterWithoutApprovalViewPermission(t *te
 	}
 }
 
+func TestListTickets_RequiresViewPermissionUnlessMine(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(t, http.MethodGet, "/tickets", "", "user-a", nil)
+	srv.ListTickets(c, generated.ListTicketsParams{})
+
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "FORBIDDEN")
+}
+
+func TestListTickets_RejectsInvalidFilterEnums(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target string
+		params generated.ListTicketsParams
+	}{
+		{
+			name:   "status",
+			target: "/tickets?mine=true&status=BOGUS",
+			params: generated.ListTicketsParams{
+				Mine:   true,
+				Status: generated.ListTicketsParamsStatus("BOGUS"),
+			},
+		},
+		{
+			name:   "status group",
+			target: "/tickets?mine=true&status_group=BOGUS",
+			params: generated.ListTicketsParams{
+				Mine:        true,
+				StatusGroup: generated.ListTicketsParamsStatusGroup("BOGUS"),
+			},
+		},
+		{
+			name:   "operation type",
+			target: "/tickets?mine=true&operation_type=BOGUS",
+			params: generated.ListTicketsParams{
+				Mine:          true,
+				OperationType: generated.ListTicketsParamsOperationType("BOGUS"),
+			},
+		},
+		{
+			name:   "placement snapshot",
+			target: "/tickets?mine=true&placement_snapshot=bogus",
+			params: generated.ListTicketsParams{
+				Mine:              true,
+				PlacementSnapshot: generated.ListTicketsParamsPlacementSnapshot("bogus"),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := NewServer(ServerDeps{})
+			c, w := newAuthedGinContext(t, http.MethodGet, tc.target, "", "user-a", nil)
+			srv.ListTickets(c, tc.params)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+		})
+	}
+}
+
 func TestListApprovals_StatusGroupFiltersActiveAndTerminalTickets(t *testing.T) {
 	t.Parallel()
 
@@ -1155,6 +1228,16 @@ func TestListApprovals_StatusGroupFiltersActiveAndTerminalTickets(t *testing.T) 
 		Save(t.Context()); err != nil {
 		t.Fatalf("create active ticket: %v", err)
 	}
+	mustCreateDomainEvent(t, client, "ev-status-approved", []byte(`{"reason":"approved"}`))
+	if _, err := client.Ticket.Create().
+		SetID("ticket-status-approved").
+		SetEventID("ev-status-approved").
+		SetRequester("user-a").
+		SetStatus(entticket.StatusAPPROVED).
+		SetOperationType(entticket.OperationTypeCREATE).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create approved active ticket: %v", err)
+	}
 	mustCreateDomainEvent(t, client, "ev-status-terminal", []byte(`{"reason":"terminal"}`))
 	if _, err := client.Ticket.Create().
 		SetID("ticket-status-terminal").
@@ -1164,6 +1247,16 @@ func TestListApprovals_StatusGroupFiltersActiveAndTerminalTickets(t *testing.T) 
 		SetOperationType(entticket.OperationTypeCREATE).
 		Save(t.Context()); err != nil {
 		t.Fatalf("create terminal ticket: %v", err)
+	}
+	mustCreateDomainEvent(t, client, "ev-status-success", []byte(`{"reason":"success"}`))
+	if _, err := client.Ticket.Create().
+		SetID("ticket-status-success").
+		SetEventID("ev-status-success").
+		SetRequester("user-a").
+		SetStatus(entticket.StatusSUCCESS).
+		SetOperationType(entticket.OperationTypeVNC_ACCESS).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create success terminal ticket: %v", err)
 	}
 
 	c, w := newAuthedGinContext(t, http.MethodGet, "/tickets?mine=true&status_group=ACTIVE", "", "user-a", nil)
@@ -1180,8 +1273,9 @@ func TestListApprovals_StatusGroupFiltersActiveAndTerminalTickets(t *testing.T) 
 	if err := json.Unmarshal(w.Body.Bytes(), &activeResp); err != nil {
 		t.Fatalf("decode active TicketList: %v", err)
 	}
-	if len(activeResp.Items) != 1 || activeResp.Items[0].Id != "ticket-status-active" {
-		t.Fatalf("active items = %+v, want only active ticket", activeResp.Items)
+	activeIDs := ticketListIDs(activeResp.Items)
+	if !reflect.DeepEqual(activeIDs, []string{"ticket-status-active", "ticket-status-approved"}) {
+		t.Fatalf("active item ids = %+v, want executing and approved tickets", activeIDs)
 	}
 
 	terminalCtx, terminalW := newAuthedGinContext(t, http.MethodGet, "/tickets?mine=true&status_group=TERMINAL", "", "user-a", nil)
@@ -1198,9 +1292,19 @@ func TestListApprovals_StatusGroupFiltersActiveAndTerminalTickets(t *testing.T) 
 	if err := json.Unmarshal(terminalW.Body.Bytes(), &terminalResp); err != nil {
 		t.Fatalf("decode terminal TicketList: %v", err)
 	}
-	if len(terminalResp.Items) != 1 || terminalResp.Items[0].Id != "ticket-status-terminal" {
-		t.Fatalf("terminal items = %+v, want only terminal ticket", terminalResp.Items)
+	terminalIDs := ticketListIDs(terminalResp.Items)
+	if !reflect.DeepEqual(terminalIDs, []string{"ticket-status-success", "ticket-status-terminal"}) {
+		t.Fatalf("terminal item ids = %+v, want failed and success tickets", terminalIDs)
 	}
+}
+
+func ticketListIDs(items []generated.Ticket) []string {
+	ids := make([]string, 0, len(items))
+	for i := range items {
+		ids = append(ids, items[i].Id)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 func TestListBuiltinApprovalTasks_StatusGroupAttentionIncludesPendingExecutingAndFailed(t *testing.T) {

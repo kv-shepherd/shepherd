@@ -38,6 +38,13 @@ var auditRequestActions = []string{
 	"vnc.request_submitted",
 }
 
+var listClusterDVAccessModeValues = []string{
+	"ReadWriteOnce",
+	"ReadOnlyMany",
+	"ReadWriteMany",
+	"ReadWriteOncePod",
+}
+
 var auditResourceChangeActions = []string{
 	"vm.create",
 	"vm.update",
@@ -162,6 +169,27 @@ func (s *Server) ListClusters(c *gin.Context, params generated.ListClustersParam
 	if !requireAnyGlobalPermission(c, "cluster:read", "cluster:write") {
 		return
 	}
+	if rejectInvalidEnumQuery(
+		c,
+		"selected_dv_volume_mode",
+		string(params.SelectedDvVolumeMode),
+		string(generated.ListClustersParamsSelectedDvVolumeModeBlock),
+		string(generated.ListClustersParamsSelectedDvVolumeModeFilesystem),
+	) {
+		return
+	}
+	selectedDVAccessModes := make([]generated.ListClustersParamsSelectedDvAccessModes, 0, len(params.SelectedDvAccessModes))
+	for _, mode := range params.SelectedDvAccessModes {
+		trimmedMode := strings.TrimSpace(string(mode))
+		if trimmedMode == "" {
+			continue
+		}
+		if rejectInvalidEnumQuery(c, "selected_dv_access_modes", trimmedMode, listClusterDVAccessModeValues...) {
+			return
+		}
+		selectedDVAccessModes = append(selectedDVAccessModes, generated.ListClustersParamsSelectedDvAccessModes(trimmedMode))
+	}
+	params.SelectedDvAccessModes = selectedDVAccessModes
 	ctx := c.Request.Context()
 
 	// Parse required features from ?requires=Feature1,Feature2 (case-insensitive, comma-separated)
@@ -876,6 +904,17 @@ func (s *Server) ListAuditLogs(c *gin.Context, params generated.ListAuditLogsPar
 	if !requireGlobalPermission(c, "audit:read") {
 		return
 	}
+	if rejectInvalidEnumQuery(
+		c,
+		"category",
+		string(params.Category),
+		string(generated.Requests),
+		string(generated.Approvals),
+		string(generated.ResourceChanges),
+		string(generated.SystemTasks),
+	) {
+		return
+	}
 	ctx := c.Request.Context()
 
 	query := s.client.AuditLog.Query()
@@ -1209,7 +1248,7 @@ func buildClusterCompatibilityFilter(params generated.ListClustersParams) (servi
 		InstanceSizeID: strings.TrimSpace(params.InstanceSizeId),
 		Namespace:      strings.TrimSpace(params.Namespace),
 		StorageClass:   strings.TrimSpace(params.SelectedStorageClass),
-		DVAccessModes:  cloneStringSlice(params.SelectedDvAccessModes),
+		DVAccessModes:  listClusterDVAccessModesToStrings(params.SelectedDvAccessModes),
 		DVVolumeMode:   strings.TrimSpace(string(params.SelectedDvVolumeMode)),
 	}
 
@@ -1232,6 +1271,19 @@ func buildClusterCompatibilityFilter(params generated.ListClustersParams) (servi
 		input.Override != nil
 
 	return input, hasFilter
+}
+
+func listClusterDVAccessModesToStrings(modes []generated.ListClustersParamsSelectedDvAccessModes) []string {
+	if len(modes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(modes))
+	for _, mode := range modes {
+		if trimmed := strings.TrimSpace(string(mode)); trimmed != "" {
+			out = append(out, trimmed)
+		}
+	}
+	return out
 }
 
 func rootVolumeResolutionToAPI(resolution *service.RootVolumeResolution) generated.RootVolumeResolution {

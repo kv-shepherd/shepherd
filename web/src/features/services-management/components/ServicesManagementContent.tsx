@@ -444,6 +444,7 @@ export function ServicesManagementContent() {
                                     openLabel: t('search.advanced', 'Advanced search'),
                                     closeLabel: t('search.hide_advanced', 'Hide advanced search'),
                                     title: t('search.advanced', 'Advanced search'),
+                                    toggleTestId: 'services-advanced-search-toggle',
                                     content: (
                                         <Space direction="vertical" size={12} style={{ width: '100%' }}>
                                             <Text type="secondary">

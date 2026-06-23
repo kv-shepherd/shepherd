@@ -256,10 +256,8 @@ test.describe('admin-flow mock smoke interactions', () => {
     });
 
     test('Stage 2.A – custom role delete modal opens and submits', async ({ page }) => {
-        const captured: string[] = [];
         await page.route('**/api/v1/admin/roles/**', async (route) => {
             if (route.request().method() !== 'DELETE') return route.fallback();
-            captured.push(new URL(route.request().url()).pathname);
             await route.fulfill({ status: 204, body: '' });
         });
 
@@ -269,9 +267,15 @@ test.describe('admin-flow mock smoke interactions', () => {
         // RBAC delete uses a Modal (not Popconfirm), title is "Delete"
         const modal = visibleModal(page);
         await expect(modal).toBeVisible();
+        const deleteRespPromise = page.waitForResponse((response) => {
+            const request = response.request();
+            const path = new URL(response.url()).pathname;
+            return request.method() === 'DELETE' && path.endsWith('/api/v1/admin/roles/role-custom-1');
+        });
         await modal.getByRole('button', { name: 'OK' }).click();
 
-        await expect.poll(() => captured.some((p) => p.includes('role-custom-1')), { timeout: 5000 }).toBeTruthy();
+        const deleteResp = await deleteRespPromise;
+        expect(deleteResp.status()).toBe(204);
     });
 
     // ── Stage 2.A+: User management ──────────────────────────────────────────

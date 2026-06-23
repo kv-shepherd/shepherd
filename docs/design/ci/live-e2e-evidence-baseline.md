@@ -94,9 +94,13 @@ A real-cluster live E2E run is acceptable completion evidence only when:
 5. `policy_gates.cluster_probe` is `required`.
 6. `artifacts.playwright_json` exists and contains Playwright JSON reporter
    output.
-7. The runner log includes cleanup review for the live namespace.
-8. `cluster.api_server_reachable` is `true`.
-9. `cluster.kubevirt_api_available` is `true`, with at least one
+7. The evidence, result, runner log, backend log, and Playwright JSON artifact
+   paths exist on disk.
+8. The runner log includes
+   `cleanup review: namespace_vm_cleanup status=passed` for the live namespace.
+9. `cluster.authenticated_context` is `true`.
+10. `cluster.api_server_reachable` is `true`.
+11. `cluster.kubevirt_api_available` is `true`, with at least one
    `cluster.kubevirt_api_versions` entry.
 
 Preflight manifests are readiness evidence only. They do not prove the roadmap
@@ -105,8 +109,9 @@ workflow has run.
 
 Release-evidence readiness must still prove the local tooling and cluster
 target. The live runner therefore requires Atlas CLI, `kubectl`, a reachable
-Kubernetes API server, and KubeVirt API discovery before it starts the
-backend/browser path. `E2E_PREFLIGHT_CLUSTER_PROBE=0` is a local debugging
+Kubernetes API server, an authenticated kubeconfig context, and KubeVirt API
+discovery before it starts the backend/browser path.
+`E2E_PREFLIGHT_CLUSTER_PROBE=0` is a local debugging
 override only. The runner records that override as
 `policy_gates.cluster_probe=skipped`, and strict full-pass validation rejects
 the manifest even if later artifacts exist.
@@ -136,7 +141,11 @@ The real-run mode verifies that completion evidence is a full pass, policy gates
 were not skipped, Playwright JSON output is present, and referenced artifact
 paths exist on disk. For completion evidence it also requires the manifest to
 record that cluster probing was not skipped plus a successful Kubernetes API
-server probe and KubeVirt API discovery result.
+server probe, authenticated kubeconfig context, and KubeVirt API discovery
+result. Strict full-pass validation with `--require-existing-artifacts` also
+requires evidence, result, runner log, backend log, and Playwright JSON
+artifacts to exist, namespace VM cleanup to be enabled, and the runner log to contain
+`cleanup review: namespace_vm_cleanup status=passed`.
 
 `find_latest_live_e2e_full_evidence.mjs` supports manual release evidence
 selection. It scans `.run/live-e2e/`, ignores readiness-only preflight
@@ -180,3 +189,5 @@ fixtures and proves negative fixtures are rejected, including:
 * a full-pass manifest that reports flaky Playwright results
 * a full-pass manifest without successful Kubernetes/KubeVirt discovery probes
 * a full-pass manifest generated with cluster preflight probing skipped
+* a full-pass manifest whose runner log lacks cleanup
+  `namespace_vm_cleanup status=passed`

@@ -42,16 +42,33 @@ type ClusterHealthChecker struct {
 	clientFactory      ClusterClientFactory
 	capabilityDetector *CapabilityDetector // ADR-0014: nil-safe, optional
 	interval           time.Duration
+	operationTimeout   time.Duration
 	results            map[string]*ClusterHealth
 	mu                 sync.RWMutex
 }
 
+const defaultClusterHealthOperationTimeout = 5 * time.Minute
+
 // NewClusterHealthChecker creates a new ClusterHealthChecker.
 func NewClusterHealthChecker(clientFactory ClusterClientFactory, interval time.Duration) *ClusterHealthChecker {
+	return NewClusterHealthCheckerWithTimeout(clientFactory, interval, defaultClusterHealthOperationTimeout)
+}
+
+// NewClusterHealthCheckerWithTimeout creates a new ClusterHealthChecker with a
+// bounded timeout for each Kubernetes health probe.
+func NewClusterHealthCheckerWithTimeout(
+	clientFactory ClusterClientFactory,
+	interval time.Duration,
+	operationTimeout time.Duration,
+) *ClusterHealthChecker {
+	if operationTimeout <= 0 {
+		operationTimeout = defaultClusterHealthOperationTimeout
+	}
 	return &ClusterHealthChecker{
 		clientFactory:      clientFactory,
 		capabilityDetector: NewCapabilityDetector(), // always enabled
 		interval:           interval,
+		operationTimeout:   operationTimeout,
 		results:            make(map[string]*ClusterHealth),
 	}
 }
@@ -82,10 +99,13 @@ func (c *ClusterHealthChecker) CheckCluster(ctx context.Context, clusterName str
 		return health
 	}
 
+	opCtx, cancel := context.WithTimeout(ctx, c.operationTimeout)
+	defer cancel()
+
 	// Connectivity probe: GET KubeVirt CR (cluster-scoped singleton, no namespace dependency).
 	// If this fails, the cluster is genuinely unreachable or RBAC is fully denied.
 	// GetVersion() returns ("", nil) if the field is not yet populated — that is not an error.
-	version, probeErr := client.KubeVirt().GetVersion(ctx)
+	version, probeErr := client.KubeVirt().GetVersion(opCtx)
 	if probeErr != nil {
 		health.Status = ClusterStatusUnhealthy
 		health.Error = fmt.Sprintf("kubevirt api probe failed: %v", probeErr)
@@ -104,7 +124,7 @@ func (c *ClusterHealthChecker) CheckCluster(ctx context.Context, clusterName str
 	// Capability detection: non-fatal, runs after connectivity confirmed.
 	// capabilityDetector is always non-nil (initialized in NewClusterHealthChecker).
 	if c.capabilityDetector != nil {
-		caps, detectErr := c.capabilityDetector.Detect(ctx, client)
+		caps, detectErr := c.capabilityDetector.Detect(opCtx, client)
 		if detectErr != nil {
 			// Non-fatal: log and continue with empty EnabledFeatures.
 			logger.Warn("capability detection failed, using GA table only",
@@ -121,7 +141,7 @@ func (c *ClusterHealthChecker) CheckCluster(ctx context.Context, clusterName str
 	}
 
 	if storageClient := client.StorageClass(); storageClient != nil {
-		storageClasses, detectErr := detectStorageClasses(ctx, storageClient)
+		storageClasses, detectErr := detectStorageClasses(opCtx, storageClient)
 		if detectErr != nil {
 			logger.Warn("storage class detection failed",
 				zap.String("cluster", clusterName),
@@ -181,8 +201,8 @@ func (c *ClusterHealthChecker) checkAll(ctx context.Context, clusterNames []stri
 	}
 }
 
-func detectStorageClasses(ctx context.Context, storageClient StorageClassClient) ([]string, error) {
-	list, err := storageClient.List(ctx, k8smetav1.ListOptions{ResourceVersion: ""})
+func detectStorageClasses(opCtx context.Context, storageClient StorageClassClient) ([]string, error) {
+	list, err := storageClient.List(opCtx, k8smetav1.ListOptions{ResourceVersion: ""})
 	if err != nil {
 		return nil, err
 	}

@@ -31,6 +31,7 @@
         "docs/design/phases/05-auth-api-frontend.md#current-runtime-alignment"
       ],
       "checklists": [
+        "docs/design/CHECKLIST.md",
         "docs/design/checklist/phase-0-checklist.md",
         "docs/design/checklist/phase-1-checklist.md",
         "docs/design/checklist/phase-5-checklist.md",
@@ -52,6 +53,9 @@
       "examples": [
         ".github/workflows/release.yml",
         "config/config.yaml.example",
+        "docs/design/DEPENDENCIES.md#api-contract-tooling",
+        "docs/design/DEPENDENCIES.md#frontend-runtime",
+        "docs/design/DEPENDENCIES.md#kubernetes-and-kubevirt",
         "docs/design/DEPENDENCIES.md#go-version",
         "docs/design/database/migrations.md#startup-migration-modes",
         "docs/design/frontend/FRONTEND.md",

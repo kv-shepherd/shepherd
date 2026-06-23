@@ -12,7 +12,6 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/cluster"
-	"kv-shepherd.io/shepherd/ent/domainevent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/ent/vm"
@@ -80,7 +79,7 @@ func (w *VMCreateWorker) findCreatedVMByEvent(
 	clusterID, namespace, eventID string,
 ) (*domain.VM, error) {
 	list, err := w.vmService.ListVMs(ctx, clusterID, namespace, infracontract.ListOptions{
-		LabelSelector: "shepherd.io/event-id=" + eventID,
+		LabelSelector: domain.ShepherdEventIDLabel + "=" + eventID,
 		Limit:         1,
 	})
 	if err != nil {
@@ -90,7 +89,7 @@ func (w *VMCreateWorker) findCreatedVMByEvent(
 		if candidate == nil {
 			continue
 		}
-		if candidate.Spec.Labels["shepherd.io/event-id"] == eventID {
+		if candidate.Spec.Labels[domain.ShepherdEventIDLabel] == eventID {
 			return candidate, nil
 		}
 	}
@@ -111,31 +110,44 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	if err != nil {
 		return fmt.Errorf("fetch domain event %s: %w", eventID, err)
 	}
-	if event.Status == domainevent.StatusCOMPLETED {
-		logger.Info("vm create event already completed, skipping duplicate execution",
+	if ticketStatus, ok := ticketStatusForTerminalDomainEvent(event.Status); ok {
+		logger.Info("vm create event already terminal, skipping duplicate execution",
 			zap.String("event_id", eventID),
+			zap.String("event_status", event.Status.String()),
 		)
+		if ticketErr := updateTicketStatusByEvent(ctx, w.entClient, eventID, ticketStatus); ticketErr != nil {
+			if ctxErr := jobContextErr(ctx, ticketErr); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("persist %s ticket status for terminal create event %s: %w", ticketStatus, eventID, ticketErr)
+		}
 		return nil
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusEXECUTING)
+	if persistErr := persistProcessingEventAndExecutingTicketByEvent(ctx, w.entClient, eventID); persistErr != nil {
+		if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+			return ctxErr
+		}
+		return fmt.Errorf("persist PROCESSING/EXECUTING status for create event %s: %w", eventID, persistErr)
+	}
 
 	// Step 2: Parse payload.
 	var payload domain.VMCreationPayload
 	if decodeErr := json.Unmarshal(event.Payload, &payload); decodeErr != nil {
-		_, _ = w.entClient.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
-		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
+		if persistErr := persistFailedEventAndTicketByEvent(ctx, w.entClient, eventID); persistErr != nil {
+			if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("persist FAILED status for malformed create event %s: %w", eventID, persistErr)
+		}
 		return river.JobCancel(fmt.Errorf("unmarshal payload for event %s: %w", eventID, decodeErr))
 	}
 	markFailed := func(cause error, cancel bool) error {
-		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-			SetStatus(domainevent.StatusFAILED).
-			Save(ctx); saveErr != nil {
-			logger.Error("failed to persist FAILED status for event",
-				zap.String("event_id", eventID),
-				zap.Error(saveErr),
-			)
+		if persistErr := persistFailedEventAndTicketByEvent(ctx, w.entClient, eventID); persistErr != nil && cancel {
+			if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("persist FAILED status for create event %s before cancellation: %w", eventID, persistErr)
 		}
-		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 		if cancel {
 			return river.JobCancel(cause)
 		}
@@ -161,6 +173,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		return markFailed(fmt.Errorf("event %s has no selected cluster", eventID), true)
 	}
 	if validateErr := w.ensureNamespaceClusterEnvironment(ctx, clusterID, namespace); validateErr != nil {
+		if ctxErr := jobContextErr(ctx, validateErr); ctxErr != nil {
+			return ctxErr
+		}
 		if isClusterRuntimeUnavailable(validateErr) {
 			return snoozeClusterRuntimeUnavailable("vm_create", eventID, clusterID, "namespace_cluster_validation", validateErr)
 		}
@@ -273,9 +288,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		StorageClass: strings.TrimSpace(ticket.SelectedStorageClass),
 		CloudInit:    cloudInit,
 		Labels: map[string]string{
-			"shepherd.io/service-id":  payload.ServiceID,
-			"shepherd.io/template-id": effectiveTemplateID,
-			"shepherd.io/event-id":    eventID,
+			domain.ShepherdServiceIDLabel:  payload.ServiceID,
+			domain.ShepherdTemplateIDLabel: effectiveTemplateID,
+			domain.ShepherdEventIDLabel:    eventID,
 		},
 		SpecOverrides: specOverrides,
 
@@ -303,6 +318,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	// If a prior attempt already created this VM, detect it by event label and skip create.
 	createdVM, err := w.findCreatedVMByEvent(ctx, clusterID, namespace, eventID)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		if isClusterRuntimeUnavailable(err) {
 			return snoozeClusterRuntimeUnavailable("vm_create", eventID, clusterID, "idempotency_lookup", err)
 		}
@@ -322,57 +340,40 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		// Step 6: Execute K8s VM creation (outside transaction per ADR-0012).
 		vmObj, err := w.vmService.ExecuteK8sCreate(ctx, clusterID, namespace, spec)
 		if err != nil {
+			if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+				return ctxErr
+			}
 			if isClusterRuntimeUnavailable(err) {
 				return snoozeClusterRuntimeUnavailable("vm_create", eventID, clusterID, "execute_create", err)
 			}
-			// K8s VM was NOT created — safe to retry.
-			// Persist FAILED status (best-effort; original error is returned regardless).
-			if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-				SetStatus(domainevent.StatusFAILED).
-				Save(ctx); saveErr != nil {
-				logger.Error("failed to persist FAILED status for event",
-					zap.String("event_id", eventID),
-					zap.Error(saveErr),
-				)
-			}
-			if _, saveErr := w.entClient.VM.UpdateOneID(vmRow.ID).
-				SetStatus(vm.StatusFAILED).
-				Save(ctx); saveErr != nil {
-				logger.Error("failed to persist VM FAILED status",
-					zap.String("event_id", eventID),
-					zap.String("vm_id", vmRow.ID),
-					zap.Error(saveErr),
-				)
-			}
-
 			logAuditVMOp(ctx, w.auditLogger, "create_failed", eventID, "system", eventID)
-			setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
-
-			return fmt.Errorf("execute k8s create for event %s: %w", eventID, err)
+			failureErr := fmt.Errorf("execute k8s create for event %s: %w", eventID, err)
+			if isFinalJobAttempt(job) {
+				if persistErr := persistFinalCreateFailure(ctx, w.entClient, eventID, vmRow.ID); persistErr != nil {
+					if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+						return ctxErr
+					}
+					return fmt.Errorf("persist final FAILED status for create event %s: %w", eventID, persistErr)
+				}
+			}
+			return failureErr
 		}
 		createdVMName = vmObj.Name
 		targetVMStatus = mapCreatedVMStatusToRow(vmObj)
 	}
 
-	// Step 7: Update VM status in DB.
-	if _, saveErr := w.entClient.VM.UpdateOneID(vmRow.ID).
-		SetStatus(targetVMStatus).
-		Save(ctx); saveErr != nil {
-		return fmt.Errorf(
-			"persist vm status for event %s (vm_id=%s, status=%s): %w",
-			eventID, vmRow.ID, targetVMStatus, saveErr,
-		)
-	}
-
-	// Step 8: Update event status to COMPLETED.
+	// Step 7: Update VM, event, ticket, and parent batch state together.
 	// We deliberately return error on persistence failure so River retries.
 	// Retry is safe because idempotency check above prevents duplicate K8s create.
-	if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-		SetStatus(domainevent.StatusCOMPLETED).
-		Save(ctx); saveErr != nil {
-		return fmt.Errorf("persist COMPLETED status for event %s: %w", eventID, saveErr)
+	if persistErr := persistCompletedEventTicketAndVMStatusByEvent(ctx, w.entClient, eventID, vmRow.ID, targetVMStatus); persistErr != nil {
+		if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+			return ctxErr
+		}
+		return fmt.Errorf(
+			"persist completed create state for event %s (vm_id=%s, status=%s): %w",
+			eventID, vmRow.ID, targetVMStatus, persistErr,
+		)
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusSUCCESS)
 
 	logAuditVMOp(ctx, w.auditLogger, "create", createdVMName, "system", eventID)
 
@@ -383,6 +384,13 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 	)
 
 	return nil
+}
+
+func persistFinalCreateFailure(ctx context.Context, client *ent.Client, eventID, vmID string) error {
+	if client == nil {
+		return nil
+	}
+	return persistFailedEventTicketAndVMByEventUnlessDeleting(ctx, client, eventID, vmID)
 }
 
 func (w *VMCreateWorker) ensureNamespaceClusterEnvironment(

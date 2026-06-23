@@ -79,8 +79,8 @@ func TestListAdminTemplates_SupportsQuickSearchAndExactFilters(t *testing.T) {
 			Page:         1,
 			PerPage:      20,
 			OsFamily:     "linux",
-			SourceType:   "cdi_pvc_clone",
-			CatalogScope: "test",
+			SourceType:   generated.ListAdminTemplatesParamsSourceType("cdi_pvc_clone"),
+			CatalogScope: generated.ListAdminTemplatesParamsCatalogScope("test"),
 			Enabled:      false,
 		})
 
@@ -97,4 +97,74 @@ func TestListAdminTemplates_SupportsQuickSearchAndExactFilters(t *testing.T) {
 			t.Fatalf("items[0].name = %q, want ubuntu-golden", got)
 		}
 	})
+
+	t.Run("exact filters normalize valid enum casing", func(t *testing.T) {
+		c, w := newAuthedGinContext(
+			t,
+			http.MethodGet,
+			"/admin/templates?page=1&per_page=20&source_type=CDI_PVC_CLONE&catalog_scope=%20TEST%20",
+			"",
+			"admin-1",
+			[]string{"platform:admin"},
+		)
+		srv.ListAdminTemplates(c, generated.ListAdminTemplatesParams{
+			Page:         1,
+			PerPage:      20,
+			SourceType:   generated.ListAdminTemplatesParamsSourceType("CDI_PVC_CLONE"),
+			CatalogScope: generated.ListAdminTemplatesParamsCatalogScope(" TEST "),
+		})
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+		}
+
+		var resp generated.TemplateList
+		mustDecodeJSON(t, w.Body.Bytes(), &resp)
+		if got := len(resp.Items); got != 1 {
+			t.Fatalf("items len = %d, want 1", got)
+		}
+		if got := resp.Items[0].Name; got != "ubuntu-golden" {
+			t.Fatalf("items[0].name = %q, want ubuntu-golden", got)
+		}
+	})
+}
+
+func TestListAdminTemplates_RejectsInvalidEnumFilters(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name   string
+		target string
+		params generated.ListAdminTemplatesParams
+	}{
+		{
+			name:   "source type",
+			target: "/admin/templates?source_type=image",
+			params: generated.ListAdminTemplatesParams{
+				SourceType: generated.ListAdminTemplatesParamsSourceType("image"),
+			},
+		},
+		{
+			name:   "catalog scope",
+			target: "/admin/templates?catalog_scope=staging",
+			params: generated.ListAdminTemplatesParams{
+				CatalogScope: generated.ListAdminTemplatesParamsCatalogScope("staging"),
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv := NewServer(ServerDeps{})
+			c, w := newAuthedGinContext(t, http.MethodGet, tc.target, "", "admin-1", []string{"platform:admin"})
+			srv.ListAdminTemplates(c, tc.params)
+
+			if w.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+			}
+			assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+		})
+	}
 }

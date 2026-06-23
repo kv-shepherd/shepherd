@@ -15,10 +15,11 @@ import (
 
 // VMModule wires VM domain use cases/services and workers.
 type VMModule struct {
-	infra      *Infrastructure
-	vmService  *service.VMService
-	createVMUC *usecase.CreateVMUseCase
-	deleteVMUC *usecase.DeleteVMUseCase
+	infra             *Infrastructure
+	vmService         *service.VMService
+	adoptionDiscovery *service.AdoptionDiscoveryService
+	createVMUC        *usecase.CreateVMUseCase
+	deleteVMUC        *usecase.DeleteVMUseCase
 }
 
 // NewVMModule creates a VM module with explicit constructor wiring.
@@ -46,10 +47,11 @@ func NewVMModule(infra *Infrastructure) (*VMModule, error) {
 	deleteVM := usecase.NewDeleteVMUseCase(infra.EntClient).WithAuditLogger(infra.AuditLogger)
 
 	return &VMModule{
-		infra:      infra,
-		vmService:  vmSvc,
-		createVMUC: createVM,
-		deleteVMUC: deleteVM,
+		infra:             infra,
+		vmService:         vmSvc,
+		adoptionDiscovery: service.NewAdoptionDiscoveryService(infra.EntClient, vmSvc),
+		createVMUC:        createVM,
+		deleteVMUC:        deleteVM,
 	}, nil
 }
 
@@ -81,6 +83,7 @@ func (m *VMModule) RegisterWorkers(workers *river.Workers) {
 	river.AddWorker(workers, jobs.NewVMDeleteWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
 	river.AddWorker(workers, jobs.NewVMModifyWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
 	river.AddWorker(workers, jobs.NewVMPowerWorker(m.infra.EntClient, m.vmService, m.infra.AuditLogger))
+	river.AddWorker(workers, jobs.NewVMAdoptionDiscoveryScanWorker(m.infra.EntClient, m.adoptionDiscovery))
 	// ADR-0038 Phase 2: Register adaptive status sync worker.
 	river.AddWorker(workers, jobs.NewVMStatusSyncWorker(m.infra.EntClient, m.vmService, func() *river.Client[pgx.Tx] {
 		return m.infra.RiverClient

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -175,6 +176,39 @@ func TestTempoTraceQueryClientRouteFilter(t *testing.T) {
 	}
 	if len(summary.Endpoints) != 0 {
 		t.Fatalf("endpoints = %#v, want empty after route filter", summary.Endpoints)
+	}
+}
+
+func TestTempoTraceQueryClientRejectsOversizedSearchResponse(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/search" {
+			http.NotFound(w, r)
+			return
+		}
+		writeJSON(t, w, map[string]any{
+			"traces": []map[string]any{{
+				"traceID": strings.Repeat("x", 64),
+			}},
+		})
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewTempoTraceQueryClient(TempoTraceQueryOptions{
+		BaseURL:          server.URL,
+		MaxResponseBytes: 32,
+	})
+	if err != nil {
+		t.Fatalf("NewTempoTraceQueryClient() error = %v", err)
+	}
+
+	_, err = client.TraceSummary(t.Context(), TraceSummaryFilter{})
+	if err == nil {
+		t.Fatal("TraceSummary() error = nil, want oversized response error")
+	}
+	if !strings.Contains(err.Error(), "tempo response exceeds 32 bytes") {
+		t.Fatalf("TraceSummary() error = %v, want oversized response error", err)
 	}
 }
 

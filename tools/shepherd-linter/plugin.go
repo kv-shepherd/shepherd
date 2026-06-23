@@ -17,6 +17,7 @@ import (
 	"kv-shepherd.io/shepherd-linter/analyzer/forbiddenimports"
 	"kv-shepherd.io/shepherd-linter/analyzer/k8sintransaction"
 	"kv-shepherd.io/shepherd-linter/analyzer/k8spollingrv"
+	"kv-shepherd.io/shepherd-linter/analyzer/k8stimeout"
 	"kv-shepherd.io/shepherd-linter/analyzer/manualdi"
 	"kv-shepherd.io/shepherd-linter/analyzer/nakedgoroutine"
 	"kv-shepherd.io/shepherd-linter/analyzer/openapirbaccontract"
@@ -54,6 +55,8 @@ var AllAnalyzers = []*analysis.Analyzer{
 	k8sintransaction.Analyzer,
 	// Batch 3: ADR-0038 ResourceVersion enforcement for K8s polling
 	k8spollingrv.Analyzer,
+	// Provider-layer K8s operation-timeout regression guard
+	k8stimeout.Analyzer,
 }
 
 // New is the golangci-lint v2 module plugin entrypoint.

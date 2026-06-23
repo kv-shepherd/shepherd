@@ -403,7 +403,7 @@ func (q *Queries) InsertVM(ctx context.Context, arg InsertVMParams) error {
 const resetDomainEventForRetry = `-- name: ResetDomainEventForRetry :execrows
 UPDATE domain_events
 SET status = 'PENDING'
-WHERE id = $1
+WHERE id = $1 AND status IN ('FAILED', 'CANCELLED')
 `
 
 func (q *Queries) ResetDomainEventForRetry(ctx context.Context, id string) (int64, error) {
@@ -422,17 +422,20 @@ SET
     updated_at = NOW()
 WHERE
     id = $1
-    AND parent_ticket_id = $2
+    AND event_id = $2
+    AND parent_ticket_id = $3
+    AND status IN ('FAILED', 'REJECTED')
     AND operation_type = 'POWER'
 `
 
 type ResetPowerRetryTicketParams struct {
 	ID             string      `db:"id" json:"id"`
+	EventID        string      `db:"event_id" json:"event_id"`
 	ParentTicketID pgtype.Text `db:"parent_ticket_id" json:"parent_ticket_id"`
 }
 
 func (q *Queries) ResetPowerRetryTicket(ctx context.Context, arg ResetPowerRetryTicketParams) (int64, error) {
-	result, err := q.db.Exec(ctx, resetPowerRetryTicket, arg.ID, arg.ParentTicketID)
+	result, err := q.db.Exec(ctx, resetPowerRetryTicket, arg.ID, arg.EventID, arg.ParentTicketID)
 	if err != nil {
 		return 0, err
 	}
@@ -442,7 +445,7 @@ func (q *Queries) ResetPowerRetryTicket(ctx context.Context, arg ResetPowerRetry
 const setDomainEventStatus = `-- name: SetDomainEventStatus :execrows
 UPDATE domain_events
 SET status = $2
-WHERE id = $1
+WHERE id = $1 AND status = 'PENDING'
 `
 
 type SetDomainEventStatusParams struct {

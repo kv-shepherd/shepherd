@@ -6,11 +6,13 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/internal/app/modules"
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
@@ -63,6 +65,58 @@ func (s *stubLifecycleClusterClient) Pods() provider.PodClient                  
 func (s *stubLifecycleClusterClient) Authorization() provider.AuthorizationClient { return nil }
 func (s *stubLifecycleClusterClient) SSA() provider.DynamicSSAClient              { return nil }
 func (s *stubLifecycleClusterClient) KubeVirt() provider.KubeVirtCRClient         { return s.kvCR }
+
+type recordingShutdownModule struct {
+	hasDeadline bool
+	remaining   time.Duration
+}
+
+func (m *recordingShutdownModule) Name() string {
+	return "recording-shutdown"
+}
+
+func (m *recordingShutdownModule) Shutdown(ctx context.Context) error {
+	deadline, ok := ctx.Deadline()
+	m.hasDeadline = ok
+	if ok {
+		m.remaining = time.Until(deadline)
+	}
+	return nil
+}
+
+func TestApplicationShutdown_UsesDefaultBoundedContext(t *testing.T) {
+	t.Parallel()
+
+	mod := &recordingShutdownModule{}
+	app := &Application{Modules: []modules.Module{mod}}
+
+	app.Shutdown()
+
+	if !mod.hasDeadline {
+		t.Fatal("module shutdown context missing deadline")
+	}
+	if mod.remaining <= 0 || mod.remaining > defaultApplicationShutdownTimeout {
+		t.Fatalf("module shutdown context remaining = %s, want within %s", mod.remaining, defaultApplicationShutdownTimeout)
+	}
+}
+
+func TestApplicationShutdownContext_UsesCallerContext(t *testing.T) {
+	t.Parallel()
+
+	mod := &recordingShutdownModule{}
+	app := &Application{Modules: []modules.Module{mod}}
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+
+	app.ShutdownContext(ctx)
+
+	if !mod.hasDeadline {
+		t.Fatal("module shutdown context missing caller deadline")
+	}
+	if mod.remaining <= 0 || mod.remaining > time.Second {
+		t.Fatalf("module shutdown context remaining = %s, want within caller timeout", mod.remaining)
+	}
+}
 
 func TestApplication_refreshClusterHealth_PersistsDetectedCapabilities(t *testing.T) {
 	t.Parallel()

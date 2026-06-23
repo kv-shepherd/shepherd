@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -51,6 +52,124 @@ func TestSystemHandler_ListSystems_RespectsResourceBindings(t *testing.T) {
 	}
 	if resp.Items[0].CreatedByUsername != "owner-1@example.com" {
 		t.Fatalf("created_by_username = %#v, want owner-1@example.com", resp.Items[0].CreatedByUsername)
+	}
+}
+
+func TestSystemHandler_ListSystems_RejectsInvalidSortOrder(t *testing.T) {
+	srv, _ := newSystemBehaviorTestServer(t)
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems?sort_order=sideways", "", "platform-admin", []string{"system:read", "platform:admin"})
+	srv.ListSystems(c, generated.ListSystemsParams{
+		SortOrder: generated.ListSystemsParamsSortOrder("sideways"),
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}
+
+func TestSystemHandler_ListSystems_RejectsInvalidSortBy(t *testing.T) {
+	srv, _ := newSystemBehaviorTestServer(t)
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems?sort_by=tenant", "", "platform-admin", []string{"system:read", "platform:admin"})
+	srv.ListSystems(c, generated.ListSystemsParams{
+		SortBy: "tenant",
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}
+
+func TestSystemHandler_ListSystems_SortsByCreatedAtAscendingWhenRequested(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	ctx := t.Context()
+
+	olderCreatedAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	newerCreatedAt := time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
+	_, err := client.System.Create().
+		SetID("sys-old-" + uuid.NewString()).
+		SetName("oldsys").
+		SetCreatedBy("platform-admin").
+		SetCreatedAt(olderCreatedAt).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create older system: %v", err)
+	}
+	newer, err := client.System.Create().
+		SetID("sys-new-" + uuid.NewString()).
+		SetName("newsys").
+		SetCreatedBy("platform-admin").
+		SetCreatedAt(newerCreatedAt).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create newer system: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems?sort_order=asc", "", "platform-admin", []string{"system:read", "platform:admin"})
+	srv.ListSystems(c, generated.ListSystemsParams{
+		SortOrder: generated.ListSystemsParamsSortOrderAsc,
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.SystemList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if len(resp.Items) < 2 {
+		t.Fatalf("items len = %d, want at least 2", len(resp.Items))
+	}
+	if resp.Items[0].Name != "oldsys" {
+		t.Fatalf("first system name = %q, want oldsys", resp.Items[0].Name)
+	}
+	if resp.Items[1].Id != newer.ID {
+		t.Fatalf("second system id = %q, want %q", resp.Items[1].Id, newer.ID)
+	}
+}
+
+func TestSystemHandler_ListSystems_SortsByNameWhenRequested(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	ctx := t.Context()
+
+	_, err := client.System.Create().
+		SetID("sys-z-" + uuid.NewString()).
+		SetName("zsort").
+		SetCreatedBy("platform-admin").
+		SetCreatedAt(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create z system: %v", err)
+	}
+	firstByName, err := client.System.Create().
+		SetID("sys-a-" + uuid.NewString()).
+		SetName("asort").
+		SetCreatedBy("platform-admin").
+		SetCreatedAt(time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create a system: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/systems?sort_by=name&sort_order=asc", "", "platform-admin", []string{"system:read", "platform:admin"})
+	srv.ListSystems(c, generated.ListSystemsParams{
+		SortBy:    "name",
+		SortOrder: generated.ListSystemsParamsSortOrderAsc,
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.SystemList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if len(resp.Items) < 2 {
+		t.Fatalf("items len = %d, want at least 2", len(resp.Items))
+	}
+	if resp.Items[0].Id != firstByName.ID {
+		t.Fatalf("first system id = %q, want %q", resp.Items[0].Id, firstByName.ID)
 	}
 }
 
@@ -302,6 +421,47 @@ func TestSystemHandler_ListServicesOverview_RespectsVisibilityAndFilter(t *testi
 	}
 	if got := resp.Items[0].SystemId; got != sysVisibleB.ID {
 		t.Fatalf("search system_id = %q, want %q", got, sysVisibleB.ID)
+	}
+}
+
+func TestSystemHandler_ListServices_FiltersWithinSystem(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+
+	sys := mustCreateSystem(t, client, "sys-services", "shop", "owner-1")
+	otherSys := mustCreateSystem(t, client, "sys-other-services", "other", "owner-1")
+	apiSvc := mustCreateService(t, client, "svc-api", "api", sys.ID, "backend")
+	_ = mustCreateService(t, client, "svc-cache", "cache", sys.ID, "redis")
+	_ = mustCreateService(t, client, "svc-other-api", "api", otherSys.ID, "other backend")
+	mustCreateSystemBinding(t, client, "user-a", sys.ID, "viewer")
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/systems/"+sys.ID+"/services?page=1&per_page=20&search=api",
+		"",
+		"user-a",
+		[]string{"service:read"},
+	)
+	srv.ListServices(c, sys.ID, generated.ListServicesParams{
+		Page:    1,
+		PerPage: 20,
+		Search:  "api",
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.ServiceList
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	if got := len(resp.Items); got != 1 {
+		t.Fatalf("items len = %d, want 1", got)
+	}
+	if got := resp.Items[0].Id; got != apiSvc.ID {
+		t.Fatalf("service id = %q, want %q", got, apiSvc.ID)
+	}
+	if got := resp.Items[0].SystemId; got != sys.ID {
+		t.Fatalf("system_id = %q, want %q", got, sys.ID)
 	}
 }
 

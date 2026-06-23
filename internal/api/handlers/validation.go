@@ -13,6 +13,14 @@ import (
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
+const (
+	queryFieldCreatedAt = "created_at"
+	queryFieldCreatedBy = "created_by"
+	queryFieldName      = "name"
+	queryFieldNamespace = "namespace"
+	queryFieldStatus    = "status"
+)
+
 func bindAndValidateJSON(c *gin.Context, req any) bool {
 	if err := c.ShouldBindJSON(req); err != nil {
 		var maxBytesErr *http.MaxBytesError
@@ -46,6 +54,22 @@ func bindAndValidateJSON(c *gin.Context, req any) bool {
 		return false
 	}
 
+	return true
+}
+
+func rejectInvalidEnumQuery(c *gin.Context, name, value string, allowed ...string) bool {
+	if value == "" {
+		return false
+	}
+	for _, allowedValue := range allowed {
+		if value == allowedValue {
+			return false
+		}
+	}
+	c.JSON(http.StatusBadRequest, generated.Error{
+		Code:    "INVALID_REQUEST",
+		Message: "invalid " + name + " query parameter",
+	})
 	return true
 }
 

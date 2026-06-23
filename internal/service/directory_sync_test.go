@@ -289,6 +289,201 @@ func TestDirectorySyncServiceApplyRecord_ReconcilesObservedCohortsAndBindings(t 
 	}
 }
 
+func TestDirectorySyncServiceApplyRecord_ClearsManagedRBACForDisabledMatchedUser(t *testing.T) {
+	t.Parallel()
+
+	client := newDirectorySyncTestClient(t)
+	svc := NewDirectorySyncService(client)
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-directory-disabled-user-manual").
+		SetName("directory_disabled_user_manual").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	disabledUser, err := client.User.Create().
+		SetID("user-directory-disabled-manual").
+		SetUsername("disabled.manual@example.com").
+		SetDisplayName("Disabled Manual").
+		SetEmail("disabled.manual@example.com").
+		SetAuthProviderID("provider-directory-disabled-manual").
+		SetExternalID("ext-disabled-manual").
+		SetEnabled(false).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create disabled user: %v", err)
+	}
+	if _, createMappingErr := client.ExternalCohortMapping.Create().
+		SetID("cohort-mapping-directory-disabled-manual").
+		SetProviderID("provider-directory-disabled-manual").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(t.Context()); createMappingErr != nil {
+		t.Fatalf("create cohort mapping: %v", createMappingErr)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-directory-disabled-manual").
+		SetUserID(disabledUser.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create managed role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-directory-disabled-manual").
+		SetUserID(disabledUser.ID).
+		SetProviderID("provider-directory-disabled-manual").
+		SetBindingKey(externalCohortBindingKey(roleEnt.ID, "global", "", nil)).
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{"cohort-mapping-directory-disabled-manual"}).
+		SetLastAppliedAt(disabledUser.CreatedAt).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create external cohort grant: %v", err)
+	}
+
+	result, conflicts, err := svc.ApplyRecord(t.Context(), "provider-directory-disabled-manual", directorycontract.DirectoryUserRecord{
+		ExternalID:  "ext-disabled-manual",
+		Username:    "disabled.manual@example.com",
+		DisplayName: "Disabled Manual Updated",
+		Email:       "disabled.manual@example.com",
+		Cohorts: []directorycontract.ExternalCohort{
+			{Kind: "group", Key: "ops", DisplayName: "ops"},
+		},
+	}, DirectoryConflictResolutionSkip)
+	if err != nil {
+		t.Fatalf("ApplyRecord() error = %v", err)
+	}
+	if result.Action != directorycontract.DirectoryActionUpdate {
+		t.Fatalf("action = %q, want %q", result.Action, directorycontract.DirectoryActionUpdate)
+	}
+	if !result.RBACChanged {
+		t.Fatal("RBACChanged = false, want true for disabled user managed RBAC cleanup")
+	}
+	if len(conflicts) != 1 || conflicts[0].Code != directorycontract.DirectoryConflictSameExternalIdentity {
+		t.Fatalf("conflicts = %#v, want same_external_identity", conflicts)
+	}
+
+	reloaded, err := client.User.Get(t.Context(), disabledUser.ID)
+	if err != nil {
+		t.Fatalf("reload disabled user: %v", err)
+	}
+	if reloaded.Enabled {
+		t.Fatal("disabled matched user was re-enabled by directory sync")
+	}
+	if _, err := client.ExternalCohortGrant.Get(t.Context(), grantEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("external cohort grant should be deleted, got err %v", err)
+	}
+	if _, err := client.RoleBinding.Get(t.Context(), bindingEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("managed role binding should be deleted, got err %v", err)
+	}
+}
+
+func TestDirectorySyncServiceApplyEnrichmentRecord_ClearsManagedRBACForDisabledMatchedUser(t *testing.T) {
+	t.Parallel()
+
+	client := newDirectorySyncTestClient(t)
+	svc := NewDirectorySyncService(client)
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-directory-disabled-user-enrichment").
+		SetName("directory_disabled_user_enrichment").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	disabledUser, err := client.User.Create().
+		SetID("user-directory-disabled-enrichment").
+		SetUsername("disabled.enrichment@example.com").
+		SetDisplayName("Disabled Enrichment").
+		SetEmail("disabled.enrichment@example.com").
+		SetEnabled(false).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create disabled user: %v", err)
+	}
+	if _, createMappingErr := client.ExternalCohortMapping.Create().
+		SetID("cohort-mapping-directory-disabled-enrichment").
+		SetProviderID("provider-directory-disabled-enrichment").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(t.Context()); createMappingErr != nil {
+		t.Fatalf("create cohort mapping: %v", createMappingErr)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-directory-disabled-enrichment").
+		SetUserID(disabledUser.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create managed role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-directory-disabled-enrichment").
+		SetUserID(disabledUser.ID).
+		SetProviderID("provider-directory-disabled-enrichment").
+		SetBindingKey(externalCohortBindingKey(roleEnt.ID, "global", "", nil)).
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{"cohort-mapping-directory-disabled-enrichment"}).
+		SetLastAppliedAt(disabledUser.CreatedAt).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create external cohort grant: %v", err)
+	}
+
+	result, err := svc.ApplyEnrichmentRecord(
+		t.Context(),
+		"provider-directory-disabled-enrichment",
+		directorycontract.DirectoryJoinKeyUsername,
+		directorycontract.DirectoryUserRecord{
+			ExternalID:  "ext-disabled-enrichment",
+			Username:    "disabled.enrichment@example.com",
+			DisplayName: "Disabled Enrichment",
+			Cohorts: []directorycontract.ExternalCohort{
+				{Kind: "group", Key: "ops", DisplayName: "ops"},
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("ApplyEnrichmentRecord() error = %v", err)
+	}
+	if result.Action != directorycontract.DirectoryActionUpdate {
+		t.Fatalf("action = %q, want %q", result.Action, directorycontract.DirectoryActionUpdate)
+	}
+	if !result.RBACChanged {
+		t.Fatal("RBACChanged = false, want true for disabled user managed RBAC cleanup")
+	}
+
+	reloaded, err := client.User.Get(t.Context(), disabledUser.ID)
+	if err != nil {
+		t.Fatalf("reload disabled user: %v", err)
+	}
+	if reloaded.Enabled {
+		t.Fatal("disabled matched user was re-enabled by directory enrichment")
+	}
+	if _, err := client.ExternalCohortGrant.Get(t.Context(), grantEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("external cohort grant should be deleted, got err %v", err)
+	}
+	if _, err := client.RoleBinding.Get(t.Context(), bindingEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("managed role binding should be deleted, got err %v", err)
+	}
+}
+
 func TestDirectorySyncServiceApplyRecord_ClaimsUniqueCanonicalIdentityForDirectoryOwner(t *testing.T) {
 	t.Parallel()
 

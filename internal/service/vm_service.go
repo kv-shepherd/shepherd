@@ -11,8 +11,10 @@ import (
 	"context"
 	"fmt"
 	"net"
+	"strings"
 
 	"go.uber.org/zap"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 
 	"kv-shepherd.io/shepherd/internal/domain"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
@@ -30,6 +32,13 @@ type VMService struct {
 // NewVMService creates a new VMService.
 func NewVMService(infra infracontract.InfrastructureProvider) *VMService {
 	return &VMService{infra: infra}
+}
+
+func (s *VMService) infrastructureProvider() (infracontract.InfrastructureProvider, error) {
+	if s == nil || s.infra == nil {
+		return nil, fmt.Errorf("vm infrastructure provider is not configured")
+	}
+	return s.infra, nil
 }
 
 // ValidateAndPrepare validates a VM creation request (outside transaction).
@@ -55,7 +64,11 @@ func (s *VMService) ValidateAndPrepare(ctx context.Context, cluster, namespace s
 
 // GetVM retrieves a VM.
 func (s *VMService) GetVM(ctx context.Context, cluster, namespace, name string) (*domain.VM, error) {
-	vm, err := s.infra.GetVM(ctx, cluster, namespace, name)
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return nil, err
+	}
+	vm, err := infra.GetVM(ctx, cluster, namespace, name)
 	if err != nil {
 		return nil, fmt.Errorf("get vm: %w", err)
 	}
@@ -63,10 +76,11 @@ func (s *VMService) GetVM(ctx context.Context, cluster, namespace, name string) 
 }
 
 func (s *VMService) GetVMManifestYAML(ctx context.Context, cluster, namespace, name string) (string, error) {
-	if s == nil || s.infra == nil {
-		return "", fmt.Errorf("vm infrastructure provider is not configured")
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return "", err
 	}
-	manifestProvider, ok := s.infra.(infracontract.VMManifestProvider)
+	manifestProvider, ok := infra.(infracontract.VMManifestProvider)
 	if !ok {
 		return "", fmt.Errorf("vm infrastructure provider does not expose manifest queries")
 	}
@@ -79,7 +93,11 @@ func (s *VMService) GetVMManifestYAML(ctx context.Context, cluster, namespace, n
 
 // ListVMs lists VMs with filtering.
 func (s *VMService) ListVMs(ctx context.Context, cluster, namespace string, opts infracontract.ListOptions) (*domain.VMList, error) {
-	list, err := s.infra.ListVMs(ctx, cluster, namespace, opts)
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return nil, err
+	}
+	list, err := infra.ListVMs(ctx, cluster, namespace, opts)
 	if err != nil {
 		return nil, fmt.Errorf("list vms: %w", err)
 	}
@@ -92,11 +110,28 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, cluster, namespace str
 	if err := s.ensureNamespaceReady(ctx, cluster, namespace); err != nil {
 		return nil, err
 	}
-	if err := ensureRenderedYAML(namespace, spec); err != nil {
-		return nil, fmt.Errorf("render vm yaml: %w", err)
+	if renderErr := ensureRenderedYAML(namespace, spec); renderErr != nil {
+		return nil, fmt.Errorf("render vm yaml: %w", renderErr)
 	}
 	vm, err := s.infra.CreateVM(ctx, cluster, namespace, spec)
 	if err != nil {
+		if apierrors.IsAlreadyExists(err) {
+			existing, lookupErr := s.existingVMForAlreadyExistsCreate(ctx, cluster, namespace, spec)
+			if lookupErr == nil {
+				logger.Info("VM already exists on K8s, treating create as idempotent",
+					zap.String("cluster", cluster),
+					zap.String("namespace", namespace),
+					zap.String("name", existing.Name),
+				)
+				return existing, nil
+			}
+			logger.Error("K8s VM already exists but ownership verification failed",
+				zap.String("cluster", cluster),
+				zap.String("namespace", namespace),
+				zap.Error(lookupErr),
+			)
+			return nil, fmt.Errorf("execute k8s create: %w; verify existing vm: %w", err, lookupErr)
+		}
 		logger.Error("K8s VM creation failed",
 			zap.String("cluster", cluster),
 			zap.String("namespace", namespace),
@@ -113,6 +148,50 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, cluster, namespace str
 	return vm, nil
 }
 
+func (s *VMService) existingVMForAlreadyExistsCreate(
+	ctx context.Context,
+	cluster, namespace string,
+	spec *domain.VMSpec,
+) (*domain.VM, error) {
+	if spec == nil {
+		return nil, fmt.Errorf("requested vm spec is nil")
+	}
+	name := strings.TrimSpace(spec.Name)
+	if name == "" {
+		return nil, fmt.Errorf("requested vm name is empty")
+	}
+
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return nil, err
+	}
+	existing, err := infra.GetVM(ctx, cluster, namespace, name)
+	if err != nil {
+		return nil, fmt.Errorf("get existing vm %s/%s: %w", namespace, name, err)
+	}
+	if existing == nil {
+		return nil, fmt.Errorf("get existing vm %s/%s returned nil", namespace, name)
+	}
+
+	requestedEventID := strings.TrimSpace(spec.Labels[domain.ShepherdEventIDLabel])
+	if requestedEventID == "" {
+		return nil, fmt.Errorf("requested vm %s/%s has no %s label", namespace, name, domain.ShepherdEventIDLabel)
+	}
+	existingEventID := strings.TrimSpace(existing.Spec.Labels[domain.ShepherdEventIDLabel])
+	if existingEventID != requestedEventID {
+		return nil, fmt.Errorf(
+			"existing vm %s/%s %s label %q does not match requested %q",
+			namespace,
+			name,
+			domain.ShepherdEventIDLabel,
+			existingEventID,
+			requestedEventID,
+		)
+	}
+
+	return existing, nil
+}
+
 // ExecuteK8sUpdate applies a narrow SSA patch or full desired spec to an existing VM.
 func (s *VMService) ExecuteK8sUpdate(ctx context.Context, cluster, namespace, name string, spec *domain.VMSpec) (*domain.VM, error) {
 	if spec == nil {
@@ -124,13 +203,17 @@ func (s *VMService) ExecuteK8sUpdate(ctx context.Context, cluster, namespace, na
 	if name == "" {
 		return nil, fmt.Errorf("update vm: name is required")
 	}
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return nil, err
+	}
 	if spec.Name == "" {
 		spec.Name = name
 	}
-	if err := ensureRenderedYAML(namespace, spec); err != nil {
-		return nil, fmt.Errorf("render vm yaml: %w", err)
+	if renderErr := ensureRenderedYAML(namespace, spec); renderErr != nil {
+		return nil, fmt.Errorf("render vm yaml: %w", renderErr)
 	}
-	vm, err := s.infra.UpdateVM(ctx, cluster, namespace, name, spec)
+	vm, err := infra.UpdateVM(ctx, cluster, namespace, name, spec)
 	if err != nil {
 		logger.Error("K8s VM update failed",
 			zap.String("cluster", cluster),
@@ -153,7 +236,11 @@ func (s *VMService) DryRunVMMutation(ctx context.Context, cluster, namespace, na
 	if name == "" {
 		return fmt.Errorf("vm mutation: name is required")
 	}
-	mutator, ok := s.infra.(infracontract.VMMutationProvider)
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return err
+	}
+	mutator, ok := infra.(infracontract.VMMutationProvider)
 	if !ok {
 		return fmt.Errorf("vm infrastructure provider does not support vm mutation dry-run")
 	}
@@ -173,7 +260,11 @@ func (s *VMService) ExecuteVMMutation(ctx context.Context, cluster, namespace, n
 	if name == "" {
 		return nil, fmt.Errorf("vm mutation: name is required")
 	}
-	mutator, ok := s.infra.(infracontract.VMMutationProvider)
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := infra.(infracontract.VMMutationProvider)
 	if !ok {
 		return nil, fmt.Errorf("vm infrastructure provider does not support vm mutation execution")
 	}
@@ -193,10 +284,11 @@ func (s *VMService) ExecuteVMMutation(ctx context.Context, cluster, namespace, n
 // GetStorageProfile returns the CDI StorageProfile for a target storage class.
 // It is used by approval-time root-volume resolution and clone advisories.
 func (s *VMService) GetStorageProfile(ctx context.Context, cluster, name string) (*domain.StorageProfile, error) {
-	if s == nil || s.infra == nil {
-		return nil, fmt.Errorf("vm infrastructure provider is not configured")
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return nil, err
 	}
-	query, ok := s.infra.(infracontract.ProvisioningQueryProvider)
+	query, ok := infra.(infracontract.ProvisioningQueryProvider)
 	if !ok {
 		return nil, fmt.Errorf("vm infrastructure provider does not expose storage profile queries")
 	}
@@ -204,10 +296,11 @@ func (s *VMService) GetStorageProfile(ctx context.Context, cluster, name string)
 }
 
 func (s *VMService) ensureNamespaceReady(ctx context.Context, cluster, namespace string) error {
-	if s == nil || s.infra == nil {
-		return fmt.Errorf("vm infrastructure provider is not configured")
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return err
 	}
-	provisioner, ok := s.infra.(infracontract.NamespaceProvisioner)
+	provisioner, ok := infra.(infracontract.NamespaceProvisioner)
 	if !ok {
 		return fmt.Errorf("vm infrastructure provider does not support namespace provisioning")
 	}
@@ -252,30 +345,47 @@ func ensureRenderedYAML(namespace string, spec *domain.VMSpec) error {
 
 // StartVM starts a VM.
 func (s *VMService) StartVM(ctx context.Context, cluster, namespace, name string) error {
-	return s.infra.StartVM(ctx, cluster, namespace, name)
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return err
+	}
+	return infra.StartVM(ctx, cluster, namespace, name)
 }
 
 // StopVM stops a VM.
 func (s *VMService) StopVM(ctx context.Context, cluster, namespace, name string) error {
-	return s.infra.StopVM(ctx, cluster, namespace, name)
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return err
+	}
+	return infra.StopVM(ctx, cluster, namespace, name)
 }
 
 // RestartVM restarts a VM.
 func (s *VMService) RestartVM(ctx context.Context, cluster, namespace, name string) error {
-	return s.infra.RestartVM(ctx, cluster, namespace, name)
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return err
+	}
+	return infra.RestartVM(ctx, cluster, namespace, name)
 }
 
 // DeleteVM deletes a VM.
 func (s *VMService) DeleteVM(ctx context.Context, cluster, namespace, name string) error {
-	return s.infra.DeleteVM(ctx, cluster, namespace, name)
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return err
+	}
+	return infra.DeleteVM(ctx, cluster, namespace, name)
 }
 
 // OpenVNCStream returns a raw VNC stream for the target VM when the provider supports it.
 func (s *VMService) OpenVNCStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error) {
-	if s == nil || s.infra == nil {
-		return nil, fmt.Errorf("vm infrastructure provider is not configured")
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return nil, err
 	}
-	console, ok := s.infra.(infracontract.VNCStreamProvider)
+	console, ok := infra.(infracontract.VNCStreamProvider)
 	if !ok {
 		return nil, fmt.Errorf("vm infrastructure provider does not support vnc streaming")
 	}
@@ -284,10 +394,11 @@ func (s *VMService) OpenVNCStream(ctx context.Context, cluster, namespace, name 
 
 // OpenSerialConsoleStream returns a raw serial console stream for the target VM when the provider supports it.
 func (s *VMService) OpenSerialConsoleStream(ctx context.Context, cluster, namespace, name string) (net.Conn, error) {
-	if s == nil || s.infra == nil {
-		return nil, fmt.Errorf("vm infrastructure provider is not configured")
+	infra, err := s.infrastructureProvider()
+	if err != nil {
+		return nil, err
 	}
-	console, ok := s.infra.(infracontract.SerialConsoleStreamProvider)
+	console, ok := infra.(infracontract.SerialConsoleStreamProvider)
 	if !ok {
 		return nil, fmt.Errorf("vm infrastructure provider does not support serial console streaming")
 	}

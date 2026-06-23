@@ -25,6 +25,7 @@
 //
 //	ssacompliance    - ADR-0011: provider write paths must not use typed KubeVirt structs or .Create()/.Update()
 //	k8sintransaction - ADR-0006/ADR-0012: K8s provider calls inside DB transaction callbacks (advisory)
+//	k8stimeout       - Provider-layer K8s calls must use bounded operation-timeout contexts
 //
 // golangci-lint v2 Module Plugin:
 //

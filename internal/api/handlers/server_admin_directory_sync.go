@@ -48,6 +48,13 @@ func (s *Server) GetAuthProviderDirectorySchedule(c *gin.Context, providerID gen
 	if !supported {
 		return
 	}
+	if !providerRow.Enabled {
+		c.JSON(http.StatusOK, generated.DirectoryEnrichmentScheduleStatus{
+			Supported: true,
+			Enabled:   false,
+		})
+		return
+	}
 
 	adapter := adminglobal.Resolve(providerRow.AuthType)
 	scheduledCapability, ok := adapter.(directorycontract.ScheduledDirectoryEnrichmentCapability)
@@ -87,6 +94,9 @@ func (s *Server) PreviewAuthProviderDirectory(c *gin.Context, providerID generat
 
 	providerRow, capability, supported := s.resolveDirectorySyncCapability(ctx, c, providerID)
 	if !supported {
+		return
+	}
+	if rejectDisabledAuthProviderDirectoryOperation(c, providerRow) {
 		return
 	}
 	descriptor := capability.DescribeDirectorySync()
@@ -147,8 +157,11 @@ func (s *Server) SyncAuthProviderDirectory(c *gin.Context, providerID generated.
 	if !supported {
 		return
 	}
-	if s.riverClient == nil {
-		logger.Error("river client is not initialized for directory sync enqueue", zap.String("provider_id", providerID))
+	if rejectDisabledAuthProviderDirectoryOperation(c, providerRow) {
+		return
+	}
+	if s.pool == nil || s.riverClient == nil {
+		logger.Error("database queue dependencies are not initialized for directory sync enqueue", zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -187,43 +200,29 @@ func (s *Server) SyncAuthProviderDirectory(c *gin.Context, providerID generated.
 	}
 	jobID := jobUUID.String()
 
-	jobRow, err := s.client.DirectorySyncJob.Create().
-		SetID(jobID).
-		SetAuthProviderID(providerID).
-		SetRequestSnapshot(req.ProviderRequest).
-		SetConflictResolution(conflictResolution).
-		SetSyncMode(service.DirectoryExecutionModeManualImport).
-		SetTriggeredBy(actor).
-		Save(ctx)
+	enqueueResult, err := jobs.CreateDirectorySyncJobAndEnqueue(ctx, s.pool, s.riverClient, jobs.DirectorySyncEnqueueInput{
+		JobID:              jobID,
+		AuthProviderID:     providerID,
+		RequestSnapshot:    req.ProviderRequest,
+		ConflictResolution: conflictResolution,
+		SyncMode:           service.DirectoryExecutionModeManualImport,
+		TriggeredBy:        actor,
+	})
 	if err != nil {
-		logger.Error("failed to create directory sync job", zap.Error(err), zap.String("provider_id", providerID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	if _, err := s.riverClient.Insert(ctx, jobs.DirectorySyncArgs{
-		JobID: jobRow.ID,
-	}, nil); err != nil {
-		logger.Error("failed to enqueue directory sync job", zap.Error(err), zap.String("provider_id", providerID), zap.String("job_id", jobRow.ID))
-		_, _ = s.client.DirectorySyncJob.UpdateOneID(jobRow.ID).
-			SetStatus(directorysyncjob.StatusFailed).
-			SetErrorCount(1).
-			SetErrors([]string{err.Error()}).
-			SetCompletedAt(time.Now().UTC()).
-			Save(ctx)
+		logger.Error("failed to create and enqueue directory sync job", zap.Error(err), zap.String("provider_id", providerID), zap.String("job_id", jobID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if s.audit != nil {
-		_ = s.audit.LogAction(ctx, "auth_provider.directory_sync_requested", "directory_sync_job", jobRow.ID, actor, map[string]interface{}{
+		_ = s.audit.LogAction(ctx, "auth_provider.directory_sync_requested", "directory_sync_job", enqueueResult.JobID, actor, map[string]interface{}{
 			"auth_provider_id": providerID,
 		})
 	}
 
 	c.JSON(http.StatusAccepted, generated.DirectorySyncStartResponse{
-		JobId:  jobRow.ID,
-		Status: generated.DirectorySyncStartResponseStatus(jobRow.Status),
+		JobId:  enqueueResult.JobID,
+		Status: generated.DirectorySyncStartResponseStatus(enqueueResult.Status),
 	})
 }
 
@@ -329,6 +328,17 @@ func (s *Server) resolveDirectorySyncCapability(
 func isDirectorySyncRequestError(err error) bool {
 	var requestErr *directorycontract.DirectorySyncRequestError
 	return errors.As(err, &requestErr)
+}
+
+func rejectDisabledAuthProviderDirectoryOperation(c *gin.Context, providerRow *ent.AuthProvider) bool {
+	if providerRow == nil || providerRow.Enabled {
+		return false
+	}
+	c.JSON(http.StatusConflict, generated.Error{
+		Code:    "AUTH_PROVIDER_DISABLED",
+		Message: "auth provider is disabled",
+	})
+	return true
 }
 
 func (s *Server) buildDirectoryScheduleStatus(

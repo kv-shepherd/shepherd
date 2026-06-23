@@ -1,8 +1,6 @@
 package notification
 
 import (
-	"os"
-	"strings"
 	"testing"
 
 	"github.com/google/uuid"
@@ -12,9 +10,6 @@ import (
 
 func TestTriggers_OnTicketSubmitted_NotifiesPlatformAdminsAndApprovalAdmins(t *testing.T) {
 	t.Parallel()
-	if strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")) == "" && strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
-		t.Skip("PostgreSQL test DSN is required: set TEST_DATABASE_URL or DATABASE_URL")
-	}
 
 	client := testutil.OpenEntPostgres(t, "notification_triggers_ticket_submitted")
 	ctx := t.Context()

@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"testing"
 	"time"
 
@@ -130,6 +131,40 @@ func TestToSystemMember(t *testing.T) {
 	})
 }
 
+func TestToGeneratedUser_IgnoresDisabledRoles(t *testing.T) {
+	t.Parallel()
+
+	user := &ent.User{
+		ID:       "user-role-projection",
+		Username: "role.projection",
+		Edges: ent.UserEdges{
+			RoleBindings: []*ent.RoleBinding{
+				{
+					Edges: ent.RoleBindingEdges{
+						Role: &ent.Role{Name: "disabled-admin", Enabled: false},
+					},
+				},
+				{
+					Edges: ent.RoleBindingEdges{
+						Role: &ent.Role{Name: " operator ", Enabled: true},
+					},
+				},
+				{
+					Edges: ent.RoleBindingEdges{
+						Role: &ent.Role{Name: "viewer", Enabled: true},
+					},
+				},
+			},
+		},
+	}
+
+	got := toGeneratedUser(user, nil)
+	wantRoles := []string{"operator", "viewer"}
+	if !slices.Equal(got.Roles, wantRoles) {
+		t.Fatalf("Roles = %#v, want %#v", got.Roles, wantRoles)
+	}
+}
+
 func TestMemberHandler_ListSystemMembers_RequestContextCanceled(t *testing.T) {
 	t.Parallel()
 
@@ -241,6 +276,35 @@ func TestApplyUserSearch_SupportsMailAndRolesAliases(t *testing.T) {
 		Save(t.Context()); createErr != nil {
 		t.Fatalf("create role binding: %v", createErr)
 	}
+	disabledRoleUser, err := client.User.Create().
+		SetID("user-search-disabled-role").
+		SetUsername("disabled.role.only").
+		SetDisplayName("Disabled Role Only").
+		SetEmail("disabled.role.only@example.com").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create disabled role user: %v", err)
+	}
+	disabledRole, err := client.Role.Create().
+		SetID("role-search-dormant").
+		SetName("DormantRole").
+		SetDisplayName("Dormant Role").
+		SetPermissions([]string{"user:manage"}).
+		SetEnabled(false).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create disabled role: %v", err)
+	}
+	if _, createErr := client.RoleBinding.Create().
+		SetID("binding-search-disabled-role").
+		SetUserID(disabledRoleUser.ID).
+		SetRoleID(disabledRole.ID).
+		SetScopeType("global").
+		SetCreatedBy("test").
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("create disabled role binding: %v", createErr)
+	}
 
 	usersByMail, err := applyUserSearch(client.User.Query(), "mail:alice.alias@example.com", nil).All(t.Context())
 	if err != nil {
@@ -256,5 +320,21 @@ func TestApplyUserSearch_SupportsMailAndRolesAliases(t *testing.T) {
 	}
 	if len(usersByRoles) != 1 || usersByRoles[0].ID != userEnt.ID {
 		t.Fatalf("roles alias search returned %+v, want only %s", usersByRoles, userEnt.ID)
+	}
+
+	usersByDisabledRole, err := applyUserSearch(client.User.Query(), `roles:"Dormant Role"`, nil).All(t.Context())
+	if err != nil {
+		t.Fatalf("search by disabled role alias: %v", err)
+	}
+	if len(usersByDisabledRole) != 0 {
+		t.Fatalf("disabled role search returned %+v, want no users", usersByDisabledRole)
+	}
+
+	usersByDisabledRoleFreeText, err := applyUserSearch(client.User.Query(), "DormantRole", nil).All(t.Context())
+	if err != nil {
+		t.Fatalf("free-text search by disabled role: %v", err)
+	}
+	if len(usersByDisabledRoleFreeText) != 0 {
+		t.Fatalf("disabled role free-text search returned %+v, want no users", usersByDisabledRoleFreeText)
 	}
 }

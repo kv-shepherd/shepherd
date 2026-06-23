@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,6 +19,7 @@ const (
 	wecomLoginModeQR           = "qr"
 	wecomLoginModeInWeCom      = "in_wecom"
 	wecomDefaultRequestTimeout = 10 * time.Second
+	wecomMaxResponseBodyBytes  = int64(1024 * 1024)
 )
 
 type wecomAuthProviderAdapter struct {
@@ -333,7 +335,14 @@ func decodeWeComJSONResponse(resp *http.Response, out interface{}) error {
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return fmt.Errorf("wecom request returned status %d", resp.StatusCode)
 	}
-	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
+	payload, err := io.ReadAll(&io.LimitedReader{R: resp.Body, N: wecomMaxResponseBodyBytes + 1})
+	if err != nil {
+		return fmt.Errorf("read wecom response: %w", err)
+	}
+	if int64(len(payload)) > wecomMaxResponseBodyBytes {
+		return fmt.Errorf("wecom response exceeds %d bytes", wecomMaxResponseBodyBytes)
+	}
+	if err := json.Unmarshal(payload, out); err != nil {
 		return fmt.Errorf("decode wecom response: %w", err)
 	}
 	return nil
@@ -352,9 +361,12 @@ func (a *wecomAuthProviderAdapter) getWeComJSON(
 	}
 	req.URL.RawQuery = values.Encode()
 
-	resp, err := a.doWeComRequest(req)
+	resp, cancel, err := a.doWeComRequest(req)
 	if err != nil {
 		return fmt.Errorf("wecom %s request failed: %w", action, err)
+	}
+	if cancel != nil {
+		defer cancel()
 	}
 	defer resp.Body.Close()
 
@@ -364,12 +376,12 @@ func (a *wecomAuthProviderAdapter) getWeComJSON(
 	return nil
 }
 
-func (a *wecomAuthProviderAdapter) doWeComRequest(req *http.Request) (*http.Response, error) {
+func (a *wecomAuthProviderAdapter) doWeComRequest(req *http.Request) (*http.Response, context.CancelFunc, error) {
 	if req == nil || req.URL == nil {
-		return nil, fmt.Errorf("wecom request url is required")
+		return nil, nil, fmt.Errorf("wecom request url is required")
 	}
 	if !strings.EqualFold(req.URL.Hostname(), "qyapi.weixin.qq.com") {
-		return nil, fmt.Errorf("unexpected wecom host %q", req.URL.Hostname())
+		return nil, nil, fmt.Errorf("unexpected wecom host %q", req.URL.Hostname())
 	}
 
 	client := a.httpClient
@@ -378,10 +390,20 @@ func (a *wecomAuthProviderAdapter) doWeComRequest(req *http.Request) (*http.Resp
 	}
 	if client.Timeout > 0 {
 		ctx, cancel := context.WithTimeout(req.Context(), client.Timeout)
-		defer cancel()
 		req = req.Clone(ctx)
+		resp, err := roundTripWeComRequest(client, req)
+		if err != nil {
+			cancel()
+			return nil, nil, err
+		}
+		return resp, cancel, nil
 	}
 
+	resp, err := roundTripWeComRequest(client, req)
+	return resp, nil, err
+}
+
+func roundTripWeComRequest(client *http.Client, req *http.Request) (*http.Response, error) {
 	transport := client.Transport
 	if transport == nil {
 		transport = http.DefaultTransport

@@ -142,6 +142,61 @@ func TestToEntType_RejectsUnknownType(t *testing.T) {
 	}
 }
 
+func TestCloneParams_ReturnsIndependentMap(t *testing.T) {
+	t.Parallel()
+
+	source := map[string]interface{}{
+		"ticketId": "ticket-123",
+		"count":    3,
+	}
+	cloned := cloneParams(source)
+	if len(cloned) != len(source) {
+		t.Fatalf("cloneParams() len = %d, want %d", len(cloned), len(source))
+	}
+	if cloned["ticketId"] != "ticket-123" || cloned["count"] != 3 {
+		t.Fatalf("cloneParams() = %#v, want copied values", cloned)
+	}
+
+	cloned["ticketId"] = "mutated"
+	if source["ticketId"] != "ticket-123" {
+		t.Fatalf("cloneParams() returned aliased map; source = %#v", source)
+	}
+}
+
+func TestCloneParams_EmptyInputReturnsWritableMap(t *testing.T) {
+	t.Parallel()
+
+	cloned := cloneParams(nil)
+	if cloned == nil {
+		t.Fatal("cloneParams(nil) = nil, want writable empty map")
+	}
+	cloned["key"] = "value"
+	if cloned["key"] != "value" {
+		t.Fatalf("cloneParams(nil) map write failed: %#v", cloned)
+	}
+}
+
+func TestApprovalPendingParams(t *testing.T) {
+	t.Parallel()
+
+	params := approvalPendingParams("ticket-123", "alice", "prod-ns")
+	if params.Type != TypeApprovalPending {
+		t.Fatalf("Type = %q, want %q", params.Type, TypeApprovalPending)
+	}
+	if params.TitleKey != TitleKeyApprovalPending || params.MessageKey != MessageKeyApprovalPending {
+		t.Fatalf("i18n keys = %q/%q, want approval pending keys", params.TitleKey, params.MessageKey)
+	}
+	if params.ResourceType != "ticket" || params.ResourceID != "ticket-123" {
+		t.Fatalf("resource = %q/%q, want ticket/ticket-123", params.ResourceType, params.ResourceID)
+	}
+	if params.MessageParams["requester"] != "alice" || params.MessageParams["namespace"] != "prod-ns" {
+		t.Fatalf("message params = %#v, want requester and namespace", params.MessageParams)
+	}
+	if !strings.Contains(params.Message, "alice") || !strings.Contains(params.Message, "prod-ns") {
+		t.Fatalf("message = %q, want requester and namespace", params.Message)
+	}
+}
+
 func TestTriggers_OnTicketApproved_UsesTicketResource(t *testing.T) {
 	t.Parallel()
 

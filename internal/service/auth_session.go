@@ -13,6 +13,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/authprovider"
 	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 )
@@ -106,6 +107,7 @@ SET last_activity_at = $2,
 	updated_at = NOW()
 WHERE user_id = $1
   AND (last_activity_at IS NULL OR last_activity_at < $3);`
+	authSessionSchemaInitTimeout = 5 * time.Second
 )
 
 // AuthSessionManager provides JWT revocation and live subject validation.
@@ -114,8 +116,8 @@ type AuthSessionManager struct {
 	client      *ent.Client
 	idleTimeout time.Duration
 	now         func() time.Time
-	initOnce    sync.Once
-	initErr     error
+	initMu      sync.Mutex
+	initialized bool
 }
 
 // NewAuthSessionManager creates a PostgreSQL-backed auth session manager.
@@ -143,7 +145,7 @@ func (m *AuthSessionManager) CurrentSessionVersion(ctx context.Context, userID s
 	if userID == "" {
 		return 0, ErrAuthSessionUserIDMissing
 	}
-	if err := m.ensureSchema(); err != nil {
+	if err := m.ensureSchema(ctx); err != nil {
 		return 0, err
 	}
 
@@ -182,7 +184,7 @@ func (m *AuthSessionManager) RevokeToken(
 	if expiresAt.IsZero() {
 		expiresAt = m.now().Add(time.Hour)
 	}
-	if err := m.ensureSchema(); err != nil {
+	if err := m.ensureSchema(ctx); err != nil {
 		return err
 	}
 	if _, err := m.pool.Exec(ctx, revokeAuthTokenSQL, tokenID, userID, expiresAt.UTC(), strings.TrimSpace(reason)); err != nil {
@@ -204,7 +206,7 @@ func (m *AuthSessionManager) RevokeUsersSessions(ctx context.Context, userIDs []
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	if err := m.ensureSchema(); err != nil {
+	if err := m.ensureSchema(ctx); err != nil {
 		return err
 	}
 
@@ -231,7 +233,7 @@ func (m *AuthSessionManager) IsRevoked(ctx context.Context, tokenID string) (boo
 	if tokenID == "" {
 		return false, ErrAuthSessionTokenIDMissing
 	}
-	if err := m.ensureSchema(); err != nil {
+	if err := m.ensureSchema(ctx); err != nil {
 		return false, err
 	}
 
@@ -274,6 +276,20 @@ func (m *AuthSessionManager) ValidateClaims(ctx context.Context, claims *middlew
 	if !userRow.Enabled {
 		return middleware.ErrJWTSubjectDisabled
 	}
+	if authProviderID := strings.TrimSpace(userRow.AuthProviderID); authProviderID != "" {
+		providerRow, providerErr := m.client.AuthProvider.Query().
+			Where(authprovider.IDEQ(authProviderID)).
+			Only(ctx)
+		if providerErr != nil {
+			if ent.IsNotFound(providerErr) {
+				return middleware.ErrJWTSubjectDisabled
+			}
+			return fmt.Errorf("query jwt subject auth provider: %w", providerErr)
+		}
+		if !providerRow.Enabled {
+			return middleware.ErrJWTSubjectDisabled
+		}
+	}
 
 	version, err := m.readSessionVersion(ctx, userID)
 	if err != nil {
@@ -309,7 +325,7 @@ func (m *AuthSessionManager) readSessionVersion(ctx context.Context, userID stri
 	if userID == "" {
 		return 0, ErrAuthSessionUserIDMissing
 	}
-	if err := m.ensureSchema(); err != nil {
+	if err := m.ensureSchema(ctx); err != nil {
 		return 0, err
 	}
 
@@ -341,7 +357,7 @@ func (m *AuthSessionManager) readLastActivityAt(ctx context.Context, userID stri
 	if userID == "" {
 		return time.Time{}, ErrAuthSessionUserIDMissing
 	}
-	if err := m.ensureSchema(); err != nil {
+	if err := m.ensureSchema(ctx); err != nil {
 		return time.Time{}, err
 	}
 
@@ -386,33 +402,39 @@ func (m *AuthSessionManager) touchLastActivityAt(ctx context.Context, userID str
 	return nil
 }
 
-func (m *AuthSessionManager) ensureSchema() error {
-	m.initOnce.Do(func() {
-		if m == nil || m.pool == nil {
-			m.initErr = ErrAuthSessionStoreUnavailable
-			return
-		}
+func (m *AuthSessionManager) ensureSchema(ctx context.Context) error {
+	if m == nil || m.pool == nil {
+		return ErrAuthSessionStoreUnavailable
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	m.initMu.Lock()
+	defer m.initMu.Unlock()
+	if m.initialized {
+		return nil
+	}
 
-		for _, statement := range []string{
-			createAuthSessionSubjectsTableSQL,
-			ensureAuthSessionSubjectsLastActivityColumnSQL,
-			backfillAuthSessionSubjectsLastActivitySQL,
-			setAuthSessionSubjectsLastActivityDefaultSQL,
-			setAuthSessionSubjectsLastActivityNotNullSQL,
-			createAuthRevokedTokensTableSQL,
-			createAuthRevokedTokensExpiryIndexSQL,
-			createAuthRevokedTokensUserIndexSQL,
-		} {
-			if _, err := m.pool.Exec(ctx, statement); err != nil {
-				m.initErr = fmt.Errorf("initialize auth session schema: %w", err)
-				return
-			}
+	schemaCtx, cancel := context.WithTimeout(ctx, authSessionSchemaInitTimeout)
+	defer cancel()
+
+	for _, statement := range []string{
+		createAuthSessionSubjectsTableSQL,
+		ensureAuthSessionSubjectsLastActivityColumnSQL,
+		backfillAuthSessionSubjectsLastActivitySQL,
+		setAuthSessionSubjectsLastActivityDefaultSQL,
+		setAuthSessionSubjectsLastActivityNotNullSQL,
+		createAuthRevokedTokensTableSQL,
+		createAuthRevokedTokensExpiryIndexSQL,
+		createAuthRevokedTokensUserIndexSQL,
+	} {
+		if _, err := m.pool.Exec(schemaCtx, statement); err != nil {
+			return fmt.Errorf("initialize auth session schema: %w", err)
 		}
-	})
-	return m.initErr
+	}
+	m.initialized = true
+	return nil
 }
 
 func normalizeAuthSessionUserIDs(userIDs []string) []string {

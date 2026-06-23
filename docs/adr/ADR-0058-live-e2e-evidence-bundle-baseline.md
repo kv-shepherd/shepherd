@@ -46,8 +46,9 @@ manual live validation auditable when operators choose to run it.
   under the run output directory.
 * The manifest records run mode, result, timestamps, commit, environment
   fingerprint, artifact paths, and validation phases without embedding secrets.
-* Full evidence must include a phase proving that KubeVirt API discovery succeeded
-  before release completion is claimed.
+* Full evidence must include a phase proving that the kubeconfig authenticates,
+  the Kubernetes API is reachable, and KubeVirt API discovery succeeded before
+  release completion is claimed.
 * Latest-run lookup must select the latest full-run evidence when release
   completion requires a full live result.
 * CI validates schema-compatible fixtures and negative fixtures, but does not

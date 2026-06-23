@@ -71,9 +71,9 @@ func (s *InMemoryVNCReplayStore) Consume(ctx context.Context, tokenID string, ex
 // PostgresVNCReplayStore persists replay markers to PostgreSQL so single-use
 // semantics hold across replicas.
 type PostgresVNCReplayStore struct {
-	pool     *pgxpool.Pool
-	initOnce sync.Once
-	initErr  error
+	pool        *pgxpool.Pool
+	initMu      sync.Mutex
+	initialized bool
 }
 
 const (
@@ -90,6 +90,7 @@ ON vnc_replay_markers (expires_at);`
 INSERT INTO vnc_replay_markers (token_id, expires_at, used_at)
 VALUES ($1, $2, NOW())
 ON CONFLICT (token_id) DO NOTHING;`
+	vncReplaySchemaInitTimeout = 5 * time.Second
 )
 
 // NewPostgresVNCReplayStore creates a replay store backed by PostgreSQL.
@@ -109,7 +110,7 @@ func (s *PostgresVNCReplayStore) Consume(ctx context.Context, tokenID string, ex
 	if tokenID == "" {
 		return false, ErrVNCTokenIDMissing
 	}
-	if err := s.ensureSchema(); err != nil {
+	if err := s.ensureSchema(ctx); err != nil {
 		return false, err
 	}
 
@@ -120,25 +121,31 @@ func (s *PostgresVNCReplayStore) Consume(ctx context.Context, tokenID string, ex
 	return tag.RowsAffected() == 1, nil
 }
 
-func (s *PostgresVNCReplayStore) ensureSchema() error {
-	s.initOnce.Do(func() {
-		if s == nil || s.pool == nil {
-			s.initErr = ErrVNCReplayStoreUnavailable
-			return
-		}
+func (s *PostgresVNCReplayStore) ensureSchema(ctx context.Context) error {
+	if s == nil || s.pool == nil {
+		return ErrVNCReplayStoreUnavailable
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	s.initMu.Lock()
+	defer s.initMu.Unlock()
+	if s.initialized {
+		return nil
+	}
 
-		if _, err := s.pool.Exec(ctx, createVNCReplayMarkerTableSQL); err != nil {
-			s.initErr = fmt.Errorf("create vnc replay marker table: %w", err)
-			return
-		}
-		if _, err := s.pool.Exec(ctx, createVNCReplayMarkerExpiryIndexSQL); err != nil {
-			s.initErr = fmt.Errorf("create vnc replay marker index: %w", err)
-		}
-	})
-	return s.initErr
+	schemaCtx, cancel := context.WithTimeout(ctx, vncReplaySchemaInitTimeout)
+	defer cancel()
+
+	if _, err := s.pool.Exec(schemaCtx, createVNCReplayMarkerTableSQL); err != nil {
+		return fmt.Errorf("create vnc replay marker table: %w", err)
+	}
+	if _, err := s.pool.Exec(schemaCtx, createVNCReplayMarkerExpiryIndexSQL); err != nil {
+		return fmt.Errorf("create vnc replay marker index: %w", err)
+	}
+	s.initialized = true
+	return nil
 }
 
 // VNCJWTClaims is the signed token payload for Stage 6.

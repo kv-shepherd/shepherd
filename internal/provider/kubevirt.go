@@ -17,14 +17,18 @@ import (
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	k8syaml "k8s.io/apimachinery/pkg/util/yaml"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+	instancetypev1beta1 "kubevirt.io/api/instancetype/v1beta1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 	"sigs.k8s.io/yaml"
 
 	"kv-shepherd.io/shepherd/internal/domain"
 )
+
+var _ InstanceTypeProvider = (*KubeVirtProviderImpl)(nil)
 
 // KubeVirtProviderImpl implements KubeVirtProvider using our client abstraction.
 // ADR-0001: Use official kubevirt.io/client-go client (bound at composition root).
@@ -101,20 +105,23 @@ func (p *KubeVirtProviderImpl) GetVM(ctx context.Context, cluster, namespace, na
 		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
 	}
 
-	vm, err := client.VM().Get(ctx, namespace, name, k8smetav1.GetOptions{})
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	vm, err := client.VM().Get(opCtx, namespace, name, k8smetav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get vm %s/%s: %w", namespace, name, err)
 	}
 
 	// Try to get VMI for status enrichment
-	vmi, _ := client.VMI().Get(ctx, namespace, name, k8smetav1.GetOptions{})
+	vmi, _ := client.VMI().Get(opCtx, namespace, name, k8smetav1.GetOptions{})
 
 	mapped, err := p.mapper.MapVM(vm, vmi)
 	if err != nil {
 		return nil, err
 	}
 	if mapped.NodeName != "" {
-		if node, nodeErr := client.Nodes().Get(ctx, mapped.NodeName, k8smetav1.GetOptions{}); nodeErr == nil {
+		if node, nodeErr := client.Nodes().Get(opCtx, mapped.NodeName, k8smetav1.GetOptions{}); nodeErr == nil {
 			mapped.HostIP = resolveNodePrimaryIP(node)
 		}
 	}
@@ -250,7 +257,10 @@ func (p *KubeVirtProviderImpl) ListVMs(ctx context.Context, cluster, namespace s
 		listOpts.ResourceVersionMatch = k8smetav1.ResourceVersionMatchNotOlderThan
 	}
 
-	vmList, err := client.VM().List(ctx, namespace, listOpts)
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	vmList, err := client.VM().List(opCtx, namespace, listOpts)
 	if err != nil {
 		return nil, fmt.Errorf("list vms in %s: %w", namespace, err)
 	}
@@ -258,7 +268,7 @@ func (p *KubeVirtProviderImpl) ListVMs(ctx context.Context, cluster, namespace s
 	var vmis []kubevirtv1.VirtualMachineInstance
 	// Batch fetch VMIs for status enrichment unless caller explicitly skips it.
 	if !opts.SkipVMIEnrichment {
-		vmiList, _ := client.VMI().List(ctx, namespace, k8smetav1.ListOptions{})
+		vmiList, _ := client.VMI().List(opCtx, namespace, k8smetav1.ListOptions{})
 		if vmiList != nil {
 			vmis = vmiList.Items
 		}
@@ -268,7 +278,7 @@ func (p *KubeVirtProviderImpl) ListVMs(ctx context.Context, cluster, namespace s
 	if err != nil {
 		return nil, fmt.Errorf("map vm list: %w", err)
 	}
-	p.enrichVMListHostPlacement(ctx, client, result)
+	p.enrichVMListHostPlacement(opCtx, client, result)
 
 	if vmList.Continue != "" {
 		result.Continue = vmList.Continue
@@ -277,7 +287,7 @@ func (p *KubeVirtProviderImpl) ListVMs(ctx context.Context, cluster, namespace s
 	return result, nil
 }
 
-func (p *KubeVirtProviderImpl) enrichVMListHostPlacement(ctx context.Context, client KubeVirtClusterClient, list *domain.VMList) {
+func (p *KubeVirtProviderImpl) enrichVMListHostPlacement(opCtx context.Context, client KubeVirtClusterClient, list *domain.VMList) {
 	if list == nil || len(list.Items) == 0 {
 		return
 	}
@@ -288,7 +298,7 @@ func (p *KubeVirtProviderImpl) enrichVMListHostPlacement(ctx context.Context, cl
 		}
 		hostIP, ok := hostIPByNode[item.NodeName]
 		if !ok {
-			node, err := client.Nodes().Get(ctx, item.NodeName, k8smetav1.GetOptions{})
+			node, err := client.Nodes().Get(opCtx, item.NodeName, k8smetav1.GetOptions{})
 			if err != nil {
 				hostIPByNode[item.NodeName] = ""
 				continue
@@ -337,12 +347,33 @@ func (p *KubeVirtProviderImpl) CreateVM(ctx context.Context, cluster, namespace 
 	opCtx, cancel := p.withTimeout(ctx)
 	defer cancel()
 
-	if validateErr := validateYAMLResourceHalfSteps([]byte(spec.RenderedYAML)); validateErr != nil {
+	renderedYAML := []byte(spec.RenderedYAML)
+	if validateErr := validateYAMLResourceHalfSteps(renderedYAML); validateErr != nil {
 		return nil, fmt.Errorf("validate vm yaml resource steps for create: %w", validateErr)
 	}
 
+	yamlName, err := extractNameFromYAML(renderedYAML)
+	if err != nil {
+		return nil, fmt.Errorf("validate yaml name for create: %w", err)
+	}
+	if specName := strings.TrimSpace(spec.Name); specName != "" && yamlName != specName {
+		return nil, fmt.Errorf(
+			"yaml metadata.name %q does not match create target %q: refusing to create a different resource",
+			yamlName,
+			specName,
+		)
+	}
+
+	existing, err := p.existingOwnedVMForCreate(opCtx, client, namespace, yamlName, spec, renderedYAML)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil {
+		return existing, nil
+	}
+
 	// SSA Apply: idempotent, conflict-free, FieldOwner-tracked.
-	result, err := client.SSA().ApplyYAML(opCtx, namespace, []byte(spec.RenderedYAML))
+	result, err := client.SSA().ApplyYAML(opCtx, namespace, renderedYAML)
 	if err != nil {
 		return nil, fmt.Errorf("create vm %s/%s via ssa: %w", namespace, spec.Name, err)
 	}
@@ -354,6 +385,77 @@ func (p *KubeVirtProviderImpl) CreateVM(ctx context.Context, cluster, namespace 
 	}
 
 	return p.mapper.MapVM(created, nil)
+}
+
+func (p *KubeVirtProviderImpl) existingOwnedVMForCreate(
+	opCtx context.Context,
+	client KubeVirtClusterClient,
+	namespace, name string,
+	spec *domain.VMSpec,
+	renderedYAML []byte,
+) (*domain.VM, error) {
+	existing, err := client.VM().Get(opCtx, namespace, name, k8smetav1.GetOptions{})
+	if apierrors.IsNotFound(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get existing vm %s/%s before ssa create: %w", namespace, name, err)
+	}
+
+	requestedEventID := requestedCreateEventID(spec, renderedYAML)
+	if requestedEventID == "" {
+		return nil, fmt.Errorf(
+			"create vm %s/%s: existing VM blocks create and requested %s label is empty: %w",
+			namespace,
+			name,
+			domain.ShepherdEventIDLabel,
+			apierrors.NewAlreadyExists(schema.GroupResource{Group: "kubevirt.io", Resource: "virtualmachines"}, name),
+		)
+	}
+
+	existingEventID := existingVMEventIDLabel(existing)
+	if existingEventID != requestedEventID {
+		return nil, fmt.Errorf(
+			"create vm %s/%s: existing %s label %q does not match requested %q: %w",
+			namespace,
+			name,
+			domain.ShepherdEventIDLabel,
+			existingEventID,
+			requestedEventID,
+			apierrors.NewAlreadyExists(schema.GroupResource{Group: "kubevirt.io", Resource: "virtualmachines"}, name),
+		)
+	}
+
+	mapped, err := p.mapper.MapVM(existing, nil)
+	if err != nil {
+		return nil, fmt.Errorf("map existing vm %s/%s for idempotent create: %w", namespace, name, err)
+	}
+	return mapped, nil
+}
+
+func requestedCreateEventID(spec *domain.VMSpec, renderedYAML []byte) string {
+	if spec != nil {
+		if value := strings.TrimSpace(spec.Labels[domain.ShepherdEventIDLabel]); value != "" {
+			return value
+		}
+	}
+	value, err := extractEventIDLabelFromYAML(renderedYAML)
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(value)
+}
+
+func existingVMEventIDLabel(vm *kubevirtv1.VirtualMachine) string {
+	if vm == nil {
+		return ""
+	}
+	if vm.Spec.Template != nil {
+		if value := strings.TrimSpace(vm.Spec.Template.ObjectMeta.Labels[domain.ShepherdEventIDLabel]); value != "" {
+			return value
+		}
+	}
+	return strings.TrimSpace(vm.Labels[domain.ShepherdEventIDLabel])
 }
 
 // UpdateVM updates a VM via SSA Apply (ADR-0011).
@@ -476,7 +578,7 @@ func (p *KubeVirtProviderImpl) patchVM(
 }
 
 func enrichVMUpdateManifestWithCurrentDevices(
-	ctx context.Context,
+	opCtx context.Context,
 	client KubeVirtClusterClient,
 	namespace, name string,
 	yamlData []byte,
@@ -501,7 +603,7 @@ func enrichVMUpdateManifestWithCurrentDevices(
 		return yamlData, nil
 	}
 
-	currentVM, err := client.VM().Get(ctx, namespace, name, k8smetav1.GetOptions{})
+	currentVM, err := client.VM().Get(opCtx, namespace, name, k8smetav1.GetOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("get current vm for domain defaults: %w", err)
 	}
@@ -562,7 +664,22 @@ func (p *KubeVirtProviderImpl) StartVM(ctx context.Context, cluster, namespace, 
 	}
 	opCtx, cancel := p.withTimeout(ctx)
 	defer cancel()
-	return client.VM().Start(opCtx, namespace, name, &kubevirtv1.StartOptions{})
+
+	vmClient := client.VM()
+	current, getErr := vmClient.Get(opCtx, namespace, name, k8smetav1.GetOptions{})
+	if getErr == nil && shouldUseRunStrategyPowerControl(current) {
+		return startVMByRunStrategy(opCtx, vmClient, current, namespace, name)
+	}
+
+	err = vmClient.Start(opCtx, namespace, name, &kubevirtv1.StartOptions{})
+	if isManualPowerRequestUnsupported(err, "start") {
+		current, getErr = vmClient.Get(opCtx, namespace, name, k8smetav1.GetOptions{})
+		if getErr == nil {
+			return startVMByRunStrategy(opCtx, vmClient, current, namespace, name)
+		}
+		return patchVMRunStrategy(opCtx, vmClient, namespace, name, kubevirtv1.RunStrategyAlways)
+	}
+	return err
 }
 
 // StopVM stops a running VM.
@@ -573,7 +690,18 @@ func (p *KubeVirtProviderImpl) StopVM(ctx context.Context, cluster, namespace, n
 	}
 	opCtx, cancel := p.withTimeout(ctx)
 	defer cancel()
-	return client.VM().Stop(opCtx, namespace, name, &kubevirtv1.StopOptions{})
+
+	vmClient := client.VM()
+	current, getErr := vmClient.Get(opCtx, namespace, name, k8smetav1.GetOptions{})
+	if getErr == nil && shouldUseRunStrategyPowerControl(current) {
+		return patchVMRunStrategy(opCtx, vmClient, namespace, name, kubevirtv1.RunStrategyHalted)
+	}
+
+	err = vmClient.Stop(opCtx, namespace, name, &kubevirtv1.StopOptions{})
+	if isManualPowerRequestUnsupported(err, "stop") {
+		return patchVMRunStrategy(opCtx, vmClient, namespace, name, kubevirtv1.RunStrategyHalted)
+	}
+	return err
 }
 
 // RestartVM restarts a VM.
@@ -584,7 +712,76 @@ func (p *KubeVirtProviderImpl) RestartVM(ctx context.Context, cluster, namespace
 	}
 	opCtx, cancel := p.withTimeout(ctx)
 	defer cancel()
-	return client.VM().Restart(opCtx, namespace, name, &kubevirtv1.RestartOptions{})
+	vmClient := client.VM()
+	err = vmClient.Restart(opCtx, namespace, name, &kubevirtv1.RestartOptions{})
+	if isManualPowerRequestUnsupported(err, "restart") {
+		if patchErr := patchVMRunStrategy(opCtx, vmClient, namespace, name, kubevirtv1.RunStrategyHalted); patchErr != nil {
+			return patchErr
+		}
+		return patchVMRunStrategy(opCtx, vmClient, namespace, name, kubevirtv1.RunStrategyAlways)
+	}
+	return err
+}
+
+func shouldUseRunStrategyPowerControl(vm *kubevirtv1.VirtualMachine) bool {
+	if vm == nil || vm.Spec.RunStrategy == nil {
+		return false
+	}
+	switch *vm.Spec.RunStrategy {
+	case kubevirtv1.RunStrategyAlways, kubevirtv1.RunStrategyHalted:
+		return true
+	default:
+		return false
+	}
+}
+
+func startVMByRunStrategy(
+	ctx context.Context,
+	vmClient VirtualMachineClient,
+	vm *kubevirtv1.VirtualMachine,
+	namespace string,
+	name string,
+) error {
+	if vm != nil &&
+		vm.Spec.RunStrategy != nil &&
+		*vm.Spec.RunStrategy == kubevirtv1.RunStrategyAlways &&
+		vm.Status.PrintableStatus == kubevirtv1.VirtualMachineStatusStopped {
+		if err := patchVMRunStrategy(ctx, vmClient, namespace, name, kubevirtv1.RunStrategyHalted); err != nil {
+			return err
+		}
+	}
+	return patchVMRunStrategy(ctx, vmClient, namespace, name, kubevirtv1.RunStrategyAlways)
+}
+
+func patchVMRunStrategy(
+	opCtx context.Context,
+	vmClient VirtualMachineClient,
+	namespace string,
+	name string,
+	strategy kubevirtv1.VirtualMachineRunStrategy,
+) error {
+	payload, err := json.Marshal(map[string]any{
+		"spec": map[string]string{
+			"runStrategy": string(strategy),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("marshal runStrategy patch for vm %s/%s: %w", namespace, name, err)
+	}
+	if _, err = vmClient.Patch(opCtx, namespace, name, types.MergePatchType, payload, k8smetav1.PatchOptions{}); err != nil {
+		return fmt.Errorf("patch vm %s/%s runStrategy=%s: %w", namespace, name, strategy, err)
+	}
+	return nil
+}
+
+func isManualPowerRequestUnsupported(err error, operation string) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(
+		strings.ToLower(err.Error()),
+		fmt.Sprintf("does not support manual %s requests", operation),
+	)
 }
 
 // PauseVM pauses a running VM.
@@ -639,8 +836,11 @@ func (p *KubeVirtProviderImpl) ValidateSpec(ctx context.Context, cluster, namesp
 		}, nil
 	}
 
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
 	dryRunErrMsg := ""
-	if applyErr := client.SSA().DryRunApplyYAML(ctx, namespace, []byte(spec.RenderedYAML)); applyErr != nil {
+	if applyErr := client.SSA().DryRunApplyYAML(opCtx, namespace, []byte(spec.RenderedYAML)); applyErr != nil {
 		dryRunErrMsg = applyErr.Error()
 	}
 	if dryRunErrMsg != "" {
@@ -764,6 +964,86 @@ func (p *KubeVirtProviderImpl) GetStorageProfile(ctx context.Context, cluster, n
 	return mapStorageProfile(storageProfile), nil
 }
 
+// ListInstanceTypes lists namespace-scoped KubeVirt instance types.
+func (p *KubeVirtProviderImpl) ListInstanceTypes(ctx context.Context, cluster, namespace string) ([]*domain.InstanceType, error) {
+	client, err := p.instanceTypeCatalogClient(cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	list, err := client.ListInstanceTypes(opCtx, namespace, k8smetav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list instancetypes in namespace %s: %w", namespace, err)
+	}
+	return mapInstanceTypeList(list), nil
+}
+
+// ListClusterInstanceTypes lists cluster-scoped KubeVirt instance types.
+func (p *KubeVirtProviderImpl) ListClusterInstanceTypes(ctx context.Context, cluster string) ([]*domain.InstanceType, error) {
+	client, err := p.instanceTypeCatalogClient(cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	list, err := client.ListClusterInstanceTypes(opCtx, k8smetav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list cluster instancetypes: %w", err)
+	}
+	return mapClusterInstanceTypeList(list), nil
+}
+
+// ListPreferences lists namespace-scoped KubeVirt VM preferences.
+func (p *KubeVirtProviderImpl) ListPreferences(ctx context.Context, cluster, namespace string) ([]*domain.Preference, error) {
+	client, err := p.instanceTypeCatalogClient(cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	list, err := client.ListPreferences(opCtx, namespace, k8smetav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list preferences in namespace %s: %w", namespace, err)
+	}
+	return mapPreferenceList(list), nil
+}
+
+// ListClusterPreferences lists cluster-scoped KubeVirt VM preferences.
+func (p *KubeVirtProviderImpl) ListClusterPreferences(ctx context.Context, cluster string) ([]*domain.Preference, error) {
+	client, err := p.instanceTypeCatalogClient(cluster)
+	if err != nil {
+		return nil, err
+	}
+
+	opCtx, cancel := p.withTimeout(ctx)
+	defer cancel()
+
+	list, err := client.ListClusterPreferences(opCtx, k8smetav1.ListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("list cluster preferences: %w", err)
+	}
+	return mapClusterPreferenceList(list), nil
+}
+
+func (p *KubeVirtProviderImpl) instanceTypeCatalogClient(cluster string) (InstanceTypeCatalogClient, error) {
+	clusterClient, err := p.clientFactory(cluster)
+	if err != nil {
+		return nil, fmt.Errorf("get client for cluster %s: %w", cluster, err)
+	}
+	catalogClient, ok := clusterClient.(InstanceTypeCatalogClient)
+	if !ok {
+		return nil, fmt.Errorf("cluster client for %s does not support KubeVirt instance type catalog reads", cluster)
+	}
+	return catalogClient, nil
+}
+
 // ListEventsForObject lists best-effort Kubernetes Events for the referenced object.
 func (p *KubeVirtProviderImpl) ListEventsForObject(ctx context.Context, cluster string, ref domain.ObjectReference) ([]domain.ProvisioningEvent, error) {
 	client, err := p.clientFactory(cluster)
@@ -808,6 +1088,58 @@ func (p *KubeVirtProviderImpl) ListEventsForObject(ctx context.Context, cluster 
 		})
 	}
 	return items, nil
+}
+
+func mapInstanceTypeList(list *instancetypev1beta1.VirtualMachineInstancetypeList) []*domain.InstanceType {
+	if list == nil || len(list.Items) == 0 {
+		return nil
+	}
+	items := make([]*domain.InstanceType, 0, len(list.Items))
+	for i := range list.Items {
+		items = append(items, mapInstanceType(list.Items[i].Name, list.Items[i].Spec))
+	}
+	return items
+}
+
+func mapClusterInstanceTypeList(list *instancetypev1beta1.VirtualMachineClusterInstancetypeList) []*domain.InstanceType {
+	if list == nil || len(list.Items) == 0 {
+		return nil
+	}
+	items := make([]*domain.InstanceType, 0, len(list.Items))
+	for i := range list.Items {
+		items = append(items, mapInstanceType(list.Items[i].Name, list.Items[i].Spec))
+	}
+	return items
+}
+
+func mapInstanceType(name string, spec instancetypev1beta1.VirtualMachineInstancetypeSpec) *domain.InstanceType {
+	return &domain.InstanceType{
+		Name:   name,
+		CPU:    int(spec.CPU.Guest),
+		Memory: spec.Memory.Guest.String(),
+	}
+}
+
+func mapPreferenceList(list *instancetypev1beta1.VirtualMachinePreferenceList) []*domain.Preference {
+	if list == nil || len(list.Items) == 0 {
+		return nil
+	}
+	items := make([]*domain.Preference, 0, len(list.Items))
+	for i := range list.Items {
+		items = append(items, &domain.Preference{Name: list.Items[i].Name})
+	}
+	return items
+}
+
+func mapClusterPreferenceList(list *instancetypev1beta1.VirtualMachineClusterPreferenceList) []*domain.Preference {
+	if list == nil || len(list.Items) == 0 {
+		return nil
+	}
+	items := make([]*domain.Preference, 0, len(list.Items))
+	for i := range list.Items {
+		items = append(items, &domain.Preference{Name: list.Items[i].Name})
+	}
+	return items
 }
 
 func pvcVolumeMode(mode *corev1.PersistentVolumeMode) string {
@@ -1010,6 +1342,33 @@ func extractNameFromYAML(yamlData []byte) (string, error) {
 		return "", fmt.Errorf("yaml does not contain metadata.name")
 	}
 	return name, nil
+}
+
+func extractEventIDLabelFromYAML(yamlData []byte) (string, error) {
+	obj := &unstructured.Unstructured{}
+	decoder := k8syaml.NewYAMLOrJSONDecoder(bytes.NewReader(yamlData), 4096)
+	if err := decoder.Decode(obj); err != nil {
+		return "", fmt.Errorf("decode yaml for event label extraction: %w", err)
+	}
+	if labels := obj.GetLabels(); labels != nil {
+		if value := strings.TrimSpace(labels[domain.ShepherdEventIDLabel]); value != "" {
+			return value, nil
+		}
+	}
+	templateLabels, found, err := unstructured.NestedStringMap(
+		obj.Object,
+		"spec",
+		"template",
+		"metadata",
+		"labels",
+	)
+	if err != nil {
+		return "", fmt.Errorf("read spec.template.metadata.labels: %w", err)
+	}
+	if found {
+		return strings.TrimSpace(templateLabels[domain.ShepherdEventIDLabel]), nil
+	}
+	return "", nil
 }
 
 // validateYAMLResourceHalfSteps enforces CPU/Memory 0.5-step standards for any

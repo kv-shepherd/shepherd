@@ -4,6 +4,7 @@
 package observability
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"time"
@@ -18,6 +19,11 @@ import (
 )
 
 const unmatchedRoute = "unmatched"
+const defaultCollectorScrapeTimeout = 2 * time.Second
+
+func collectorScrapeContext() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.Background(), defaultCollectorScrapeTimeout)
+}
 
 // Metrics owns the Prometheus registry and application collectors.
 type Metrics struct {

@@ -9,6 +9,7 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
@@ -37,7 +38,10 @@ func (s *Server) resolveNamespaceVisibility(c *gin.Context) (namespaceVisibility
 	}
 
 	bindings, err := s.client.RoleBinding.Query().
-		Where(rolebinding.HasUserWith(entuser.IDEQ(actor))).
+		Where(
+			rolebinding.HasUserWith(entuser.IDEQ(actor)),
+			rolebinding.HasRoleWith(role.EnabledEQ(true)),
+		).
 		All(c.Request.Context())
 	if err != nil {
 		return namespaceVisibility{}, err
@@ -84,6 +88,9 @@ func namespaceVisibilityFromRoleBindings(bindings []*ent.RoleBinding) namespaceV
 	explicitEnvRestriction := false
 	for _, rb := range bindings {
 		if rb == nil {
+			continue
+		}
+		if rb.Edges.Role != nil && !rb.Edges.Role.Enabled {
 			continue
 		}
 		if len(rb.AllowedEnvironments) == 0 {

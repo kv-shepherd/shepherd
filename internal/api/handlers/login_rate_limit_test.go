@@ -1,8 +1,11 @@
 package handlers
 
 import (
+	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -98,6 +101,38 @@ func TestPostgresLoginAttemptStoreSharesBucketsAcrossLimiters(t *testing.T) {
 	}
 	if allowed, _, err := limiterB.allowContext(t.Context(), "alice", "203.0.113.10"); err != nil || !allowed {
 		t.Fatalf("allow after shared success clear allowed=%v err=%v, want allowed", allowed, err)
+	}
+}
+
+func TestPostgresLoginAttemptStoreRetriesSchemaAfterCanceledInitialization(t *testing.T) {
+	t.Parallel()
+
+	pool := testutil.OpenPGXPool(t, "login_rate_limit_schema_retry")
+	store := &postgresLoginAttemptStore{pool: pool}
+
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := store.ensureSchema(canceledCtx)
+	if err == nil {
+		t.Fatal("ensureSchema(canceled) error = nil, want cancellation error")
+	}
+	if !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "context canceled") {
+		t.Fatalf("ensureSchema(canceled) error = %v, want context cancellation", err)
+	}
+	if store.initialized {
+		t.Fatal("store initialized after canceled schema init, want retryable failure")
+	}
+
+	if err := store.ensureSchema(t.Context()); err != nil {
+		t.Fatalf("ensureSchema(retry) error = %v", err)
+	}
+	if !store.initialized {
+		t.Fatal("store initialized = false after successful retry")
+	}
+
+	now := time.Date(2026, 6, 19, 9, 0, 0, 0, time.UTC)
+	if err := store.RecordFailure(t.Context(), []string{"user:alice"}, now, time.Minute, time.Minute, 2); err != nil {
+		t.Fatalf("RecordFailure() after schema retry error = %v", err)
 	}
 }
 

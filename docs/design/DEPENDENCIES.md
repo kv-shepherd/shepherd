@@ -60,13 +60,13 @@ ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
 | `k8s.io/api` | `v0.34.3` | Kubernetes API types |
 | `k8s.io/apimachinery` | `v0.34.3` | Kubernetes API machinery |
 | `k8s.io/client-go` | `v0.34.3` | Kubernetes clients |
-| `kubevirt.io/api` | `v1.8.2` | KubeVirt API types |
-| `kubevirt.io/client-go` | `v1.8.2` | Official KubeVirt client |
+| `kubevirt.io/api` | `v1.8.4` | KubeVirt API types |
+| `kubevirt.io/client-go` | `v1.8.4` | Official KubeVirt client |
 | `kubevirt.io/containerized-data-importer-api` | `v1.64.0` | CDI DataVolume and StorageProfile types |
 | `sigs.k8s.io/yaml` | `v1.6.0` | YAML conversion |
 
 Kubernetes core packages are replace-locked in `go.mod` to the same `v0.34.3`
-series used by the KubeVirt `v1.8.2` baseline. Do not upgrade one Kubernetes
+series used by the KubeVirt `v1.8.4` baseline. Do not upgrade one Kubernetes
 core package independently.
 
 SSA is implemented through `dynamic.Interface` and
@@ -163,7 +163,7 @@ bootstrap secrets and console replay markers; the current runtime does not use
 |------------|----------|
 | PostgreSQL | `18` |
 | Kubernetes API series | `v1.34` / `k8s.io/* v0.34.3` |
-| KubeVirt | `v1.8.2` |
+| KubeVirt | `v1.8.4` |
 | CDI API | `v1.64.0` |
 
 ## Configuration Parameters
@@ -236,8 +236,8 @@ require (
     k8s.io/api v0.34.3
     k8s.io/apimachinery v0.34.3
     k8s.io/client-go v0.34.3
-    kubevirt.io/api v1.8.2
-    kubevirt.io/client-go v1.8.2
+    kubevirt.io/api v1.8.4
+    kubevirt.io/client-go v1.8.4
 )
 
 replace (

@@ -68,16 +68,28 @@ export function useServicesManagementController({
 
     const servicesQuery = useApiGet<ServiceList>(
         ['services', activeSystemId, filters.search, page, pageSize],
-        () => api.GET('/services', {
-            params: {
-                query: {
-                    page,
-                    per_page: pageSize,
-                    ...(filters.search ? { search: filters.search } : {}),
-                    ...(activeSystemId !== ALL_SYSTEMS_FILTER ? { system_id: activeSystemId } : {}),
+        () => {
+            const query = {
+                page,
+                per_page: pageSize,
+                ...(filters.search ? { search: filters.search } : {}),
+            };
+
+            if (activeSystemId !== ALL_SYSTEMS_FILTER) {
+                return api.GET('/systems/{system_id}/services', {
+                    params: {
+                        path: { system_id: activeSystemId },
+                        query,
+                    },
+                });
+            }
+
+            return api.GET('/services', {
+                params: {
+                    query,
                 },
-            },
-        }),
+            });
+        },
     );
     const existingServicesTotal =
         servicesQuery.data?.pagination?.total ??

@@ -12,6 +12,8 @@ import (
 	"kv-shepherd.io/shepherd/internal/provider"
 )
 
+const defaultApplicationShutdownTimeout = 30 * time.Second
+
 // Start starts all background services (River workers, health checker).
 func (a *Application) Start(ctx context.Context) error {
 	if a.Config != nil && a.Config.River.ConsumeJobs && a.DB != nil && a.DB.RiverClient != nil {
@@ -41,7 +43,19 @@ func (a *Application) Start(ctx context.Context) error {
 
 // Shutdown gracefully shuts down all application components.
 func (a *Application) Shutdown() {
-	shutdownCtx := context.Background()
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), defaultApplicationShutdownTimeout)
+	defer cancel()
+
+	a.ShutdownContext(shutdownCtx)
+}
+
+// ShutdownContext gracefully shuts down all application components using caller-provided bounds.
+func (a *Application) ShutdownContext(shutdownCtx context.Context) {
+	if shutdownCtx == nil {
+		var cancel context.CancelFunc
+		shutdownCtx, cancel = context.WithTimeout(context.Background(), defaultApplicationShutdownTimeout)
+		defer cancel()
+	}
 
 	if a.DB != nil && a.DB.RiverClient != nil {
 		if err := a.DB.RiverClient.Stop(shutdownCtx); err != nil {

@@ -206,6 +206,38 @@ const validateArtifact = (errors, manifestPath, manifest, key) => {
   }
 };
 
+const requireArtifactPresent = (errors, manifestPath, manifest, key) => {
+  const artifact = manifest.artifacts?.[key];
+  if (!isObject(artifact)) return;
+  if (typeof artifact.path !== 'string' || artifact.path.trim() === '') {
+    add(errors, manifestPath, `artifacts.${key}.path`, 'must be present for full-pass release evidence');
+    return;
+  }
+  if (artifact.exists !== true) {
+    add(errors, manifestPath, `artifacts.${key}.exists`, 'must be true for full-pass release evidence');
+  }
+};
+
+const requireRunnerCleanupReview = (errors, manifestPath, manifest) => {
+  const runnerLogPath = manifest.artifacts?.runner_log?.path;
+  if (typeof runnerLogPath !== 'string' || runnerLogPath.trim() === '') {
+    return;
+  }
+  if (!fs.existsSync(runnerLogPath)) {
+    return;
+  }
+  let logText = '';
+  try {
+    logText = fs.readFileSync(runnerLogPath, 'utf8');
+  } catch (error) {
+    add(errors, manifestPath, 'artifacts.runner_log.path', `failed to read runner log: ${error.message}`);
+    return;
+  }
+  if (!/cleanup review: namespace_vm_cleanup status=passed\b/.test(logText)) {
+    add(errors, manifestPath, 'artifacts.runner_log.path', 'must contain cleanup review: namespace_vm_cleanup status=passed');
+  }
+};
+
 const requireResultMatchesTopLevel = (errors, manifestPath, manifest, resultKey, topLevelKey) => {
   const resultValue = manifest.result_file?.[resultKey];
   if (resultValue === undefined) {
@@ -321,6 +353,7 @@ const validateManifest = (manifestPath) => {
   if (cluster) {
     requireType(errors, manifestPath, manifest, ['cluster', 'kubeconfig_source'], isStringOrNull, 'a string or null');
     requireType(errors, manifestPath, manifest, ['cluster', 'current_context'], isStringOrNull, 'a string or null');
+    requireType(errors, manifestPath, manifest, ['cluster', 'authenticated_context'], (v) => typeof v === 'boolean' || v === null, 'a boolean or null');
     requireType(errors, manifestPath, manifest, ['cluster', 'api_server_reachable'], (v) => typeof v === 'boolean' || v === null, 'a boolean or null');
     requireType(errors, manifestPath, manifest, ['cluster', 'kubernetes_version'], isStringOrNull, 'a string or null');
     requireType(errors, manifestPath, manifest, ['cluster', 'kubevirt_api_available'], (v) => typeof v === 'boolean' || v === null, 'a boolean or null');
@@ -381,18 +414,29 @@ const validateManifest = (manifestPath) => {
     requireOptionalResultZero(errors, manifestPath, manifest, 'flaky');
     if (manifest.policy_gates?.skipped !== false) add(errors, manifestPath, 'policy_gates.skipped', 'must be false');
     if (manifest.policy_gates?.cluster_probe !== 'required') add(errors, manifestPath, 'policy_gates.cluster_probe', 'must be required');
+    for (const key of ['evidence', 'result', 'runner_log', 'backend_log', 'playwright_json']) {
+      requireArtifactPresent(errors, manifestPath, manifest, key);
+    }
     if (manifest.artifacts?.playwright_json?.exists !== true) add(errors, manifestPath, 'artifacts.playwright_json.exists', 'must be true');
     if (manifest.playwright?.json_report === null) add(errors, manifestPath, 'playwright.json_report', 'must be present');
     if (manifest.playwright?.json_report?.parse_error) add(errors, manifestPath, 'playwright.json_report.parse_error', 'must be absent');
     requireOptionalStatsZero(errors, manifestPath, manifest, 'unexpected');
     requireOptionalStatsZero(errors, manifestPath, manifest, 'flaky');
     if (manifest.cluster?.current_context === null) add(errors, manifestPath, 'cluster.current_context', 'must be present');
+    if (manifest.cluster?.authenticated_context !== true) add(errors, manifestPath, 'cluster.authenticated_context', 'must be true');
     if (manifest.cluster?.api_server_reachable !== true) add(errors, manifestPath, 'cluster.api_server_reachable', 'must be true');
     if (manifest.cluster?.kubevirt_api_available !== true) add(errors, manifestPath, 'cluster.kubevirt_api_available', 'must be true');
     if (!Array.isArray(manifest.cluster?.kubevirt_api_versions) || manifest.cluster.kubevirt_api_versions.length === 0) {
       add(errors, manifestPath, 'cluster.kubevirt_api_versions', 'must be a non-empty array for full-pass evidence');
     }
+    if (typeof manifest.cleanup?.namespace !== 'string' || manifest.cleanup.namespace.trim() === '') {
+      add(errors, manifestPath, 'cleanup.namespace', 'must be a non-empty string');
+    }
+    if (manifest.cleanup?.namespace_vm_cleanup_enabled !== true) add(errors, manifestPath, 'cleanup.namespace_vm_cleanup_enabled', 'must be true');
     if (manifest.cleanup?.review_log_required !== true) add(errors, manifestPath, 'cleanup.review_log_required', 'must be true');
+    if (requireExistingArtifacts) {
+      requireRunnerCleanupReview(errors, manifestPath, manifest);
+    }
   }
 
   scanForSecrets(errors, manifestPath, manifest);
@@ -475,6 +519,62 @@ if (selfTest) {
   if (negativeAbsolutePathFailures.length === 0) {
     console.error('[live-e2e-evidence] ERROR: absolute-path fixture was accepted');
     process.exit(1);
+  }
+
+  const artifactFixtureRoot = path.join('.run', 'live-e2e', `evidence-validator-self-test-${process.pid}`);
+  try {
+    const artifactFixturePath = path.join(artifactFixtureRoot, 'live-e2e.evidence.json');
+    const releaseFixture = JSON.parse(fs.readFileSync('docs/design/ci/fixtures/live-e2e-evidence-full.passed.json', 'utf8'));
+    const artifactPaths = {
+      evidence: artifactFixturePath,
+      result: path.join(artifactFixtureRoot, 'live-e2e.result'),
+      runner_log: path.join(artifactFixtureRoot, 'live-e2e.log'),
+      backend_log: path.join(artifactFixtureRoot, 'shepherd-e2e-server.log'),
+      playwright_json: path.join(artifactFixtureRoot, 'playwright-results.json'),
+      playwright_report: path.join(artifactFixtureRoot, 'playwright-report'),
+      playwright_test_results: path.join(artifactFixtureRoot, 'test-results'),
+    };
+    for (const [key, artifactPath] of Object.entries(artifactPaths)) {
+      releaseFixture.artifacts[key].path = artifactPath;
+      releaseFixture.artifacts[key].exists = true;
+    }
+    fs.mkdirSync(artifactFixtureRoot, { recursive: true });
+    fs.writeFileSync(artifactPaths.result, 'exit_code=0\nplaywright_exit_code=0\nbackend_guard_exit_code=0\nfailed=0\nflaky=0\n');
+    fs.writeFileSync(artifactPaths.runner_log, 'cleanup review: namespace_vm_cleanup status=passed namespace=e2e-live\n');
+    fs.writeFileSync(artifactPaths.backend_log, 'backend completed\n');
+    fs.writeFileSync(artifactPaths.playwright_json, '{"stats":{"unexpected":0,"flaky":0}}\n');
+    fs.mkdirSync(artifactPaths.playwright_report, { recursive: true });
+    fs.mkdirSync(artifactPaths.playwright_test_results, { recursive: true });
+    fs.writeFileSync(artifactFixturePath, `${JSON.stringify(releaseFixture, null, 2)}\n`);
+
+    requireFullPass = true;
+    requireExistingArtifacts = true;
+    const positiveArtifactFailures = runValidation([artifactFixturePath]);
+    if (positiveArtifactFailures.length > 0) {
+      console.error('[live-e2e-evidence] ERROR: full-pass artifact fixture was rejected');
+      for (const failure of positiveArtifactFailures) {
+        console.error(` - ${failure}`);
+      }
+      process.exit(1);
+    }
+
+    fs.writeFileSync(artifactPaths.runner_log, 'cleanup review: namespace_vm_cleanup status=warnings namespace=e2e-live\n');
+    const negativeCleanupFailures = runValidation([artifactFixturePath]);
+    if (negativeCleanupFailures.length === 0) {
+      console.error('[live-e2e-evidence] ERROR: missing cleanup-passed runner log fixture was accepted');
+      process.exit(1);
+    }
+
+    releaseFixture.cleanup.namespace = '';
+    fs.writeFileSync(artifactPaths.runner_log, 'cleanup review: namespace_vm_cleanup status=passed namespace=e2e-live\n');
+    fs.writeFileSync(artifactFixturePath, `${JSON.stringify(releaseFixture, null, 2)}\n`);
+    const negativeCleanupNamespaceFailures = runValidation([artifactFixturePath]);
+    if (negativeCleanupNamespaceFailures.length === 0) {
+      console.error('[live-e2e-evidence] ERROR: empty cleanup namespace fixture was accepted');
+      process.exit(1);
+    }
+  } finally {
+    fs.rmSync(artifactFixtureRoot, { recursive: true, force: true });
   }
 
   requireFullPass = originalRequireFullPass;

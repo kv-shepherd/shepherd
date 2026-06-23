@@ -54,6 +54,7 @@
     "nav.approval_tasks": "审批任务",
     "nav.external_approval_systems": "外部审批",
     "nav.clusters": "集群",
+    "nav.pending_adoptions": "待接管资源",
     "nav.namespaces": "命名空间",
     "nav.templates": "模板",
     "nav.instance_sizes": "实例规格",

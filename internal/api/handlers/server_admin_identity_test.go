@@ -2,15 +2,27 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"slices"
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/stdlib"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/enttest"
+	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
+	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
+	enthook "kv-shepherd.io/shepherd/ent/hook"
+	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
+	entrole "kv-shepherd.io/shepherd/ent/role"
+	"kv-shepherd.io/shepherd/ent/rolebinding"
+	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/provider"
@@ -263,6 +275,327 @@ func TestDeleteAuthProviderReturnsConflictWhenUsersRemainLinked(t *testing.T) {
 	}
 }
 
+func TestDeleteAuthProvider_CleansExternalCohortState(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	providerEnt, err := client.AuthProvider.Create().
+		SetID("provider-delete-cohort-cleanup").
+		SetName("Delete Cohort Cleanup").
+		SetAuthType("oidc").
+		SetConfig(map[string]interface{}{"issuer": "https://sso.example.com"}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed auth provider: %v", err)
+	}
+	roleEnt, err := client.Role.Create().
+		SetID("role-delete-provider-cleanup").
+		SetName("delete_provider_cleanup").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-delete-provider-cleanup").
+		SetUsername("delete.provider.cleanup").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	cohortEnt, err := client.ExternalCohort.Create().
+		SetID("cohort-delete-provider-cleanup").
+		SetProviderID(providerEnt.ID).
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetDisplayName("Ops").
+		SetSourceField("groups").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-provider-cleanup").
+		SetProviderID(providerEnt.ID).
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort mapping: %v", err)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-delete-provider-cleanup").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-provider-cleanup").
+		SetUserID(userEnt.ID).
+		SetProviderID(providerEnt.ID).
+		SetBindingKey("delete-provider-cleanup").
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort grant: %v", err)
+	}
+
+	deleteProviderCtx, deleteProviderW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/"+providerEnt.ID,
+		"",
+		"admin-1",
+		[]string{"auth_provider:delete"},
+	)
+	srv.DeleteAuthProvider(deleteProviderCtx, providerEnt.ID)
+	if got := deleteProviderCtx.Writer.Status(); got != http.StatusNoContent {
+		t.Fatalf("delete provider status = %d, want %d, body=%s", got, http.StatusNoContent, deleteProviderW.Body.String())
+	}
+	if _, err := client.AuthProvider.Get(ctx, providerEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("provider should be deleted, err=%v", err)
+	}
+	if _, err := client.ExternalCohort.Get(ctx, cohortEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("cohort should be deleted, err=%v", err)
+	}
+	if _, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("mapping should be deleted, err=%v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, grantEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("grant should be deleted, err=%v", err)
+	}
+	if _, err := client.RoleBinding.Get(ctx, bindingEnt.ID); !ent.IsNotFound(err) {
+		t.Fatalf("managed role binding should be deleted, err=%v", err)
+	}
+	if _, err := client.User.Get(ctx, userEnt.ID); err != nil {
+		t.Fatalf("user should remain: %v", err)
+	}
+	if _, err := client.Role.Get(ctx, roleEnt.ID); err != nil {
+		t.Fatalf("role should remain: %v", err)
+	}
+}
+
+func TestDeleteAuthProvider_RevokesAffectedExternalCohortGrantSessions(t *testing.T) {
+	t.Parallel()
+
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(t, "admin_identity_delete_provider_cohort_revoke")
+	ctx := t.Context()
+
+	providerEnt, err := client.AuthProvider.Create().
+		SetID("provider-delete-cohort-revoke").
+		SetName("Delete Cohort Revoke").
+		SetAuthType("oidc").
+		SetConfig(map[string]interface{}{"issuer": "https://sso.example.com"}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed auth provider: %v", err)
+	}
+	roleEnt, err := client.Role.Create().
+		SetID("role-delete-provider-revoke").
+		SetName("delete_provider_revoke").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-delete-provider-revoke").
+		SetUsername("delete.provider.revoke").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-provider-revoke").
+		SetProviderID(providerEnt.ID).
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort mapping: %v", err)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-delete-provider-revoke").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role binding: %v", err)
+	}
+	_, err = client.ExternalCohortGrant.Create().
+		SetID("grant-delete-provider-revoke").
+		SetUserID(userEnt.ID).
+		SetProviderID(providerEnt.ID).
+		SetBindingKey("delete-provider-revoke").
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort grant: %v", err)
+	}
+	beforeVersion, err := authSessions.CurrentSessionVersion(ctx, userEnt.ID)
+	if err != nil {
+		t.Fatalf("seed session version: %v", err)
+	}
+
+	deleteProviderCtx, deleteProviderW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/"+providerEnt.ID,
+		"",
+		"admin-1",
+		[]string{"auth_provider:delete"},
+	)
+	srv.DeleteAuthProvider(deleteProviderCtx, providerEnt.ID)
+	if got := deleteProviderCtx.Writer.Status(); got != http.StatusNoContent {
+		t.Fatalf("delete provider status = %d, want %d, body=%s", got, http.StatusNoContent, deleteProviderW.Body.String())
+	}
+	afterVersion, err := authSessions.CurrentSessionVersion(ctx, userEnt.ID)
+	if err != nil {
+		t.Fatalf("read session version after provider delete: %v", err)
+	}
+	if afterVersion != beforeVersion+1 {
+		t.Fatalf("session version after provider delete = %d, want %d", afterVersion, beforeVersion+1)
+	}
+}
+
+func TestDeleteAuthProvider_RollsBackWhenCohortGrantCleanupFails(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	providerEnt, err := client.AuthProvider.Create().
+		SetID("provider-delete-cohort-rollback").
+		SetName("Delete Cohort Rollback").
+		SetAuthType("oidc").
+		SetConfig(map[string]interface{}{"issuer": "https://sso.example.com"}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed auth provider: %v", err)
+	}
+	roleEnt, err := client.Role.Create().
+		SetID("role-delete-provider-rollback").
+		SetName("delete_provider_rollback").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-delete-provider-rollback").
+		SetUsername("delete.provider.rollback").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	cohortEnt, err := client.ExternalCohort.Create().
+		SetID("cohort-delete-provider-rollback").
+		SetProviderID(providerEnt.ID).
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetDisplayName("Ops").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-provider-rollback").
+		SetProviderID(providerEnt.ID).
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort mapping: %v", err)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-delete-provider-rollback").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-provider-rollback").
+		SetUserID(userEnt.ID).
+		SetProviderID(providerEnt.ID).
+		SetBindingKey("delete-provider-rollback").
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort grant: %v", err)
+	}
+	client.RoleBinding.Use(enthook.On(
+		enthook.FixedError(errors.New("role binding delete unavailable")),
+		ent.OpDeleteOne,
+	))
+
+	deleteProviderCtx, deleteProviderW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/"+providerEnt.ID,
+		"",
+		"admin-1",
+		[]string{"auth_provider:delete"},
+	)
+	srv.DeleteAuthProvider(deleteProviderCtx, providerEnt.ID)
+	if deleteProviderW.Code != http.StatusInternalServerError {
+		t.Fatalf("delete provider status = %d, want %d, body=%s", deleteProviderW.Code, http.StatusInternalServerError, deleteProviderW.Body.String())
+	}
+	if _, err := client.AuthProvider.Get(ctx, providerEnt.ID); err != nil {
+		t.Fatalf("provider should remain after rollback: %v", err)
+	}
+	if _, err := client.ExternalCohort.Get(ctx, cohortEnt.ID); err != nil {
+		t.Fatalf("cohort should remain after rollback: %v", err)
+	}
+	if _, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID); err != nil {
+		t.Fatalf("mapping should remain after rollback: %v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, grantEnt.ID); err != nil {
+		t.Fatalf("grant should remain after rollback: %v", err)
+	}
+	if _, err := client.RoleBinding.Get(ctx, bindingEnt.ID); err != nil {
+		t.Fatalf("role binding should remain after rollback: %v", err)
+	}
+}
+
 func TestListPermissions_ExcludesUnknownPermissionsStoredInRoles(t *testing.T) {
 	t.Parallel()
 
@@ -395,6 +728,215 @@ func TestUserRoleBinding_IncludesRoleAndScopeDisplayNames(t *testing.T) {
 	}
 }
 
+func TestCreateUserRoleBinding_RejectsDisabledRole(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+	roleEnt, err := client.Role.Create().
+		SetID("role-disabled-user-binding").
+		SetName("disabled_user_binding").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(false).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create disabled role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-disabled-role-binding").
+		SetUsername("disabled.role.binding").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+
+	bindCtx, bindW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/users/"+userEnt.ID+"/role-bindings",
+		`{"role_id":"`+roleEnt.ID+`","scope_type":"global"}`,
+		"admin-1",
+		[]string{"rbac:manage"},
+	)
+	srv.CreateUserRoleBinding(bindCtx, userEnt.ID)
+	if bindW.Code != http.StatusConflict {
+		t.Fatalf("create role binding status = %d, want %d, body=%s", bindW.Code, http.StatusConflict, bindW.Body.String())
+	}
+	assertErrorCode(t, bindW.Body.Bytes(), "ROLE_DISABLED")
+
+	count, err := client.RoleBinding.Query().
+		Where(
+			rolebinding.HasUserWith(entuser.IDEQ(userEnt.ID)),
+			rolebinding.HasRoleWith(entrole.IDEQ(roleEnt.ID)),
+		).
+		Count(ctx)
+	if err != nil {
+		t.Fatalf("count disabled role bindings: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("disabled role binding count = %d, want 0", count)
+	}
+}
+
+func TestCreateUserRoleBinding_RejectsDisabledUser(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+	roleEnt, err := client.Role.Create().
+		SetID("role-disabled-user-target").
+		SetName("disabled_user_target_role").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-disabled-role-target").
+		SetUsername("disabled.role.target").
+		SetEnabled(false).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create disabled user: %v", err)
+	}
+
+	bindCtx, bindW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/users/"+userEnt.ID+"/role-bindings",
+		`{"role_id":"`+roleEnt.ID+`","scope_type":"global"}`,
+		"admin-1",
+		[]string{"rbac:manage"},
+	)
+	srv.CreateUserRoleBinding(bindCtx, userEnt.ID)
+	if bindW.Code != http.StatusConflict {
+		t.Fatalf("create disabled-user role binding status = %d, want %d, body=%s", bindW.Code, http.StatusConflict, bindW.Body.String())
+	}
+	assertErrorCode(t, bindW.Body.Bytes(), "USER_DISABLED")
+
+	count, err := client.RoleBinding.Query().
+		Where(
+			rolebinding.HasUserWith(entuser.IDEQ(userEnt.ID)),
+			rolebinding.HasRoleWith(entrole.IDEQ(roleEnt.ID)),
+		).
+		Count(ctx)
+	if err != nil {
+		t.Fatalf("count disabled user role bindings: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("disabled user role binding count = %d, want 0", count)
+	}
+}
+
+func TestListUserRoleBindings_ManagedStateRequiresMapperOwnedGrant(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-rbac-managed-state").
+		SetName("rbac_managed_state").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-rbac-managed-state").
+		SetUsername("managed.state").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	manualBinding, err := client.RoleBinding.Create().
+		SetID("rb-rbac-managed-state-manual").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create manual role binding: %v", err)
+	}
+	mapperBinding, err := client.RoleBinding.Create().
+		SetID("rb-rbac-managed-state-mapper").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-rbac-managed-state").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create mapper role binding: %v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Create().
+		SetID("grant-rbac-managed-state-manual").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-rbac-managed-state").
+		SetBindingKey("manual-corrupt-grant").
+		SetRoleBindingID(manualBinding.ID).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx); err != nil {
+		t.Fatalf("create manual external cohort grant: %v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Create().
+		SetID("grant-rbac-managed-state-mapper").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-rbac-managed-state").
+		SetBindingKey("mapper-grant").
+		SetRoleBindingID(mapperBinding.ID).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx); err != nil {
+		t.Fatalf("create mapper external cohort grant: %v", err)
+	}
+
+	listCtx, listW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/users/"+userEnt.ID+"/role-bindings",
+		"",
+		"admin-1",
+		[]string{"rbac:read"},
+	)
+	srv.ListUserRoleBindings(listCtx, userEnt.ID)
+	if listW.Code != http.StatusOK {
+		t.Fatalf("list role bindings status = %d, want %d, body=%s", listW.Code, http.StatusOK, listW.Body.String())
+	}
+	var list generated.GlobalRoleBindingList
+	mustDecodeJSON(t, listW.Body.Bytes(), &list)
+	bindingsByID := make(map[string]generated.GlobalRoleBinding, len(list.Items))
+	for _, item := range list.Items {
+		bindingsByID[item.Id] = item
+	}
+
+	manualItem, ok := bindingsByID[manualBinding.ID]
+	if !ok {
+		t.Fatalf("manual role binding %q missing from list", manualBinding.ID)
+	}
+	if manualItem.Managed {
+		t.Fatal("manual role binding with corrupt grant was reported managed")
+	}
+	if manualItem.ManagedSource != "" {
+		t.Fatalf("manual role binding managed_source = %q, want empty", manualItem.ManagedSource)
+	}
+
+	mapperItem, ok := bindingsByID[mapperBinding.ID]
+	if !ok {
+		t.Fatalf("mapper role binding %q missing from list", mapperBinding.ID)
+	}
+	if !mapperItem.Managed {
+		t.Fatal("mapper-owned role binding with matching grant was not reported managed")
+	}
+	if mapperItem.ManagedSource != "external_cohort" {
+		t.Fatalf("mapper role binding managed_source = %q, want external_cohort", mapperItem.ManagedSource)
+	}
+}
+
 func TestListSystemMemberCandidates_ExcludesExistingMembersAndSupportsSearch(t *testing.T) {
 	t.Parallel()
 
@@ -408,18 +950,20 @@ func TestListSystemMemberCandidates_ExcludesExistingMembersAndSupportsSearch(t *
 		username    string
 		displayName string
 		email       string
+		enabled     bool
 	}{
-		{id: "user-alice", username: "alice", displayName: "Alice Zhang", email: "alice@example.com"},
-		{id: "user-bob", username: "bob", displayName: "Bob Platform", email: "bob@example.com"},
-		{id: "user-carol", username: "carol", displayName: "Carol Ops", email: "ops@example.com"},
-		{id: "user-existing", username: "existing", displayName: "Existing Member", email: "existing@example.com"},
+		{id: "user-alice", username: "alice", displayName: "Alice Zhang", email: "alice@example.com", enabled: true},
+		{id: "user-bob", username: "bob", displayName: "Bob Platform", email: "bob@example.com", enabled: true},
+		{id: "user-carol", username: "carol", displayName: "Carol Ops", email: "ops@example.com", enabled: true},
+		{id: "user-disabled-candidate", username: "disabled-candidate", displayName: "Disabled Candidate", email: "disabled@example.com", enabled: false},
+		{id: "user-existing", username: "existing", displayName: "Existing Member", email: "existing@example.com", enabled: true},
 	} {
 		_, err := client.User.Create().
 			SetID(user.id).
 			SetUsername(user.username).
 			SetDisplayName(user.displayName).
 			SetEmail(user.email).
-			SetEnabled(true).
+			SetEnabled(user.enabled).
 			Save(t.Context())
 		if err != nil {
 			t.Fatalf("create user %s: %v", user.id, err)
@@ -503,6 +1047,52 @@ func TestListSystemMemberCandidates_ExcludesExistingMembersAndSupportsSearch(t *
 	mustDecodeJSON(t, profileSearchW.Body.Bytes(), &candidates)
 	if len(candidates.Items) != 1 || candidates.Items[0].Username != "bob" {
 		t.Fatalf("profile search candidates = %+v, want only bob", candidates.Items)
+	}
+}
+
+func TestAddSystemMember_RejectsDisabledUser(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	systemID := "system-add-disabled-member"
+	mustCreateSystem(t, client, systemID, "disabled-member", "owner-1")
+	mustCreateSystemBinding(t, client, "owner-1", systemID, "owner")
+	if _, err := client.User.Create().
+		SetID("user-disabled-member-add").
+		SetUsername("disabled.member.add").
+		SetDisplayName("Disabled Member Add").
+		SetEmail("disabled.member.add@example.com").
+		SetEnabled(false).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create disabled user: %v", err)
+	}
+
+	addCtx, addW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/systems/"+systemID+"/members",
+		`{"user_id":"user-disabled-member-add","role":"viewer"}`,
+		"owner-1",
+		[]string{"rbac:manage"},
+	)
+	srv.AddSystemMember(addCtx, systemID)
+	if addW.Code != http.StatusConflict {
+		t.Fatalf("add disabled member status = %d, want %d, body=%s", addW.Code, http.StatusConflict, addW.Body.String())
+	}
+	assertErrorCode(t, addW.Body.Bytes(), "USER_DISABLED")
+
+	count, err := client.ResourceRoleBinding.Query().
+		Where(
+			resourcerolebinding.UserIDEQ("user-disabled-member-add"),
+			resourcerolebinding.ResourceTypeEQ("system"),
+			resourcerolebinding.ResourceIDEQ(systemID),
+		).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count disabled user member bindings: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("disabled user member binding count = %d, want 0", count)
 	}
 }
 
@@ -860,6 +1450,140 @@ func TestAuthProviderConfigSecretsStayEncryptedAndRevealOnlyForEditableResponses
 	}
 }
 
+func TestUpdateAuthProvider_DisablingRevokesLinkedUserSessions(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	pool := testutil.OpenPGXPool(t, "admin_identity_disable_provider_revoke")
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	t.Cleanup(func() { _ = client.Close() })
+	authSessions := service.NewAuthSessionManager(pool, client, 0)
+	srv := NewServer(ServerDeps{
+		EntClient:     client,
+		Pool:          pool,
+		AuthSessions:  authSessions,
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	})
+	ctx := t.Context()
+
+	providerEnt, err := client.AuthProvider.Create().
+		SetID("provider-disable-revoke").
+		SetName("Disable Revoke Provider").
+		SetAuthType("oidc").
+		SetConfig(map[string]interface{}{
+			"issuer":        "https://sso.example.com",
+			"client_id":     "shepherd",
+			"client_secret": "secret",
+		}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed auth provider: %v", err)
+	}
+	linkedUser, err := client.User.Create().
+		SetID("user-disable-provider-revoke").
+		SetUsername("disable.provider.revoke").
+		SetEnabled(true).
+		SetAuthProviderID(providerEnt.ID).
+		SetExternalID("external-disable-provider-revoke").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed linked user: %v", err)
+	}
+	beforeVersion, err := authSessions.CurrentSessionVersion(ctx, linkedUser.ID)
+	if err != nil {
+		t.Fatalf("seed session version: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/"+providerEnt.ID,
+		`{"enabled":false}`,
+		"admin-1",
+		[]string{"auth_provider:update"},
+	)
+	srv.UpdateAuthProvider(updateCtx, providerEnt.ID)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("disable provider status = %d, want %d, body=%s", updateW.Code, http.StatusOK, updateW.Body.String())
+	}
+	afterVersion, err := authSessions.CurrentSessionVersion(ctx, linkedUser.ID)
+	if err != nil {
+		t.Fatalf("read session version after disable: %v", err)
+	}
+	if afterVersion != beforeVersion+1 {
+		t.Fatalf("session version after provider disable = %d, want %d", afterVersion, beforeVersion+1)
+	}
+	reloadedProvider, err := client.AuthProvider.Get(ctx, providerEnt.ID)
+	if err != nil {
+		t.Fatalf("reload provider: %v", err)
+	}
+	if reloadedProvider.Enabled {
+		t.Fatal("provider should be disabled")
+	}
+}
+
+func TestUpdateAuthProvider_RollsBackWhenLinkedSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	client := testutil.OpenEntPostgres(t, "admin_identity_disable_provider_revoke_fail")
+	srv := NewServer(ServerDeps{
+		EntClient:     client,
+		AuthSessions:  &service.AuthSessionManager{},
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+	})
+	ctx := t.Context()
+
+	providerEnt, err := client.AuthProvider.Create().
+		SetID("provider-disable-revoke-fail").
+		SetName("Disable Revoke Fail Provider").
+		SetAuthType("oidc").
+		SetConfig(map[string]interface{}{
+			"issuer":        "https://sso.example.com",
+			"client_id":     "shepherd",
+			"client_secret": "secret",
+		}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed auth provider: %v", err)
+	}
+	if _, createErr := client.User.Create().
+		SetID("user-disable-provider-revoke-fail").
+		SetUsername("disable.provider.revoke.fail").
+		SetEnabled(true).
+		SetAuthProviderID(providerEnt.ID).
+		SetExternalID("external-disable-provider-revoke-fail").
+		Save(ctx); createErr != nil {
+		t.Fatalf("seed linked user: %v", createErr)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/"+providerEnt.ID,
+		`{"enabled":false}`,
+		"admin-1",
+		[]string{"auth_provider:update"},
+	)
+	srv.UpdateAuthProvider(updateCtx, providerEnt.ID)
+	if updateW.Code != http.StatusInternalServerError {
+		t.Fatalf("disable provider status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
+	}
+	reloadedProvider, err := client.AuthProvider.Get(ctx, providerEnt.ID)
+	if err != nil {
+		t.Fatalf("reload provider: %v", err)
+	}
+	if !reloadedProvider.Enabled {
+		t.Fatal("provider should remain enabled after session revocation failure")
+	}
+}
+
 func TestAuthProviderStage2CFlow(t *testing.T) {
 	t.Parallel()
 
@@ -1064,6 +1788,101 @@ func TestAuthProviderStage2CFlow(t *testing.T) {
 	}
 }
 
+func TestAuthProviderCohortMapping_RejectsDisabledRole(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+	providerEnt, err := client.AuthProvider.Create().
+		SetID("provider-disabled-role-mapping").
+		SetName("Disabled Role Mapping Provider").
+		SetAuthType("oidc").
+		SetConfig(map[string]interface{}{"issuer": "https://sso.example.com"}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create auth provider: %v", err)
+	}
+	enabledRole, err := client.Role.Create().
+		SetID("role-disabled-mapping-enabled").
+		SetName("disabled_mapping_enabled").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create enabled role: %v", err)
+	}
+	disabledRole, err := client.Role.Create().
+		SetID("role-disabled-mapping-disabled").
+		SetName("disabled_mapping_disabled").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(false).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create disabled role: %v", err)
+	}
+
+	createMappingCtx, createMappingW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/auth-providers/"+providerEnt.ID+"/cohort-mappings",
+		`{"cohort_kind":"group","cohort_key":"Disabled-Team","role_id":"`+disabledRole.ID+`","scope_type":"global"}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_create"},
+	)
+	srv.CreateAuthProviderCohortMapping(createMappingCtx, providerEnt.ID)
+	if createMappingW.Code != http.StatusConflict {
+		t.Fatalf("create disabled-role mapping status = %d, want %d, body=%s", createMappingW.Code, http.StatusConflict, createMappingW.Body.String())
+	}
+	assertErrorCode(t, createMappingW.Body.Bytes(), "ROLE_DISABLED")
+	disabledMappingCount, err := client.ExternalCohortMapping.Query().
+		Where(
+			externalcohortmapping.ProviderIDEQ(providerEnt.ID),
+			externalcohortmapping.RoleIDEQ(disabledRole.ID),
+		).
+		Count(ctx)
+	if err != nil {
+		t.Fatalf("count disabled-role mappings: %v", err)
+	}
+	if disabledMappingCount != 0 {
+		t.Fatalf("disabled-role mapping count = %d, want 0", disabledMappingCount)
+	}
+
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-disabled-role-update").
+		SetProviderID(providerEnt.ID).
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(enabledRole.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create existing mapping: %v", err)
+	}
+	updateMappingCtx, updateMappingW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/"+providerEnt.ID+"/cohort-mappings/"+mappingEnt.ID,
+		`{"role_id":"`+disabledRole.ID+`"}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_update"},
+	)
+	srv.UpdateAuthProviderCohortMapping(updateMappingCtx, providerEnt.ID, mappingEnt.ID)
+	if updateMappingW.Code != http.StatusConflict {
+		t.Fatalf("update disabled-role mapping status = %d, want %d, body=%s", updateMappingW.Code, http.StatusConflict, updateMappingW.Body.String())
+	}
+	assertErrorCode(t, updateMappingW.Body.Bytes(), "ROLE_DISABLED")
+	reloaded, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID)
+	if err != nil {
+		t.Fatalf("reload mapping after disabled-role update: %v", err)
+	}
+	if reloaded.RoleID != enabledRole.ID {
+		t.Fatalf("mapping role_id = %q, want unchanged %q", reloaded.RoleID, enabledRole.ID)
+	}
+}
+
 func TestListAuthProviderTypesAndRejectUnknownType(t *testing.T) {
 	t.Parallel()
 
@@ -1157,6 +1976,1369 @@ func TestUpdateUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	}
 }
 
+func TestDeleteUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	client := testutil.OpenEntPostgres(t, "admin_identity_delete_user_revoke_fail")
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		AuthSessions: &service.AuthSessionManager{},
+	})
+	ctx := t.Context()
+
+	userRow, err := client.User.Create().
+		SetID("user-delete-revoke-fail").
+		SetUsername("delete.revoke.fail").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	roleRow, err := client.Role.Create().
+		SetID("role-delete-revoke-fail").
+		SetName("DeleteRevokeFailRole").
+		SetPermissions([]string{"vm:read"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	bindingRow, err := client.RoleBinding.Create().
+		SetID("binding-delete-revoke-fail").
+		SetUser(userRow).
+		SetRole(roleRow).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role binding: %v", err)
+	}
+	grantRow, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-revoke-fail").
+		SetUserID(userRow.ID).
+		SetProviderID("provider-delete-revoke-fail").
+		SetBindingKey("group:ops").
+		SetRoleBindingID(bindingRow.ID).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort grant: %v", err)
+	}
+	preferenceRow, err := client.UserPreference.Create().
+		SetID("preference-delete-revoke-fail").
+		SetUserID(userRow.ID).
+		SetKey("theme").
+		SetValue(map[string]interface{}{"mode": "dark"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed preference: %v", err)
+	}
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/users/"+userRow.ID,
+		"",
+		"admin-1",
+		[]string{"user:manage"},
+	)
+	srv.DeleteUser(deleteCtx, userRow.ID)
+	if deleteW.Code != http.StatusInternalServerError {
+		t.Fatalf("delete user status = %d, want %d, body=%s", deleteW.Code, http.StatusInternalServerError, deleteW.Body.String())
+	}
+	if _, err := client.User.Get(ctx, userRow.ID); err != nil {
+		t.Fatalf("user should remain after failed session revocation: %v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, grantRow.ID); err != nil {
+		t.Fatalf("external cohort grant should remain after failed session revocation: %v", err)
+	}
+	if _, err := client.RoleBinding.Get(ctx, bindingRow.ID); err != nil {
+		t.Fatalf("role binding should remain after failed session revocation: %v", err)
+	}
+	if _, err := client.UserPreference.Get(ctx, preferenceRow.ID); err != nil {
+		t.Fatalf("user preference should remain after failed session revocation: %v", err)
+	}
+}
+
+func TestDeleteUser_RevokesSessionsOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	pool := testutil.OpenPGXPool(t, "admin_identity_delete_user_revoke_success")
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	t.Cleanup(func() { _ = client.Close() })
+	authSessions := service.NewAuthSessionManager(pool, client, 0)
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		Pool:         pool,
+		AuthSessions: authSessions,
+	})
+	ctx := t.Context()
+
+	userRow, err := client.User.Create().
+		SetID("user-delete-revoke-success").
+		SetUsername("delete.revoke.success").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	beforeVersion, err := authSessions.CurrentSessionVersion(ctx, userRow.ID)
+	if err != nil {
+		t.Fatalf("seed auth session subject: %v", err)
+	}
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/users/"+userRow.ID,
+		"",
+		"admin-1",
+		[]string{"user:manage"},
+	)
+	srv.DeleteUser(deleteCtx, userRow.ID)
+	if got := deleteCtx.Writer.Status(); got != http.StatusNoContent {
+		t.Fatalf("delete user status = %d, want %d, body=%s", got, http.StatusNoContent, deleteW.Body.String())
+	}
+	if _, getErr := client.User.Get(ctx, userRow.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("user should be deleted, err=%v", getErr)
+	}
+	afterVersion, err := authSessions.CurrentSessionVersion(ctx, userRow.ID)
+	if err != nil {
+		t.Fatalf("read auth session version after delete: %v", err)
+	}
+	if afterVersion != beforeVersion+1 {
+		t.Fatalf("session version after delete = %d, want %d", afterVersion, beforeVersion+1)
+	}
+}
+
+func TestUpdateAuthProviderCohortMapping_ClearsScopeWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-clear-scope").
+		SetName("cohort_mapping_clear_scope").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-clear-scope").
+		SetProviderID("provider-clear-scope").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create external cohort mapping: %v", err)
+	}
+
+	updateEnvsCtx, updateEnvsW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/provider-clear-scope/cohort-mappings/"+mappingEnt.ID,
+		`{"allowed_environments":["test"]}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_update"},
+	)
+	srv.UpdateAuthProviderCohortMapping(updateEnvsCtx, "provider-clear-scope", mappingEnt.ID)
+	if updateEnvsW.Code != http.StatusOK {
+		t.Fatalf("update envs status = %d, want %d, body=%s", updateEnvsW.Code, http.StatusOK, updateEnvsW.Body.String())
+	}
+	afterEnvsUpdate, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID)
+	if err != nil {
+		t.Fatalf("query mapping after env update: %v", err)
+	}
+	if afterEnvsUpdate.ScopeType != "system" {
+		t.Fatalf("scope_type after env update = %q, want system", afterEnvsUpdate.ScopeType)
+	}
+	if afterEnvsUpdate.ScopeID != "system-old" {
+		t.Fatalf("scope_id after env update = %q, want system-old", afterEnvsUpdate.ScopeID)
+	}
+
+	clearScopeCtx, clearScopeW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/provider-clear-scope/cohort-mappings/"+mappingEnt.ID,
+		`{"scope_type":"global"}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_update"},
+	)
+	srv.UpdateAuthProviderCohortMapping(clearScopeCtx, "provider-clear-scope", mappingEnt.ID)
+	if clearScopeW.Code != http.StatusOK {
+		t.Fatalf("clear scope status = %d, want %d, body=%s", clearScopeW.Code, http.StatusOK, clearScopeW.Body.String())
+	}
+	var updated generated.ExternalCohortMapping
+	mustDecodeJSON(t, clearScopeW.Body.Bytes(), &updated)
+	if updated.ScopeType != "global" {
+		t.Fatalf("response scope_type = %q, want global", updated.ScopeType)
+	}
+	if updated.ScopeId != "" {
+		t.Fatalf("response scope_id = %q, want empty", updated.ScopeId)
+	}
+	reloaded, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID)
+	if err != nil {
+		t.Fatalf("query mapping after clear scope: %v", err)
+	}
+	if reloaded.ScopeType != "global" {
+		t.Fatalf("persisted scope_type = %q, want global", reloaded.ScopeType)
+	}
+	if reloaded.ScopeID != "" {
+		t.Fatalf("persisted scope_id = %q, want empty", reloaded.ScopeID)
+	}
+	if got := slices.Clone(reloaded.AllowedEnvironments); !slices.Equal(got, []string{"test"}) {
+		t.Fatalf("allowed_environments = %#v, want [test]", got)
+	}
+}
+
+func TestUpdateAuthProviderCohortMapping_MigratesExistingGrantToUpdatedBinding(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	oldRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-migrate-old").
+		SetName("cohort_mapping_update_migrate_old").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role: %v", err)
+	}
+	newRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-migrate-new").
+		SetName("cohort_mapping_update_migrate_new").
+		SetPermissions([]string{"vm:read", "vm:operate"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create new role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-update-migrate").
+		SetUsername("cohort.mapping.update.migrate").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-update-migrate").
+		SetProviderID("provider-update-migrate").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create mapping: %v", err)
+	}
+	oldBindingKey := externalCohortMappingBindingKey(mappingEnt)
+	oldBindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-update-migrate-old").
+		SetUserID(userEnt.ID).
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role binding: %v", err)
+	}
+	oldGrantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-update-migrate-old").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-update-migrate").
+		SetBindingKey(oldBindingKey).
+		SetRoleBindingID(oldBindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old grant: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/provider-update-migrate/cohort-mappings/"+mappingEnt.ID,
+		`{"role_id":"`+newRoleEnt.ID+`","scope_type":"service","scope_id":"service-new","allowed_environments":["test"]}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_update"},
+	)
+	srv.UpdateAuthProviderCohortMapping(updateCtx, "provider-update-migrate", mappingEnt.ID)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("update mapping status = %d, want %d, body=%s", updateW.Code, http.StatusOK, updateW.Body.String())
+	}
+
+	reloadedMapping, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID)
+	if err != nil {
+		t.Fatalf("reload mapping: %v", err)
+	}
+	newBindingKey := externalCohortMappingBindingKey(reloadedMapping)
+	if newBindingKey == oldBindingKey {
+		t.Fatal("expected binding key to change after mapping update")
+	}
+	if _, getErr := client.ExternalCohortGrant.Get(ctx, oldGrantEnt.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("old grant should be deleted, err=%v", getErr)
+	}
+	if _, getErr := client.RoleBinding.Get(ctx, oldBindingEnt.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("old managed role binding should be deleted, err=%v", getErr)
+	}
+	targetGrant, err := client.ExternalCohortGrant.Query().
+		Where(
+			externalcohortgrant.UserIDEQ(userEnt.ID),
+			externalcohortgrant.ProviderIDEQ("provider-update-migrate"),
+			externalcohortgrant.BindingKeyEQ(newBindingKey),
+		).
+		Only(ctx)
+	if err != nil {
+		t.Fatalf("query migrated grant: %v", err)
+	}
+	if !slices.Equal(targetGrant.SourceMappingIds, []string{mappingEnt.ID}) {
+		t.Fatalf("migrated grant source_mapping_ids = %#v, want [%q]", targetGrant.SourceMappingIds, mappingEnt.ID)
+	}
+	if targetGrant.RoleBindingID == oldBindingEnt.ID {
+		t.Fatal("migrated grant reused old role binding")
+	}
+	targetBinding, err := client.RoleBinding.Get(ctx, targetGrant.RoleBindingID)
+	if err != nil {
+		t.Fatalf("query migrated role binding: %v", err)
+	}
+	if targetBinding.CreatedBy != externalCohortRoleBindingActor {
+		t.Fatalf("migrated role binding created_by = %q, want mapper actor", targetBinding.CreatedBy)
+	}
+	if targetBinding.ScopeType != "service" {
+		t.Fatalf("migrated role binding scope_type = %q, want service", targetBinding.ScopeType)
+	}
+	if targetBinding.ScopeID != "service-new" {
+		t.Fatalf("migrated role binding scope_id = %q, want service-new", targetBinding.ScopeID)
+	}
+	if !slices.Equal(targetBinding.AllowedEnvironments, []string{"test"}) {
+		t.Fatalf("migrated role binding allowed_environments = %#v, want [test]", targetBinding.AllowedEnvironments)
+	}
+	targetRole, err := targetBinding.QueryRole().Only(ctx)
+	if err != nil {
+		t.Fatalf("query migrated role binding role: %v", err)
+	}
+	if targetRole.ID != newRoleEnt.ID {
+		t.Fatalf("migrated role binding role = %q, want %q", targetRole.ID, newRoleEnt.ID)
+	}
+}
+
+func TestUpdateAuthProviderCohortMapping_RevokesAffectedUserSessions(t *testing.T) {
+	t.Parallel()
+
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(t, "admin_identity_update_mapping_revoke")
+	ctx := t.Context()
+
+	oldRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-revoke-old").
+		SetName("cohort_mapping_update_revoke_old").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role: %v", err)
+	}
+	newRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-revoke-new").
+		SetName("cohort_mapping_update_revoke_new").
+		SetPermissions([]string{"vm:read", "vm:operate"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create new role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-update-revoke").
+		SetUsername("cohort.mapping.update.revoke").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-update-revoke").
+		SetProviderID("provider-update-revoke").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create mapping: %v", err)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-update-revoke-old").
+		SetUserID(userEnt.ID).
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-update-revoke-old").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-update-revoke").
+		SetBindingKey(externalCohortMappingBindingKey(mappingEnt)).
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old grant: %v", err)
+	}
+	beforeVersion, err := authSessions.CurrentSessionVersion(ctx, userEnt.ID)
+	if err != nil {
+		t.Fatalf("seed session version: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/provider-update-revoke/cohort-mappings/"+mappingEnt.ID,
+		`{"role_id":"`+newRoleEnt.ID+`","scope_type":"service","scope_id":"service-new","allowed_environments":["test"]}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_update"},
+	)
+	srv.UpdateAuthProviderCohortMapping(updateCtx, "provider-update-revoke", mappingEnt.ID)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("update mapping status = %d, want %d, body=%s", updateW.Code, http.StatusOK, updateW.Body.String())
+	}
+	if _, getErr := client.ExternalCohortGrant.Get(ctx, grantEnt.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("old grant should be deleted, err=%v", getErr)
+	}
+	afterVersion, err := authSessions.CurrentSessionVersion(ctx, userEnt.ID)
+	if err != nil {
+		t.Fatalf("read session version after mapping update: %v", err)
+	}
+	if afterVersion != beforeVersion+1 {
+		t.Fatalf("session version after mapping update = %d, want %d", afterVersion, beforeVersion+1)
+	}
+}
+
+func TestUpdateAuthProviderCohortMapping_MergesIntoExistingTargetGrant(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	oldRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-merge-old").
+		SetName("cohort_mapping_update_merge_old").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role: %v", err)
+	}
+	newRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-merge-new").
+		SetName("cohort_mapping_update_merge_new").
+		SetPermissions([]string{"vm:read", "vm:operate"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create new role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-update-merge").
+		SetUsername("cohort.mapping.update.merge").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingMove, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-update-merge-move").
+		SetProviderID("provider-update-merge").
+		SetCohortKind("group").
+		SetCohortKey("ops-move").
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create move mapping: %v", err)
+	}
+	mappingOldKeep, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-update-merge-old-keep").
+		SetProviderID("provider-update-merge").
+		SetCohortKind("group").
+		SetCohortKey("ops-old-keep").
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old keep mapping: %v", err)
+	}
+	mappingTargetKeep, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-update-merge-target-keep").
+		SetProviderID("provider-update-merge").
+		SetCohortKind("group").
+		SetCohortKey("ops-target-keep").
+		SetRoleID(newRoleEnt.ID).
+		SetScopeType("service").
+		SetScopeID("service-new").
+		SetAllowedEnvironments([]string{"test"}).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create target keep mapping: %v", err)
+	}
+	oldBindingKey := externalCohortMappingBindingKey(mappingMove)
+	targetBindingKey := externalCohortMappingBindingKey(mappingTargetKeep)
+	oldBindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-update-merge-old").
+		SetUserID(userEnt.ID).
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role binding: %v", err)
+	}
+	oldGrantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-update-merge-old").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-update-merge").
+		SetBindingKey(oldBindingKey).
+		SetRoleBindingID(oldBindingEnt.ID).
+		SetSourceMappingIds([]string{mappingMove.ID, mappingOldKeep.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old grant: %v", err)
+	}
+	targetBindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-update-merge-target").
+		SetUserID(userEnt.ID).
+		SetRoleID(newRoleEnt.ID).
+		SetScopeType("service").
+		SetScopeID("service-new").
+		SetAllowedEnvironments([]string{"test"}).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create target role binding: %v", err)
+	}
+	targetGrantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-update-merge-target").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-update-merge").
+		SetBindingKey(targetBindingKey).
+		SetRoleBindingID(targetBindingEnt.ID).
+		SetSourceMappingIds([]string{mappingTargetKeep.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create target grant: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/provider-update-merge/cohort-mappings/"+mappingMove.ID,
+		`{"role_id":"`+newRoleEnt.ID+`","scope_type":"service","scope_id":"service-new","allowed_environments":["test"]}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_update"},
+	)
+	srv.UpdateAuthProviderCohortMapping(updateCtx, "provider-update-merge", mappingMove.ID)
+	if updateW.Code != http.StatusOK {
+		t.Fatalf("update mapping status = %d, want %d, body=%s", updateW.Code, http.StatusOK, updateW.Body.String())
+	}
+
+	reloadedOldGrant, err := client.ExternalCohortGrant.Get(ctx, oldGrantEnt.ID)
+	if err != nil {
+		t.Fatalf("old grant should remain: %v", err)
+	}
+	if !slices.Equal(reloadedOldGrant.SourceMappingIds, []string{mappingOldKeep.ID}) {
+		t.Fatalf("old grant source_mapping_ids = %#v, want [%q]", reloadedOldGrant.SourceMappingIds, mappingOldKeep.ID)
+	}
+	if _, getErr := client.RoleBinding.Get(ctx, oldBindingEnt.ID); getErr != nil {
+		t.Fatalf("old shared role binding should remain: %v", getErr)
+	}
+	reloadedTargetGrant, err := client.ExternalCohortGrant.Get(ctx, targetGrantEnt.ID)
+	if err != nil {
+		t.Fatalf("target grant should remain: %v", err)
+	}
+	wantTargetSourceIDs := []string{mappingMove.ID, mappingTargetKeep.ID}
+	if !slices.Equal(reloadedTargetGrant.SourceMappingIds, wantTargetSourceIDs) {
+		t.Fatalf("target grant source_mapping_ids = %#v, want %#v", reloadedTargetGrant.SourceMappingIds, wantTargetSourceIDs)
+	}
+	if reloadedTargetGrant.RoleBindingID != targetBindingEnt.ID {
+		t.Fatalf("target grant role_binding_id = %q, want existing %q", reloadedTargetGrant.RoleBindingID, targetBindingEnt.ID)
+	}
+	grants, err := client.ExternalCohortGrant.Query().
+		Where(
+			externalcohortgrant.UserIDEQ(userEnt.ID),
+			externalcohortgrant.ProviderIDEQ("provider-update-merge"),
+		).
+		All(ctx)
+	if err != nil {
+		t.Fatalf("query user provider grants: %v", err)
+	}
+	if len(grants) != 2 {
+		t.Fatalf("grant count = %d, want 2", len(grants))
+	}
+}
+
+func TestUpdateAuthProviderCohortMapping_RollsBackWhenGrantMigrationFails(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	oldRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-rollback-old").
+		SetName("cohort_mapping_update_rollback_old").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role: %v", err)
+	}
+	newRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-rollback-new").
+		SetName("cohort_mapping_update_rollback_new").
+		SetPermissions([]string{"vm:read", "vm:operate"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create new role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-update-rollback").
+		SetUsername("cohort.mapping.update.rollback").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-update-rollback").
+		SetProviderID("provider-update-rollback").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create mapping: %v", err)
+	}
+	oldBindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-update-rollback-old").
+		SetUserID(userEnt.ID).
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role binding: %v", err)
+	}
+	oldGrantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-update-rollback-old").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-update-rollback").
+		SetBindingKey(externalCohortMappingBindingKey(mappingEnt)).
+		SetRoleBindingID(oldBindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old grant: %v", err)
+	}
+	client.RoleBinding.Use(enthook.On(
+		enthook.FixedError(errors.New("role binding create unavailable")),
+		ent.OpCreate,
+	))
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/provider-update-rollback/cohort-mappings/"+mappingEnt.ID,
+		`{"role_id":"`+newRoleEnt.ID+`","scope_type":"service","scope_id":"service-new","allowed_environments":["test"]}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_update"},
+	)
+	srv.UpdateAuthProviderCohortMapping(updateCtx, "provider-update-rollback", mappingEnt.ID)
+	if updateW.Code != http.StatusInternalServerError {
+		t.Fatalf("update mapping status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
+	}
+	reloadedMapping, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID)
+	if err != nil {
+		t.Fatalf("mapping should remain after rollback: %v", err)
+	}
+	if reloadedMapping.RoleID != oldRoleEnt.ID {
+		t.Fatalf("mapping role_id = %q, want old role %q", reloadedMapping.RoleID, oldRoleEnt.ID)
+	}
+	if reloadedMapping.ScopeType != "system" {
+		t.Fatalf("mapping scope_type = %q, want system", reloadedMapping.ScopeType)
+	}
+	if reloadedMapping.ScopeID != "system-old" {
+		t.Fatalf("mapping scope_id = %q, want system-old", reloadedMapping.ScopeID)
+	}
+	if !slices.Equal(reloadedMapping.AllowedEnvironments, []string{"prod"}) {
+		t.Fatalf("mapping allowed_environments = %#v, want [prod]", reloadedMapping.AllowedEnvironments)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, oldGrantEnt.ID); err != nil {
+		t.Fatalf("old grant should remain after rollback: %v", err)
+	}
+	if _, err := client.RoleBinding.Get(ctx, oldBindingEnt.ID); err != nil {
+		t.Fatalf("old role binding should remain after rollback: %v", err)
+	}
+}
+
+func TestUpdateAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	client := testutil.OpenEntPostgres(t, "admin_identity_update_mapping_revoke_fail")
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		AuthSessions: &service.AuthSessionManager{},
+	})
+	ctx := t.Context()
+
+	oldRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-revoke-fail-old").
+		SetName("cohort_mapping_update_revoke_fail_old").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role: %v", err)
+	}
+	newRoleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-update-revoke-fail-new").
+		SetName("cohort_mapping_update_revoke_fail_new").
+		SetPermissions([]string{"vm:read", "vm:operate"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create new role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-update-revoke-fail").
+		SetUsername("cohort.mapping.update.revoke.fail").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-update-revoke-fail").
+		SetProviderID("provider-update-revoke-fail").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create mapping: %v", err)
+	}
+	oldBindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-update-revoke-fail-old").
+		SetUserID(userEnt.ID).
+		SetRoleID(oldRoleEnt.ID).
+		SetScopeType("system").
+		SetScopeID("system-old").
+		SetAllowedEnvironments([]string{"prod"}).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old role binding: %v", err)
+	}
+	oldGrantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-update-revoke-fail-old").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-update-revoke-fail").
+		SetBindingKey(externalCohortMappingBindingKey(mappingEnt)).
+		SetRoleBindingID(oldBindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create old grant: %v", err)
+	}
+
+	updateCtx, updateW := newAuthedGinContext(
+		t,
+		http.MethodPatch,
+		"/admin/auth-providers/provider-update-revoke-fail/cohort-mappings/"+mappingEnt.ID,
+		`{"role_id":"`+newRoleEnt.ID+`","scope_type":"service","scope_id":"service-new","allowed_environments":["test"]}`,
+		"admin-1",
+		[]string{"auth_provider:mapping_update"},
+	)
+	srv.UpdateAuthProviderCohortMapping(updateCtx, "provider-update-revoke-fail", mappingEnt.ID)
+	if updateW.Code != http.StatusInternalServerError {
+		t.Fatalf("update mapping status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
+	}
+	reloadedMapping, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID)
+	if err != nil {
+		t.Fatalf("mapping should remain after rollback: %v", err)
+	}
+	if reloadedMapping.RoleID != oldRoleEnt.ID {
+		t.Fatalf("mapping role_id = %q, want old role %q", reloadedMapping.RoleID, oldRoleEnt.ID)
+	}
+	if reloadedMapping.ScopeType != "system" {
+		t.Fatalf("mapping scope_type = %q, want system", reloadedMapping.ScopeType)
+	}
+	if reloadedMapping.ScopeID != "system-old" {
+		t.Fatalf("mapping scope_id = %q, want system-old", reloadedMapping.ScopeID)
+	}
+	if !slices.Equal(reloadedMapping.AllowedEnvironments, []string{"prod"}) {
+		t.Fatalf("mapping allowed_environments = %#v, want [prod]", reloadedMapping.AllowedEnvironments)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, oldGrantEnt.ID); err != nil {
+		t.Fatalf("old grant should remain after rollback: %v", err)
+	}
+	if _, err := client.RoleBinding.Get(ctx, oldBindingEnt.ID); err != nil {
+		t.Fatalf("old role binding should remain after rollback: %v", err)
+	}
+}
+
+func TestDeleteAuthProviderCohortMapping_ReconcilesExistingGrants(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-delete-grants").
+		SetName("cohort_mapping_delete_grants").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-delete-grants").
+		SetUsername("cohort.mapping.delete.grants").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingSingle, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-single-source").
+		SetProviderID("provider-delete-grants").
+		SetCohortKind("group").
+		SetCohortKey("ops-single").
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create single-source mapping: %v", err)
+	}
+	mappingSharedDelete, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-shared-source").
+		SetProviderID("provider-delete-grants").
+		SetCohortKind("group").
+		SetCohortKey("ops-shared-a").
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create shared delete mapping: %v", err)
+	}
+	mappingSharedKeep, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-keep-shared-source").
+		SetProviderID("provider-delete-grants").
+		SetCohortKind("group").
+		SetCohortKey("ops-shared-b").
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create shared keep mapping: %v", err)
+	}
+	bindingSingle, err := client.RoleBinding.Create().
+		SetID("rb-delete-single-source").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create single-source role binding: %v", err)
+	}
+	grantSingle, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-single-source").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-delete-grants").
+		SetBindingKey("single-binding").
+		SetRoleBindingID(bindingSingle.ID).
+		SetSourceMappingIds([]string{mappingSingle.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create single-source grant: %v", err)
+	}
+	bindingShared, err := client.RoleBinding.Create().
+		SetID("rb-delete-shared-source").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create shared role binding: %v", err)
+	}
+	grantShared, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-shared-source").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-delete-grants").
+		SetBindingKey("shared-binding").
+		SetRoleBindingID(bindingShared.ID).
+		SetSourceMappingIds([]string{mappingSharedDelete.ID, mappingSharedKeep.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create shared grant: %v", err)
+	}
+
+	deleteSingleCtx, deleteSingleW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/provider-delete-grants/cohort-mappings/"+mappingSingle.ID,
+		"",
+		"admin-1",
+		[]string{"auth_provider:mapping_delete"},
+	)
+	srv.DeleteAuthProviderCohortMapping(deleteSingleCtx, "provider-delete-grants", mappingSingle.ID)
+	if got := deleteSingleCtx.Writer.Status(); got != http.StatusNoContent {
+		t.Fatalf("delete single-source mapping status = %d, want %d, body=%s", got, http.StatusNoContent, deleteSingleW.Body.String())
+	}
+	if _, getErr := client.ExternalCohortGrant.Get(ctx, grantSingle.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("single-source grant should be deleted, err=%v", getErr)
+	}
+	if _, getErr := client.RoleBinding.Get(ctx, bindingSingle.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("single-source managed role binding should be deleted, err=%v", getErr)
+	}
+
+	deleteSharedCtx, deleteSharedW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/provider-delete-grants/cohort-mappings/"+mappingSharedDelete.ID,
+		"",
+		"admin-1",
+		[]string{"auth_provider:mapping_delete"},
+	)
+	srv.DeleteAuthProviderCohortMapping(deleteSharedCtx, "provider-delete-grants", mappingSharedDelete.ID)
+	if got := deleteSharedCtx.Writer.Status(); got != http.StatusNoContent {
+		t.Fatalf("delete shared-source mapping status = %d, want %d, body=%s", got, http.StatusNoContent, deleteSharedW.Body.String())
+	}
+	reloadedGrantShared, err := client.ExternalCohortGrant.Get(ctx, grantShared.ID)
+	if err != nil {
+		t.Fatalf("shared grant should remain: %v", err)
+	}
+	if !slices.Equal(reloadedGrantShared.SourceMappingIds, []string{mappingSharedKeep.ID}) {
+		t.Fatalf("shared grant source_mapping_ids = %#v, want [%q]", reloadedGrantShared.SourceMappingIds, mappingSharedKeep.ID)
+	}
+	if _, err := client.RoleBinding.Get(ctx, bindingShared.ID); err != nil {
+		t.Fatalf("shared managed role binding should remain: %v", err)
+	}
+}
+
+func TestDeleteAuthProviderCohortMapping_RevokesAffectedUserSessions(t *testing.T) {
+	t.Parallel()
+
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(t, "admin_identity_delete_mapping_revoke")
+	ctx := t.Context()
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-delete-revoke").
+		SetName("cohort_mapping_delete_revoke").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-delete-revoke").
+		SetUsername("cohort.mapping.delete.revoke").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-revoke").
+		SetProviderID("provider-delete-revoke").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create mapping: %v", err)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-delete-revoke").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-revoke").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-delete-revoke").
+		SetBindingKey("delete-revoke-binding").
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create grant: %v", err)
+	}
+	beforeVersion, err := authSessions.CurrentSessionVersion(ctx, userEnt.ID)
+	if err != nil {
+		t.Fatalf("seed session version: %v", err)
+	}
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/provider-delete-revoke/cohort-mappings/"+mappingEnt.ID,
+		"",
+		"admin-1",
+		[]string{"auth_provider:mapping_delete"},
+	)
+	srv.DeleteAuthProviderCohortMapping(deleteCtx, "provider-delete-revoke", mappingEnt.ID)
+	if got := deleteCtx.Writer.Status(); got != http.StatusNoContent {
+		t.Fatalf("delete mapping status = %d, want %d, body=%s", got, http.StatusNoContent, deleteW.Body.String())
+	}
+	if _, getErr := client.ExternalCohortGrant.Get(ctx, grantEnt.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("grant should be deleted, err=%v", getErr)
+	}
+	if _, getErr := client.RoleBinding.Get(ctx, bindingEnt.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("managed role binding should be deleted, err=%v", getErr)
+	}
+	afterVersion, err := authSessions.CurrentSessionVersion(ctx, userEnt.ID)
+	if err != nil {
+		t.Fatalf("read session version after mapping delete: %v", err)
+	}
+	if afterVersion != beforeVersion+1 {
+		t.Fatalf("session version after mapping delete = %d, want %d", afterVersion, beforeVersion+1)
+	}
+}
+
+func TestDeleteAuthProviderCohortMapping_RollsBackWhenGrantCleanupFails(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-delete-rollback").
+		SetName("cohort_mapping_delete_rollback").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-delete-rollback").
+		SetUsername("cohort.mapping.delete.rollback").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-rollback").
+		SetProviderID("provider-delete-rollback").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create mapping: %v", err)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-delete-rollback").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-rollback").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-delete-rollback").
+		SetBindingKey("rollback-binding").
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create grant: %v", err)
+	}
+	client.RoleBinding.Use(enthook.On(
+		enthook.FixedError(errors.New("role binding delete unavailable")),
+		ent.OpDeleteOne,
+	))
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/provider-delete-rollback/cohort-mappings/"+mappingEnt.ID,
+		"",
+		"admin-1",
+		[]string{"auth_provider:mapping_delete"},
+	)
+	srv.DeleteAuthProviderCohortMapping(deleteCtx, "provider-delete-rollback", mappingEnt.ID)
+	if deleteW.Code != http.StatusInternalServerError {
+		t.Fatalf("delete mapping status = %d, want %d, body=%s", deleteW.Code, http.StatusInternalServerError, deleteW.Body.String())
+	}
+	if _, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID); err != nil {
+		t.Fatalf("mapping should remain after rollback: %v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, grantEnt.ID); err != nil {
+		t.Fatalf("grant should remain after rollback: %v", err)
+	}
+	if _, err := client.RoleBinding.Get(ctx, bindingEnt.ID); err != nil {
+		t.Fatalf("role binding should remain after rollback: %v", err)
+	}
+}
+
+func TestDeleteAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	client := testutil.OpenEntPostgres(t, "admin_identity_delete_mapping_revoke_fail")
+	srv := NewServer(ServerDeps{
+		EntClient:    client,
+		AuthSessions: &service.AuthSessionManager{},
+	})
+	ctx := t.Context()
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-cohort-mapping-delete-revoke-fail").
+		SetName("cohort_mapping_delete_revoke_fail").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	userEnt, err := client.User.Create().
+		SetID("user-cohort-mapping-delete-revoke-fail").
+		SetUsername("cohort.mapping.delete.revoke.fail").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create user: %v", err)
+	}
+	mappingEnt, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-revoke-fail").
+		SetProviderID("provider-delete-revoke-fail").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create mapping: %v", err)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-delete-revoke-fail").
+		SetUserID(userEnt.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-revoke-fail").
+		SetUserID(userEnt.ID).
+		SetProviderID("provider-delete-revoke-fail").
+		SetBindingKey("delete-revoke-fail-binding").
+		SetRoleBindingID(bindingEnt.ID).
+		SetSourceMappingIds([]string{mappingEnt.ID}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create grant: %v", err)
+	}
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/auth-providers/provider-delete-revoke-fail/cohort-mappings/"+mappingEnt.ID,
+		"",
+		"admin-1",
+		[]string{"auth_provider:mapping_delete"},
+	)
+	srv.DeleteAuthProviderCohortMapping(deleteCtx, "provider-delete-revoke-fail", mappingEnt.ID)
+	if deleteW.Code != http.StatusInternalServerError {
+		t.Fatalf("delete mapping status = %d, want %d, body=%s", deleteW.Code, http.StatusInternalServerError, deleteW.Body.String())
+	}
+	if _, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID); err != nil {
+		t.Fatalf("mapping should remain after rollback: %v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, grantEnt.ID); err != nil {
+		t.Fatalf("grant should remain after rollback: %v", err)
+	}
+	if _, err := client.RoleBinding.Get(ctx, bindingEnt.ID); err != nil {
+		t.Fatalf("role binding should remain after rollback: %v", err)
+	}
+}
+
+func TestDeleteUser_RollsBackAssociatedRowsWhenDeleteStepFails(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+
+	userRow, err := client.User.Create().
+		SetID("user-delete-rollback").
+		SetUsername("delete.rollback").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+	roleRow, err := client.Role.Create().
+		SetID("role-delete-rollback").
+		SetName("DeleteRollbackRole").
+		SetPermissions([]string{"vm:read"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	bindingRow, err := client.RoleBinding.Create().
+		SetID("binding-delete-rollback").
+		SetUser(userRow).
+		SetRole(roleRow).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role binding: %v", err)
+	}
+	grantRow, err := client.ExternalCohortGrant.Create().
+		SetID("grant-delete-rollback").
+		SetUserID(userRow.ID).
+		SetProviderID("provider-delete-rollback").
+		SetBindingKey("group:ops").
+		SetRoleBindingID(bindingRow.ID).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort grant: %v", err)
+	}
+	resourceBindingRow, err := client.ResourceRoleBinding.Create().
+		SetID("resource-binding-delete-rollback").
+		SetUserID(userRow.ID).
+		SetResourceType("system").
+		SetResourceID("system-delete-rollback").
+		SetRole("viewer").
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed resource role binding: %v", err)
+	}
+	preferenceRow, err := client.UserPreference.Create().
+		SetID("preference-delete-rollback").
+		SetUserID(userRow.ID).
+		SetKey("theme").
+		SetValue(map[string]interface{}{"mode": "dark"}).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed preference: %v", err)
+	}
+
+	client.ResourceRoleBinding.Use(enthook.On(
+		enthook.FixedError(errors.New("resource role binding delete unavailable")),
+		ent.OpDelete,
+	))
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/users/"+userRow.ID,
+		"",
+		"admin-1",
+		[]string{"user:manage"},
+	)
+	srv.DeleteUser(deleteCtx, userRow.ID)
+	if deleteW.Code != http.StatusInternalServerError {
+		t.Fatalf("delete user status = %d, want %d, body=%s", deleteW.Code, http.StatusInternalServerError, deleteW.Body.String())
+	}
+
+	if _, err := client.User.Get(ctx, userRow.ID); err != nil {
+		t.Fatalf("user should remain after rollback: %v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, grantRow.ID); err != nil {
+		t.Fatalf("external cohort grant should remain after rollback: %v", err)
+	}
+	if _, err := client.RoleBinding.Get(ctx, bindingRow.ID); err != nil {
+		t.Fatalf("role binding should remain after rollback: %v", err)
+	}
+	if _, err := client.ResourceRoleBinding.Get(ctx, resourceBindingRow.ID); err != nil {
+		t.Fatalf("resource role binding should remain after rollback: %v", err)
+	}
+	if _, err := client.UserPreference.Get(ctx, preferenceRow.ID); err != nil {
+		t.Fatalf("user preference should remain after rollback: %v", err)
+	}
+}
+
 func newAdminIdentityTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
@@ -1170,4 +3352,26 @@ func newAdminIdentityTestServer(t *testing.T) (*Server, *ent.Client) {
 		ApprovalReqs:  service.NewApprovalRequirementService(client),
 		DirectorySync: service.NewDirectorySyncService(client),
 	}), client
+}
+
+func newAdminIdentityTestServerWithAuthSessions(t *testing.T, prefix string) (*Server, *ent.Client, *service.AuthSessionManager) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	pool := testutil.OpenPGXPool(t, prefix)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	t.Cleanup(func() { _ = client.Close() })
+	authSessions := service.NewAuthSessionManager(pool, client, 0)
+	vmInfra := newGenericStorageProfileProvider()
+	return NewServer(ServerDeps{
+		EntClient:     client,
+		Pool:          pool,
+		AuthSessions:  authSessions,
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		VMService:     service.NewVMService(vmInfra),
+		ClusterPolicy: service.NewClusterPolicyService(client),
+		ApprovalReqs:  service.NewApprovalRequirementService(client),
+		DirectorySync: service.NewDirectorySyncService(client),
+	}), client, authSessions
 }
