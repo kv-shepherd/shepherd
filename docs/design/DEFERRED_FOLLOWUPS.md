@@ -1,6 +1,6 @@
 # Deferred Follow-ups
 
-> **Last audited**: 2026-05-28
+> **Last audited**: 2026-06-19
 > **Purpose**: Central parking lot for items that should not keep a completed
 > phase marked incomplete.
 
@@ -35,7 +35,7 @@ future-scoped by RFC/ADR.
 
 | Item | Status | Reference |
 |------|--------|-----------|
-| Active JWT session revocation and session listing | RFC / V2 scope | [RFC-0008](../rfc/RFC-0008-extended-auth.md) |
+| Session listing and administrative session-management API | RFC / V2 scope | Session-version JWT revocation is implemented for logout, password/user/RBAC/provider changes, and external auth/directory sync RBAC reconciliation; RFC-0008 still covers productized session listing and administrator session-management APIs. |
 | Optional K8s watch acceleration / ResourceWatcher | RFC / V2 scope | [RFC-0020](../rfc/RFC-0020-k8s-watch-acceleration.md) |
 | VM snapshot workflow | RFC / V2 scope | [RFC-0013](../rfc/RFC-0013-vm-snapshot.md) |
 | Full VM clone workflow | RFC / V2 scope | [RFC-0014](../rfc/RFC-0014-vm-clone.md) |
@@ -45,7 +45,7 @@ future-scoped by RFC/ADR.
 | Full template lifecycle states (`draft -> active -> deprecated -> archived`) | RFC / V2 candidate | V1 uses `enabled`, `catalog_scope`, source validation, and delete guards. Add a contract-first design before introducing lifecycle states. |
 | Template import/export automation | RFC / V2 candidate | V1 keeps catalog administration in the API/UI and stores templates in PostgreSQL. Import/export automation should be designed with the lifecycle-state contract instead of treated as a Phase 4 blocker. |
 | Rich VM revision diff/compressed YAML service | RFC / V2 candidate | V1 has `vm_revisions` persistence and audit logs. Diff calculation, compressed YAML storage, and revision-service APIs need a dedicated contract before they become product workflow requirements. |
-| Resource adoption admin workflow | RFC / V2 candidate | V1 keeps the `pending_adoptions` schema as a compensation hook; admin adoption APIs and periodic scan can be designed when adoption becomes a product workflow. |
+| Productized resource adoption workflow enhancements | RFC / V2 candidate | V1 now has label-based discovery, periodic scan, platform-admin list/reject/adopt endpoints for `pending_adoptions`, and the `/admin/pending-adoptions` review UI. Bulk decisions, richer operator workflows, and broader resource adoption policy remain future product scope. |
 | Full resource reconciler (`dry-run`/`mark`/`delete` + ghost/orphan reports) | RFC / V2 candidate | V1 status convergence is ADR-0038 adaptive polling, and resource adoption is a compensation hook. A full Kubernetes controller-style reconciler needs a contract-first RFC/ADR before it can mutate or mark resources. |
 | Advanced cluster degradation/circuit-breaker UX | RFC / V2 candidate | V1 uses health checks, cluster status, approval preflight degradation handling, and ADR-0038 status sync. |
 
@@ -53,7 +53,7 @@ future-scoped by RFC/ADR.
 
 | Historical item | Resolution |
 |-----------------|------------|
-| Server-side browser session storage via `scs` | Replaced by Shepherd-issued JWTs plus DB-bootstrapped signing/encryption secrets. Active revocation is RFC-0008 future scope. |
+| Server-side browser session storage via `scs` | Replaced by Shepherd-issued JWTs plus DB-bootstrapped signing/encryption secrets. Session-version revocation is implemented; session listing and administrator session-management APIs remain RFC-0008 future scope. |
 | `controller-runtime` for SSA | Replaced by dynamic-client SSA using `types.ApplyPatchType` in `internal/provider/ssa_applier.go`. |
 | Public `/api/v1/vms/validate` dry-run endpoint | Not in the current OpenAPI contract. V1 dry-run is an internal approval preflight gate. |
 | Phase 0 OpenAPI 3.1 compat uncertainty | Complete. The canonical spec uses OpenAPI 3.1 nullable union types and `REQUIRE_OPENAPI_COMPAT=1 make api-compat` passes. |

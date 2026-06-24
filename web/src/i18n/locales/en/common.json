@@ -54,6 +54,7 @@
     "nav.approval_tasks": "Approval Tasks",
     "nav.external_approval_systems": "External Approvals",
     "nav.clusters": "Clusters",
+    "nav.pending_adoptions": "Pending Adoptions",
     "nav.namespaces": "Namespaces",
     "nav.templates": "Templates",
     "nav.instance_sizes": "Instance Sizes",

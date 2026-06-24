@@ -43,8 +43,8 @@ export default defineConfig({
 	forbidOnly: true,
 	// Per Playwright docs, CI should fail if a test only passes after retry.
 	failOnFlakyTests: !!process.env.CI,
-	// Global retries: smoke uses 2 in CI; live overrides to 1 at project level
-	// (live tests are stateful – excessive retries cause duplicate side-effects)
+	// Global retries: smoke uses 2 in CI; live overrides to 0 at project level
+	// because live tests are stateful and create/delete real records.
 	retries: process.env.CI ? 2 : 0,
 	workers: process.env.CI ? 1 : undefined,
 	reporter: reporters,
@@ -72,9 +72,8 @@ export default defineConfig({
 		{
 			name: 'live-chromium',
 			testMatch: /.*-live\.spec\.ts/,
-			// Live tests: only 1 retry — they are stateful (create/delete records)
-			// and re-running a failed test may hit duplicate-key errors.
-			retries: process.env.CI ? 1 : 0,
+			// Live tests are stateful; retries can repeat already-submitted work.
+			retries: 0,
 			// Per-test timeout: 90 s is enough for all CRUD flows + schema validation.
 			// waitForResponse() inherits this; the previous default of 30 s was too
 			// short for slow CI environments.

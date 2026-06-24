@@ -28,6 +28,7 @@ func TestVMModule_RegisterWorkers_RegistersVMLifecycleWorkers(t *testing.T) {
 		"vm_delete",
 		"vm_modify",
 		"vm_power",
+		"vm_adoption_discovery_scan",
 		"vm_status_sync",
 		"vm_tombstone_cleanup",
 	} {

@@ -53,6 +53,7 @@
   "cluster": {
     "kubeconfig_source": "env:E2E_KUBECONFIG_B64",
     "current_context": "e2e",
+    "authenticated_context": true,
     "api_server_reachable": true,
     "kubernetes_version": "v1.34.3",
     "kubevirt_api_available": true,

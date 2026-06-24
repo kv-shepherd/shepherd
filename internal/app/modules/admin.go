@@ -37,8 +37,8 @@ func (m *AdminModule) RegisterWorkers(workers *river.Workers) {
 	if workers == nil || m == nil || m.infra == nil || m.infra.EntClient == nil || m.directorySync == nil {
 		return
 	}
-	river.AddWorker(workers, jobs.NewDirectorySyncWorker(m.infra.EntClient, m.directorySync, m.infra.AuditLogger, m.infra.EncryptionKey))
-	river.AddWorker(workers, jobs.NewDirectoryEnrichmentScheduleScanWorker(m.infra.EntClient, func() *river.Client[pgx.Tx] {
+	river.AddWorker(workers, jobs.NewDirectorySyncWorker(m.infra.EntClient, m.directorySync, m.infra.AuditLogger, m.infra.EncryptionKey, m.infra.AuthSessions))
+	river.AddWorker(workers, jobs.NewDirectoryEnrichmentScheduleScanWorker(m.infra.EntClient, m.infra.Pool, func() *river.Client[pgx.Tx] {
 		return m.infra.RiverClient
 	}, m.infra.AuditLogger, m.infra.EncryptionKey))
 }

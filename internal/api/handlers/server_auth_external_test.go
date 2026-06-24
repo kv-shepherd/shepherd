@@ -11,10 +11,14 @@ import (
 	"testing"
 	"time"
 
+	"entgo.io/ent/dialect"
+	entsql "entgo.io/ent/dialect/sql"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/stdlib"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/enttest"
 	"kv-shepherd.io/shepherd/ent/externalcohort"
 	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/role"
@@ -773,6 +777,241 @@ func TestSubmitLoginAuthProvider_CredentialMode_JITProvisionsUserAndReturnsLogin
 	}
 }
 
+func TestSubmitLoginAuthProvider_CredentialMode_RBACChangeRevokesExistingSessions(t *testing.T) {
+	t.Parallel()
+
+	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
+		loginModes: []provider.AuthLoginMode{
+			{
+				Key:         "credentials",
+				DisplayName: "LDAP Login",
+				Interaction: provider.AuthInteractionCredentials,
+				RequestSchema: map[string]interface{}{
+					"type": "object",
+				},
+				Default: true,
+			},
+		},
+		credentialResp: &provider.AuthResult{
+			ExternalID:  "ldap-user-rbac-revoke",
+			Username:    "ldap.rbac.revoke",
+			DisplayName: "LDAP RBAC Revoke",
+			Email:       "ldap.rbac.revoke@example.com",
+			Enabled:     true,
+		},
+	})
+	srv, client, authSessions := newExternalAuthTestServerWithAuthSessions(t, nil)
+
+	if _, err := client.AuthProvider.Create().
+		SetID("runtime-credential-rbac-revoke").
+		SetName("Runtime Credential RBAC Revoke").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create runtime provider: %v", err)
+	}
+	mappedRole, err := client.Role.Create().
+		SetID("role-runtime-credential-rbac-revoke").
+		SetName("runtime_credential_rbac_revoke").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create mapped role: %v", err)
+	}
+	existingUser, err := client.User.Create().
+		SetID("user-runtime-credential-rbac-revoke").
+		SetUsername("ldap.rbac.revoke").
+		SetDisplayName("LDAP RBAC Revoke").
+		SetEmail("ldap.rbac.revoke@example.com").
+		SetAuthProviderID("runtime-credential-rbac-revoke").
+		SetExternalID("ldap-user-rbac-revoke").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create existing external user: %v", err)
+	}
+	binding, err := client.RoleBinding.Create().
+		SetID("rb-runtime-credential-rbac-revoke").
+		SetUserID(existingUser.ID).
+		SetRoleID(mappedRole.ID).
+		SetScopeType("global").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create existing managed binding: %v", err)
+	}
+	_, err = client.ExternalCohortGrant.Create().
+		SetID("grant-runtime-credential-rbac-revoke").
+		SetUserID(existingUser.ID).
+		SetProviderID("runtime-credential-rbac-revoke").
+		SetBindingKey("stale-rbac-binding").
+		SetRoleBindingID(binding.ID).
+		SetSourceMappingIds([]string{"stale-mapping"}).
+		SetLastAppliedAt(time.Now()).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create existing external cohort grant: %v", err)
+	}
+	beforeVersion, err := authSessions.CurrentSessionVersion(t.Context(), existingUser.ID)
+	if err != nil {
+		t.Fatalf("seed session version: %v", err)
+	}
+
+	ctx, w := newPublicGinContext(
+		t,
+		http.MethodPost,
+		"/auth/providers/runtime-credential-rbac-revoke/login/submit",
+		`{"login_mode":"credentials","credentials":{"username":"alice","password":"secret"}}`,
+	)
+	srv.SubmitLoginAuthProvider(ctx, "runtime-credential-rbac-revoke")
+	if w.Code != http.StatusOK {
+		t.Fatalf("submit status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.LoginResponse
+	mustDecodeJSON(t, w.Body.Bytes(), &resp)
+	claims, err := srv.jwtCfg.ValidateToken(t.Context(), resp.Token)
+	if err != nil {
+		t.Fatalf("validate token: %v", err)
+	}
+	afterVersion, err := authSessions.CurrentSessionVersion(t.Context(), existingUser.ID)
+	if err != nil {
+		t.Fatalf("read session version after external login: %v", err)
+	}
+	if afterVersion != beforeVersion+1 {
+		t.Fatalf("session version after RBAC-changing login = %d, want %d", afterVersion, beforeVersion+1)
+	}
+	if claims.SessionVersion != afterVersion {
+		t.Fatalf("token session version = %d, want %d", claims.SessionVersion, afterVersion)
+	}
+	if slices.Contains(claims.Permissions, "vm:read") {
+		t.Fatalf("permissions = %#v, want stale vm:read removed", claims.Permissions)
+	}
+}
+
+func TestSubmitLoginAuthProvider_CredentialMode_DisabledResultPersistsAndRevokesSessions(t *testing.T) {
+	t.Parallel()
+
+	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
+		loginModes: []provider.AuthLoginMode{
+			{
+				Key:         "credentials",
+				DisplayName: "LDAP Login",
+				Interaction: provider.AuthInteractionCredentials,
+				RequestSchema: map[string]interface{}{
+					"type": "object",
+				},
+				Default: true,
+			},
+		},
+		credentialResp: &provider.AuthResult{
+			ExternalID:  "ldap-user-disabled",
+			Username:    "ldap.disabled",
+			DisplayName: "LDAP Disabled",
+			Email:       "ldap.disabled@example.com",
+			Enabled:     false,
+			Cohorts: []provider.ExternalCohort{
+				{Kind: "group", Key: "ops", DisplayName: "ops"},
+			},
+		},
+	})
+	srv, client, authSessions := newExternalAuthTestServerWithAuthSessions(t, nil)
+
+	if _, err := client.AuthProvider.Create().
+		SetID("runtime-credential-disabled").
+		SetName("Runtime Credential Disabled").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create runtime provider: %v", err)
+	}
+	mappedRole, err := client.Role.Create().
+		SetID("role-runtime-credential-disabled").
+		SetName("runtime_credential_disabled").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create mapped role: %v", err)
+	}
+	existingUser, err := client.User.Create().
+		SetID("user-runtime-credential-disabled").
+		SetUsername("ldap.disabled").
+		SetDisplayName("LDAP Disabled").
+		SetEmail("ldap.disabled@example.com").
+		SetAuthProviderID("runtime-credential-disabled").
+		SetExternalID("ldap-user-disabled").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create existing external user: %v", err)
+	}
+	binding, err := client.RoleBinding.Create().
+		SetID("rb-runtime-credential-disabled").
+		SetUserID(existingUser.ID).
+		SetRoleID(mappedRole.ID).
+		SetScopeType("global").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create existing managed binding: %v", err)
+	}
+	grant, err := client.ExternalCohortGrant.Create().
+		SetID("grant-runtime-credential-disabled").
+		SetUserID(existingUser.ID).
+		SetProviderID("runtime-credential-disabled").
+		SetBindingKey("stale-disabled-rbac-binding").
+		SetRoleBindingID(binding.ID).
+		SetSourceMappingIds([]string{"mapping-runtime-credential-disabled"}).
+		SetLastAppliedAt(time.Now()).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create existing external cohort grant: %v", err)
+	}
+	beforeVersion, err := authSessions.CurrentSessionVersion(t.Context(), existingUser.ID)
+	if err != nil {
+		t.Fatalf("seed session version: %v", err)
+	}
+
+	ctx, w := newPublicGinContext(
+		t,
+		http.MethodPost,
+		"/auth/providers/runtime-credential-disabled/login/submit",
+		`{"login_mode":"credentials","credentials":{"username":"alice","password":"secret"}}`,
+	)
+	srv.SubmitLoginAuthProvider(ctx, "runtime-credential-disabled")
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("submit status = %d, want %d, body=%s", w.Code, http.StatusForbidden, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "USER_DISABLED")
+
+	reloadedUser, err := client.User.Get(t.Context(), existingUser.ID)
+	if err != nil {
+		t.Fatalf("reload external user: %v", err)
+	}
+	if reloadedUser.Enabled {
+		t.Fatal("external user Enabled = true after disabled login result, want false")
+	}
+	afterVersion, err := authSessions.CurrentSessionVersion(t.Context(), existingUser.ID)
+	if err != nil {
+		t.Fatalf("read session version after disabled login: %v", err)
+	}
+	if afterVersion != beforeVersion+1 {
+		t.Fatalf("session version after disabled login = %d, want %d", afterVersion, beforeVersion+1)
+	}
+	if _, err := client.ExternalCohortGrant.Get(t.Context(), grant.ID); !ent.IsNotFound(err) {
+		t.Fatalf("external cohort grant should be deleted, got err %v", err)
+	}
+	if _, err := client.RoleBinding.Get(t.Context(), binding.ID); !ent.IsNotFound(err) {
+		t.Fatalf("managed role binding should be deleted, got err %v", err)
+	}
+}
+
 func TestSubmitLoginAuthProvider_CredentialMode_RateLimitedAfterRepeatedInvalidCredentials(t *testing.T) {
 	t.Parallel()
 
@@ -853,6 +1092,31 @@ func newExternalAuthTestServerWithPublicBaseURL(t *testing.T, allowedOrigins []s
 		PublicBaseURL:  publicBaseURL,
 		AllowedOrigins: allowedOrigins,
 	}), client
+}
+
+func newExternalAuthTestServerWithAuthSessions(t *testing.T, allowedOrigins []string) (*Server, *ent.Client, *service.AuthSessionManager) {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	dbName := strings.NewReplacer("/", "_", " ", "_", "-", "_").Replace(strings.ToLower(t.Name()))
+	pool := testutil.OpenPGXPool(t, "external_auth_sessions_"+dbName)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	t.Cleanup(func() { _ = client.Close() })
+	authSessions := service.NewAuthSessionManager(pool, client, 0)
+	return NewServer(ServerDeps{
+		EntClient:     client,
+		Pool:          pool,
+		ExternalAuth:  service.NewExternalAuthService(client),
+		AuthSessions:  authSessions,
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		JWTCfg: middleware.JWTConfig{
+			SigningKey: []byte("test-signing-key-0123456789abcdef"),
+			Issuer:     "shepherd-test",
+			ExpiresIn:  time.Hour,
+		},
+		AllowedOrigins: allowedOrigins,
+	}), client, authSessions
 }
 
 func registerRuntimeAuthTestAdapter(t *testing.T, adapter *testRuntimeAuthAdapter) *testRuntimeAuthAdapter {

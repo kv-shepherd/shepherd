@@ -3,6 +3,7 @@ package jobs
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -45,6 +46,10 @@ func (VMPowerArgs) InsertOpts() river.InsertOpts {
 	return river.InsertOpts{
 		Queue:       "vm_operations",
 		MaxAttempts: 3,
+		UniqueOpts: river.UniqueOpts{
+			ByArgs:  true,
+			ByQueue: true,
+		},
 	}
 }
 
@@ -86,38 +91,76 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	if err != nil {
 		return fmt.Errorf("fetch domain event %s: %w", eventID, err)
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusEXECUTING)
+	requireTicket, err := eventHasTicket(ctx, w.entClient, eventID)
+	if err != nil {
+		return fmt.Errorf("query ticket binding for power event %s: %w", eventID, err)
+	}
+	if ticketStatus, ok := ticketStatusForTerminalDomainEvent(event.Status); ok {
+		logger.Info("vm power event already terminal, skipping duplicate execution",
+			zap.String("event_id", eventID),
+			zap.String("event_status", event.Status.String()),
+		)
+		if ticketErr := updateTicketStatusByEventMaybe(ctx, w.entClient, eventID, ticketStatus, requireTicket); ticketErr != nil {
+			if ctxErr := jobContextErr(ctx, ticketErr); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("persist %s ticket status for terminal power event %s: %w", ticketStatus, eventID, ticketErr)
+		}
+		return nil
+	}
+	if persistErr := persistProcessingEventAndMaybeExecutingTicketByEvent(ctx, w.entClient, eventID, requireTicket); persistErr != nil {
+		if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+			return ctxErr
+		}
+		return fmt.Errorf("persist PROCESSING/EXECUTING status for power event %s: %w", eventID, persistErr)
+	}
 
 	// Step 2: Parse payload.
 	var payload domain.VMPowerPayload
-	if err := json.Unmarshal(event.Payload, &payload); err != nil {
-		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-			SetStatus(domainevent.StatusFAILED).
-			Save(ctx); saveErr != nil {
-			logger.Error("failed to persist FAILED status for malformed power payload",
-				zap.String("event_id", eventID), zap.Error(saveErr))
+	if unmarshalErr := json.Unmarshal(event.Payload, &payload); unmarshalErr != nil {
+		if persistErr := persistFailedEventAndMaybeTicketByEvent(ctx, w.entClient, eventID, requireTicket); persistErr != nil {
+			if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("persist FAILED status for malformed power event %s: %w", eventID, persistErr)
 		}
-		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
-		return river.JobCancel(fmt.Errorf("unmarshal power payload for event %s: %w", eventID, err))
+		return river.JobCancel(fmt.Errorf("unmarshal power payload for event %s: %w", eventID, unmarshalErr))
 	}
 
 	operation := strings.ToLower(strings.TrimSpace(payload.Operation))
 	markFailed := func(err error, cancel bool) error {
-		// K8s operation failed — persist FAILED status (best-effort).
-		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-			SetStatus(domainevent.StatusFAILED).
-			Save(ctx); saveErr != nil {
-			logger.Error("failed to persist FAILED status for power event",
-				zap.String("event_id", eventID), zap.Error(saveErr))
-		}
-
 		logAuditVMOp(ctx, w.auditLogger, operation+"_failed", payload.VMName, payload.Actor, eventID)
-		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 
 		if cancel {
+			if persistErr := persistFailedEventAndMaybeTicketByEvent(ctx, w.entClient, eventID, requireTicket); persistErr != nil {
+				if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+					return ctxErr
+				}
+				return fmt.Errorf("persist FAILED status for power event %s before cancellation: %w", eventID, persistErr)
+			}
 			return river.JobCancel(err)
 		}
+		if isFinalJobAttempt(job) {
+			if persistErr := persistFailedEventAndMaybeTicketByEvent(ctx, w.entClient, eventID, requireTicket); persistErr != nil {
+				if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+					return ctxErr
+				}
+				return fmt.Errorf("persist final FAILED status for power event %s: %w", eventID, persistErr)
+			}
+		}
 		return err
+	}
+
+	currentVM, err := w.entClient.VM.Get(ctx, payload.VMID)
+	switch {
+	case err == nil:
+		if currentVM.Status == vm.StatusDELETING {
+			return markFailed(fmt.Errorf("vm %s is deleting", payload.VMID), true)
+		}
+	case ent.IsNotFound(err):
+		return markFailed(fmt.Errorf("vm %s no longer exists", payload.VMID), true)
+	default:
+		return fmt.Errorf("query vm %s before power execution: %w", payload.VMID, err)
 	}
 
 	// Step 3: Execute K8s power operation (outside transaction per ADR-0012).
@@ -130,14 +173,16 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	case powerOpRestart:
 		execErr = w.vmService.RestartVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
 	default:
-		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-			SetStatus(domainevent.StatusFAILED).
-			Save(ctx); saveErr != nil {
-			logger.Error("failed to persist FAILED status for unknown power operation",
-				zap.String("event_id", eventID), zap.Error(saveErr))
+		if persistErr := persistFailedEventAndMaybeTicketByEvent(ctx, w.entClient, eventID, requireTicket); persistErr != nil {
+			if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("persist FAILED status for unknown power event %s: %w", eventID, persistErr)
 		}
-		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
 		return river.JobCancel(fmt.Errorf("unknown power operation: %s", operation))
+	}
+	if ctxErr := jobContextErr(ctx, execErr); ctxErr != nil {
+		return ctxErr
 	}
 
 	// Idempotent conflict handling (phase-4 checklist): start/stop may race with
@@ -177,6 +222,9 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	targetStatus := fallbackPowerOperationStatus(operation)
 	targetRV := ""
 	if liveVM, liveErr := w.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName); liveErr != nil {
+		if ctxErr := jobContextErr(ctx, liveErr); ctxErr != nil {
+			return ctxErr
+		}
 		logger.Warn("VM power operation succeeded but live status refresh failed; using transitional fallback",
 			zap.String("event_id", eventID),
 			zap.String("operation", operation),
@@ -190,36 +238,31 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 	targetTier := tierForStatus(targetStatus)
 	targetInterval := intervalForTier(targetTier)
 
-	update := w.entClient.VM.UpdateOneID(payload.VMID).
-		SetStatus(targetStatus).
-		SetPollingTier(targetTier).
-		SetPollIntervalSec(targetInterval)
-	if targetTier == vm.PollingTierHigh {
-		update = update.SetHighTierSince(observedAt)
-	} else {
-		update = update.ClearHighTierSince()
+	// Step 5: Update VM, event, and ticket terminal state together.
+	if persistErr := persistCompletedPowerState(ctx, w.entClient, eventID, payload.VMID, targetStatus, targetTier, targetInterval, observedAt, targetRV, requireTicket); persistErr != nil {
+		if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+			return ctxErr
+		}
+		var vmStatusErr powerVMStatusPersistError
+		if errors.As(persistErr, &vmStatusErr) {
+			logger.Error("CRITICAL: K8s power op succeeded but VM status update failed",
+				zap.String("event_id", eventID),
+				zap.String("operation", operation),
+				zap.String("vm_name", payload.VMName),
+				zap.Error(persistErr))
+			if isRetryablePowerOperationAfterSuccess(operation) {
+				return fmt.Errorf("persist VM status after %s power event %s: %w", operation, eventID, persistErr)
+			}
+			return river.JobCancel(fmt.Errorf("persist VM status after %s power event %s: %w", operation, eventID, persistErr))
+		}
+		logger.Error("CRITICAL: Power op completed but terminal status persistence failed",
+			zap.String("event_id", eventID), zap.Error(persistErr))
+		if isRetryablePowerOperationAfterSuccess(operation) {
+			return fmt.Errorf("persist terminal status after %s power event %s: %w", operation, eventID, persistErr)
+		}
+		return river.JobCancel(fmt.Errorf("persist terminal status after %s power event %s: %w", operation, eventID, persistErr))
 	}
-	if targetRV != "" {
-		update = update.SetLastK8sRv(targetRV).SetLastPolledAt(observedAt)
-	}
-	if _, saveErr := update.Save(ctx); saveErr != nil {
-		logger.Error("CRITICAL: K8s power op succeeded but VM status update failed",
-			zap.String("event_id", eventID),
-			zap.String("operation", operation),
-			zap.String("vm_name", payload.VMName),
-			zap.Error(saveErr))
-	}
-
-	// Step 5: Update event status to COMPLETED.
-	if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-		SetStatus(domainevent.StatusCOMPLETED).
-		Save(ctx); saveErr != nil {
-		logger.Error("CRITICAL: Power op completed but event status persistence failed",
-			zap.String("event_id", eventID), zap.Error(saveErr))
-	}
-
 	logAuditVMOp(ctx, w.auditLogger, operation, payload.VMName, payload.Actor, eventID)
-	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusSUCCESS)
 
 	logger.Info("VM power operation completed",
 		zap.String("event_id", eventID),
@@ -227,6 +270,71 @@ func (w *VMPowerWorker) Work(ctx context.Context, job *river.Job[VMPowerArgs]) e
 		zap.String("vm_name", payload.VMName),
 	)
 	return nil
+}
+
+type powerVMStatusPersistError struct {
+	err error
+}
+
+func (e powerVMStatusPersistError) Error() string {
+	return e.err.Error()
+}
+
+func (e powerVMStatusPersistError) Unwrap() error {
+	return e.err
+}
+
+func persistCompletedPowerState(
+	ctx context.Context,
+	client *ent.Client,
+	eventID string,
+	vmID string,
+	targetStatus vm.Status,
+	targetTier vm.PollingTier,
+	targetInterval int,
+	observedAt time.Time,
+	resourceVersion string,
+	requireTicket bool,
+) error {
+	if client == nil || eventID == "" {
+		return nil
+	}
+	return withJobsTx(ctx, client, func(txClient *ent.Client) error {
+		if strings.TrimSpace(vmID) != "" {
+			update := txClient.VM.UpdateOneID(vmID).
+				Where(vm.StatusNEQ(vm.StatusDELETING)).
+				SetStatus(targetStatus).
+				SetPollingTier(targetTier).
+				SetPollIntervalSec(targetInterval)
+			if targetTier == vm.PollingTierHigh {
+				update = update.SetHighTierSince(observedAt)
+			} else {
+				update = update.ClearHighTierSince()
+			}
+			if strings.TrimSpace(resourceVersion) != "" {
+				update = update.SetLastK8sRv(resourceVersion).SetLastPolledAt(observedAt)
+			}
+			if _, err := update.Save(ctx); err != nil {
+				if ent.IsNotFound(err) {
+					logger.Info("skipped completed power VM status persistence because row is delete-owned or absent",
+						zap.String("event_id", eventID),
+						zap.String("vm_id", vmID),
+					)
+				} else {
+					return powerVMStatusPersistError{
+						err: fmt.Errorf("update VM status during completed power persistence for event %s: %w", eventID, err),
+					}
+				}
+			}
+		}
+		if err := updateDomainEventStatusWithExpected(ctx, txClient, eventID, domainevent.StatusCOMPLETED, domainevent.StatusPROCESSING); err != nil {
+			return err
+		}
+		if err := updateTicketStatusByEventWithClientMaybe(ctx, txClient, eventID, entticket.StatusSUCCESS, requireTicket); err != nil {
+			return err
+		}
+		return syncParentBatchStatusByChildEventWithClient(ctx, txClient, eventID)
+	})
 }
 
 // fallbackPowerOperationStatus maps a power operation to a safe transitional
@@ -253,12 +361,19 @@ func isIdempotentPowerConflict(operation string, err error) bool {
 	msg := strings.ToLower(err.Error())
 	switch operation {
 	case powerOpStart:
-		return strings.Contains(msg, "already running") ||
-			strings.Contains(msg, "does not support manual start requests")
+		return strings.Contains(msg, "already running")
 	case powerOpStop:
 		return strings.Contains(msg, "already stopped") ||
-			strings.Contains(msg, "not running") ||
-			strings.Contains(msg, "does not support manual stop requests")
+			strings.Contains(msg, "not running")
+	default:
+		return false
+	}
+}
+
+func isRetryablePowerOperationAfterSuccess(operation string) bool {
+	switch operation {
+	case powerOpStart, powerOpStop:
+		return true
 	default:
 		return false
 	}
@@ -273,6 +388,12 @@ func isTerminalPowerError(operation string, err error) bool {
 	// Restart on a non-running VM is a deterministic invalid-state conflict.
 	// Retrying does not help and only adds noisy retries/errors in logs.
 	if operation == powerOpRestart && isRestartStateConflict(err) {
+		return true
+	}
+	if operation == powerOpStart && isManualPowerRequestUnsupported(err, "start") {
+		return true
+	}
+	if operation == powerOpStop && isManualPowerRequestUnsupported(err, "stop") {
 		return true
 	}
 	return false
@@ -307,4 +428,14 @@ func isRestartStateConflict(err error) bool {
 		return true
 	}
 	return strings.Contains(msg, "virtualmachine") && strings.Contains(msg, "not running")
+}
+
+func isManualPowerRequestUnsupported(err error, operation string) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(
+		strings.ToLower(err.Error()),
+		fmt.Sprintf("does not support manual %s requests", operation),
+	)
 }

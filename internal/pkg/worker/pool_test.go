@@ -121,6 +121,47 @@ func TestPools_SubmitDetached(t *testing.T) {
 	}
 }
 
+func TestPools_SubmitDetached_ContextCancelledOnShutdown(t *testing.T) {
+	ctx := context.Background()
+	pools, err := NewPools(ctx, PoolConfig{
+		GeneralPoolSize: 1,
+		K8sPoolSize:     1,
+	})
+	if err != nil {
+		t.Fatalf("NewPools() error = %v", err)
+	}
+
+	started := make(chan struct{})
+	errCh := make(chan error, 1)
+	err = pools.SubmitDetached("general", func(ctx context.Context) {
+		close(started)
+		<-ctx.Done()
+		errCh <- ctx.Err()
+	})
+	if err != nil {
+		pools.Shutdown()
+		t.Fatalf("SubmitDetached() error = %v", err)
+	}
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		pools.Shutdown()
+		t.Fatal("detached task did not start")
+	}
+
+	pools.Shutdown()
+
+	select {
+	case err := <-errCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("detached task context error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("detached task did not observe service lifecycle cancellation")
+	}
+}
+
 func TestPools_Metrics(t *testing.T) {
 	ctx := context.Background()
 	pools, err := NewPools(ctx, PoolConfig{
@@ -175,27 +216,46 @@ func TestPool_Submit_ContextCancelledWhileQueued(t *testing.T) {
 	})
 	wg.Wait() // Wait for blocking task to start
 
-	// Submit a task with a context that will be cancelled
+	// Submit a task with a context that will be cancelled before it can run.
 	cancelCtx, cancel := context.WithCancel(ctx)
 
-	var taskExecuted atomic.Bool
-	var submitWg sync.WaitGroup
-	submitWg.Add(1)
+	submitStarted := make(chan struct{})
+	submitErrCh := make(chan error, 1)
+	executedCh := make(chan struct{}, 1)
 	go func() {
-		defer submitWg.Done()
-		_ = pools.General.Submit(cancelCtx, func(ctx context.Context) {
-			taskExecuted.Store(true)
+		close(submitStarted)
+		submitErrCh <- pools.General.Submit(cancelCtx, func(ctx context.Context) {
+			executedCh <- struct{}{}
 		})
 	}()
 
-	// Give the task time to be queued, then cancel context
-	time.Sleep(10 * time.Millisecond)
+	<-submitStarted
+	select {
+	case err := <-submitErrCh:
+		t.Fatalf("queued Submit() returned before cancellation: %v", err)
+	case <-time.After(2 * poolSubmitRetryInterval):
+	}
+	if waiting := pools.General.pool.Waiting(); waiting != 0 {
+		t.Fatalf("ants blocking waiters = %d, want 0; Submit should wait in caller context", waiting)
+	}
 	cancel()
 
-	// Release the blocking task
-	close(blockCh)
-	submitWg.Wait()
+	select {
+	case err := <-submitErrCh:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("Submit() error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("queued Submit() did not return after context cancellation")
+	}
 
-	// The task may or may not execute depending on timing,
-	// but it should not panic
+	// Release the blocking task after Submit has returned. If ants admits the
+	// queued wrapper later, it must observe the cancelled context and skip task.
+	close(blockCh)
+
+	select {
+	case <-executedCh:
+		t.Fatal("task executed after its queued context was cancelled")
+	case <-time.After(50 * time.Millisecond):
+	}
 }

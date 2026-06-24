@@ -31,7 +31,7 @@ The fixture covers every accepted baseline recording series:
 | `shepherd:business_approval_failed:sum` | Calculates failed approval tickets by `operation_type` |
 | `shepherd:business_batch_approval_pending:sum` | Calculates pending batch approvals by `batch_type` |
 | `shepherd:business_batch_approval_failed:sum` | Calculates failed batch approvals by `batch_type` |
-| `shepherd:business_approval_failure_audit_actions:sum` | Calculates recent failure audit actions by fixed `action` |
+| `shepherd:business_approval_failure_audit_actions:sum` | Calculates recent failure audit actions by allowlisted fixed `action`, including `approval.other` |
 
 The fixture also covers every accepted baseline alert:
 

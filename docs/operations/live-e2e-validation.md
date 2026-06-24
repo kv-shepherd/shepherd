@@ -31,8 +31,8 @@ stateful resources.
 | Atlas CLI | Yes | Required for startup migrations; set `ATLAS_EXEC_PATH`, install `atlas`, or run `make live-e2e-install-atlas` |
 | Node dependencies | Yes | `npm ci --prefix web` |
 | Playwright Chromium | Yes | `cd web && npx playwright install chromium` |
-| Admin bootstrap password | Defaulted | Runner uses `admin/admin` then `E2E_NEW_PASSWORD=admin123` unless overridden |
-| Cleanup policy | Default enabled | `E2E_CLEANUP_NAMESPACE_VMS=1` removes VMs in `E2E_NAMESPACE` |
+| Admin bootstrap password | Defaulted | Runner uses `admin/admin` then `E2E_NEW_PASSWORD=ShepherdLive!2026` unless overridden |
+| Cleanup policy | Default enabled | `E2E_CLEANUP_NAMESPACE_VMS=1` removes VMs in `E2E_NAMESPACE`; `E2E_DELETE_NAMESPACE=1` deletes disposable `shepherd-e2e-*` / `e2e-*` namespaces after cleanup |
 
 Use a disposable namespace and cluster policy for live E2E. The runner defaults
 to `E2E_NAMESPACE=e2e-live`.
@@ -84,8 +84,12 @@ The command starts a detached run and writes state under `.run/live-e2e/`.
 Poll status without streaming the full log:
 
 ```bash
+make live-e2e-status
 bash scripts/run_e2e_live.sh --status
 ```
+
+If no background run has written `.run/live-e2e/latest.env` yet, status mode
+prints `state=missing` with `running=no` instead of failing.
 
 Foreground mode is better for CI and debugging:
 
@@ -93,6 +97,30 @@ Foreground mode is better for CI and debugging:
 export E2E_KUBECONFIG_B64="$(base64 -w0 /path/to/kubeconfig)"
 bash scripts/run_e2e_live.sh --foreground
 ```
+
+The runner invokes `cmd/e2e-seed` for low-level live fixtures with a default
+2 minute command timeout. Slow test databases can override it with a positive
+Go duration, for example `E2E_SEED_TIMEOUT=5m`.
+
+The API-managed template fixture defaults to `cdi_image_import` from
+`docker://quay.io/containerdisks/ubuntu:22.04`. If the validation cluster cannot
+reach external registries reliably, prefer a cluster-local source instead of
+stretching Playwright timeouts. For example:
+
+```bash
+export E2E_TEMPLATE_SOURCE_TYPE=cdi_pvc_clone
+export E2E_TEMPLATE_PVC_NAMESPACE=golden-images
+export E2E_TEMPLATE_PVC_NAME=ubuntu-2204-rootfs
+bash scripts/run_e2e_live.sh --foreground
+```
+
+When `E2E_TEMPLATE_SOURCE_TYPE=cdi_pvc_clone`, the runner automatically includes
+`E2E_TEMPLATE_PVC_NAMESPACE` in the seeded cluster policy clone allowlist.
+For fast targeted create-flow validation, set `E2E_TEMPLATE_PVC_AUTOCREATE_BLANK=1`
+to create a small blank source PVC in the disposable namespace and clean it on
+exit. This still exercises the real approval, VM create, PVC clone, and status
+sync path without depending on external registry reachability or a large golden
+image copy.
 
 ## Existing Database Run
 
@@ -154,8 +182,19 @@ Pass Playwright arguments after `--`:
 ```bash
 bash scripts/run_e2e_live.sh --foreground -- \
   --project=live-chromium \
-  web/tests/e2e/master-flow-live.spec.ts
+  tests/e2e/master-flow-live.spec.ts
 ```
+
+Common live lanes can be selected without spelling out spec paths:
+
+```bash
+E2E_LIVE_TEST_LANE=admin bash scripts/run_e2e_live.sh --foreground
+E2E_LIVE_TEST_LANE=user,vm bash scripts/run_e2e_live.sh --foreground
+```
+
+Supported lane values are `all`, `admin`, `user`, `vm`, `master`, and `edge`.
+The default is `all`. The runner ignores `E2E_LIVE_TEST_LANE` when an explicit
+Playwright spec path is provided after `--`.
 
 Use targeted runs for debugging only. Release evidence should run the full
 `live-chromium` project.
@@ -166,16 +205,27 @@ Use targeted runs for debugging only. Release evidence should run the full
 |----------|---------|---------|
 | `E2E_USERNAME` | `admin` | Live admin user |
 | `E2E_PASSWORD` | `admin` | Initial password before forced change |
-| `E2E_NEW_PASSWORD` | `admin123` | Password after forced change |
+| `E2E_NEW_PASSWORD` | `ShepherdLive!2026` | Password after forced change |
 | `E2E_NAMESPACE` | `e2e-live` | Namespace for VM requests and cleanup |
 | `E2E_CLUSTER` | `e2e-cluster` | Cluster fixture name |
 | `E2E_TEMPLATE` | `e2e-template` | Template fixture name |
+| `E2E_TEMPLATE_SOURCE_TYPE` | `cdi_image_import` | Template source type: `cdi_image_import`, `cdi_pvc_clone`, or `containerdisk` |
+| `E2E_TEMPLATE_IMAGE_URL` | `docker://quay.io/containerdisks/ubuntu:22.04` | Image URL for `cdi_image_import` and `containerdisk` templates |
+| `E2E_TEMPLATE_PVC_NAMESPACE` | empty | Existing source PVC namespace for `cdi_pvc_clone`; automatically added to cluster policy allowlist |
+| `E2E_TEMPLATE_PVC_NAME` | empty | Existing source PVC name for `cdi_pvc_clone` |
+| `E2E_TEMPLATE_PVC_AUTOCREATE_BLANK` | `0` | Create and clean a small blank source PVC for fast `cdi_pvc_clone` runs |
+| `E2E_TEMPLATE_PVC_SIZE` | `1Gi` | Size of the auto-created blank source PVC |
+| `E2E_TEMPLATE_PVC_STORAGE_CLASS` | first/default StorageClass | StorageClass for the auto-created blank source PVC |
+| `E2E_TEMPLATE_PVC_ACCESS_MODE` | `ReadWriteMany` | Access mode for the auto-created blank source PVC |
+| `E2E_TEMPLATE_PVC_VOLUME_MODE` | `Block` | Volume mode for the auto-created blank source PVC |
 | `E2E_SIZE` | `e2e-small` | Instance-size fixture name |
 | `E2E_VM_RUNNING_ID` | `vm-e2e-running` | Seeded running VM ID used by console and power flows |
 | `E2E_VM_STOPPED_ID` | `vm-e2e-stopped` | Seeded stopped VM ID used by lifecycle flows |
 | `E2E_BACKEND_CRITICAL_GUARD` | `1` | Fail run on high-signal backend log errors |
 | `E2E_BACKEND_STRICT_GUARD` | `0` | Optional stricter backend log pattern gate |
 | `E2E_CLEANUP_NAMESPACE_VMS` | `1` | Cleanup VMs in `E2E_NAMESPACE` on exit |
+| `E2E_DELETE_NAMESPACE` | `0` | Delete the disposable Kubernetes namespace on exit. Safety guard allows `shepherd-e2e-*` / `e2e-*` and rejects shared names such as `default`, `e2e-live`, `golden-images`, `kube-*`, and `openshift-*` |
+| `E2E_LIVE_TEST_LANE` | `all` | Targeted debug/regression lane: `admin`, `user`, `vm`, `master`, `edge`, or comma-separated combinations. Release evidence must use `all` |
 
 ## Evidence Requirements
 
@@ -225,7 +275,9 @@ Preserve `.run/live-e2e/<date>/<run>/` with the release evidence bundle. The
 latest-manifest validator only selects manifests whose JSON body reports
 `mode=full`; preflight manifests are ignored because they are readiness
 evidence, not completion evidence. In short, preflight manifests are ignored by
-the latest full-pass validator.
+the latest full-pass validator. If no full manifest exists, the target fails
+with an explicit "no full live E2E release evidence is available" status and
+points back to `make live-e2e-readiness` plus this SOP.
 
 ## Pass Criteria
 
@@ -243,10 +295,13 @@ The run is acceptable release evidence only when all conditions hold:
 7. `check_live_e2e_no_mock.sh` and `check_master_flow_test_matrix.go` both
    passed during the run.
 8. `policy_gates.cluster_probe=required`.
-9. `cluster.api_server_reachable=true`, `cluster.kubevirt_api_available=true`,
-   and `cluster.kubevirt_api_versions` is non-empty.
-10. Namespace cleanup either succeeded or has an explicit, ticketed follow-up for
-   leftover live test resources.
+9. `cluster.authenticated_context=true`, `cluster.api_server_reachable=true`,
+   `cluster.kubevirt_api_available=true`, and `cluster.kubevirt_api_versions`
+   is non-empty.
+10. The evidence, result, runner log, backend log, and Playwright JSON artifact
+   paths exist on disk.
+11. The runner log contains
+   `cleanup review: namespace_vm_cleanup status=passed` for the live namespace.
 
 ## Failure Triage
 

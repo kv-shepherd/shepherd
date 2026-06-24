@@ -11,6 +11,8 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -27,6 +29,8 @@ import (
 	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
+
+const defaultSeedTimeout = 2 * time.Minute
 
 func main() {
 	if err := run(); err != nil {
@@ -46,7 +50,12 @@ func run() error {
 	}
 	defer func() { _ = logger.Sync() }()
 
-	ctx := context.Background()
+	seedTimeout, err := effectiveSeedTimeout()
+	if err != nil {
+		return err
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), seedTimeout)
+	defer cancel()
 
 	db, err := infrastructure.NewDatabaseClients(ctx, cfg.Database)
 	if err != nil {
@@ -75,6 +84,21 @@ func run() error {
 	return nil
 }
 
+func effectiveSeedTimeout() (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv("SEED_TIMEOUT"))
+	if raw == "" {
+		return defaultSeedTimeout, nil
+	}
+	timeout, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("parse SEED_TIMEOUT: %w", err)
+	}
+	if timeout <= 0 {
+		return 0, fmt.Errorf("SEED_TIMEOUT must be > 0")
+	}
+	return timeout, nil
+}
+
 // builtInRole defines a built-in role for seeding.
 type builtInRole struct {
 	ID          string
@@ -82,6 +106,18 @@ type builtInRole struct {
 	DisplayName string
 	Description string
 	Permissions []string
+}
+
+type adminSeedSpec struct {
+	id                   string
+	username             string
+	email                string
+	displayName          string
+	password             string
+	forcePasswordChange  bool
+	roleID               string
+	roleBindingScopeType string
+	roleBindingCreatedBy string
 }
 
 func builtInRoles() []builtInRole {
@@ -266,12 +302,26 @@ func seedBuiltInRoles(ctx context.Context, client *ent.Client) error {
 	return nil
 }
 
+func defaultAdminSeedSpec() adminSeedSpec {
+	return adminSeedSpec{
+		id:                   "user-default-admin",
+		username:             "admin",
+		email:                "admin@localhost",
+		displayName:          "Default Administrator",
+		password:             "admin",
+		forcePasswordChange:  true,
+		roleID:               "role-platform-admin",
+		roleBindingScopeType: "global",
+		roleBindingCreatedBy: "system-seed",
+	}
+}
+
 // seedDefaultAdmin creates the default admin user (admin/admin, force_password_change=true).
 // master-flow.md Stage 1.5: Default admin with forced password change.
 func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
-	adminID := "user-default-admin"
+	spec := defaultAdminSeedSpec()
 	// bcrypt hash for default password (force_password_change=true ensures change on first login)
-	hashBytes, err := bcrypt.GenerateFromPassword([]byte("admin"), bcrypt.DefaultCost)
+	hashBytes, err := bcrypt.GenerateFromPassword([]byte(spec.password), bcrypt.DefaultCost)
 	if err != nil {
 		return fmt.Errorf("hash default admin password: %w", err)
 	}
@@ -279,23 +329,23 @@ func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
 
 	created := false
 	user, err := client.User.Create().
-		SetID(adminID).
-		SetUsername("admin").
-		SetEmail("admin@localhost").
-		SetDisplayName("Default Administrator").
+		SetID(spec.id).
+		SetUsername(spec.username).
+		SetEmail(spec.email).
+		SetDisplayName(spec.displayName).
 		SetPasswordHash(hash).
-		SetForcePasswordChange(true).
+		SetForcePasswordChange(spec.forcePasswordChange).
 		Save(ctx)
 	switch {
 	case err == nil:
 		created = true
 	case ent.IsConstraintError(err):
 		user, err = client.User.Query().
-			Where(entuser.IDEQ(adminID)).
+			Where(entuser.IDEQ(spec.id)).
 			Only(ctx)
 		if ent.IsNotFound(err) {
 			user, err = client.User.Query().
-				Where(entuser.UsernameEQ("admin")).
+				Where(entuser.UsernameEQ(spec.username)).
 				Only(ctx)
 		}
 		if err != nil {
@@ -308,8 +358,8 @@ func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
 	bindingExists, err := client.RoleBinding.Query().
 		Where(
 			rolebinding.HasUserWith(entuser.IDEQ(user.ID)),
-			rolebinding.HasRoleWith(role.IDEQ("role-platform-admin")),
-			rolebinding.ScopeTypeEQ("global"),
+			rolebinding.HasRoleWith(role.IDEQ(spec.roleID)),
+			rolebinding.ScopeTypeEQ(spec.roleBindingScopeType),
 		).
 		Exist(ctx)
 	if err != nil {
@@ -320,18 +370,18 @@ func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
 		if _, err := client.RoleBinding.Create().
 			SetID(rbID.String()).
 			SetUserID(user.ID).
-			SetRoleID("role-platform-admin").
-			SetScopeType("global").
-			SetCreatedBy("system-seed").
+			SetRoleID(spec.roleID).
+			SetScopeType(spec.roleBindingScopeType).
+			SetCreatedBy(spec.roleBindingCreatedBy).
 			Save(ctx); err != nil {
 			return fmt.Errorf("create admin role binding: %w", err)
 		}
 	}
 
 	logger.Info("Ensured default admin user",
-		zap.String("username", "admin"),
+		zap.String("username", spec.username),
 		zap.Bool("created", created),
-		zap.Bool("force_password_change", true),
+		zap.Bool("force_password_change", spec.forcePasswordChange),
 	)
 
 	return nil

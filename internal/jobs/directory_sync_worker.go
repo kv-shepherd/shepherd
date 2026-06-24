@@ -43,6 +43,7 @@ type DirectorySyncWorker struct {
 	river.WorkerDefaults[DirectorySyncArgs]
 	entClient     *ent.Client
 	directorySync *service.DirectorySyncService
+	authSessions  *service.AuthSessionManager
 	auditLogger   *audit.Logger
 	configCodec   *configcodec.AuthProviderConfigCodec
 }
@@ -52,10 +53,16 @@ func NewDirectorySyncWorker(
 	directorySync *service.DirectorySyncService,
 	auditLogger *audit.Logger,
 	encryptionKey []byte,
+	authSessions ...*service.AuthSessionManager,
 ) *DirectorySyncWorker {
+	var authSessionManager *service.AuthSessionManager
+	if len(authSessions) > 0 {
+		authSessionManager = authSessions[0]
+	}
 	return &DirectorySyncWorker{
 		entClient:     entClient,
 		directorySync: directorySync,
+		authSessions:  authSessionManager,
 		auditLogger:   auditLogger,
 		configCodec:   configcodec.NewAuthProviderConfigCodec(encryptionKey),
 	}
@@ -75,6 +82,9 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 		Where(entdirectorysyncjob.IDEQ(jobID)).
 		Only(ctx)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		if ent.IsNotFound(err) {
 			return river.JobCancel(fmt.Errorf("directory_sync: job %s not found", jobID))
 		}
@@ -87,6 +97,9 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 		SetStartedAt(now).
 		ClearCompletedAt().
 		Save(ctx); saveErr != nil {
+		if ctxErr := jobContextErr(ctx, saveErr); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("mark directory sync job running: %w", saveErr)
 	}
 
@@ -94,7 +107,13 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 		Where(authprovider.IDEQ(jobRow.AuthProviderID)).
 		Only(ctx)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return w.failJob(ctx, jobRow.ID, jobRow.TriggeredBy, fmt.Errorf("load auth provider: %w", err))
+	}
+	if !authProviderRow.Enabled {
+		return w.failJob(ctx, jobRow.ID, jobRow.TriggeredBy, fmt.Errorf("auth provider %s is disabled", authProviderRow.ID))
 	}
 
 	adapter := adminglobal.Resolve(authProviderRow.AuthType)
@@ -113,6 +132,9 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 
 	records, err := directoryCapability.ListDirectoryUsers(ctx, runtimeConfig, jobRow.RequestSnapshot)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return w.failJob(ctx, jobRow.ID, jobRow.TriggeredBy, fmt.Errorf("list directory users: %w", err))
 	}
 
@@ -128,13 +150,32 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 		)
 		switch jobRow.SyncMode {
 		case "", service.DirectoryExecutionModeManualImport:
-			result, _, applyErr = w.directorySync.ApplyRecord(ctx, jobRow.AuthProviderID, record, jobRow.ConflictResolution)
+			applyErr = withJobsTx(ctx, w.entClient, func(txClient *ent.Client) error {
+				txDirectorySync := w.directorySync.WithClient(txClient)
+				var err error
+				result, _, err = txDirectorySync.ApplyRecord(ctx, jobRow.AuthProviderID, record, jobRow.ConflictResolution)
+				if err != nil {
+					return err
+				}
+				return w.revokeDirectorySyncRBACSessions(ctx, result)
+			})
 		case service.DirectoryExecutionModeScheduledEnrichment:
-			result, applyErr = w.directorySync.ApplyEnrichmentRecord(ctx, jobRow.AuthProviderID, directorycontract.DirectoryJoinKeyType(jobRow.JoinKeyType), record)
+			applyErr = withJobsTx(ctx, w.entClient, func(txClient *ent.Client) error {
+				txDirectorySync := w.directorySync.WithClient(txClient)
+				var err error
+				result, err = txDirectorySync.ApplyEnrichmentRecord(ctx, jobRow.AuthProviderID, directorycontract.DirectoryJoinKeyType(jobRow.JoinKeyType), record)
+				if err != nil {
+					return err
+				}
+				return w.revokeDirectorySyncRBACSessions(ctx, result)
+			})
 		default:
 			applyErr = fmt.Errorf("unsupported directory sync mode %q", jobRow.SyncMode)
 		}
 		if applyErr != nil {
+			if ctxErr := jobContextErr(ctx, applyErr); ctxErr != nil {
+				return ctxErr
+			}
 			errorCount++
 			jobErrors = append(jobErrors, applyErr.Error())
 			continue
@@ -157,6 +198,9 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 		update = update.SetErrors([]string{})
 	}
 	if _, err := update.Save(ctx); err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return fmt.Errorf("complete directory sync job: %w", err)
 	}
 
@@ -179,7 +223,17 @@ func (w *DirectorySyncWorker) Work(ctx context.Context, job *river.Job[Directory
 	return nil
 }
 
+func (w *DirectorySyncWorker) revokeDirectorySyncRBACSessions(ctx context.Context, result service.DirectorySyncApplyResult) error {
+	if w == nil || w.authSessions == nil || !result.RBACChanged || strings.TrimSpace(result.UserID) == "" {
+		return nil
+	}
+	return w.authSessions.RevokeUserSessions(ctx, result.UserID, "directory_sync_rbac_changed")
+}
+
 func (w *DirectorySyncWorker) failJob(ctx context.Context, jobID, actor string, cause error) error {
+	if ctxErr := jobContextErr(ctx, cause); ctxErr != nil {
+		return ctxErr
+	}
 	if w == nil || w.entClient == nil {
 		return cause
 	}
@@ -192,6 +246,9 @@ func (w *DirectorySyncWorker) failJob(ctx context.Context, jobID, actor string, 
 		AddErrorCount(1).
 		SetErrors([]string{message})
 	if _, err := update.Save(ctx); err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		return errors.Join(cause, fmt.Errorf("persist directory sync job failure: %w", err))
 	}
 

@@ -68,44 +68,72 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 	if err != nil {
 		return fmt.Errorf("fetch domain event %s: %w", eventID, err)
 	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusEXECUTING)
+	if ticketStatus, ok := ticketStatusForTerminalDomainEvent(event.Status); ok {
+		logger.Info("vm modify event already terminal, skipping duplicate execution",
+			zap.String("event_id", eventID),
+			zap.String("event_status", event.Status.String()),
+		)
+		if ticketErr := updateTicketStatusByEvent(ctx, w.entClient, eventID, ticketStatus); ticketErr != nil {
+			if ctxErr := jobContextErr(ctx, ticketErr); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("persist %s ticket status for terminal modify event %s: %w", ticketStatus, eventID, ticketErr)
+		}
+		return nil
+	}
+	if persistErr := persistProcessingEventAndExecutingTicketByEvent(ctx, w.entClient, eventID); persistErr != nil {
+		if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+			return ctxErr
+		}
+		return fmt.Errorf("persist PROCESSING/EXECUTING status for modify event %s: %w", eventID, persistErr)
+	}
 	ticket, _ := w.entClient.Ticket.Query().
 		Where(entticket.EventIDEQ(eventID), entticket.OperationTypeEQ(entticket.OperationTypeMODIFY)).
 		Only(ctx)
 
 	var payload domain.VMModifyPayload
 	if unmarshalErr := json.Unmarshal(event.Payload, &payload); unmarshalErr != nil {
-		_, _ = w.entClient.DomainEvent.UpdateOneID(eventID).SetStatus(domainevent.StatusFAILED).Save(ctx)
-		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
+		if persistErr := persistFailedEventAndTicketByEvent(ctx, w.entClient, eventID); persistErr != nil {
+			if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+				return ctxErr
+			}
+			return fmt.Errorf("persist FAILED status for malformed modify event %s: %w", eventID, persistErr)
+		}
 		return river.JobCancel(fmt.Errorf("unmarshal modify payload for event %s: %w", eventID, unmarshalErr))
 	}
 
 	markFailed := func(cause error, cancel bool) error {
-		if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-			SetStatus(domainevent.StatusFAILED).
-			Save(ctx); saveErr != nil {
-			logger.Error("failed to persist FAILED status for modify event",
-				zap.String("event_id", eventID),
-				zap.Error(saveErr),
-			)
-		}
-		setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusFAILED)
-		if ticket != nil {
-			if _, saveErr := w.entClient.Ticket.UpdateOneID(ticket.ID).
-				SetStatus(entticket.StatusFAILED).
-				SetRejectReason(strings.TrimSpace(cause.Error())).
-				Save(ctx); saveErr != nil {
-				logger.Error("failed to persist failure reason for modify ticket",
-					zap.String("ticket_id", ticket.ID),
-					zap.Error(saveErr),
-				)
-			}
-		}
 		logAuditVMOp(ctx, w.auditLogger, "modify_failed", payload.VMName, payload.Actor, eventID)
 		if cancel {
+			if persistErr := persistFinalModifyFailure(ctx, w.entClient, eventID, cause); persistErr != nil {
+				if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+					return ctxErr
+				}
+				return fmt.Errorf("persist FAILED status for modify event %s before cancellation: %w", eventID, persistErr)
+			}
 			return river.JobCancel(cause)
 		}
+		if isFinalJobAttempt(job) {
+			if persistErr := persistFinalModifyFailure(ctx, w.entClient, eventID, cause); persistErr != nil {
+				if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+					return ctxErr
+				}
+				return fmt.Errorf("persist final FAILED status for modify event %s: %w", eventID, persistErr)
+			}
+		}
 		return cause
+	}
+
+	currentVM, err := w.entClient.VM.Get(ctx, payload.VMID)
+	switch {
+	case err == nil:
+		if currentVM.Status == entvm.StatusDELETING {
+			return markFailed(fmt.Errorf("vm %s is deleting", payload.VMID), true)
+		}
+	case ent.IsNotFound(err):
+		return markFailed(fmt.Errorf("vm %s no longer exists", payload.VMID), true)
+	default:
+		return fmt.Errorf("query vm %s before modify execution: %w", payload.VMID, err)
 	}
 
 	clusterRow, err := w.entClient.Cluster.Get(ctx, payload.ClusterID)
@@ -130,6 +158,9 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 
 	liveVM, err := w.vmService.GetVM(ctx, payload.ClusterID, payload.Namespace, payload.VMName)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		if isClusterRuntimeUnavailable(err) {
 			return snoozeClusterRuntimeUnavailable("vm_modify", eventID, payload.ClusterID, "load_live_vm", err)
 		}
@@ -165,29 +196,26 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 
 	updatedVM, err := w.vmService.ExecuteVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation)
 	if err != nil {
+		if ctxErr := jobContextErr(ctx, err); ctxErr != nil {
+			return ctxErr
+		}
 		if isClusterRuntimeUnavailable(err) {
 			return snoozeClusterRuntimeUnavailable("vm_modify", eventID, payload.ClusterID, "execute_mutation", err)
 		}
 		return markFailed(fmt.Errorf("execute vm mutation for event %s: %w", eventID, err), false)
 	}
 
-	if persistErr := w.persistModifiedVMStatus(ctx, payload.VMID, updatedVM); persistErr != nil {
-		logger.Error("VM modify succeeded but status sync persistence failed",
+	if persistErr := w.persistCompletedModifyState(ctx, eventID, payload.VMID, updatedVM); persistErr != nil {
+		if ctxErr := jobContextErr(ctx, persistErr); ctxErr != nil {
+			return ctxErr
+		}
+		logger.Error("VM modify succeeded but terminal state persistence failed",
 			zap.String("event_id", eventID),
 			zap.String("vm_id", payload.VMID),
 			zap.Error(persistErr),
 		)
+		return fmt.Errorf("persist completed modify state for event %s (vm_id=%s): %w", eventID, payload.VMID, persistErr)
 	}
-
-	if _, saveErr := w.entClient.DomainEvent.UpdateOneID(eventID).
-		SetStatus(domainevent.StatusCOMPLETED).
-		Save(ctx); saveErr != nil {
-		logger.Error("failed to persist COMPLETED status for modify event",
-			zap.String("event_id", eventID),
-			zap.Error(saveErr),
-		)
-	}
-	setTicketStatusByEvent(ctx, w.entClient, eventID, entticket.StatusSUCCESS)
 	logAuditVMOp(ctx, w.auditLogger, "modify", payload.VMName, payload.Actor, eventID)
 
 	logger.Info("VM modify job completed",
@@ -196,6 +224,13 @@ func (w *VMModifyWorker) Work(ctx context.Context, job *river.Job[VMModifyArgs])
 		zap.String("vm_name", payload.VMName),
 	)
 	return nil
+}
+
+func persistFinalModifyFailure(ctx context.Context, client *ent.Client, eventID string, cause error) error {
+	if client == nil {
+		return nil
+	}
+	return persistFailedEventAndTicketByEventWithRejectReason(ctx, client, eventID, strings.TrimSpace(cause.Error()))
 }
 
 func validateVMModifyClusterCapabilities(clusterRow *ent.Cluster, liveVM *domain.VM, payload *domain.VMModifyPayload) error {
@@ -256,7 +291,28 @@ func approvedModifyMutationPlan(ticket *ent.Ticket) (*provider.VMResourceUpdateP
 	return plan, nil
 }
 
-func (w *VMModifyWorker) persistModifiedVMStatus(ctx context.Context, vmID string, updatedVM *domain.VM) error {
+func (w *VMModifyWorker) persistCompletedModifyState(ctx context.Context, eventID, vmID string, updatedVM *domain.VM) error {
+	if w.entClient == nil || eventID == "" {
+		return nil
+	}
+	return withJobsTx(ctx, w.entClient, func(txClient *ent.Client) error {
+		if err := persistModifiedVMStatusWithClient(ctx, txClient, vmID, updatedVM); err != nil {
+			return err
+		}
+		if err := updateDomainEventStatusWithExpected(ctx, txClient, eventID, domainevent.StatusCOMPLETED, domainevent.StatusPROCESSING); err != nil {
+			return err
+		}
+		if err := updateTicketStatusByEventWithClient(ctx, txClient, eventID, entticket.StatusSUCCESS); err != nil {
+			return err
+		}
+		return syncParentBatchStatusByChildEventWithClient(ctx, txClient, eventID)
+	})
+}
+
+func persistModifiedVMStatusWithClient(ctx context.Context, client *ent.Client, vmID string, updatedVM *domain.VM) error {
+	if client == nil {
+		return nil
+	}
 	if strings.TrimSpace(vmID) == "" || updatedVM == nil {
 		return nil
 	}
@@ -264,7 +320,8 @@ func (w *VMModifyWorker) persistModifiedVMStatus(ctx context.Context, vmID strin
 	targetStatus := mapDomainStatusToEntVM(updatedVM.Status)
 	targetTier := tierForStatus(targetStatus)
 	targetInterval := intervalForTier(targetTier)
-	update := w.entClient.VM.UpdateOneID(vmID).
+	update := client.VM.UpdateOneID(vmID).
+		Where(entvm.StatusNEQ(entvm.StatusDELETING)).
 		SetStatus(targetStatus).
 		SetPollingTier(targetTier).
 		SetPollIntervalSec(targetInterval)
@@ -277,5 +334,11 @@ func (w *VMModifyWorker) persistModifiedVMStatus(ctx context.Context, vmID strin
 		update = update.SetLastK8sRv(updatedVM.ResourceVersion).SetLastPolledAt(observedAt)
 	}
 	_, err := update.Save(ctx)
+	if ent.IsNotFound(err) {
+		logger.Info("skipped completed modify VM status persistence because row is delete-owned or absent",
+			zap.String("vm_id", vmID),
+		)
+		return nil
+	}
 	return err
 }

@@ -288,6 +288,16 @@ func TestQueries_SetDomainEventStatus(t *testing.T) {
 	var status string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM domain_events WHERE id=$1`, eventID).Scan(&status))
 	require.Equal(t, "COMPLETED", status)
+
+	rows, err = q.SetDomainEventStatus(ctx, SetDomainEventStatusParams{
+		ID:     eventID,
+		Status: "PROCESSING",
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 0, rows)
+
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM domain_events WHERE id=$1`, eventID).Scan(&status))
+	require.Equal(t, "COMPLETED", status)
 }
 
 func TestQueries_InsertDomainEvent(t *testing.T) {
@@ -381,6 +391,7 @@ func TestQueries_ResetPowerRetryTicket(t *testing.T) {
 
 	rows, err := q.ResetPowerRetryTicket(ctx, ResetPowerRetryTicketParams{
 		ID:             "ticket-child-retry",
+		EventID:        "event-child-retry",
 		ParentTicketID: pgtype.Text{String: "ticket-parent-retry", Valid: true},
 	})
 	require.NoError(t, err)
@@ -391,6 +402,42 @@ func TestQueries_ResetPowerRetryTicket(t *testing.T) {
 	require.NoError(t, pool.QueryRow(ctx, `SELECT status, reject_reason FROM tickets WHERE id=$1`, "ticket-child-retry").Scan(&ticketStatus, &rejectReason))
 	require.Equal(t, "EXECUTING", ticketStatus)
 	require.False(t, rejectReason.Valid)
+
+	seedTicket(ctx, t, pool, "ticket-child-rejected", "event-child-rejected", "POWER")
+	_, err = pool.Exec(ctx, `UPDATE tickets SET status='REJECTED', reject_reason='seed rejection', parent_ticket_id='ticket-parent-retry' WHERE id='ticket-child-rejected'`)
+	require.NoError(t, err)
+	rows, err = q.ResetPowerRetryTicket(ctx, ResetPowerRetryTicketParams{
+		ID:             "ticket-child-rejected",
+		EventID:        "event-child-rejected",
+		ParentTicketID: pgtype.Text{String: "ticket-parent-retry", Valid: true},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status, reject_reason FROM tickets WHERE id=$1`, "ticket-child-rejected").Scan(&ticketStatus, &rejectReason))
+	require.Equal(t, "EXECUTING", ticketStatus)
+	require.False(t, rejectReason.Valid)
+
+	seedTicket(ctx, t, pool, "ticket-child-mismatch", "event-child-mismatch", "POWER")
+	_, err = pool.Exec(ctx, `UPDATE tickets SET status='FAILED', reject_reason='seed failure', parent_ticket_id='ticket-parent-retry' WHERE id='ticket-child-mismatch'`)
+	require.NoError(t, err)
+	rows, err = q.ResetPowerRetryTicket(ctx, ResetPowerRetryTicketParams{
+		ID:             "ticket-child-mismatch",
+		EventID:        "event-child-other",
+		ParentTicketID: pgtype.Text{String: "ticket-parent-retry", Valid: true},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 0, rows)
+
+	seedTicket(ctx, t, pool, "ticket-child-pending", "event-child-pending", "POWER")
+	_, err = pool.Exec(ctx, `UPDATE tickets SET status='PENDING', parent_ticket_id='ticket-parent-retry' WHERE id='ticket-child-pending'`)
+	require.NoError(t, err)
+	rows, err = q.ResetPowerRetryTicket(ctx, ResetPowerRetryTicketParams{
+		ID:             "ticket-child-pending",
+		EventID:        "event-child-pending",
+		ParentTicketID: pgtype.Text{String: "ticket-parent-retry", Valid: true},
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 0, rows)
 }
 
 func TestQueries_ResetDomainEventForRetry(t *testing.T) {
@@ -406,6 +453,21 @@ func TestQueries_ResetDomainEventForRetry(t *testing.T) {
 	var eventStatus string
 	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM domain_events WHERE id=$1`, "event-child-retry").Scan(&eventStatus))
 	require.Equal(t, "PENDING", eventStatus)
+
+	seedDomainEvent(ctx, t, pool, "event-child-cancelled", "CANCELLED")
+	rows, err = q.ResetDomainEventForRetry(ctx, "event-child-cancelled")
+	require.NoError(t, err)
+	require.EqualValues(t, 1, rows)
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM domain_events WHERE id=$1`, "event-child-cancelled").Scan(&eventStatus))
+	require.Equal(t, "PENDING", eventStatus)
+
+	seedDomainEvent(ctx, t, pool, "event-child-processing", "PROCESSING")
+	rows, err = q.ResetDomainEventForRetry(ctx, "event-child-processing")
+	require.NoError(t, err)
+	require.EqualValues(t, 0, rows)
+
+	require.NoError(t, pool.QueryRow(ctx, `SELECT status FROM domain_events WHERE id=$1`, "event-child-processing").Scan(&eventStatus))
+	require.Equal(t, "PROCESSING", eventStatus)
 }
 
 func TestQueries_SetVMStatus(t *testing.T) {

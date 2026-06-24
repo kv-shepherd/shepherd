@@ -175,7 +175,10 @@ func (c *postgresTableStatsCollector) Collect(ch chan<- prometheus.Metric) {
 		ch <- prometheus.MustNewConstMetric(c.scrapeSuccessDesc, prometheus.GaugeValue, 0)
 		return
 	}
-	stats, err := c.provider.TableStats(context.Background())
+	ctx, cancel := collectorScrapeContext()
+	defer cancel()
+
+	stats, err := c.provider.TableStats(ctx)
 	if err != nil {
 		ch <- prometheus.MustNewConstMetric(c.scrapeSuccessDesc, prometheus.GaugeValue, 0)
 		return

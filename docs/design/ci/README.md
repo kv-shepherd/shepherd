@@ -59,6 +59,7 @@ Enforcement is blocking:
 |--------|---------------|-------|-----------|
 | `shepherd-arch` (golangci-lint module plugin) | Batch1/2 architecture gates: forbidden imports, Ent query-safety boundary, manual DI, explicit RBAC, no runtime mock wiring, no naked goroutines, River bypass, semaphore pairing, service tx boundary, River job args claim-check, auth-provider core/edge/provider layering | Required | ✅ Yes |
 | `shepherd-arch/k8sintransaction` (Analyzer) | No K8s API calls inside transactions | Required | ✅ Yes |
+| `shepherd-arch/k8stimeout` (Analyzer) | Provider-owned K8s client interface calls across `internal/provider` must use bounded operation-timeout contexts | Required | ✅ Yes |
 | [check_validate_spec.go](./scripts/check_validate_spec.go) | No ValidateSpec calls inside transactions | Required | ✅ Yes |
 | [check_openapi_critical_contract.go](./scripts/check_openapi_critical_contract.go) | Enforce stage-critical OpenAPI contracts (auth/vm/approval/audit/notification + global BearerAuth) and ADR-0028 oapi-codegen optional-field/tag strategy | Required | ✅ Yes |
 | [check_openapi_critical_fingerprint.go](./scripts/check_openapi_critical_fingerprint.go) | Lock SHA256 fingerprints for critical OpenAPI nodes (intentional-change only) | Required | ✅ Yes |
@@ -69,6 +70,7 @@ Enforcement is blocking:
 | [check_vm_create_status_progression.go](./scripts/check_vm_create_status_progression.go) | Enforce Stage 5.C VM status persistence (`CREATING -> RUNNING|FAILED`) | Required | ✅ Yes |
 | [check_vm_create_spec_completeness.go](./scripts/check_vm_create_spec_completeness.go) | Enforce Stage 5.C carries `spec_overrides` through Worker→Provider rendering path | Required | ✅ Yes |
 | [check_critical_test_presence.go](./scripts/check_critical_test_presence.go) | Require paired `_test.go` coverage for critical runtime paths (worker/provider/usecase/gateway/validator) | Required | ✅ Yes |
+| [check_go_coverage_threshold.sh](./scripts/check_go_coverage_threshold.sh) | Enforce `make ci-go-test` handwritten Go statement coverage ≥ 60% after excluding generated Ent/OpenAPI/spec-embed code and plugin example templates; the raw `coverage.out` artifact remains complete | Required | ✅ Yes |
 | [check_stage5c_behavior_tests.go](./scripts/check_stage5c_behavior_tests.go) | Enforce Stage 5.C critical behavior tests/scenarios (spec_overrides mapping + invalid path rejection) | Required | ✅ Yes |
 | [check_stage5d_delete_baseline.go](./scripts/check_stage5d_delete_baseline.go) | Enforce Stage 5.D delete confirmation/cascade baseline across OpenAPI + runtime handlers + backend/frontend tests | Required | ✅ Yes |
 | [check_duplicate_guard_scope.go](./scripts/check_duplicate_guard_scope.go) | Enforce duplicate guard uses same-resource scope + returns `existing_ticket_id` | Required | ✅ Yes |
@@ -131,6 +133,7 @@ The following directories are exempt from the `nakedgoroutine` analyzer in `shep
 > | Check Script | Applicable Scenario in Async Model |
 > |--------------|-------------------------------------|
 > | `shepherd-arch/k8sintransaction` | Ensures K8s calls in UseCase layer are outside DB transactions |
+> | `shepherd-arch/k8stimeout` | Ensures provider-owned K8s client interface calls use bounded operation-timeout contexts |
 > | `check_validate_spec.go` | Ensures validation logic completes before transaction starts |
 > | `shepherd-arch/txboundary` | Ensures Service layer does not actively manage transaction boundaries |
 > | `shepherd-arch/riverbypass` | **Detects direct writes bypassing River Queue in UseCase layer** |
@@ -232,6 +235,7 @@ make ci-live-e2e-latest-evidence
 # Live E2E environment readiness without starting services or browser tests
 bash scripts/run_e2e_live.sh --preflight-only
 make live-e2e-readiness
+make live-e2e-status
 # Optional explicit evidence path for release artifact collectors
 bash scripts/run_e2e_live.sh --foreground --evidence-file .run/live-e2e/release/live-e2e.evidence.json
 
@@ -328,13 +332,18 @@ Current split (2026-05-09 optimization):
   `ci-api-contract`) instead of duplicating inline quality commands in workflow
   YAML. This keeps local `make pr` and remote required checks on the same
   command definitions.
-- `check_workflow_make_target_parity.sh` is blocking and enforces that workflow
-  files keep using those repository targets.
+- `check_workflow_make_parity.go` is blocking and enforces that workflow files
+  keep using those repository targets without inline quality-command drift.
 - `authproviderplugin-sdk-smoke` is blocking inside `ci-governance` and proves
   a separate Go module can consume `pkg/authproviderplugin` without importing
   Shepherd `internal/...`.
 - `Govulncheck`: runs `make govulncheck` as a blocking job and is also included in
   `make lint`, `make ci-backend`, and `make pr`.
+- `Go coverage`: `make ci-go-test` writes the complete `coverage.out` artifact,
+  then runs `check_go_coverage_threshold.sh` against a generated/template-filtered
+  profile. The blocking threshold is 60% over handwritten Go statements; generated
+  Ent/OpenAPI/spec-embed code and plugin example templates remain in the raw
+  artifact but are excluded from the pass/fail percentage.
 - `Gitleaks`: runs `make secrets-scan` as a blocking job and is also included in
   `make lint`, `make ci-governance`, and `make pr`.
 - `Dead Code & Dependency Hygiene`: runs `npm run knip` as a blocking frontend
@@ -448,6 +457,7 @@ ci/
     ├── check_frontend_no_non_english_literals.go # Frontend hardcoded non-English literal check
     ├── check_frontend_no_placeholder_pages.go # Frontend placeholder route-page marker check
     ├── check_frontend_route_shell_architecture.go # Frontend route shell threshold gate
+    ├── check_go_coverage_threshold.sh # Handwritten Go coverage threshold gate
     ├── check_changed_code_has_tests.sh # Runtime code diff must include test diff
     ├── check_no_new_run_scripts.sh # Prevent adding new legacy go-run CI scripts
     ├── check_no_legacy_batch1_invocations.sh # Prevent invoking migrated Batch1 legacy scripts in CI entrypoints

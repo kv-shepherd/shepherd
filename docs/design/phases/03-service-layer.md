@@ -438,6 +438,7 @@ func (s *VMService) ExecuteK8sCreate(ctx context.Context, spec *domain.VMSpec) e
 - [x] Handlers return `202 Accepted` for async VM writes and batch/console request paths
 - [x] River worker concurrency is configured through queue-specific `MaxWorkers`
 - [x] Cluster/runtime degradation handling exists in approval preflight, capability detection, and worker retry paths
+- [x] DB-backed VMService create request approval/worker e2e covers UseCase -> approval atomic writer -> River enqueue -> `VMCreateWorker` -> provider create path
 - [x] HPA constraints documented in [DEPENDENCIES.md §HPA Concurrency Constraints Required](../DEPENDENCIES.md#hpa-concurrency-constraints-required)
 
 Advanced degradation/circuit-breaker UX remains a non-blocking follow-up in

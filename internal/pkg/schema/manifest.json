@@ -1,7 +1,7 @@
 {
   "entities": {
     "instancesize": {
-      "current_version": "kubevirt-v1.8.2",
+      "current_version": "kubevirt-v1.8.4",
       "versions": {
         "kubevirt-v1.7.0": {
           "kubevirt_version": "1.7.0",
@@ -22,6 +22,11 @@
           "kubevirt_version": "1.8.2",
           "schema_path": "versions/kubevirt-v1.8.2/instancesize.schema.json",
           "mask_path": "versions/kubevirt-v1.8.2/instancesize.mask.json"
+        },
+        "kubevirt-v1.8.4": {
+          "kubevirt_version": "1.8.4",
+          "schema_path": "versions/kubevirt-v1.8.4/instancesize.schema.json",
+          "mask_path": "versions/kubevirt-v1.8.4/instancesize.mask.json"
         }
       }
     }

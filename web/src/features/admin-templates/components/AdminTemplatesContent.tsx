@@ -66,7 +66,12 @@ import {
     TEMPLATE_OS_FAMILY_OPTIONS,
     type TemplatePresetKey,
 } from '../templatePresets';
-import { OS_COLOR_MAP, type Template } from '../types';
+import {
+    OS_COLOR_MAP,
+    type Template,
+    type TemplateCatalogScope,
+    type TemplateSourceType,
+} from '../types';
 import { getTemplateRequestFlowStatus } from '../requestFlow';
 
 const { Text } = Typography;
@@ -758,7 +763,9 @@ export function AdminTemplatesContent() {
                                         value={sourceTypeDraft || undefined}
                                         options={sourceTypeOptions}
                                         style={{ minWidth: 220 }}
-                                        onChange={(value) => setSourceTypeDraft((value as string | undefined) ?? '')}
+                                        onChange={(value) =>
+                                            setSourceTypeDraft((value as TemplateSourceType | undefined) ?? '')
+                                        }
                                     />
                                     <Select
                                         allowClear
@@ -768,7 +775,9 @@ export function AdminTemplatesContent() {
                                         value={catalogScopeDraft || undefined}
                                         options={catalogScopeOptions}
                                         style={{ minWidth: 200 }}
-                                        onChange={(value) => setCatalogScopeDraft((value as string | undefined) ?? '')}
+                                        onChange={(value) =>
+                                            setCatalogScopeDraft((value as TemplateCatalogScope | undefined) ?? '')
+                                        }
                                     />
                                     <Select
                                         allowClear

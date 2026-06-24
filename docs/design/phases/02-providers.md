@@ -329,38 +329,41 @@ If schema fetch fails → use embedded fallback → retry on next health check c
 Periodic Scan
   → Find K8s VMs with Shepherd labels but missing DB record
   → Check adoption criteria (valid Service association)
-  → Write adoptable items to pending_adoptions
+  → Write/refresh PENDING adoptable items in pending_adoptions
 
 Admin Review
-  → Adopt (create DB record) OR Ignore
+  → Reject noisy items OR Adopt (create DB VM inventory record)
 ```
 
 ### Adoption Criteria (ADR-0015 §12)
 
 | Condition | Adoptable | Action |
 |-----------|-----------|--------|
-| Has `kubevirt-shepherd.io/service` label and Service exists in DB | ✅ Yes | Add to pending list |
+| Has `shepherd.io/service-id` label and Service exists in DB | ✅ Yes | Add to pending list |
 | Shepherd labels exist but Service missing | ❌ No | Ignore as orphan; manual kubectl cleanup if needed |
 | No Shepherd labels | ❌ No | Not platform-managed |
+
+Existing `ADOPTED`, `REJECTED`, or `EXPIRED` pending-adoption rows are not reopened by discovery.
 
 ### PendingAdoption Fields
 
 | Field | Type | Purpose |
 |-------|------|---------|
-| `cluster_name` | string | Resource location |
+| `cluster_id` | string | Resource location |
 | `namespace` | string | K8s namespace |
-| `system`, `service`, `instance` | string | Governance identifiers from labels |
-| `k8s_uid` | string | K8s resource UID |
-| `resource_spec` | JSON | Snapshot for admin review |
-| `status` | enum | PENDING, ADOPTED, IGNORED |
+| `resource_name` | string | K8s resource name |
+| `resource_type` | string | Resource kind, e.g. `VirtualMachine` |
+| `status` | enum | PENDING, ADOPTED, REJECTED, EXPIRED |
+| `discovered_by` | string | Optional scanner/operator identifier |
+| `labels` | JSON | K8s labels snapshot for admin review |
 
 ### Admin APIs
 
-| Endpoint | Purpose |
-|----------|---------|
-| `GET /api/v1/admin/pending-adoptions` | List pending adoptable resources |
-| `POST .../adopt` | Confirm adoption into DB |
-| `POST .../ignore` | Ignore item (no DB record created) |
+| Endpoint | Purpose | Status |
+|----------|---------|--------|
+| `GET /api/v1/admin/pending-adoptions` | List pending adoptable resources with status, cluster, namespace, type, search, and pagination filters | ✅ Implemented |
+| `POST /api/v1/admin/pending-adoptions/{pending_adoption_id}/reject` | Reject a pending item without creating a DB VM record and write an audit event | ✅ Implemented |
+| `POST /api/v1/admin/pending-adoptions/{pending_adoption_id}/adopt` | Re-read the live Kubernetes VM, verify Shepherd service ownership, create the DB VM inventory row, mark the pending item `ADOPTED`, and write an audit event | ✅ Implemented |
 
 ### V1 Constraints (Intentional)
 
@@ -390,12 +393,17 @@ func (p *MockProvider) Reset() { ... }
 ## Acceptance Criteria
 
 - [x] KubeVirt provider implements the V1 runtime interfaces needed by create, power, modify, delete, manifest, status, VNC, serial, dry-run, storage-class, and DataVolume paths
+- [x] KubeVirt provider exposes namespace-scoped and cluster-scoped instance type/preference catalog reads through a narrow catalog client
 - [x] MockProvider matches the current V1 provider contracts used by tests
 - [x] MapVM handles nil fields correctly
 - [x] ResourceWatcher 410 handling is not a V1 acceptance item; optional watch acceleration is tracked in [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md)
 - [x] Health check updates cluster status
 - [x] Capability detector runs on health check
-- [x] Adoption compensation schema exists; admin discovery/adoption workflow is deferred to [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md)
+- [x] Adoption compensation schema exists
+- [x] Label-based adoption discovery writes `pending_adoptions` rows for Shepherd-labeled K8s VMs missing DB rows when the referenced Service exists
+- [x] Periodic adoption discovery scan is configured as a River job over enabled healthy clusters and enabled same-environment namespaces
+- [x] Admin list/reject baseline exposes pending adoption resources and records rejection audit events
+- [x] Admin adoption execution creates DB VM inventory rows only after live VM re-verification, Service ownership validation, duplicate DB row checks, transactional `pending_adoptions` status update, and `adoption.adopted` audit logging
 
 ---
 

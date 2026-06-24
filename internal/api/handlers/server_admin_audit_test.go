@@ -456,6 +456,27 @@ func TestListAuditLogs_FiltersByCategory(t *testing.T) {
 	}
 }
 
+func TestListAuditLogs_RejectsInvalidCategory(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminIdentityTestServer(t)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/audit-logs?category=unknown",
+		"",
+		"admin-1",
+		[]string{"audit:read", "platform:admin"},
+	)
+	srv.ListAuditLogs(c, generated.ListAuditLogsParams{Category: generated.ListAuditLogsParamsCategory("unknown")})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}
+
 func TestListAuditLogs_EnrichesReadableActorResourceAndTicketSummary(t *testing.T) {
 	t.Parallel()
 

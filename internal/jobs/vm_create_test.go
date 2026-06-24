@@ -1,6 +1,7 @@
 package jobs
 
 import (
+	"slices"
 	"testing"
 
 	"kv-shepherd.io/shepherd/ent"
@@ -495,6 +496,73 @@ func TestResolveInstanceSizeSpecOverrides_BackwardCompatibleFlatSnapshot(t *test
 	}
 }
 
+func TestResolveInstanceSizeDVStorage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name            string
+		size            *ent.InstanceSize
+		snapshot        map[string]interface{}
+		wantAccessModes []string
+		wantVolumeMode  string
+	}{
+		{
+			name: "snapshot access modes and volume mode win",
+			size: &ent.InstanceSize{
+				DvAccessModes: []string{"ReadWriteMany"},
+				DvVolumeMode:  "Filesystem",
+			},
+			snapshot: map[string]interface{}{
+				"dv_access_modes": []interface{}{" ReadWriteOnce ", "", 42, "ReadOnlyMany"},
+				"dv_volume_mode":  " Block ",
+			},
+			wantAccessModes: []string{"ReadWriteOnce", "ReadOnlyMany"},
+			wantVolumeMode:  "Block",
+		},
+		{
+			name: "snapshot volume mode alone wins over instance size storage defaults",
+			size: &ent.InstanceSize{
+				DvAccessModes: []string{"ReadWriteOnce"},
+				DvVolumeMode:  "Filesystem",
+			},
+			snapshot: map[string]interface{}{
+				"dv_volume_mode": "Block",
+			},
+			wantVolumeMode: "Block",
+		},
+		{
+			name: "instance size storage defaults are cloned and trimmed",
+			size: &ent.InstanceSize{
+				DvAccessModes: []string{"ReadWriteOnce"},
+				DvVolumeMode:  " Filesystem ",
+			},
+			wantAccessModes: []string{"ReadWriteOnce"},
+			wantVolumeMode:  "Filesystem",
+		},
+		{
+			name: "missing instance size and snapshot returns empty storage hints",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotAccessModes, gotVolumeMode := resolveInstanceSizeDVStorage(tc.size, tc.snapshot)
+			if !slices.Equal(gotAccessModes, tc.wantAccessModes) {
+				t.Fatalf("accessModes = %#v, want %#v", gotAccessModes, tc.wantAccessModes)
+			}
+			if gotVolumeMode != tc.wantVolumeMode {
+				t.Fatalf("volumeMode = %q, want %q", gotVolumeMode, tc.wantVolumeMode)
+			}
+			if tc.size != nil && len(gotAccessModes) > 0 {
+				gotAccessModes[0] = "mutated"
+				if slices.Contains(tc.size.DvAccessModes, "mutated") {
+					t.Fatal("resolveInstanceSizeDVStorage returned storage access modes aliased to InstanceSize")
+				}
+			}
+		})
+	}
+}
+
 func TestMapCreatedVMStatusToRow(t *testing.T) {
 	testCases := []struct {
 		name   string
@@ -563,6 +631,72 @@ func TestMapCreatedVMStatusToRow(t *testing.T) {
 			got := mapCreatedVMStatusToRow(tc.vm)
 			if got != tc.expect {
 				t.Fatalf("status mismatch: got %s want %s", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestLookupStringSliceValue(t *testing.T) {
+	t.Parallel()
+
+	t.Run("clones string slice values", func(t *testing.T) {
+		source := []string{"ReadWriteOnce"}
+		got := lookupStringSliceValue(map[string]interface{}{"dv_access_modes": source}, "missing", "dv_access_modes")
+		if !slices.Equal(got, []string{"ReadWriteOnce"}) {
+			t.Fatalf("lookupStringSliceValue() = %#v, want ReadWriteOnce", got)
+		}
+		got[0] = "mutated"
+		if source[0] != "ReadWriteOnce" {
+			t.Fatal("lookupStringSliceValue returned a slice aliased to the source []string")
+		}
+	})
+
+	t.Run("filters interface slice values", func(t *testing.T) {
+		got := lookupStringSliceValue(map[string]interface{}{
+			"dv_access_modes": []interface{}{" ReadWriteOnce ", "", 42, "ReadOnlyMany"},
+		}, "dv_access_modes")
+		if !slices.Equal(got, []string{"ReadWriteOnce", "ReadOnlyMany"}) {
+			t.Fatalf("lookupStringSliceValue() = %#v, want filtered access modes", got)
+		}
+	})
+
+	t.Run("ignores empty or non-string interface slice values", func(t *testing.T) {
+		got := lookupStringSliceValue(map[string]interface{}{
+			"dv_access_modes": []interface{}{42, " "},
+		}, "dv_access_modes")
+		if got != nil {
+			t.Fatalf("lookupStringSliceValue() = %#v, want nil", got)
+		}
+	})
+}
+
+func TestToInt(t *testing.T) {
+	t.Parallel()
+
+	maxInt := int(^uint(0) >> 1)
+	tests := []struct {
+		name   string
+		raw    interface{}
+		want   int
+		wantOK bool
+	}{
+		{name: "int8", raw: int8(-8), want: -8, wantOK: true},
+		{name: "uint16", raw: uint16(42), want: 42, wantOK: true},
+		{name: "uint64 overflow", raw: uint64(maxInt) + 1, wantOK: false},
+		{name: "float64 truncates", raw: float64(3.9), want: 3, wantOK: true},
+		{name: "trimmed string", raw: " 17 ", want: 17, wantOK: true},
+		{name: "invalid string", raw: "not-a-number", wantOK: false},
+		{name: "nil", raw: nil, wantOK: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := toInt(tc.raw)
+			if ok != tc.wantOK {
+				t.Fatalf("toInt(%#v) ok = %v, want %v", tc.raw, ok, tc.wantOK)
+			}
+			if got != tc.want {
+				t.Fatalf("toInt(%#v) = %d, want %d", tc.raw, got, tc.want)
 			}
 		})
 	}

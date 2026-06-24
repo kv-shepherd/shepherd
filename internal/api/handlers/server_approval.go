@@ -106,6 +106,9 @@ func (s *Server) ListBuiltinApprovalTasks(c *gin.Context, params generated.ListB
 
 func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options ticketListOptions) {
 	ctx := c.Request.Context()
+	if !normalizeAndValidateTicketListOptions(c, &options) {
+		return
+	}
 	query := s.client.Ticket.Query()
 	query = query.Where(entticket.ParentTicketIDIsNil())
 	if options.mine {
@@ -354,6 +357,43 @@ func (s *Server) writeTicketListResponse(c *gin.Context, actor string, options t
 			TotalPages: totalPages,
 		},
 	})
+}
+
+func normalizeAndValidateTicketListOptions(c *gin.Context, options *ticketListOptions) bool {
+	if options == nil {
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "ticket list options are required"})
+		return false
+	}
+	options.status = strings.TrimSpace(options.status)
+	options.statusGroup = strings.TrimSpace(options.statusGroup)
+	options.operationType = strings.TrimSpace(options.operationType)
+	options.placementSnapshot = strings.TrimSpace(options.placementSnapshot)
+
+	if options.status != "" {
+		if err := entticket.StatusValidator(entticket.Status(options.status)); err != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "invalid ticket status"})
+			return false
+		}
+	}
+	switch options.statusGroup {
+	case "", "ACTIVE", "TERMINAL", "ATTENTION":
+	default:
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "invalid ticket status group"})
+		return false
+	}
+	if options.operationType != "" {
+		if err := entticket.OperationTypeValidator(entticket.OperationType(options.operationType)); err != nil {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "invalid ticket operation type"})
+			return false
+		}
+	}
+	switch options.placementSnapshot {
+	case "", "present", "missing":
+	default:
+		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: "invalid placement snapshot filter"})
+		return false
+	}
+	return true
 }
 
 // ApproveBuiltinApprovalTask handles POST /builtin-approval/tasks/{ticket_id}/approve.

@@ -58,6 +58,8 @@ tests:
         values: '3x35'
       - series: 'shepherd_business_approval_failure_audit_actions_recent{action="approval.validation_failed"}'
         values: '2x35'
+      - series: 'shepherd_business_approval_failure_audit_actions_recent{action="approval.other"}'
+        values: '5x35'
 
     promql_expr_test:
       - expr: shepherd:http_requests:rate5m
@@ -120,6 +122,8 @@ tests:
         exp_samples:
           - labels: 'shepherd:business_approval_failure_audit_actions:sum{action="approval.validation_failed"}'
             value: 2
+          - labels: 'shepherd:business_approval_failure_audit_actions:sum{action="approval.other"}'
+            value: 5
 
     alert_rule_test:
       - alertname: ShepherdMetricsTargetDown
@@ -282,4 +286,12 @@ tests:
             exp_annotations:
               summary: Shepherd approval failure audit actions were recorded
               description: Approval-related failure audit actions were recorded recently for action=approval.validation_failed.
+              runbook_url: docs/design/observability/alerts-baseline.md#shepherdapprovalfailureauditactionsrecent
+          - exp_labels:
+              action: approval.other
+              severity: warning
+              service: shepherd
+            exp_annotations:
+              summary: Shepherd approval failure audit actions were recorded
+              description: Approval-related failure audit actions were recorded recently for action=approval.other.
               runbook_url: docs/design/observability/alerts-baseline.md#shepherdapprovalfailureauditactionsrecent

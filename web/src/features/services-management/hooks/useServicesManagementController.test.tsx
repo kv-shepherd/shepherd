@@ -212,6 +212,48 @@ describe('useServicesManagementController', () => {
     });
   });
 
+  it('fetches the system-scoped services endpoint when a system filter is active', async () => {
+    const createMutate = vi.fn();
+    const deleteMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 3 === 1) return { mutate: createMutate, isPending: false };
+      if (mutationCall % 3 === 2) return { mutate: deleteMutate, isPending: false };
+      return { mutate: updateMutate, isPending: false };
+    });
+
+    const { result } = renderHook(() => useServicesManagementController({
+      t,
+      initialSystemId: 'sys-1',
+    }));
+
+    act(() => {
+      result.current.applyFilters({ search: 'api', systemId: 'sys-1' });
+    });
+
+    const servicesCall = [...useApiGetMock.mock.calls].reverse().find(
+      (call) => Array.isArray(call[0]) && call[0][0] === 'services',
+    );
+    const servicesFetcher = servicesCall?.[1] as (() => Promise<unknown>) | undefined;
+    expect(servicesFetcher).toBeTypeOf('function');
+
+    await servicesFetcher?.();
+
+    expect(apiGetMock).toHaveBeenCalledWith('/systems/{system_id}/services', {
+      params: {
+        path: { system_id: 'sys-1' },
+        query: {
+          page: 1,
+          per_page: 20,
+          search: 'api',
+        },
+      },
+    });
+  });
+
   it('submits update and delete operations for selected service', async () => {
     const createMutate = vi.fn();
     const deleteMutate = vi.fn();

@@ -111,7 +111,7 @@ Allowed business labels:
 | `status` | Ticket and batch-ticket enum status |
 | `operation_type` | Ticket enum operation type |
 | `batch_type` | Batch-ticket enum batch type |
-| `action` | Fixed audit action name such as `approval.validation_failed` |
+| `action` | Fixed allowlisted audit action such as `approval.validation_failed`; unknown or future approval actions are aggregated as `approval.other` |
 
 Forbidden HTTP labels:
 

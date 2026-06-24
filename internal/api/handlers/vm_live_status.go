@@ -27,6 +27,9 @@ func (s *Server) refreshVMLiveState(ctx context.Context, vmRow *ent.VM) *ent.VM 
 	if s == nil || s.vmService == nil || vmRow == nil || strings.TrimSpace(vmRow.ClusterID) == "" {
 		return vmRow
 	}
+	if vmRow.Status == entvm.StatusDELETING {
+		return vmRow
+	}
 
 	liveVM, err := s.vmService.GetVM(ctx, vmRow.ClusterID, vmRow.Namespace, vmRow.Name)
 	if err != nil {
@@ -54,6 +57,9 @@ func (s *Server) refreshVMLiveStates(ctx context.Context, vms []*ent.VM) []*ent.
 	groups := make(map[vmLiveGroupKey][]int)
 	for i, vmRow := range vms {
 		if vmRow == nil || strings.TrimSpace(vmRow.ClusterID) == "" || strings.TrimSpace(vmRow.Namespace) == "" {
+			continue
+		}
+		if vmRow.Status == entvm.StatusDELETING {
 			continue
 		}
 		key := vmLiveGroupKey{
@@ -209,6 +215,9 @@ func (s *Server) applyObservedVMState(ctx context.Context, vmRow *ent.VM, liveVM
 	if s == nil || s.client == nil || vmRow == nil || liveVM == nil {
 		return vmRow
 	}
+	if vmRow.Status == entvm.StatusDELETING {
+		return vmRow
+	}
 
 	newStatus := mapDomainVMStatusToEntVM(liveVM.Status)
 	newTier := pollingTierForVMStatus(newStatus)
@@ -246,6 +255,7 @@ func (s *Server) applyObservedVMState(ctx context.Context, vmRow *ent.VM, liveVM
 	}
 
 	update := s.client.VM.UpdateOneID(vmRow.ID).
+		Where(entvm.StatusNEQ(entvm.StatusDELETING)).
 		SetStatus(newStatus).
 		SetPollingTier(newTier).
 		SetPollIntervalSec(newInterval)
@@ -264,6 +274,9 @@ func (s *Server) applyObservedVMState(ctx context.Context, vmRow *ent.VM, liveVM
 	}
 
 	if _, err := update.Save(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			return s.currentVMAfterSkippedLivePersist(ctx, vmRow)
+		}
 		logger.Warn("failed to persist observed vm state",
 			zap.String("vm_id", vmRow.ID),
 			zap.String("cluster_id", vmRow.ClusterID),
@@ -282,6 +295,9 @@ func (s *Server) applyObservedVMState(ctx context.Context, vmRow *ent.VM, liveVM
 // isNotFound=false → K8s API call failed (cluster unreachable)   → UNKNOWN
 func (s *Server) applyUnavailableVMState(ctx context.Context, vmRow *ent.VM, observedAt time.Time, isNotFound bool) *ent.VM {
 	if s == nil || s.client == nil || vmRow == nil {
+		return vmRow
+	}
+	if vmRow.Status == entvm.StatusDELETING {
 		return vmRow
 	}
 
@@ -309,6 +325,7 @@ func (s *Server) applyUnavailableVMState(ctx context.Context, vmRow *ent.VM, obs
 	}
 
 	update := s.client.VM.UpdateOneID(vmRow.ID).
+		Where(entvm.StatusNEQ(entvm.StatusDELETING)).
 		SetStatus(newStatus).
 		SetPollingTier(newTier).
 		SetPollIntervalSec(newInterval).
@@ -324,6 +341,9 @@ func (s *Server) applyUnavailableVMState(ctx context.Context, vmRow *ent.VM, obs
 	}
 
 	if _, err := update.Save(ctx); err != nil {
+		if ent.IsNotFound(err) {
+			return s.currentVMAfterSkippedLivePersist(ctx, vmRow)
+		}
 		logger.Warn("failed to persist unavailable vm state",
 			zap.String("vm_id", vmRow.ID),
 			zap.String("cluster_id", vmRow.ClusterID),
@@ -335,6 +355,23 @@ func (s *Server) applyUnavailableVMState(ctx context.Context, vmRow *ent.VM, obs
 	}
 
 	return &updated
+}
+
+func (s *Server) currentVMAfterSkippedLivePersist(ctx context.Context, vmRow *ent.VM) *ent.VM {
+	if s == nil || s.client == nil || vmRow == nil {
+		return vmRow
+	}
+	current, err := s.client.VM.Get(ctx, vmRow.ID)
+	if err != nil {
+		if !ent.IsNotFound(err) {
+			logger.Warn("failed to reload vm after skipped live state persist",
+				zap.String("vm_id", vmRow.ID),
+				zap.Error(err),
+			)
+		}
+		return vmRow
+	}
+	return current
 }
 
 func shouldPersistObservedVMState(vmRow *ent.VM, updated ent.VM, resourceVersion string, observedAt time.Time) bool {

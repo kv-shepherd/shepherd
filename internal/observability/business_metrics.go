@@ -3,6 +3,8 @@ package observability
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -11,6 +13,9 @@ import (
 
 const (
 	businessApprovalAuditRecentWindow = time.Hour
+
+	// BusinessApprovalAuditOtherAction aggregates non-allowlisted approval audit actions.
+	BusinessApprovalAuditOtherAction = "approval.other"
 
 	businessApprovalTicketsByStatusQuery = `
 SELECT status::text, operation_type::text, count(*)::float8
@@ -72,6 +77,19 @@ GROUP BY action
 ORDER BY action
 `
 )
+
+var businessApprovalAuditActionAllowlist = map[string]struct{}{
+	"approval.approved":            {},
+	"approval.rejected":            {},
+	"approval.validation_failed":   {},
+	"approval.power_approved":      {},
+	"approval.delete_approved":     {},
+	"approval.vnc_access_approved": {},
+	"approval.cancelled":           {},
+	"approval.batch_approved":      {},
+	"approval.batch_rejected":      {},
+	"approval.batch_cancelled":     {},
+}
 
 // BusinessApprovalTicketCount is one aggregate approval ticket count.
 type BusinessApprovalTicketCount struct {
@@ -188,7 +206,7 @@ func (p *pgxBusinessMetricsProvider) BusinessMetrics(ctx context.Context) (Busin
 		return BusinessMetricsStats{}, err
 	}
 
-	return BusinessMetricsStats{
+	return NormalizeBusinessMetricsStats(BusinessMetricsStats{
 		ApprovalTickets:             approvalTickets,
 		ApprovalPendingAges:         approvalPendingAges,
 		BatchApprovalTickets:        batchApprovalTickets,
@@ -196,7 +214,49 @@ func (p *pgxBusinessMetricsProvider) BusinessMetrics(ctx context.Context) (Busin
 		BatchApprovalFailedChildren: batchApprovalFailedChildren,
 		ApprovalAuditActions:        approvalAuditActions,
 		ApprovalFailureAuditActions: approvalFailureAuditActions,
-	}, nil
+	}), nil
+}
+
+// NormalizeBusinessMetricsStats caps business metric labels to the low-cardinality baseline.
+func NormalizeBusinessMetricsStats(stats BusinessMetricsStats) BusinessMetricsStats {
+	stats.ApprovalAuditActions = normalizeBusinessApprovalAuditActionCounts(stats.ApprovalAuditActions)
+	stats.ApprovalFailureAuditActions = normalizeBusinessApprovalAuditActionCounts(stats.ApprovalFailureAuditActions)
+	return stats
+}
+
+func normalizeBusinessApprovalAuditActionCounts(items []BusinessApprovalAuditActionCount) []BusinessApprovalAuditActionCount {
+	if len(items) == 0 {
+		return nil
+	}
+
+	totals := make(map[string]float64, len(items))
+	for _, item := range items {
+		action := normalizeBusinessApprovalAuditAction(item.Action)
+		totals[action] += item.Count
+	}
+
+	actions := make([]string, 0, len(totals))
+	for action := range totals {
+		actions = append(actions, action)
+	}
+	sort.Strings(actions)
+
+	result := make([]BusinessApprovalAuditActionCount, 0, len(actions))
+	for _, action := range actions {
+		result = append(result, BusinessApprovalAuditActionCount{
+			Action: action,
+			Count:  totals[action],
+		})
+	}
+	return result
+}
+
+func normalizeBusinessApprovalAuditAction(action string) string {
+	action = strings.TrimSpace(action)
+	if _, ok := businessApprovalAuditActionAllowlist[action]; ok {
+		return action
+	}
+	return BusinessApprovalAuditOtherAction
 }
 
 func queryBusinessApprovalTicketCounts(ctx context.Context, queryer pgxQueryer, query string, args ...any) ([]BusinessApprovalTicketCount, error) {
@@ -422,11 +482,15 @@ func (c *businessMetricsCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
-	stats, err := c.provider.BusinessMetrics(context.Background())
+	ctx, cancel := collectorScrapeContext()
+	defer cancel()
+
+	stats, err := c.provider.BusinessMetrics(ctx)
 	if err != nil {
 		ch <- prometheus.MustNewConstMetric(c.scrapeSuccessDesc, prometheus.GaugeValue, 0)
 		return
 	}
+	stats = NormalizeBusinessMetricsStats(stats)
 
 	ch <- prometheus.MustNewConstMetric(c.scrapeSuccessDesc, prometheus.GaugeValue, 1)
 	for _, count := range stats.ApprovalTickets {

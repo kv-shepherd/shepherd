@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type manifest struct {
@@ -25,8 +26,10 @@ type ghRelease struct {
 }
 
 const (
-	manifestPath  = "internal/pkg/schema/manifest.json"
-	ghReleasesURL = "https://api.github.com/repos/kubevirt/kubevirt/releases?per_page=30"
+	manifestPath                    = "internal/pkg/schema/manifest.json"
+	ghReleasesURL                   = "https://api.github.com/repos/kubevirt/kubevirt/releases?per_page=30"
+	schemaMaintenanceRequestTimeout = 30 * time.Second
+	githubReleasesMaxResponseBytes  = int64(2 * 1024 * 1024)
 )
 
 var gaTagRe = regexp.MustCompile(`^v(\d+\.\d+\.\d+)$`)
@@ -92,7 +95,21 @@ func readLocalVersionFromManifest(path string) (string, error) {
 }
 
 func fetchLatestGA() (string, error) {
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, ghReleasesURL, http.NoBody)
+	return fetchLatestGAFrom(http.DefaultClient, ghReleasesURL)
+}
+
+func fetchLatestGAFrom(client *http.Client, releasesURL string) (string, error) {
+	return fetchLatestGAFromWithLimit(client, releasesURL, githubReleasesMaxResponseBytes)
+}
+
+func fetchLatestGAFromWithLimit(client *http.Client, releasesURL string, maxResponseBytes int64) (string, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), schemaMaintenanceRequestTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, releasesURL, http.NoBody)
 	if err != nil {
 		return "", err
 	}
@@ -102,19 +119,23 @@ func fetchLatestGA() (string, error) {
 	}
 
 	// #nosec G704 -- fixed GitHub releases API endpoint for advisory freshness check.
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("GitHub API request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 201))
 		return "", fmt.Errorf("GitHub API returned %d: %s", resp.StatusCode, string(body[:minInt(len(body), 200)]))
 	}
 
+	payload, err := readLimitedResponseBody(resp.Body, maxResponseBytes, "GitHub releases response")
+	if err != nil {
+		return "", err
+	}
 	var releases []ghRelease
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+	if err := json.Unmarshal(payload, &releases); err != nil {
 		return "", fmt.Errorf("decode releases: %w", err)
 	}
 
@@ -129,6 +150,20 @@ func fetchLatestGA() (string, error) {
 		return m[1], nil
 	}
 	return "", fmt.Errorf("no GA release found in latest %d releases", len(releases))
+}
+
+func readLimitedResponseBody(r io.Reader, maxBytes int64, label string) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("%s size limit must be positive", label)
+	}
+	payload, err := io.ReadAll(&io.LimitedReader{R: r, N: maxBytes + 1})
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", label, err)
+	}
+	if int64(len(payload)) > maxBytes {
+		return nil, fmt.Errorf("%s exceeds %d bytes", label, maxBytes)
+	}
+	return payload, nil
 }
 
 func compareSemver(a, b string) int {

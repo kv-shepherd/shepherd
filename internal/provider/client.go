@@ -13,6 +13,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+	instancetypev1beta1 "kubevirt.io/api/instancetype/v1beta1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
@@ -73,6 +74,14 @@ type DataVolumeClient interface {
 // StorageProfileClient abstracts CDI StorageProfile reads.
 type StorageProfileClient interface {
 	Get(ctx context.Context, name string, opts k8smetav1.GetOptions) (*cdiv1beta1.StorageProfile, error)
+}
+
+// InstanceTypeCatalogClient abstracts KubeVirt instance type and preference list reads.
+type InstanceTypeCatalogClient interface {
+	ListInstanceTypes(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*instancetypev1beta1.VirtualMachineInstancetypeList, error)
+	ListClusterInstanceTypes(ctx context.Context, opts k8smetav1.ListOptions) (*instancetypev1beta1.VirtualMachineClusterInstancetypeList, error)
+	ListPreferences(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*instancetypev1beta1.VirtualMachinePreferenceList, error)
+	ListClusterPreferences(ctx context.Context, opts k8smetav1.ListOptions) (*instancetypev1beta1.VirtualMachineClusterPreferenceList, error)
 }
 
 // PersistentVolumeClaimClient abstracts PVC read operations.

@@ -11,9 +11,14 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 )
 
-const manifestPath = "internal/pkg/schema/manifest.json"
+const (
+	manifestPath                    = "internal/pkg/schema/manifest.json"
+	schemaMaintenanceRequestTimeout = 30 * time.Second
+	kubeVirtSwaggerMaxResponseBytes = int64(64 * 1024 * 1024)
+)
 
 var versionRe = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
 
@@ -342,8 +347,23 @@ func difference(a, b []string) []string {
 }
 
 func httpGet(url string) ([]byte, error) {
+	return httpGetFrom(http.DefaultClient, url)
+}
+
+func httpGetFrom(client *http.Client, url string) ([]byte, error) {
+	return httpGetFromWithLimit(client, url, kubeVirtSwaggerMaxResponseBytes)
+}
+
+func httpGetFromWithLimit(client *http.Client, url string, maxResponseBytes int64) ([]byte, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), schemaMaintenanceRequestTimeout)
+	defer cancel()
+
 	// #nosec G704 -- URL is constructed from a semver-validated KubeVirt release tag.
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, url, http.NoBody)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, http.NoBody)
 	if err != nil {
 		return nil, err
 	}
@@ -352,7 +372,7 @@ func httpGet(url string) ([]byte, error) {
 	}
 
 	// #nosec G704 -- URL is constructed from a semver-validated KubeVirt release tag.
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -361,7 +381,21 @@ func httpGet(url string) ([]byte, error) {
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("HTTP %d for %s", resp.StatusCode, url)
 	}
-	return io.ReadAll(resp.Body)
+	return readLimitedHTTPResponseBody(resp.Body, maxResponseBytes, "KubeVirt swagger response")
+}
+
+func readLimitedHTTPResponseBody(r io.Reader, maxBytes int64, label string) ([]byte, error) {
+	if maxBytes <= 0 {
+		return nil, fmt.Errorf("%s size limit must be positive", label)
+	}
+	payload, err := io.ReadAll(&io.LimitedReader{R: r, N: maxBytes + 1})
+	if err != nil {
+		return nil, fmt.Errorf("read %s: %w", label, err)
+	}
+	if int64(len(payload)) > maxBytes {
+		return nil, fmt.Errorf("%s exceeds %d bytes", label, maxBytes)
+	}
+	return payload, nil
 }
 
 func downloadSwagger(version string) ([]byte, error) {

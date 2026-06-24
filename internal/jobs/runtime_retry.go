@@ -17,6 +17,25 @@ import (
 
 const clusterRuntimeUnavailableSnoozeDuration = 5 * time.Minute
 
+func jobContextErr(ctx context.Context, err error) error {
+	if ctx != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return ctxErr
+		}
+	}
+	if stderrors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	return nil
+}
+
+func isFinalJobAttempt[T river.JobArgs](job *river.Job[T]) bool {
+	if job == nil || job.JobRow == nil || job.MaxAttempts <= 0 {
+		return false
+	}
+	return job.Attempt >= job.MaxAttempts
+}
+
 func isClusterRuntimeUnavailable(err error) bool {
 	if err == nil {
 		return false

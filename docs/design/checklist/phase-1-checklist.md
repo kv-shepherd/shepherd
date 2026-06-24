@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/01-contracts.md](../phases/01-contracts.md)
 >
-> **Implementation Status**: 🔄 Partial (~98%) — 33 Ent schemas complete, Ent codegen sync gate, Ent dynamic-query safety gate, Go/TS API types, ADR-0028 generated-type gate, frontend testing toolchain, cluster credential runtime, and provider-plugin config boundary are complete; remaining work is Ent schema/transaction/test standards and deferred V2 schemas
+> **Implementation Status**: 🔄 Partial (~99%) — 33 Ent schemas complete, Ent schema standards/codegen/dynamic-query safety gates, Go/TS API types, ADR-0028 generated-type/pointer-audit gates, frontend testing toolchain, cluster credential runtime, and provider-plugin config boundary are complete; remaining work is deferred V2 schemas/deployment items
 
 ---
 
@@ -80,12 +80,12 @@
 
 ## Ent Usage Standards (CI Enforcement)
 
-- [ ] **Schema Definition Standards** followed
+- [x] **Schema Definition Standards** followed — design governance verifies each concrete Ent schema has an immutable unique string `id`, uses `TimeMixin` or `AuditMixin`, and does not redefine shared timestamp fields outside `mixin.go`
 - [x] **Code Generation Sync** (CI detection) — `check_ent_codegen.go` runs in `make ci-governance`; `go.mod` pins the Ent generator tool so `go generate ./ent` is reproducible without `go.sum` churn
 - [x] **Dynamic Queries Must Be Type-Safe** — `shepherd-arch/entquerysafety` requires generated Ent predicates by default and limits raw `ent/dialect/sql` / `sqljson` imports to reviewed `*_ent_predicates.go` helpers plus database/test integration
-- [ ] **Transaction Management** per ADR-0012
-- [ ] **Test Infrastructure** (PostgreSQL via testcontainers-go)
-- [ ] **Test Coverage** (CI enforcement)
+- [x] **Transaction Management** per ADR-0012 — atomic approval writers use `sqlc + pgx.Tx + river.InsertTx`; `check_sqlc_usage.sh`, `check_validate_spec.go`, `check_k8s_in_transaction.go`, and `shepherd-arch/txboundary` keep transaction ownership and K8s calls out of unsafe layers
+- [x] **PostgreSQL Test Infrastructure** — shared Docker-backed `testutil.MustStartDockerPG` / `OpenEntPostgres` helpers run DB-backed suites from `TEST_DATABASE_URL`/`DATABASE_URL` or an ephemeral PostgreSQL container
+- [x] **Test Coverage** (CI enforcement) — `make ci-go-test` now runs the complete race/coverage profile and enforces ≥60% handwritten Go statement coverage via `check_go_coverage_threshold.sh`; generated Ent/OpenAPI/spec-embed code and plugin example templates remain in the raw artifact but are excluded from the threshold
 
 ---
 
@@ -104,18 +104,19 @@
 
 > **Details**: See [CI README §API Contract-First](../ci/README.md#api-contract-first-enforcement-adr-0021-adr-0029) for full implementation guidance.
 
-- [x] `api/openapi.yaml` exists and is OpenAPI 3.1 canonical spec (135 operationIds, full scope coverage)
+- [x] `api/openapi.yaml` exists and is OpenAPI 3.1 canonical spec (140 operationIds, full scope coverage)
 - [x] `api/.vacuum.yaml` exists and `make api-lint` passes (ADR-0029: vacuum replaces spectral) — *implemented in `build/api.mk`*
 - [x] `api/oapi-codegen.yaml` exists and targets `internal/api/generated/` — *Phase 5: v2 format with gin-server + models*
 - [x] `make api-generate` produces:
-  - [x] `internal/api/generated/` Go server types — *Phase 5: ServerInterface with 135 endpoints*
+  - [x] `internal/api/generated/` Go server types — *Phase 5: ServerInterface with 140 endpoints*
   - [x] `web/src/types/api.gen.ts` TypeScript types — *Regenerated from `api/openapi.yaml`*
 - [x] `make api-check` passes with no uncommitted generated changes — *implemented in `build/api.mk` + `docs/design/ci/scripts/api-check.sh`*
-- [ ] If 3.1-only features are used:
-  - [ ] `api/openapi.compat.yaml` is generated (3.0-compatible)
-  - [ ] CI runs `make api-compat-generate` before `make api-compat`
-- [ ] CI blocks merges unless `make api-check` passes
-- [ ] ADR-0029 Compliance: libopenapi-validator with StrictMode, version-pinned CI actions
+- [x] Handler-level validation covers implemented optional enum query filters that oapi-codegen binds as string-like values (tickets, audit category, namespace environment, cluster DataVolume mode, pending adoption resource type, and list sort order)
+- [x] If 3.1-only features are used, the compat path is enforced when required:
+  - [x] `api/openapi.compat.yaml` is generated and freshness-checked by `make api-compat-generate` / `make api-compat`
+  - [x] Generated-sync CI runs `REQUIRE_OPENAPI_COMPAT=1 bash docs/design/ci/scripts/api-check.sh` through `make ci-api-generated-sync`
+- [x] CI API contract workflow runs the merge-gate API targets (`make ci-api-lint`, `make ci-api-generated-sync`, `make ci-api-contract`); generated-sync wraps `make api-check`
+- [x] ADR-0029 Compliance: Vacuum linting, libopenapi-validator StrictMode, version-pinned runners/actions, and workflow/make parity checks are implemented
 
 ---
 
@@ -131,7 +132,7 @@
   - [x] Optional value fields use `json:",omitempty,omitzero"` tags
   - [x] Pointer-style optional fields are limited to explicit codegen overrides / nullable semantics and must not carry `omitzero`
   - [x] No unnecessary optional `*string`, `*int`, `*bool`, or numeric scalar pointers
-- [ ] Business logic does not contain excessive `if ptr != nil` checks for optional fields
+- [x] Business logic does not contain excessive `if ptr != nil` checks for optional fields — `check_openapi_critical_contract.go` blocks optional builtin scalar pointers and freezes the remaining generated optional pointer fields to explicit complex/nullable boundary exceptions
 
 ---
 
@@ -212,8 +213,8 @@
 
 ## Go Module Configuration (ADR-0016)
 
-- [ ] `go.mod` uses vanity import path: `kv-shepherd.io/shepherd`
-- [ ] All internal imports use vanity path: `kv-shepherd.io/shepherd/internal/...`
+- [x] `go.mod` uses vanity import path: `kv-shepherd.io/shepherd`
+- [x] All internal imports use vanity path: `kv-shepherd.io/shepherd/internal/...`
 - [ ] Vanity import server configured (for production deployment)
 
 ---

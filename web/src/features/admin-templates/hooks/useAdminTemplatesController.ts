@@ -13,7 +13,14 @@ import {
     normalizeTemplateSystemLabelSelection,
 } from '@/features/catalog/systemLabels';
 
-import type { Template, TemplateCreateRequest, TemplateList, TemplateUpdateRequest } from '../types';
+import type {
+    Template,
+    TemplateCatalogScope,
+    TemplateCreateRequest,
+    TemplateList,
+    TemplateSourceType,
+    TemplateUpdateRequest,
+} from '../types';
 
 interface UseAdminTemplatesControllerArgs {
     t: TFunction;
@@ -23,10 +30,23 @@ interface UseAdminTemplatesControllerArgs {
 interface TemplateSearchFilters {
     search: string;
     osFamily: string;
-    sourceType: string;
-    catalogScope: string;
+    sourceType: '' | TemplateSourceType;
+    catalogScope: '' | TemplateCatalogScope;
     enabled: '' | 'enabled' | 'disabled';
 }
+
+const TEMPLATE_SOURCE_TYPE_FILTERS = [
+    'containerdisk',
+    'cdi_image_import',
+    'cdi_pvc_clone',
+] as const satisfies readonly TemplateSourceType[];
+
+const TEMPLATE_CATALOG_SCOPE_FILTERS = [
+    'unclassified',
+    'test',
+    'prod',
+    'all',
+] as const satisfies readonly TemplateCatalogScope[];
 
 const CREATE_TEMPLATE_DEFAULTS: Pick<TemplateCreateRequest, 'catalog_scope' | 'enabled' | 'source_type'> = {
     catalog_scope: 'unclassified',
@@ -42,14 +62,26 @@ const EMPTY_TEMPLATE_SEARCH_FILTERS: TemplateSearchFilters = {
     enabled: '',
 };
 
+function normalizeTemplateSourceTypeFilter(value: unknown): '' | TemplateSourceType {
+    return TEMPLATE_SOURCE_TYPE_FILTERS.includes(value as TemplateSourceType)
+        ? value as TemplateSourceType
+        : '';
+}
+
+function normalizeTemplateCatalogScopeFilter(value: unknown): '' | TemplateCatalogScope {
+    return TEMPLATE_CATALOG_SCOPE_FILTERS.includes(value as TemplateCatalogScope)
+        ? value as TemplateCatalogScope
+        : '';
+}
+
 function normalizeTemplateSearchFilters(
     nextFilters: Partial<TemplateSearchFilters>,
 ): TemplateSearchFilters {
     return {
         search: nextFilters.search?.trim() ?? '',
         osFamily: nextFilters.osFamily?.trim() ?? '',
-        sourceType: nextFilters.sourceType?.trim() ?? '',
-        catalogScope: nextFilters.catalogScope?.trim() ?? '',
+        sourceType: normalizeTemplateSourceTypeFilter(nextFilters.sourceType),
+        catalogScope: normalizeTemplateCatalogScopeFilter(nextFilters.catalogScope),
         enabled:
             nextFilters.enabled === 'enabled' || nextFilters.enabled === 'disabled'
                 ? nextFilters.enabled

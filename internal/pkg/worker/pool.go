@@ -20,6 +20,8 @@ import (
 // ErrPoolClosed is returned when submitting to a closed pool.
 var ErrPoolClosed = errors.New("worker pool is closed")
 
+const poolSubmitRetryInterval = 10 * time.Millisecond
+
 // Task is a context-aware task function (ADR-0031 Rule 2).
 type Task func(ctx context.Context)
 
@@ -68,7 +70,7 @@ func NewPools(ctx context.Context, cfg PoolConfig) (*Pools, error) {
 
 	generalAnts, err := ants.NewPool(cfg.GeneralPoolSize,
 		ants.WithPanicHandler(panicHandler),
-		ants.WithNonblocking(false),
+		ants.WithNonblocking(true),
 		ants.WithExpiryDuration(10*time.Second), // Purge idle workers (ants best practice)
 	)
 	if err != nil {
@@ -78,7 +80,7 @@ func NewPools(ctx context.Context, cfg PoolConfig) (*Pools, error) {
 
 	k8sAnts, err := ants.NewPool(cfg.K8sPoolSize,
 		ants.WithPanicHandler(panicHandler),
-		ants.WithNonblocking(false),
+		ants.WithNonblocking(true),
 		ants.WithExpiryDuration(30*time.Second), // K8s tasks are longer-lived
 	)
 	if err != nil {
@@ -99,6 +101,9 @@ func NewPools(ctx context.Context, cfg PoolConfig) (*Pools, error) {
 // The task receives the caller's context and SHOULD check ctx.Done() at blocking points.
 // If context is already cancelled, returns ctx.Err() immediately without submitting.
 func (p *Pool) Submit(ctx context.Context, task Task) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
 	// Fast path: check if context is already cancelled
 	select {
 	case <-ctx.Done():
@@ -106,7 +111,7 @@ func (p *Pool) Submit(ctx context.Context, task Task) error {
 	default:
 	}
 
-	return p.pool.Submit(func() {
+	wrappedTask := func() {
 		// Check context again inside worker (may have been cancelled while queued)
 		select {
 		case <-ctx.Done():
@@ -118,7 +123,9 @@ func (p *Pool) Submit(ctx context.Context, task Task) error {
 		default:
 		}
 		task(ctx)
-	})
+	}
+
+	return p.submitWithContext(ctx, wrappedTask)
 }
 
 // SubmitDetached submits a detached background task (ADR-0031 Rule 2).
@@ -136,7 +143,7 @@ func (p *Pools) SubmitDetached(poolName string, task Task) error {
 		pool = p.General
 	}
 
-	return pool.pool.Submit(func() {
+	return pool.submitWithContext(p.serviceCtx, func() {
 		// Check service context
 		select {
 		case <-p.serviceCtx.Done():
@@ -148,6 +155,47 @@ func (p *Pools) SubmitDetached(poolName string, task Task) error {
 		}
 		task(p.serviceCtx)
 	})
+}
+
+func (p *Pool) submitWithContext(ctx context.Context, task func()) error {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		err := p.pool.Submit(task)
+		if err == nil {
+			return nil
+		}
+		if !errors.Is(err, ants.ErrPoolOverload) {
+			return err
+		}
+
+		timer := time.NewTimer(poolSubmitRetryInterval)
+		select {
+		case <-ctx.Done():
+			stopTimer(timer)
+			return ctx.Err()
+		case <-timer.C:
+		}
+	}
+}
+
+func stopTimer(timer *time.Timer) {
+	if timer == nil {
+		return
+	}
+	if !timer.Stop() {
+		select {
+		case <-timer.C:
+		default:
+		}
+	}
 }
 
 // Shutdown gracefully shuts down all pools with a timeout.

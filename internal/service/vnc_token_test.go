@@ -230,6 +230,37 @@ func TestPostgresVNCReplayStore_ConsumeSingleUseAcrossInstances(t *testing.T) {
 	}
 }
 
+func TestPostgresVNCReplayStore_RetriesSchemaAfterCanceledInitialization(t *testing.T) {
+	t.Parallel()
+
+	pool := testutil.OpenPGXPool(t, "vnc_replay_schema_retry")
+	store := NewPostgresVNCReplayStore(pool)
+
+	canceledCtx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := store.ensureSchema(canceledCtx)
+	if err == nil {
+		t.Fatal("ensureSchema(canceled) error = nil, want cancellation error")
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("ensureSchema(canceled) error = %v, want %v", err, context.Canceled)
+	}
+	if store.initialized {
+		t.Fatal("store initialized after canceled schema init, want retryable failure")
+	}
+
+	allowed, err := store.Consume(t.Context(), "jti-schema-retry", time.Now().Add(time.Hour))
+	if err != nil {
+		t.Fatalf("Consume() after schema retry error = %v", err)
+	}
+	if !allowed {
+		t.Fatal("Consume() after schema retry = false, want first consume")
+	}
+	if !store.initialized {
+		t.Fatal("store initialized = false after successful retry")
+	}
+}
+
 func TestVNCTokenManager_ValidateAndConsume_UsesPostgresReplayStore(t *testing.T) {
 	t.Parallel()
 

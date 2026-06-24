@@ -74,6 +74,30 @@ func userIDsForRoleWithClient(ctx context.Context, client *ent.Client, roleID st
 	return slices.Compact(userIDs), nil
 }
 
+func userIDsForAuthProviderWithClient(ctx context.Context, client *ent.Client, providerID string) ([]string, error) {
+	if client == nil {
+		return nil, fmt.Errorf("server client is required")
+	}
+
+	users, err := client.User.Query().
+		Where(entuser.AuthProviderIDEQ(providerID)).
+		All(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	userIDs := make([]string, 0, len(users))
+	for _, userRow := range users {
+		userID := strings.TrimSpace(userRow.ID)
+		if userID == "" {
+			continue
+		}
+		userIDs = append(userIDs, userID)
+	}
+	slices.Sort(userIDs)
+	return slices.Compact(userIDs), nil
+}
+
 func (s *Server) revokeCurrentAuthToken(c *gin.Context, reason string) error {
 	if s == nil || s.authSessions == nil {
 		return nil

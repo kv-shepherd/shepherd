@@ -64,7 +64,7 @@ interface UseVMManagementControllerArgs {
 interface VMListFilters {
   search: string;
   namespace: string;
-  status: string;
+  status: "" | VM["status"];
   clusterId: string;
   systemId: string;
   serviceId: string;

@@ -954,6 +954,7 @@ func (s *Server) finalizeExternalAuthLogin(
 
 	var upsertResult *service.ExternalAuthUpsertResult
 	var loginResp generated.LoginResponse
+	disabledUser := false
 	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
 		txServer := &Server{
 			client:       tx.Client(),
@@ -971,7 +972,13 @@ func (s *Server) finalizeExternalAuthLogin(
 			return fmt.Errorf("external auth provisioning returned no user")
 		}
 		if !upsertResult.User.Enabled {
-			return errExternalAuthUserDisabled
+			disabledUser = true
+			return txServer.revokeUserSessions(ctx, upsertResult.User.ID, "external_auth_user_disabled")
+		}
+		if upsertResult.RBACChanged {
+			if err := txServer.revokeUserSessions(ctx, upsertResult.User.ID, "external_auth_rbac_changed"); err != nil {
+				return err
+			}
 		}
 
 		var issueErr error
@@ -984,6 +991,9 @@ func (s *Server) finalizeExternalAuthLogin(
 		}
 		return nil
 	})
+	if err == nil && disabledUser {
+		return generated.LoginResponse{}, upsertResult, errExternalAuthUserDisabled
+	}
 	return loginResp, upsertResult, err
 }
 

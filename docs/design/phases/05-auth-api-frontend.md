@@ -16,7 +16,7 @@
 | RBAC Middleware | `internal/api/middleware/rbac.go` | ✅ | RequirePermission + RequireResourceAccess |
 | Member Handler | `internal/api/handlers/member.go` | ✅ | ResourceRoleBinding CRUD + audit |
 | oapi-codegen config | `api/oapi-codegen.yaml` | ✅ | v2 format, gin-server + models |
-| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 135 endpoints (ADR-0028 omitzero value types), all model types |
+| Generated Server | `internal/api/generated/server.gen.go` | ✅ | 140 endpoints (ADR-0028 omitzero value types), all model types |
 | openapi-typescript | `web/src/types/api.gen.ts` | ✅ | Auto-generated from OpenAPI spec |
 | Seed Command | `cmd/seed/main.go` | ✅ | 6 roles + default admin |
 | Bootstrap | `internal/app/bootstrap.go` | ✅ | 127 file lines; `Bootstrap()` function is 57 lines and remains orchestration-only (see ADR-0043 design note) |
@@ -63,7 +63,7 @@ Phase 5 bridges the backend to a usable product by implementing:
 
 ## Current Runtime Alignment
 
-- `api/openapi.yaml` currently exposes 135 `operationId`s.
+- `api/openapi.yaml` currently exposes 140 `operationId`s.
 - `web/src/app` currently contains 29 `page.tsx` files, including the root route and compatibility/alias pages.
 - Auth middleware lives under `internal/api/middleware/`; there is no standalone `internal/middleware` package.
 - Route registration is OpenAPI-generated and centralized through `internal/app/router.go`.
@@ -143,8 +143,8 @@ Phase 5 bridges the backend to a usable product by implementing:
 
 ### Atlas Migration
 
-- `migrations/atlas/atlas.hcl` configuration (ent schema → PostgreSQL 18)
-- Dev database: `docker://postgres/18/dev`
+- `migrations/atlas/atlas.hcl` configuration (ent schema -> PostgreSQL baseline from [DEPENDENCIES.md](../DEPENDENCIES.md#database))
+- Dev database: use the PostgreSQL baseline from [DEPENDENCIES.md](../DEPENDENCIES.md#database)
 
 ---
 
@@ -155,13 +155,13 @@ Phase 5 bridges the backend to a usable product by implementing:
 
 ### Technology Stack (ADR-0020)
 
-- **Framework**: React 19 + Next.js 16 (App Router)
-- **Language**: TypeScript 5.8+ (strict mode)
-- **UI Components**: Ant Design 5.x + @ant-design/pro-components 2.x
-- **State Management**: Zustand 5.x + TanStack Query 5.x
-- **Styling**: Tailwind CSS 4.x
-- **Form Validation**: Zod 4.x with Ant Design rule adapters for localized field validation
-- **Internationalization**: react-i18next 16.x
+- **Framework**: React + Next.js App Router (pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime))
+- **Language**: TypeScript strict mode (pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-and-test-tooling))
+- **UI Components**: Ant Design + @ant-design/pro-components (pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime))
+- **State Management**: Zustand + TanStack Query (pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime))
+- **Styling**: Tailwind CSS (pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime))
+- **Form Validation**: Zod with Ant Design rule adapters for localized field validation (pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime))
+- **Internationalization**: react-i18next (pinned in [DEPENDENCIES.md](../DEPENDENCIES.md#frontend-runtime))
 - **API Client**: Generated from OpenAPI via `openapi-typescript` + `openapi-fetch`
 
 ### Contract-First Frontend Development
@@ -170,7 +170,7 @@ Phase 5 bridges the backend to a usable product by implementing:
 2. `openapi-fetch` creates type-safe API client (no manual typing)
 3. All API calls are fully typed end-to-end (OpenAPI → Go server → TS client)
 
-### Pages (MVP — 29 App Router page files)
+### Pages (MVP — 32 App Router page files)
 
 - Login page with force password change
 - Change password page (standalone)
@@ -186,6 +186,7 @@ Phase 5 bridges the backend to a usable product by implementing:
 - Users management (admin)
 - Auth Providers management (admin: CRUD + test connection + sample fields + directory preview/sync + external cohort mappings)
 - External Approval Systems management (admin: webhook registry CRUD)
+- Pending Adoptions management (admin: review/adopt/reject discovered live resources)
 - Rate Limits management (admin: exemptions/overrides)
 - Permissions browser (admin)
 - RBAC management (admin: roles + role bindings)

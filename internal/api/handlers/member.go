@@ -108,7 +108,7 @@ func (s *Server) ListSystemMemberCandidates(
 		existingMemberUserIDs = append(existingMemberUserIDs, binding.UserID)
 	}
 
-	query := s.client.User.Query()
+	query := s.client.User.Query().Where(entuser.EnabledEQ(true))
 	if len(existingMemberUserIDs) > 0 {
 		query = query.Where(entuser.Not(entuser.IDIn(existingMemberUserIDs...)))
 	}
@@ -244,6 +244,13 @@ func (s *Server) AddSystemMember(c *gin.Context, systemID generated.SystemID) {
 		}
 		logger.Error("failed to get user for member add", zap.Error(err), zap.String("user_id", req.UserId))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !userEnt.Enabled {
+		c.JSON(http.StatusConflict, generated.Error{
+			Code:    "USER_DISABLED",
+			Message: "disabled users cannot be added as system members",
+		})
 		return
 	}
 
@@ -575,7 +582,14 @@ func toGeneratedUser(userEnt *ent.User, profileFields []string) generated.User {
 		if rb == nil || rb.Edges.Role == nil {
 			continue
 		}
-		roleSet[rb.Edges.Role.Name] = struct{}{}
+		if !rb.Edges.Role.Enabled {
+			continue
+		}
+		roleName := strings.TrimSpace(rb.Edges.Role.Name)
+		if roleName == "" {
+			continue
+		}
+		roleSet[roleName] = struct{}{}
 	}
 
 	roles := make([]string, 0, len(roleSet))
@@ -744,11 +758,11 @@ func buildUserSearchPredicate(
 		switch normalizeUserSearchField(term.Field) {
 		case "username":
 			return entuser.UsernameEqualFold(term.Value)
-		case "display_name", "displayname", "name":
+		case "display_name", "displayname", queryFieldName:
 			return entuser.DisplayNameEqualFold(term.Value)
 		case userSearchFieldEmail, "mail":
 			return entuser.EmailEqualFold(term.Value)
-		case "status", "enabled":
+		case queryFieldStatus, "enabled":
 			if enabled, ok := parseUserEnabledSearchValue(term.Value); ok {
 				return entuser.EnabledEQ(enabled)
 			}
@@ -778,21 +792,27 @@ func buildUserSearchPredicate(
 
 func userHasRoleNameContainsFold(value string) predicate.User {
 	return entuser.HasRoleBindingsWith(
-		rolebinding.HasRoleWith(entrole.Or(
-			entrole.NameContainsFold(value),
-			entrole.DisplayNameContainsFold(value),
-			entrole.IDContainsFold(value),
-		)),
+		rolebinding.HasRoleWith(
+			entrole.EnabledEQ(true),
+			entrole.Or(
+				entrole.NameContainsFold(value),
+				entrole.DisplayNameContainsFold(value),
+				entrole.IDContainsFold(value),
+			),
+		),
 	)
 }
 
 func userHasRoleNameEqualFold(value string) predicate.User {
 	return entuser.HasRoleBindingsWith(
-		rolebinding.HasRoleWith(entrole.Or(
-			entrole.NameEqualFold(value),
-			entrole.DisplayNameEqualFold(value),
-			entrole.IDEqualFold(value),
-		)),
+		rolebinding.HasRoleWith(
+			entrole.EnabledEQ(true),
+			entrole.Or(
+				entrole.NameEqualFold(value),
+				entrole.DisplayNameEqualFold(value),
+				entrole.IDEqualFold(value),
+			),
+		),
 	)
 }
 

@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/03-service-layer.md](../phases/03-service-layer.md)
 >
-> **Implementation Status**: 🔄 Partial (~86%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates done; River worker concurrency and V1 degradation baseline done; per-cluster semaphore/degradation UX deferred
+> **Implementation Status**: 🔄 Partial (~89%) — Core DI/UseCase + ADR-0012 atomic path + sqlc + InstanceSize handler + analyzer-backed DI/sqlc CI gates done; River worker concurrency, V1 degradation baseline, VMService create `AlreadyExists` idempotency, DB-backed VM API CRUD handler success paths, and DB-backed VMService create approval/worker e2e done; per-cluster semaphore/degradation UX deferred
 
 ---
 
@@ -87,8 +87,8 @@
 - [x] `ValidateAndPrepare()` method (outside transaction)
 - [x] `CreateVMRecord()` — via CreateVMUseCase atomic transaction (DomainEvent + ApprovalTicket)
 - [x] `ExecuteK8sCreate()` method (outside transaction)
-  - [ ] **Idempotency**: Handle AlreadyExists error (deferred)
-  - [ ] **Adoption Logic**: K8s resource exists handling (deferred)
+  - [x] **Idempotency**: Kubernetes `AlreadyExists` is handled by reading the existing VM and accepting it only when `shepherd.io/event-id` matches the requested spec
+  - [ ] **Adoption Logic**: generalized K8s resource exists handling remains deferred; V1 only reuses same-event resources for retry safety
 
 ---
 
@@ -103,7 +103,7 @@
 
 ## Unit Tests
 
-- [ ] VMService unit tests (deferred — requires testcontainers)
+- [x] VMService unit tests cover namespace provisioning, create `AlreadyExists` idempotency, read/list/manifest, update, mutation, power/delete, console streams, and unconfigured-provider error behavior through provider stubs
 - [x] Can directly pass in MockProvider
 - [x] No HTTP Server dependency
 
@@ -112,8 +112,13 @@
 ## Pre-Phase 4 Verification
 
 - [x] Manual DI `bootstrap.go` verified
-- [ ] VMService end-to-end test passes (requires DB)
-- [ ] API `/api/v1/vms` CRUD test passes (requires DB)
+- [x] VMService end-to-end test passes (requires DB)
+  - [x] DB-backed create request -> approval atomic writer -> River enqueue -> `VMCreateWorker` -> VMService provider create path is covered
+- [x] API `/api/v1/vms` CRUD handler success paths pass (requires DB)
+  - [x] DB-backed list/get/filter handler coverage exists
+  - [x] DB-backed create request success path persists pending `CREATE` Ticket + `VM_CREATION_REQUESTED` DomainEvent and does not create a VM before approval
+  - [x] DB-backed modify request success path persists pending `MODIFY` Ticket + DomainEvent
+  - [x] DB-backed delete request success path persists pending `DELETE` Ticket + `VM_DELETION_REQUESTED` DomainEvent and leaves the VM unchanged before approval
 - [x] `go vet ./...` passes
 - [x] `go build ./...` passes
 - [x] `go test -race ./...` passes

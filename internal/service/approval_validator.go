@@ -550,6 +550,12 @@ func (v *ApprovalValidator) validateResolvedCluster(
 	if cl == nil {
 		return apperrors.BadRequest(apperrors.CodeValidationFailed, "selected cluster not found")
 	}
+	if !cl.Enabled {
+		return apperrors.BadRequest(
+			apperrors.CodeValidationFailed,
+			fmt.Sprintf("cluster %s is disabled", cl.Name),
+		)
+	}
 	if cl.Status != cluster.StatusHEALTHY {
 		return apperrors.BadRequest(
 			apperrors.CodeValidationFailed,

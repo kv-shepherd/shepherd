@@ -1,6 +1,8 @@
 package jobs
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"testing"
 )
@@ -28,6 +30,11 @@ func TestIsClusterRuntimeUnavailable_ClassifiesRuntimeDependencyFailures(t *test
 			err:  fmt.Errorf("cpu limit exceeds quota"),
 			want: false,
 		},
+		{
+			name: "context canceled is worker lifecycle not cluster runtime",
+			err:  context.Canceled,
+			want: false,
+		},
 	}
 
 	for _, tt := range tests {
@@ -38,5 +45,24 @@ func TestIsClusterRuntimeUnavailable_ClassifiesRuntimeDependencyFailures(t *test
 				t.Fatalf("isClusterRuntimeUnavailable(%v) = %v, want %v", tt.err, got, tt.want)
 			}
 		})
+	}
+}
+
+func TestJobContextErr(t *testing.T) {
+	t.Parallel()
+
+	canceledCtx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if got := jobContextErr(canceledCtx, nil); !errors.Is(got, context.Canceled) {
+		t.Fatalf("jobContextErr(canceled ctx) = %v, want context.Canceled", got)
+	}
+
+	err := fmt.Errorf("provider returned: %w", context.Canceled)
+	if got := jobContextErr(context.Background(), err); !errors.Is(got, context.Canceled) {
+		t.Fatalf("jobContextErr(wrapped canceled err) = %v, want context.Canceled", got)
+	}
+
+	if got := jobContextErr(context.Background(), context.DeadlineExceeded); got != nil {
+		t.Fatalf("jobContextErr(request deadline err with active worker ctx) = %v, want nil", got)
 	}
 }

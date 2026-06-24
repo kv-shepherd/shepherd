@@ -17,7 +17,7 @@ alignment, start with [CURRENT_STATE.md](./CURRENT_STATE.md).
 ## Architecture Overview
 
 ```
-React 19 + Next.js 16
+Frontend runtime (versions in DEPENDENCIES.md)
         |
         | OpenAPI-generated TypeScript client
         v
@@ -28,14 +28,14 @@ Gin HTTP API + OpenAPI validator
 Handlers -> UseCases -> Services
         |        |         |
         |        |         +-- KubeVirt provider
-        |        |             - official kubevirt client-go v1.8.1
+        |        |             - official kubevirt client-go
         |        |             - dynamic-client SSA for desired-state submit
         |        |             - KubeVirt-native patch/dry-run for existing VM mutation
         |        |
         |        +-- Ent + sqlc + River InsertTx
         |
         v
-PostgreSQL 18
+PostgreSQL
         |
         +-- Ent tables
         +-- sqlc transaction tables
@@ -48,14 +48,14 @@ Current implementation facts:
 | Area | Current state |
 |------|---------------|
 | Backend module | `kv-shepherd.io/shepherd` |
-| Go baseline | Go `1.25.11` |
-| Database | PostgreSQL 18, shared pgx pool for Ent + sqlc + River |
-| HTTP contract | OpenAPI `3.1.0`, 135 operationIds |
+| Go baseline | See [DEPENDENCIES.md](./DEPENDENCIES.md#go-version) |
+| Database | PostgreSQL baseline from [DEPENDENCIES.md](./DEPENDENCIES.md#database), shared pgx pool for Ent + sqlc + River |
+| HTTP contract | Canonical OpenAPI spec with 140 operationIds; spec/tool versions in [DEPENDENCIES.md](./DEPENDENCIES.md#api-contract-tooling) |
 | Ent schemas | 33 schema files |
-| KubeVirt baseline | `kubevirt.io/client-go` `v1.8.2` |
+| KubeVirt baseline | Official KubeVirt client version from [DEPENDENCIES.md](./DEPENDENCIES.md#kubernetes-and-kubevirt) |
 | Observability | Prometheus metrics, River queue health metrics, approval/audit business metrics, HTTP request correlation logs, River worker correlation logs, config validation, recording rules, alert rules, Grafana starter dashboard with PromQL validation, OpenTelemetry tracing, OpenTelemetry Collector, Tempo, DB spans, River worker spans, and KubeVirt/provider spans |
-| Frontend | React 19.2 + Next.js 16.2 + Ant Design 5 |
-| Frontend route files | 29 App Router `page.tsx` files |
+| Frontend | React, Next.js, Ant Design, TanStack Query, and Zustand versions from [DEPENDENCIES.md](./DEPENDENCIES.md#frontend-runtime) |
+| Frontend route files | 32 App Router `page.tsx` files |
 
 ## ADR Governance
 
@@ -119,15 +119,15 @@ docs/design/
 
 | Component | Technology |
 |-----------|------------|
-| Language | Go 1.25.11 |
+| Language | Go; pinned version in [DEPENDENCIES.md](./DEPENDENCIES.md#go-version) |
 | HTTP | Gin |
-| Database | PostgreSQL 18 |
+| Database | PostgreSQL; pinned baseline in [DEPENDENCIES.md](./DEPENDENCIES.md#database) |
 | ORM | Ent |
 | SQL generation | sqlc |
 | Async queue | River |
 | KubeVirt client | `kubevirt.io/client-go` |
-| API contract | OpenAPI 3.1 + oapi-codegen + openapi-typescript |
-| Frontend | React 19, Next.js 16, Ant Design 5, TanStack Query 5, Zustand 5 |
+| API contract | OpenAPI + oapi-codegen + openapi-typescript; versions in [DEPENDENCIES.md](./DEPENDENCIES.md#api-contract-tooling) |
+| Frontend | React, Next.js, Ant Design, TanStack Query, Zustand; versions in [DEPENDENCIES.md](./DEPENDENCIES.md#frontend-runtime) |
 
 Detailed versions are pinned in [DEPENDENCIES.md](./DEPENDENCIES.md).
 

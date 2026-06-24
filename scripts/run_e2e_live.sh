@@ -217,15 +217,24 @@ build_service_payload() {
 }
 
 build_template_payload() {
-  node - <<'EOF' "${E2E_TEMPLATE:-e2e-template}" "${E2E_NAMESPACE:-e2e-live}"
-const [name, namespace] = process.argv.slice(2);
+  node - <<'EOF' \
+    "${E2E_TEMPLATE:-e2e-template}" \
+    "${E2E_NAMESPACE:-e2e-live}" \
+    "${E2E_TEMPLATE_SOURCE_TYPE:-cdi_image_import}" \
+    "${E2E_TEMPLATE_IMAGE_URL:-docker://quay.io/containerdisks/ubuntu:22.04}" \
+    "${E2E_TEMPLATE_PVC_NAME:-}" \
+    "${E2E_TEMPLATE_PVC_NAMESPACE:-}"
+const [name, namespace, rawSourceType, rawImageURL, rawPVCName, rawPVCNamespace] = process.argv.slice(2);
+const sourceType = (rawSourceType || "cdi_image_import").trim();
+const imageURL = (rawImageURL || "").trim();
+const pvcName = (rawPVCName || "").trim();
+const pvcNamespace = (rawPVCNamespace || "").trim();
 const payload = {
   name,
   display_name: "Ubuntu 22.04 (E2E)",
   description: `Live E2E Ubuntu template for namespace ${namespace}`,
   catalog_scope: "all",
-  source_type: "cdi_image_import",
-  image_url: "docker://quay.io/containerdisks/ubuntu:22.04",
+  source_type: sourceType,
   cloud_init: [
     "#cloud-config",
     "hostname: e2e-template",
@@ -238,16 +247,25 @@ const payload = {
   os_version: "22.04",
   enabled: true
 };
+if (sourceType === "cdi_pvc_clone") {
+  payload.pvc_name = pvcName;
+  payload.pvc_namespace = pvcNamespace;
+} else {
+  payload.image_url = imageURL;
+}
 process.stdout.write(JSON.stringify(payload));
 EOF
 }
 
 build_cluster_policy_payload() {
-  node - <<'EOF' "${E2E_NAMESPACE:-e2e-live}"
-const namespace = process.argv[2].trim();
-const allowedCloneNamespaces = ["golden-images"];
-if (namespace !== "" && namespace !== "golden-images") {
-  allowedCloneNamespaces.push(namespace);
+  node - <<'EOF' "${E2E_NAMESPACE:-e2e-live}" "${E2E_TEMPLATE_PVC_NAMESPACE:-}"
+const [namespaceArg, pvcNamespaceArg] = process.argv.slice(2);
+const allowedCloneNamespaces = [];
+for (const value of ["golden-images", namespaceArg, pvcNamespaceArg]) {
+  const namespace = (value || "").trim();
+  if (namespace !== "" && !allowedCloneNamespaces.includes(namespace)) {
+    allowedCloneNamespaces.push(namespace);
+  }
 }
 const payload = {
   allow_cpu_overcommit: true,
@@ -263,6 +281,188 @@ const payload = {
 };
 process.stdout.write(JSON.stringify(payload));
 EOF
+}
+
+template_source_uses_autocreated_blank_pvc() {
+  [[ "${E2E_TEMPLATE_SOURCE_TYPE:-}" == "cdi_pvc_clone" && "${E2E_TEMPLATE_PVC_AUTOCREATE_BLANK:-0}" == "1" ]]
+}
+
+resolve_template_pvc_storage_class() {
+  local kubeconfig_file="$1"
+  local configured="${E2E_TEMPLATE_PVC_STORAGE_CLASS:-}"
+
+  if [[ -n "${configured}" ]]; then
+    printf '%s' "${configured}"
+    return 0
+  fi
+
+  kubectl --kubeconfig "${kubeconfig_file}" get storageclass -o json | node -e '
+    let raw = "";
+    process.stdin.on("data", (chunk) => { raw += chunk; });
+    process.stdin.on("end", () => {
+      const parsed = JSON.parse(raw || "{}");
+      const items = Array.isArray(parsed.items) ? parsed.items : [];
+      const preferred = items.find((item) => {
+        const annotations = item.metadata?.annotations ?? {};
+        return annotations["storageclass.kubernetes.io/is-default-class"] === "true" ||
+          annotations["storageclass.beta.kubernetes.io/is-default-class"] === "true";
+      }) ?? items[0];
+      if (!preferred?.metadata?.name) {
+        process.exit(1);
+      }
+      process.stdout.write(preferred.metadata.name);
+    });
+  '
+}
+
+ensure_autocreated_template_source_pvc() {
+  if ! template_source_uses_autocreated_blank_pvc; then
+    return 0
+  fi
+
+  local namespace="${E2E_TEMPLATE_PVC_NAMESPACE:-}"
+  local pvc_name="${E2E_TEMPLATE_PVC_NAME:-}"
+  local pvc_size="${E2E_TEMPLATE_PVC_SIZE:-1Gi}"
+  local pvc_access_mode="${E2E_TEMPLATE_PVC_ACCESS_MODE:-ReadWriteMany}"
+  local pvc_volume_mode="${E2E_TEMPLATE_PVC_VOLUME_MODE:-Block}"
+  local kubeconfig_tmp=""
+  local storage_class=""
+
+  if [[ -z "${namespace}" || -z "${pvc_name}" ]]; then
+    log_error "E2E_TEMPLATE_PVC_AUTOCREATE_BLANK=1 requires E2E_TEMPLATE_PVC_NAMESPACE and E2E_TEMPLATE_PVC_NAME"
+    return 1
+  fi
+
+  kubeconfig_tmp="$(mktemp)"
+  if ! resolve_live_e2e_kubeconfig_file "${kubeconfig_tmp}"; then
+    rm -f "${kubeconfig_tmp}"
+    log_error "failed to resolve kubeconfig for blank template source PVC"
+    return 1
+  fi
+
+  if ! storage_class="$(resolve_template_pvc_storage_class "${kubeconfig_tmp}")"; then
+    rm -f "${kubeconfig_tmp}"
+    log_error "failed to resolve storage class for blank template source PVC"
+    return 1
+  fi
+
+  log_info "ensuring blank template source PVC (${namespace}/${pvc_name}, size=${pvc_size}, storage_class=${storage_class})"
+  if ! kubectl --kubeconfig "${kubeconfig_tmp}" create namespace "${namespace}" --dry-run=client -o yaml |
+    kubectl --kubeconfig "${kubeconfig_tmp}" apply -f - >/dev/null; then
+    rm -f "${kubeconfig_tmp}"
+    log_error "failed to ensure namespace ${namespace} for blank template source PVC"
+    return 1
+  fi
+
+  if ! printf '%s\n' \
+    "apiVersion: v1" \
+    "kind: PersistentVolumeClaim" \
+    "metadata:" \
+    "  name: ${pvc_name}" \
+    "  labels:" \
+    "    app.kubernetes.io/managed-by: kubevirt-shepherd-live-e2e" \
+    "spec:" \
+    "  accessModes:" \
+    "    - ${pvc_access_mode}" \
+    "  storageClassName: ${storage_class}" \
+    "  volumeMode: ${pvc_volume_mode}" \
+    "  resources:" \
+    "    requests:" \
+    "      storage: ${pvc_size}" |
+    kubectl --kubeconfig "${kubeconfig_tmp}" -n "${namespace}" apply -f - >/dev/null; then
+    rm -f "${kubeconfig_tmp}"
+    log_error "failed to apply blank template source PVC ${namespace}/${pvc_name}"
+    return 1
+  fi
+
+  if ! kubectl --kubeconfig "${kubeconfig_tmp}" -n "${namespace}" wait \
+    --for=jsonpath='{.status.phase}'=Bound "pvc/${pvc_name}" \
+    --timeout="${E2E_TEMPLATE_PVC_BIND_TIMEOUT:-60s}" >/dev/null; then
+    rm -f "${kubeconfig_tmp}"
+    log_error "timed out waiting for blank template source PVC ${namespace}/${pvc_name} to bind"
+    return 1
+  fi
+
+  rm -f "${kubeconfig_tmp}"
+}
+
+cleanup_autocreated_template_source_pvc() {
+  if ! template_source_uses_autocreated_blank_pvc; then
+    return 0
+  fi
+
+  local namespace="${E2E_TEMPLATE_PVC_NAMESPACE:-}"
+  local pvc_name="${E2E_TEMPLATE_PVC_NAME:-}"
+  local kubeconfig_tmp=""
+
+  if [[ -z "${namespace}" || -z "${pvc_name}" ]]; then
+    return 0
+  fi
+
+  kubeconfig_tmp="$(mktemp)"
+  if ! resolve_live_e2e_kubeconfig_file "${kubeconfig_tmp}"; then
+    rm -f "${kubeconfig_tmp}"
+    log_warn "failed to resolve kubeconfig for blank template source PVC cleanup"
+    return 1
+  fi
+
+  log_info "cleaning blank template source PVC ${namespace}/${pvc_name}"
+  kubectl --kubeconfig "${kubeconfig_tmp}" -n "${namespace}" delete "pvc/${pvc_name}" \
+    --ignore-not-found --wait=false >/dev/null 2>&1
+  local delete_exit=$?
+  rm -f "${kubeconfig_tmp}"
+  return "${delete_exit}"
+}
+
+kubernetes_namespace_delete_allowed() {
+  local namespace="$1"
+  local allowed_regex="${E2E_DELETE_NAMESPACE_ALLOWED_REGEX:-}"
+
+  case "${namespace}" in
+    ""|default|e2e-live|golden-images|kube-*|openshift-*)
+      return 1
+      ;;
+  esac
+
+  if [[ -n "${allowed_regex}" ]]; then
+    [[ "${namespace}" =~ ${allowed_regex} ]]
+    return $?
+  fi
+
+  [[ "${namespace}" == shepherd-e2e-* || "${namespace}" == e2e-* ]]
+}
+
+cleanup_kubernetes_namespace() {
+  local enabled="${E2E_DELETE_NAMESPACE:-0}"
+  local namespace="${E2E_NAMESPACE:-}"
+  local kubeconfig_tmp=""
+  local delete_exit=0
+
+  if [[ "${enabled}" != "1" ]]; then
+    return 0
+  fi
+  if [[ -z "${namespace}" ]]; then
+    log_warn "skipping Kubernetes namespace delete because E2E_NAMESPACE is empty"
+    return 1
+  fi
+  if ! kubernetes_namespace_delete_allowed "${namespace}"; then
+    log_warn "skipping Kubernetes namespace delete for unsafe namespace: ${namespace}"
+    return 1
+  fi
+
+  kubeconfig_tmp="$(mktemp)"
+  if ! resolve_live_e2e_kubeconfig_file "${kubeconfig_tmp}"; then
+    rm -f "${kubeconfig_tmp}"
+    log_warn "failed to resolve kubeconfig for Kubernetes namespace cleanup"
+    return 1
+  fi
+
+  log_info "deleting temporary Kubernetes namespace ${namespace}"
+  kubectl --kubeconfig "${kubeconfig_tmp}" delete namespace "${namespace}" \
+    --ignore-not-found --wait=false --request-timeout="${E2E_DELETE_NAMESPACE_TIMEOUT:-20s}" >/dev/null 2>&1
+  delete_exit=$?
+  rm -f "${kubeconfig_tmp}"
+  return "${delete_exit}"
 }
 
 live_instance_size_payloads() {
@@ -564,6 +764,7 @@ seed_live_api_managed_fixtures() {
 
   log_info "seeding namespace fixture (${E2E_NAMESPACE})"
   namespace_id="$(ensure_namespace_api "${token}")"
+  ensure_autocreated_template_source_pvc
   log_info "seeding system fixture (${E2E_SYSTEM:-e2e-system})"
   system_id="$(ensure_system_api "${token}")"
   log_info "seeding service fixture (${E2E_SERVICE:-e2e-service})"
@@ -757,7 +958,7 @@ cleanup_namespace_vms() {
       continue
     fi
 
-    if ! curl -fsS "${API_BASE_URL}/api/v1/approvals/${ticket_id}/approve" \
+    if ! curl -fsS "${API_BASE_URL}/api/v1/builtin-approval/tasks/${ticket_id}/approve" \
       -X POST \
       -H "Authorization: Bearer ${token}" \
       -H "Content-Type: application/json" \
@@ -791,6 +992,70 @@ run_live_e2e_preflight_checks() {
   log_info "running live-e2e no-mock policy gate"
   if ! bash docs/design/ci/scripts/check_live_e2e_no_mock.sh; then
     return 1
+  fi
+}
+
+playwright_args_have_explicit_test_selection() {
+  local arg=""
+  for arg in "$@"; do
+    case "${arg}" in
+      *-live.spec.ts|tests/e2e/*|web/tests/e2e/*|*.spec.ts)
+        return 0
+        ;;
+    esac
+  done
+  return 1
+}
+
+append_live_e2e_lane_args() {
+  local lane_value="${E2E_LIVE_TEST_LANE:-all}"
+  local lane=""
+  local -a lane_args=()
+  lane_value="${lane_value#"${lane_value%%[![:space:]]*}"}"
+  lane_value="${lane_value%"${lane_value##*[![:space:]]}"}"
+
+  if [[ -z "${lane_value}" || "${lane_value}" == "all" ]]; then
+    return 0
+  fi
+
+  if playwright_args_have_explicit_test_selection "${PLAYWRIGHT_ARGS[@]}"; then
+    log_warn "ignoring E2E_LIVE_TEST_LANE=${lane_value} because explicit Playwright test selection was provided"
+    return 0
+  fi
+
+  IFS=',' read -r -a lane_parts <<< "${lane_value}"
+  for lane in "${lane_parts[@]}"; do
+    lane="${lane#"${lane%%[![:space:]]*}"}"
+    lane="${lane%"${lane##*[![:space:]]}"}"
+    case "${lane}" in
+      admin)
+        lane_args+=("tests/e2e/admin-flow-live.spec.ts" "tests/e2e/admin-extended-live.spec.ts")
+        ;;
+      user)
+        lane_args+=("tests/e2e/user-selfservice-live.spec.ts")
+        ;;
+      vm)
+        lane_args+=("tests/e2e/vm-lifecycle-live.spec.ts")
+        ;;
+      master)
+        lane_args+=("tests/e2e/master-flow-live.spec.ts")
+        ;;
+      edge)
+        lane_args+=("tests/e2e/edge-cases-live.spec.ts")
+        ;;
+      all|"")
+        ;;
+      *)
+        log_error "unknown E2E_LIVE_TEST_LANE value: ${lane}"
+        log_error "supported lanes: all, admin, user, vm, master, edge"
+        return 1
+        ;;
+    esac
+  done
+
+  if (( ${#lane_args[@]} > 0 )); then
+    log_info "selected live test lane(s): ${lane_value}"
+    PLAYWRIGHT_ARGS+=("${lane_args[@]}")
   fi
 }
 
@@ -842,6 +1107,31 @@ Environment:
                          Enable strict backend-log patterns (default: disabled to reduce false positives)
   E2E_BACKEND_ERROR_ALLOWLIST_REGEX=<regex>
                          Ignore matching backend-log lines in guard checks
+  E2E_TEMPLATE_SOURCE_TYPE=cdi_image_import|cdi_pvc_clone|containerdisk
+                         Seeded template source type (default: cdi_image_import)
+  E2E_TEMPLATE_IMAGE_URL=<image>
+                         Image for cdi_image_import/containerdisk templates (default: docker://quay.io/containerdisks/ubuntu:22.04)
+  E2E_TEMPLATE_PVC_NAMESPACE=<namespace>
+  E2E_TEMPLATE_PVC_NAME=<pvc>
+                         Existing source PVC for cdi_pvc_clone templates; policy allowlist includes the source namespace
+  E2E_TEMPLATE_PVC_AUTOCREATE_BLANK=1
+                         Create and clean a small blank source PVC for cdi_pvc_clone live E2E runs
+  E2E_TEMPLATE_PVC_SIZE=1Gi
+  E2E_TEMPLATE_PVC_STORAGE_CLASS=<storage-class>
+  E2E_TEMPLATE_PVC_ACCESS_MODE=ReadWriteMany
+  E2E_TEMPLATE_PVC_VOLUME_MODE=Block
+                         Blank source PVC options when E2E_TEMPLATE_PVC_AUTOCREATE_BLANK=1
+  E2E_DELETE_NAMESPACE=1
+                         After VM/PVC cleanup, delete the temporary Kubernetes namespace asynchronously.
+                         Safety guard allows only shepherd-e2e-* or e2e-* namespaces by default.
+  E2E_DELETE_NAMESPACE_ALLOWED_REGEX=<regex>
+                         Override the temporary namespace allow-list regex. Protected shared names
+                         such as default, e2e-live, golden-images, kube-*, and openshift-* stay denied.
+  E2E_DELETE_NAMESPACE_TIMEOUT=20s
+                         kubectl request timeout for namespace deletion.
+  E2E_LIVE_TEST_LANE=all|admin|user|vm|master|edge[,lane...]
+                         Run a targeted live Playwright lane. Default all.
+                         Release evidence must use all. Targeted lanes are for fast debug/regression checks.
 EOF
 }
 
@@ -1219,6 +1509,7 @@ live_e2e_kube_context() {
 live_e2e_cluster_probe_json() {
   local kubeconfig_tmp=""
   local api_server_reachable="false"
+  local authenticated_context="false"
   local kubernetes_version=""
   local kubevirt_api_available="false"
   local kubevirt_api_versions=""
@@ -1227,6 +1518,10 @@ live_e2e_cluster_probe_json() {
 
   kubeconfig_tmp="$(mktemp)"
   if resolve_live_e2e_kubeconfig_file "${kubeconfig_tmp}" && command -v kubectl >/dev/null 2>&1; then
+    if kubectl --kubeconfig "${kubeconfig_tmp}" auth whoami --request-timeout=10s >/dev/null 2>&1; then
+      authenticated_context="true"
+    fi
+
     if version_json="$(kubectl --kubeconfig "${kubeconfig_tmp}" version --output=json --request-timeout=10s 2>/dev/null)"; then
       api_server_reachable="true"
       kubernetes_version="$(
@@ -1264,8 +1559,9 @@ live_e2e_cluster_probe_json() {
       kubernetes_version: process.argv[2] || null,
       kubevirt_api_available: process.argv[3] === "true",
       kubevirt_api_versions: versions,
+      authenticated_context: process.argv[5] === "true",
     }));
-  ' "${api_server_reachable}" "${kubernetes_version}" "${kubevirt_api_available}" "${kubevirt_api_versions}"
+  ' "${api_server_reachable}" "${kubernetes_version}" "${kubevirt_api_available}" "${kubevirt_api_versions}" "${authenticated_context}"
 }
 
 write_live_e2e_evidence_manifest() {
@@ -1297,9 +1593,9 @@ write_live_e2e_evidence_manifest() {
     LIVE_E2E_RESULT_FILE="${RUN_RESULT_FILE:-}" \
     LIVE_E2E_RUN_LOG_FILE="${RUN_LOG_FILE:-}" \
     LIVE_E2E_BACKEND_LOG_FILE="${SERVER_LOG:-}" \
-    LIVE_E2E_PLAYWRIGHT_JSON_FILE="${PLAYWRIGHT_JSON_OUTPUT_FILE:-}" \
-    LIVE_E2E_PLAYWRIGHT_HTML_REPORT="${PLAYWRIGHT_HTML_OUTPUT_DIR:-}" \
-    LIVE_E2E_PLAYWRIGHT_TEST_RESULTS="${PLAYWRIGHT_TEST_RESULTS_DIR:-}" \
+    LIVE_E2E_PLAYWRIGHT_JSON_FILE="${PLAYWRIGHT_JSON_EVIDENCE_FILE:-${PLAYWRIGHT_JSON_OUTPUT_FILE:-}}" \
+    LIVE_E2E_PLAYWRIGHT_HTML_REPORT="${PLAYWRIGHT_HTML_EVIDENCE_DIR:-${PLAYWRIGHT_HTML_OUTPUT_DIR:-}}" \
+    LIVE_E2E_PLAYWRIGHT_TEST_RESULTS="${PLAYWRIGHT_TEST_RESULTS_EVIDENCE_DIR:-${PLAYWRIGHT_TEST_RESULTS_DIR:-}}" \
     LIVE_E2E_PLAYWRIGHT_PROJECT="${DEFAULT_PW_PROJECT:-${E2E_PLAYWRIGHT_PROJECT:-}}" \
     LIVE_E2E_KUBECONFIG_SOURCE="$(live_e2e_kubeconfig_source)" \
     LIVE_E2E_KUBE_CONTEXT="$(live_e2e_kube_context || true)" \
@@ -1397,6 +1693,7 @@ const manifest = {
   cluster: {
     kubeconfig_source: optional(env.LIVE_E2E_KUBECONFIG_SOURCE),
     current_context: optional(env.LIVE_E2E_KUBE_CONTEXT),
+    authenticated_context: typeof clusterProbe.authenticated_context === 'boolean' ? clusterProbe.authenticated_context : null,
     api_server_reachable: typeof clusterProbe.api_server_reachable === 'boolean' ? clusterProbe.api_server_reachable : null,
     kubernetes_version: optional(clusterProbe.kubernetes_version),
     kubevirt_api_available: typeof clusterProbe.kubevirt_api_available === 'boolean' ? clusterProbe.kubevirt_api_available : null,
@@ -1406,11 +1703,14 @@ const manifest = {
   },
   playwright: {
     project: optional(env.LIVE_E2E_PLAYWRIGHT_PROJECT),
+    lane: optional(env.E2E_LIVE_TEST_LANE),
     json_report: parsePlaywrightJSON(env.LIVE_E2E_PLAYWRIGHT_JSON_FILE),
   },
   cleanup: {
     namespace: optional(env.E2E_NAMESPACE),
     namespace_vm_cleanup_enabled: env.E2E_CLEANUP_NAMESPACE_VMS !== '0',
+    kubernetes_namespace_delete_enabled: env.E2E_DELETE_NAMESPACE === '1',
+    kubernetes_namespace_delete_allowed_regex: optional(env.E2E_DELETE_NAMESPACE_ALLOWED_REGEX),
     review_log_required: true,
   },
 };
@@ -1443,7 +1743,7 @@ write_live_e2e_result_file() {
     echo "backend_guard_exit_code=${backend_guard_exit_code}"
     echo "phase=${LIVE_E2E_PHASE:-unknown}"
     if [[ -n "${RUN_LOG_FILE:-}" ]] && result_line="$(extract_result_summary "${RUN_LOG_FILE}")"; then
-      echo "${result_line}"
+      printf '%s\n' "${result_line}" | tr ' ' '\n'
     else
       echo "summary=unavailable"
     fi
@@ -1603,6 +1903,13 @@ check_live_e2e_readiness() {
         log_info "live E2E kubeconfig context: ${kube_context}"
       fi
 
+      if kubectl --kubeconfig "${kubeconfig_tmp}" auth whoami --request-timeout=10s >/dev/null 2>&1; then
+        log_info "live E2E kubeconfig authentication probe succeeded"
+      else
+        log_error "live E2E kubeconfig authentication probe failed"
+        failures=$((failures + 1))
+      fi
+
       if [[ "${E2E_PREFLIGHT_CLUSTER_PROBE:-1}" == "0" ]]; then
         log_warn "skipping live E2E cluster probe (E2E_PREFLIGHT_CLUSTER_PROBE=0); do not use this for release evidence"
       else
@@ -1727,6 +2034,12 @@ if [[ "$STATUS_ONLY" -eq 1 ]]; then
       # shellcheck disable=SC1090
       source "${BG_STATE_FILE}"
     fi
+  fi
+
+  if [[ -z "${BG_LOG_FILE}" && -z "${BG_PID_FILE}" && ! -f "${BG_STATE_FILE}" ]]; then
+    echo "STATUS: running=no pid=N/A log=N/A size_bytes=0 updated_at=N/A state_file=${BG_STATE_FILE} state=missing"
+    echo "RESULT: no live E2E background state found; start one with: bash scripts/run_e2e_live.sh --background"
+    exit 0
   fi
 
   if [[ -z "${BG_LOG_FILE}" || -z "${BG_PID_FILE}" ]]; then
@@ -1889,6 +2202,11 @@ SERVER_LOG="${E2E_SERVER_LOG:-${E2E_RUN_DIR}/shepherd-e2e-server.log}"
 SERVER_BIN="${E2E_SERVER_BIN:-${E2E_RUN_DIR}/shepherd-e2e-server-bin}"
 RUN_RESULT_FILE="${RUN_RESULT_FILE:-${E2E_RUN_DIR}/live-e2e.result}"
 RUN_EVIDENCE_FILE="${RUN_EVIDENCE_FILE:-${E2E_RUN_DIR}/live-e2e.evidence.json}"
+RUN_LOG_FILE_WAS_SET=0
+if [[ -n "${RUN_LOG_FILE:-}" ]]; then
+  RUN_LOG_FILE_WAS_SET=1
+fi
+RUN_LOG_FILE="${RUN_LOG_FILE:-${E2E_RUN_DIR}/live-e2e.log}"
 # Use a per-run Next.js dist directory to avoid lock contention on
 # web/.next-e2e/dev/lock when another dev server is alive or a stale lock exists.
 E2E_RUN_ID="$(basename "${E2E_RUN_DIR}")"
@@ -1897,12 +2215,22 @@ NEXT_DIST_DIR="${NEXT_DIST_DIR:-.next-e2e/${E2E_RUN_ID}}"
 NEXT_TSCONFIG_PATH="${NEXT_TSCONFIG_PATH:-.next-e2e/tsconfig.e2e.json}"
 WEB_NEXT_TSCONFIG_PATH="${ROOT_DIR}/web/${NEXT_TSCONFIG_PATH}"
 mkdir -p "$(dirname "${WEB_NEXT_TSCONFIG_PATH}")"
+mkdir -p "$(dirname "${RUN_LOG_FILE}")"
 cat > "${WEB_NEXT_TSCONFIG_PATH}" <<'EOF'
 {
   "extends": "../tsconfig.json"
 }
 EOF
+if [[ "${RUN_LOG_FILE_WAS_SET}" -eq 0 && "${LIVE_E2E_LOG_TEE_STARTED:-0}" != "1" ]]; then
+  if command -v tee >/dev/null 2>&1; then
+    export LIVE_E2E_LOG_TEE_STARTED=1
+    exec > >(tee -a "${RUN_LOG_FILE}") 2>&1
+  else
+    log_warn "tee command not found; foreground runner log will not be mirrored"
+  fi
+fi
 log_info "run directory : ${E2E_RUN_DIR}"
+log_info "runner log    : ${RUN_LOG_FILE}"
 log_info "backend log   : ${SERVER_LOG}"
 log_info "result file   : ${RUN_RESULT_FILE}"
 log_info "evidence file : ${RUN_EVIDENCE_FILE}"
@@ -1931,11 +2259,40 @@ export NEXT_TSCONFIG_PATH
 export PW_WEB_PORT
 export PW_BASE_URL
 export PW_E2E_RUN_ID="${PW_E2E_RUN_ID:-${E2E_RUN_ID}}"
-export PLAYWRIGHT_JSON_OUTPUT_FILE="${PLAYWRIGHT_JSON_OUTPUT_FILE:-${E2E_RUN_DIR}/playwright-results.json}"
-export PLAYWRIGHT_HTML_OUTPUT_DIR="${PLAYWRIGHT_HTML_OUTPUT_DIR:-${E2E_RUN_DIR}/playwright-report}"
-export PLAYWRIGHT_TEST_RESULTS_DIR="${PLAYWRIGHT_TEST_RESULTS_DIR:-${E2E_RUN_DIR}/test-results}"
+manifest_path_for_root() {
+  local value="$1"
+  case "${value}" in
+    "${ROOT_DIR}"/*)
+      printf '%s' "${value#"${ROOT_DIR}/"}"
+      ;;
+    *)
+      printf '%s' "${value}"
+      ;;
+  esac
+}
+absolute_path_for_root() {
+  local value="$1"
+  case "${value}" in
+    /*)
+      printf '%s' "${value}"
+      ;;
+    *)
+      printf '%s/%s' "${ROOT_DIR}" "${value}"
+      ;;
+  esac
+}
+PLAYWRIGHT_JSON_OUTPUT_FILE="$(absolute_path_for_root "${PLAYWRIGHT_JSON_OUTPUT_FILE:-${E2E_RUN_DIR}/playwright-results.json}")"
+PLAYWRIGHT_HTML_OUTPUT_DIR="$(absolute_path_for_root "${PLAYWRIGHT_HTML_OUTPUT_DIR:-${E2E_RUN_DIR}/playwright-report}")"
+PLAYWRIGHT_TEST_RESULTS_DIR="$(absolute_path_for_root "${PLAYWRIGHT_TEST_RESULTS_DIR:-${E2E_RUN_DIR}/test-results}")"
+export PLAYWRIGHT_JSON_OUTPUT_FILE
+export PLAYWRIGHT_HTML_OUTPUT_DIR
+export PLAYWRIGHT_TEST_RESULTS_DIR
+PLAYWRIGHT_JSON_EVIDENCE_FILE="$(manifest_path_for_root "${PLAYWRIGHT_JSON_OUTPUT_FILE}")"
+PLAYWRIGHT_HTML_EVIDENCE_DIR="$(manifest_path_for_root "${PLAYWRIGHT_HTML_OUTPUT_DIR}")"
+PLAYWRIGHT_TEST_RESULTS_EVIDENCE_DIR="$(manifest_path_for_root "${PLAYWRIGHT_TEST_RESULTS_DIR}")"
 export RUN_RESULT_FILE
 export RUN_EVIDENCE_FILE
+export RUN_LOG_FILE
 # Expose run directory to Playwright config (used for webServer stdout/stderr logs).
 export E2E_RUN_DIR
 log_info "Playwright JSON report : ${PLAYWRIGHT_JSON_OUTPUT_FILE}"
@@ -1943,21 +2300,76 @@ log_info "Playwright HTML report : ${PLAYWRIGHT_HTML_OUTPUT_DIR}"
 log_info "Playwright test results: ${PLAYWRIGHT_TEST_RESULTS_DIR}"
 
 SERVER_PID=""
+cleanup_e2e_generated_artifacts() {
+  if [[ "${E2E_RETAIN_BUILD_ARTIFACTS:-0}" == "1" ]]; then
+    log_info "retaining generated e2e artifacts because E2E_RETAIN_BUILD_ARTIFACTS=1"
+    return 0
+  fi
+
+  if [[ -n "${SERVER_BIN:-}" ]]; then
+    rm -f "${SERVER_BIN}" >/dev/null 2>&1 || log_warn "failed to remove server binary: ${SERVER_BIN}"
+  fi
+
+  case "${NEXT_DIST_DIR:-}" in
+    .next-e2e/*)
+      rm -rf "${ROOT_DIR}/web/${NEXT_DIST_DIR}" >/dev/null 2>&1 || log_warn "failed to remove Next e2e dist dir: ${ROOT_DIR}/web/${NEXT_DIST_DIR}"
+      ;;
+  esac
+
+  if [[ -n "${WEB_NEXT_TSCONFIG_PATH:-}" ]]; then
+    rm -f "${WEB_NEXT_TSCONFIG_PATH}" >/dev/null 2>&1 || log_warn "failed to remove Next e2e tsconfig: ${WEB_NEXT_TSCONFIG_PATH}"
+  fi
+  if [[ -n "${PW_E2E_RUN_ID:-}" ]]; then
+    rm -f "${ROOT_DIR}/web/tsconfig.e2e.${PW_E2E_RUN_ID}.json" \
+      "${ROOT_DIR}/web/tsconfig.e2e.${PW_E2E_RUN_ID}.backup.json" >/dev/null 2>&1 || true
+  fi
+}
 cleanup() {
   local exit_code=$?
   local cleanup_vm_exit=0
+  local cleanup_k8s_namespace_exit=0
+  local cleanup_enabled="${E2E_CLEANUP_NAMESPACE_VMS:-1}"
+  local cleanup_namespace="${E2E_NAMESPACE:-}"
   set +e
   if [[ "${LIVE_E2E_BACKEND_STARTED:-0}" == "1" ]]; then
     cleanup_namespace_vms
     cleanup_vm_exit=$?
+    cleanup_autocreated_template_source_pvc || cleanup_vm_exit=1
+    cleanup_kubernetes_namespace
+    cleanup_k8s_namespace_exit=$?
+    if [[ "${cleanup_enabled}" == "0" ]]; then
+      log_warn "cleanup review: namespace_vm_cleanup status=skipped reason=disabled namespace=${cleanup_namespace:-unset}"
+    elif [[ -z "${cleanup_namespace}" ]]; then
+      log_warn "cleanup review: namespace_vm_cleanup status=skipped reason=empty_namespace"
+    elif [[ "${cleanup_vm_exit}" -eq 0 ]]; then
+      log_info "cleanup review: namespace_vm_cleanup status=passed namespace=${cleanup_namespace}"
+    else
+      log_warn "cleanup review: namespace_vm_cleanup status=warnings namespace=${cleanup_namespace}"
+    fi
+    if [[ "${E2E_DELETE_NAMESPACE:-0}" == "1" ]]; then
+      if [[ "${cleanup_k8s_namespace_exit}" -eq 0 ]]; then
+        log_info "cleanup review: kubernetes_namespace_delete status=requested namespace=${cleanup_namespace}"
+      else
+        log_warn "cleanup review: kubernetes_namespace_delete status=warnings namespace=${cleanup_namespace:-unset}"
+      fi
+    else
+      log_info "cleanup review: kubernetes_namespace_delete status=skipped reason=disabled namespace=${cleanup_namespace:-unset}"
+    fi
+  else
+    log_warn "cleanup review: namespace_vm_cleanup status=skipped reason=backend_not_started"
+    log_warn "cleanup review: kubernetes_namespace_delete status=skipped reason=backend_not_started"
   fi
   if [[ -n "$SERVER_PID" ]]; then
     kill "$SERVER_PID" >/dev/null 2>&1 || true
     wait "$SERVER_PID" >/dev/null 2>&1 || true
   fi
   cleanup_next_web_port "${PW_WEB_PORT:-}"
+  cleanup_e2e_generated_artifacts
   if [[ "${cleanup_vm_exit}" -ne 0 ]]; then
     log_warn "namespace VM cleanup completed with warnings"
+  fi
+  if [[ "${cleanup_k8s_namespace_exit}" -ne 0 ]]; then
+    log_warn "Kubernetes namespace cleanup completed with warnings"
   fi
   finalize_live_e2e_failure_artifacts "${exit_code}"
   return "${exit_code}"
@@ -1989,19 +2401,29 @@ export SECURITY_ENCRYPTION_KEY="${SECURITY_ENCRYPTION_KEY:-}"
 export SERVER_ALLOWED_ORIGINS="${SERVER_ALLOWED_ORIGINS:-${PW_BASE_URL}}"
 export SERVER_UNSAFE_ALLOW_ALL_ORIGINS="${SERVER_UNSAFE_ALLOW_ALL_ORIGINS:-false}"
 # Unified live E2E auth defaults (master-flow first-login reality):
-# default account is admin/admin, and first-login password change target is admin123.
+# default account is admin/admin, and first-login password change target must
+# satisfy the runtime password policy because later tests restore back to it.
 DEFAULT_E2E_USERNAME="${E2E_USERNAME:-${E2E_ADMIN_USERNAME:-admin}}"
 DEFAULT_E2E_PASSWORD="${E2E_PASSWORD:-${E2E_ADMIN_PASSWORD:-admin}}"
 
 export E2E_USERNAME="${DEFAULT_E2E_USERNAME}"
 export E2E_PASSWORD="${DEFAULT_E2E_PASSWORD}"
-export E2E_NEW_PASSWORD="${E2E_NEW_PASSWORD:-admin123}"
+export E2E_NEW_PASSWORD="${E2E_NEW_PASSWORD:-ShepherdLive!2026}"
 export E2E_CLUSTER="${E2E_CLUSTER:-e2e-cluster}"
 export E2E_SYSTEM="${E2E_SYSTEM:-e2e-system}"
 export E2E_SERVICE="${E2E_SERVICE:-e2e-service}"
 export E2E_TEMPLATE="${E2E_TEMPLATE:-e2e-template}"
 export E2E_SIZE="${E2E_SIZE:-e2e-small}"
 export E2E_NAMESPACE="${E2E_NAMESPACE:-e2e-live}"
+export E2E_TEMPLATE_SOURCE_TYPE="${E2E_TEMPLATE_SOURCE_TYPE:-cdi_image_import}"
+export E2E_TEMPLATE_IMAGE_URL="${E2E_TEMPLATE_IMAGE_URL:-docker://quay.io/containerdisks/ubuntu:22.04}"
+export E2E_TEMPLATE_PVC_NAME="${E2E_TEMPLATE_PVC_NAME:-}"
+export E2E_TEMPLATE_PVC_NAMESPACE="${E2E_TEMPLATE_PVC_NAMESPACE:-}"
+export E2E_TEMPLATE_PVC_AUTOCREATE_BLANK="${E2E_TEMPLATE_PVC_AUTOCREATE_BLANK:-0}"
+if template_source_uses_autocreated_blank_pvc; then
+  export E2E_TEMPLATE_PVC_NAME="${E2E_TEMPLATE_PVC_NAME:-e2e-blank-rootfs}"
+  export E2E_TEMPLATE_PVC_NAMESPACE="${E2E_TEMPLATE_PVC_NAMESPACE:-${E2E_NAMESPACE}}"
+fi
 export E2E_VM_RUNNING_ID="${E2E_VM_RUNNING_ID:-vm-e2e-running}"
 export E2E_VM_STOPPED_ID="${E2E_VM_STOPPED_ID:-vm-e2e-stopped}"
 export E2E_VM_RUNNING_NAME="${E2E_VM_RUNNING_NAME:-vm-live}"
@@ -2101,6 +2523,7 @@ PLAYWRIGHT_ARGS=("$@")
 if [[ "${HAS_PROJECT_ARG}" -eq 0 ]]; then
   PLAYWRIGHT_ARGS+=("--project=${DEFAULT_PW_PROJECT}")
 fi
+append_live_e2e_lane_args
 
 set +e
 CI=1 npm --prefix web run test:e2e:all -- "${PLAYWRIGHT_ARGS[@]}"

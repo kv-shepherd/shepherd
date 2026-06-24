@@ -53,16 +53,22 @@ import {
   test,
   type APIRequestContext,
   type Page,
-  type Response,
 } from "@playwright/test";
 import { validateApiResponse } from "./lib/schema-validator";
 import {
   ensureSeedSystemAndService,
+  expectSchemaResponse as expectSchema,
   fetchStatusWithStoredToken,
   getAntModal,
-  getApiTokenWithForcePasswordSupport,
+  getApiAuthHeadersWithForcePasswordSupport,
   loginWithForcePasswordSupport,
+  pickIDByPreferredName,
+  pickPreferredNamespace,
+  resolveClusterOptionFilter,
+  selectApprovalRootVolumeModeIfRequired,
   selectAntOption,
+  selectServicesSystemFilter,
+  toLooseOptionFilter,
   urlPathEndsWith,
   urlPathIncludes,
 } from "./lib/helpers";
@@ -73,13 +79,19 @@ const e2eUsername = process.env.E2E_USERNAME ?? "e2e-admin";
 const e2ePassword = process.env.E2E_PASSWORD ?? "e2e-admin-123";
 const e2eNewPassword =
   process.env.E2E_NEW_PASSWORD ??
-  (e2ePassword === "admin" ? "admin123" : `${e2ePassword}-new`);
+  (e2ePassword === "admin" ? "ShepherdLive!2026" : `${e2ePassword}-new`);
 const e2eClusterName = process.env.E2E_CLUSTER ?? "e2e-cluster";
 const e2eSystemName = process.env.E2E_SYSTEM ?? "e2e-system";
 const e2eServiceName = process.env.E2E_SERVICE ?? "e2e-service";
 const e2eTemplateName = process.env.E2E_TEMPLATE ?? "e2e-template";
 const e2eSizeName = process.env.E2E_SIZE ?? "e2e-small";
 const e2eNamespace = process.env.E2E_NAMESPACE ?? "e2e-test";
+const e2eTemplatePVCStorageClass =
+  process.env.E2E_TEMPLATE_PVC_STORAGE_CLASS?.trim() ?? "";
+const e2eTemplatePVCAccessMode =
+  process.env.E2E_TEMPLATE_PVC_ACCESS_MODE?.trim() ?? "";
+const e2eTemplatePVCVolumeMode =
+  process.env.E2E_TEMPLATE_PVC_VOLUME_MODE?.trim() ?? "";
 const runningVMID = process.env.E2E_VM_RUNNING_ID ?? "";
 let activePassword = e2ePassword;
 
@@ -96,23 +108,8 @@ async function login(page: Page): Promise<void> {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-/** Wait for a response and validate its body against the given OpenAPI schema. */
-async function expectSchema(
-  respPromise: Promise<Response>,
-  schemaName: string,
-  expectedStatus: number | number[] = 200,
-): Promise<{ body: unknown; resp: Response }> {
-  const resp = await respPromise;
-  const statuses = Array.isArray(expectedStatus)
-    ? expectedStatus
-    : [expectedStatus];
-  expect(statuses).toContain(resp.status());
-  const body = await validateApiResponse(schemaName, resp);
-  return { body, resp };
-}
-
 async function getAdminToken(request: APIRequestContext): Promise<string> {
-  const auth = await getApiTokenWithForcePasswordSupport(request, {
+  const auth = await getApiAuthHeadersWithForcePasswordSupport(request, {
     username: e2eUsername,
     primaryPassword: e2ePassword,
     secondaryPassword: e2eNewPassword,
@@ -120,85 +117,6 @@ async function getAdminToken(request: APIRequestContext): Promise<string> {
   });
   activePassword = auth.password;
   return auth.token;
-}
-
-function pickIDByPreferredName<T extends { id?: string; name?: string }>(
-  items: T[] | undefined,
-  preferredName: string,
-): string {
-  const preferred = (items ?? []).find(
-    (item) => (item.name ?? "").trim() === preferredName && Boolean(item.id),
-  );
-  if (preferred?.id) {
-    return preferred.id;
-  }
-  return (items ?? []).find((item) => Boolean(item.id))?.id ?? "";
-}
-
-function pickPreferredNamespace(
-  namespaces: string[] | undefined,
-  preferredName: string,
-): string {
-  return (
-    namespaces?.find((ns) => ns === preferredName) ??
-    namespaces?.[0] ??
-    preferredName
-  );
-}
-
-function escapeRegExp(input: string): string {
-  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
-function toLooseOptionFilter(rawName: string): RegExp {
-  const tokens = rawName
-    .trim()
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map(escapeRegExp);
-  if (tokens.length === 0) {
-    return /.*/;
-  }
-  return new RegExp(tokens.join("\\s*[-_ ]*\\s*"), "i");
-}
-
-async function resolveClusterOptionFilter(
-  request: APIRequestContext,
-  headers: { Authorization: string },
-): Promise<RegExp> {
-  const clustersResp = await request.get(
-    "/api/v1/admin/clusters?page=1&per_page=100",
-    { headers },
-  );
-  expect(
-    clustersResp.status(),
-    `GET /admin/clusters returned ${clustersResp.status()}`,
-  ).toBe(200);
-  const clustersBody = (await validateApiResponse(
-    "ClusterList",
-    clustersResp,
-  )) as {
-    items?: Array<{
-      id?: string;
-      name?: string;
-      display_name?: string;
-      displayName?: string;
-    }>;
-  };
-  const clusters = clustersBody.items ?? [];
-  expect(
-    clusters.length,
-    "Stage 5.B requires at least one cluster option",
-  ).toBeGreaterThan(0);
-
-  const preferred =
-    clusters.find((item) => (item.name ?? "").trim() === e2eClusterName) ??
-    clusters[0];
-  const label = String(
-    preferred.display_name ?? preferred.displayName ?? preferred.name ?? "",
-  ).trim();
-  expect(label, "Cluster option label cannot be empty").toBeTruthy();
-  return toLooseOptionFilter(label);
 }
 
 async function resolveHealthyClusterID(
@@ -611,6 +529,100 @@ async function waitForNewVMFromApproval(
     )
     .not.toBe("");
   return createdVMID;
+}
+
+function buildCreateApprovalData(clusterID: string): Record<string, unknown> {
+  const data: Record<string, unknown> = { selected_cluster_id: clusterID };
+  if (e2eTemplatePVCStorageClass) {
+    data.selected_storage_class = e2eTemplatePVCStorageClass;
+  }
+  if (e2eTemplatePVCAccessMode) {
+    data.selected_dv_access_modes = [e2eTemplatePVCAccessMode];
+  }
+  if (e2eTemplatePVCVolumeMode) {
+    data.selected_dv_volume_mode = e2eTemplatePVCVolumeMode;
+  }
+  return data;
+}
+
+async function waitForVMRunning(
+  request: APIRequestContext,
+  headers: { Authorization: string },
+  vmID: string,
+): Promise<void> {
+  await expect
+    .poll(
+      async () => {
+        const vmResp = await request.get(`/api/v1/vms/${vmID}`, { headers });
+        if (vmResp.status() !== 200) {
+          return `HTTP_${vmResp.status()}`;
+        }
+        const vmBody = (await validateApiResponse("VM", vmResp)) as {
+          status?: string;
+        };
+        const status = (vmBody.status ?? "").toUpperCase();
+        if (status === "CREATING") {
+          const health = await summarizeClusterHealth(request, headers);
+          return `CREATING|${health}`;
+        }
+        return status;
+      },
+      {
+        timeout: 180_000,
+        intervals: [1000, 2000, 4000, 8000],
+        message: `VM ${vmID} did not reach RUNNING for console test`,
+      },
+    )
+    .toBe("RUNNING");
+}
+
+async function createRunningVMForConsole(
+  request: APIRequestContext,
+  headers: { Authorization: string },
+): Promise<string> {
+  const baselineIDs = new Set((await listVMBriefs(request, headers)).map((vm) => vm.id));
+  const serviceName = await createUniqueServiceForApprovalSeed(request);
+  const createReqData = await resolveCreateVMRequestData(
+    request,
+    headers,
+    "Stage 6 console VM setup",
+    serviceName,
+  );
+  const createResp = await request.post("/api/v1/vms/request", {
+    headers,
+    data: {
+      ...createReqData,
+      reason: `Stage 6 console VM setup ${Date.now()}`,
+    },
+  });
+  expect(
+    createResp.status(),
+    `POST /vms/request returned ${createResp.status()} for console setup`,
+  ).toBe(202);
+  const createBody = (await validateApiResponse(
+    "TicketResponse",
+    createResp,
+  )) as { ticket_id?: string; id?: string };
+  const ticketID = String(createBody.ticket_id ?? createBody.id ?? "").trim();
+  expect(ticketID, "console setup requires a create ticket id").toBeTruthy();
+
+  const clusterID = await resolveHealthyClusterID(request, headers);
+  expect(clusterID, "console setup requires at least one cluster").toBeTruthy();
+  const approveResp = await request.post(
+    `/api/v1/builtin-approval/tasks/${ticketID}/approve`,
+    {
+      headers,
+      data: buildCreateApprovalData(clusterID),
+    },
+  );
+  expect(
+    approveResp.status(),
+    `POST /builtin-approval/tasks/{id}/approve returned ${approveResp.status()} for console setup`,
+  ).toBe(204);
+
+  const vmID = await waitForNewVMFromApproval(request, headers, baselineIDs);
+  await waitForVMRunning(request, headers, vmID);
+  return vmID;
 }
 
 async function summarizeClusterHealth(
@@ -1248,11 +1260,7 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
       await expect(
         page.getByRole("heading", { name: "Services" }),
       ).toBeVisible();
-      await selectAntOption(
-        page,
-        page.getByTestId("services-system-selector"),
-        systemName,
-      );
+      await selectServicesSystemFilter(page, systemName);
 
       // ── CONTRACT CHECK: createService → Service ───────────────────────────────
       const serviceName = `e2e-svc-${Date.now().toString(36).slice(-5)}`;
@@ -1281,11 +1289,33 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
       const serviceID = (createdSvc as { id?: string }).id ?? "";
       expect(serviceID).toBeTruthy();
 
+      const serviceListRespPromise = page.waitForResponse(
+        (r) =>
+          urlPathEndsWith(r.url(), `/api/v1/systems/${systemID}/services`) &&
+          r.request().method() === "GET",
+      );
+      await page.goto(`/services?system_id=${systemID}`);
+      await serviceListRespPromise;
       await expect(
-        page.locator("tr").filter({ hasText: serviceName }).first(),
+        page.getByRole("heading", { name: "Services" }),
+      ).toBeVisible();
+
+      const createdServiceRow = page
+        .locator("tr")
+        .filter({ hasText: serviceName })
+        .first();
+      await expect(
+        createdServiceRow,
       ).toBeVisible();
 
       // ── CONTRACT CHECK: updateService → Service ───────────────────────────────
+      await createdServiceRow.getByTestId(`service-action-edit-${serviceID}`).click();
+      const editSvcModal = getAntModal(page, "service-edit-modal");
+      await expect(editSvcModal).toBeVisible();
+      await editSvcModal
+        .locator("textarea")
+        .first()
+        .fill("updated by live e2e");
       const updateSvcRespPromise = page.waitForResponse(
         (r) =>
           urlPathIncludes(
@@ -1293,18 +1323,16 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
             `/api/v1/systems/${systemID}/services/${serviceID}`,
           ) && r.request().method() === "PATCH",
       );
-      await page.getByTestId(`service-action-edit-${serviceID}`).click();
-      const editSvcModal = getAntModal(page, "service-edit-modal");
-      await expect(editSvcModal).toBeVisible();
-      await editSvcModal
-        .locator("textarea")
-        .first()
-        .fill("updated by live e2e");
       await editSvcModal.getByRole("button", { name: "OK" }).click();
 
       await expectSchema(updateSvcRespPromise, "Service", 200);
 
       // ── CONTRACT CHECK: deleteService with confirm=true ───────────────────────
+      const updatedServiceRow = page
+        .locator("tr")
+        .filter({ hasText: serviceName })
+        .first();
+      await expect(updatedServiceRow).toBeVisible();
       const deleteSvcRespPromise = page.waitForResponse(
         (r) =>
           urlPathIncludes(
@@ -1312,7 +1340,7 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
             `/api/v1/systems/${systemID}/services/${serviceID}`,
           ) && r.request().method() === "DELETE",
       );
-      await page.getByTestId(`service-action-delete-${serviceID}`).click();
+      await updatedServiceRow.getByTestId(`service-action-delete-${serviceID}`).click();
       const popconfirm = page.locator(".ant-popover:visible");
       await expect(popconfirm).toBeVisible();
       await popconfirm.getByRole("button", { name: /confirm/i }).click();
@@ -1402,11 +1430,7 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
         await expect(
           page.getByRole("heading", { name: "Services" }),
         ).toBeVisible();
-        await selectAntOption(
-          page,
-          page.getByTestId("services-system-selector"),
-          systemName,
-        );
+        await selectServicesSystemFilter(page, systemName);
 
         const serviceRow = page
           .locator("tr")
@@ -1524,11 +1548,7 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
         page.getByRole("heading", { name: "Services" }),
       ).toBeVisible();
 
-      await selectAntOption(
-        page,
-        page.getByTestId("services-system-selector"),
-        e2eSystemName,
-      );
+      await selectServicesSystemFilter(page, e2eSystemName);
 
       const serviceRow = page
         .locator("tr")
@@ -1787,12 +1807,13 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
         modal.locator(".ant-select-selector").first(),
         "Stage 5.B requires selecting a target cluster before approval",
       ).toBeVisible();
-      const clusterFilter = await resolveClusterOptionFilter(request, headers);
+      const clusterFilter = await resolveClusterOptionFilter(request, headers, e2eClusterName);
       await selectAntOption(
         page,
         modal.locator(".ant-select-selector").first(),
         clusterFilter,
       );
+      await selectApprovalRootVolumeModeIfRequired(page, modal);
 
       const approveRespPromise = page.waitForResponse(
         (r) =>
@@ -1801,7 +1822,7 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
             `/api/v1/builtin-approval/tasks/${ticketID}/approve`,
           ) && r.request().method() === "POST",
       );
-      await modal.getByRole("button", { name: "OK" }).click();
+      await modal.getByRole("button", { name: /approve/i }).click();
 
       const approveResp = await approveRespPromise;
       expect(
@@ -1939,11 +1960,19 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
         page.getByRole("heading", { name: /approval/i }),
       ).toBeVisible();
 
-      const rejectBtn = page.getByTestId(`approval-action-reject-${ticketID}`);
+      const actionsBtn = page.getByTestId(`approval-action-more-${ticketID}`);
       await expect(
-        rejectBtn,
+        actionsBtn,
         "No pending approval tasks found — API setup may have failed",
       ).toBeVisible();
+      await actionsBtn.click();
+
+      const rejectBtn = page.getByTestId(`approval-action-reject-${ticketID}`);
+      await expect(rejectBtn).toBeVisible();
+      await rejectBtn.click();
+      const modal = getAntModal(page, "reject-modal");
+      await expect(modal).toBeVisible();
+      await modal.locator("textarea").first().fill("Rejected by live e2e test");
 
       const rejectRespPromise = page.waitForResponse(
         (r) =>
@@ -1952,12 +1981,7 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
             `/api/v1/builtin-approval/tasks/${ticketID}/reject`,
           ) && r.request().method() === "POST",
       );
-
-      await rejectBtn.click();
-      const modal = getAntModal(page, "reject-modal");
-      await expect(modal).toBeVisible();
-      await modal.locator("textarea").first().fill("Rejected by live e2e test");
-      await modal.getByRole("button", { name: "OK" }).click();
+      await modal.getByRole("button", { name: /^OK$/i }).click();
 
       const rejectResp = await rejectRespPromise;
       expect(
@@ -1976,7 +2000,7 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
     });
   });
 
-  test("Stage 5.B Constraint – dedicated CPU with overcommit is blocking at approval time", async ({
+  test("Stage 5.B Constraint – dedicated CPU with overcommit is blocked before execution", async ({
     request,
   }) => {
     const token = await getAdminToken(request);
@@ -1991,6 +2015,7 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
     const serviceName = await createUniqueServiceForApprovalSeed(request);
     let instanceSizeID = "";
     let ticketID = "";
+    let catalogBlockedConflict = false;
 
     try {
       await test.step("Stage 5.B Constraint / Step 1: construct dedicated+overcommit conflict through staged update", async () => {
@@ -2043,6 +2068,18 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
             },
           },
         );
+        if (patchSizeResp.status() === 400) {
+          catalogBlockedConflict = true;
+          const errBody = (await validateApiResponse(
+            "Error",
+            patchSizeResp,
+          )) as { code?: string; message?: string };
+          expect(
+            `${errBody.code ?? ""} ${errBody.message ?? ""}`,
+            "catalog update must hard-block dedicated+overcommit conflict",
+          ).toMatch(/DEDICATED_CPU_OVERCOMMIT_CONFLICT|dedicated CPU|overcommit/i);
+          return;
+        }
         expect(
           patchSizeResp.status(),
           `PATCH /admin/instance-sizes/{id} returned ${patchSizeResp.status()}`,
@@ -2066,6 +2103,9 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
       });
 
       await test.step("Stage 5.B Constraint / Step 2: approval API blocks with canonical DEDICATED_CPU_OVERCOMMIT_CONFLICT", async () => {
+        if (catalogBlockedConflict) {
+          return;
+        }
         const createReqData = await resolveCreateVMRequestData(
           request,
           headers,
@@ -2402,17 +2442,31 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
     });
 
     let targetVMID = runningVMID;
+    let targetOpenedOnDetail = false;
     await test.step("Stage 6 / Step 2: resolve runnable VM target from UI action button", async () => {
-      if (!targetVMID) {
+      const configuredButton = targetVMID
+        ? page.getByTestId(`vm-action-console-${targetVMID}`)
+        : null;
+      const configuredVisible = configuredButton
+        ? await configuredButton.isVisible().catch(() => false)
+        : false;
+      const configuredEnabled = configuredButton
+        ? await configuredButton.isEnabled().catch(() => false)
+        : false;
+      if (!targetVMID || !configuredVisible || !configuredEnabled) {
         const enabledConsoleButton = page
           .locator('button[data-testid^="vm-action-console-"]:not([disabled])')
           .first();
-        await expect(
-          enabledConsoleButton,
-          "No running VM with enabled console action found; set E2E_VM_RUNNING_ID or seed a running VM",
-        ).toBeVisible();
-        const testId = await enabledConsoleButton.getAttribute("data-testid");
-        targetVMID = testId?.replace("vm-action-console-", "") ?? "";
+        if (await enabledConsoleButton.isVisible().catch(() => false)) {
+          const testId = await enabledConsoleButton.getAttribute("data-testid");
+          targetVMID = testId?.replace("vm-action-console-", "") ?? "";
+        } else {
+          const token = await getAdminToken(request);
+          const headers = { Authorization: `Bearer ${token}` };
+          targetVMID = await createRunningVMForConsole(request, headers);
+          await page.goto(`/vms/${targetVMID}`);
+          targetOpenedOnDetail = true;
+        }
       }
       expect(
         targetVMID,
@@ -2425,10 +2479,14 @@ test.describe("master-flow live (contract-enforced, no mock)", () => {
         urlPathEndsWith(r.url(), `/api/v1/vms/${targetVMID}/console/request`) &&
         r.request().method() === "POST",
     );
-    await page.getByTestId(`vm-action-console-${targetVMID}`).click();
-    await expect(page).toHaveURL(new RegExp(`/vms/${targetVMID}`));
+    if (!targetOpenedOnDetail) {
+      await page.getByTestId(`vm-action-console-${targetVMID}`).click();
+      await expect(page).toHaveURL(new RegExp(`/vms/${targetVMID}`));
+    }
     await expect(page.getByTestId("vm-console-section")).toBeVisible();
-    await page.getByTestId(`vm-action-console-${targetVMID}`).click();
+    const detailConsoleButton = page.getByTestId(`vm-action-console-${targetVMID}`);
+    await expect(detailConsoleButton).toBeEnabled({ timeout: 30_000 });
+    await detailConsoleButton.click();
     await page.getByRole("button", { name: "Confirm" }).click();
 
     let consoleStatus = "";

@@ -171,26 +171,31 @@ export function VMRequestTemplateFields({
             label={t('wizard.select_template')}
             rules={[{ required: true, message: t('wizard.validation.template_required') }]}
         >
-            <Select
-                placeholder={t('wizard.select_template')}
-                options={templatesData?.items
-                    ?.filter((template: Template) => template.enabled !== false)
-                    .map((template: Template) => ({
-                        label: (
-                            <Space>
-                                <Text strong>{template.display_name || template.name}</Text>
-                                {template.os_family && <Tag color="blue">{template.os_family} {template.os_version}</Tag>}
-                                {normalizeSystemLabels(template.system_labels).map((label) => (
-                                    <Tag key={label} color={systemLabelColor(label)}>
-                                        {systemLabelText(label, t)}
-                                    </Tag>
-                                ))}
-                            </Space>
-                        ),
-                        value: template.id,
-                    }))}
-                style={{ width: '100%' }}
-            />
+                <Select
+                    placeholder={t('wizard.select_template')}
+                    options={templatesData?.items
+                        ?.filter((template: Template) => template.enabled !== false)
+                        .map((template: Template) => {
+                            const displayName = template.display_name || template.name;
+                            const stableName = displayName !== template.name ? template.name : '';
+                            return {
+                                label: (
+                                    <Space>
+                                        <Text strong>{displayName}</Text>
+                                        {stableName && <Text type="secondary">{stableName}</Text>}
+                                        {template.os_family && <Tag color="blue">{template.os_family} {template.os_version}</Tag>}
+                                        {normalizeSystemLabels(template.system_labels).map((label) => (
+                                            <Tag key={label} color={systemLabelColor(label)}>
+                                                {systemLabelText(label, t)}
+                                            </Tag>
+                                        ))}
+                                    </Space>
+                                ),
+                                value: template.id,
+                            };
+                        })}
+                    style={{ width: '100%' }}
+                />
         </Form.Item>
     );
 }
@@ -260,10 +265,13 @@ export function VMRequestSizeFields({
                         ?.filter((size: InstanceSize) => size.enabled !== false)
                         .map((size: InstanceSize) => {
                             const sizeTags = capabilityTags(size, t);
+                            const displayName = size.display_name || size.name;
+                            const stableName = displayName !== size.name ? size.name : '';
                             return {
-                                label: `${size.display_name || size.name}  ${formatInstanceSizeSummary(size, t)}${size.disk_gb ? ` · ${formatInstanceSizeDisk(size, t)}` : ''}`,
+                                label: `${displayName}${stableName ? ` ${stableName}` : ''}  ${formatInstanceSizeSummary(size, t)}${size.disk_gb ? ` · ${formatInstanceSizeDisk(size, t)}` : ''}`,
                                 value: size.id,
-                                sizeName: size.display_name || size.name,
+                                sizeName: displayName,
+                                stableName,
                                 sizeSummary: formatInstanceSizeSummary(size, t),
                                 sizeDisk: size.disk_gb ? formatInstanceSizeDisk(size, t) : null,
                                 sizeTags,
@@ -273,6 +281,7 @@ export function VMRequestSizeFields({
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '4px 0' }}>
                             <div>
                                 <Text strong>{option.data.sizeName}</Text>{' '}
+                                {option.data.stableName ? <Text type="secondary">{option.data.stableName} </Text> : null}
                                 <Text type="secondary">{option.data.sizeSummary}</Text>
                                 {option.data.sizeDisk && <Text type="secondary"> · {option.data.sizeDisk}</Text>}
                             </div>

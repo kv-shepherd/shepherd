@@ -190,8 +190,8 @@ func (s *Server) Logout(c *gin.Context) {
 	c.Writer.WriteHeaderNow()
 }
 
-// loadUserRolesAndPermissions fetches roles and flattened permissions for a user.
-func (s *Server) loadUserRolesAndPermissions(ctx context.Context, userID string) ([]*ent.Role, []string, error) {
+// loadUserRolesAndPermissions fetches active role names and flattened permissions for a user.
+func (s *Server) loadUserRolesAndPermissions(ctx context.Context, userID string) (roleNames, permissions []string, err error) {
 	user, err := s.client.User.Query().
 		Where(entuser.IDEQ(userID)).
 		WithRoleBindings(func(q *ent.RoleBindingQuery) {
@@ -202,26 +202,42 @@ func (s *Server) loadUserRolesAndPermissions(ctx context.Context, userID string)
 		return nil, nil, fmt.Errorf("query user with roles: %w", err)
 	}
 
-	var roles []*ent.Role
+	roleSet := make(map[string]struct{})
 	permSet := make(map[string]struct{})
 	for _, rb := range user.Edges.RoleBindings {
 		if rb.Edges.Role == nil || !rb.Edges.Role.Enabled {
 			continue
 		}
 		role := rb.Edges.Role
-		roles = append(roles, role)
+		roleName := strings.TrimSpace(role.Name)
+		if roleName != "" {
+			roleSet[roleName] = struct{}{}
+		}
 		for _, p := range role.Permissions {
-			permSet[p] = struct{}{}
+			key := strings.TrimSpace(p)
+			if key == "" {
+				continue
+			}
+			if _, supported := permissionCatalog[key]; !supported {
+				continue
+			}
+			permSet[key] = struct{}{}
 		}
 	}
 
-	permissions := make([]string, 0, len(permSet))
+	roleNames = make([]string, 0, len(roleSet))
+	for roleName := range roleSet {
+		roleNames = append(roleNames, roleName)
+	}
+	sort.Strings(roleNames)
+
+	permissions = make([]string, 0, len(permSet))
 	for p := range permSet {
 		permissions = append(permissions, p)
 	}
 	sort.Strings(permissions)
 
-	return roles, permissions, nil
+	return roleNames, permissions, nil
 }
 
 func (s *Server) buildUserInfo(ctx context.Context, user *ent.User) (generated.UserInfo, error) {
@@ -229,14 +245,9 @@ func (s *Server) buildUserInfo(ctx context.Context, user *ent.User) (generated.U
 		return generated.UserInfo{}, fmt.Errorf("server and user are required")
 	}
 
-	roles, permissions, err := s.loadUserRolesAndPermissions(ctx, user.ID)
+	roleNames, permissions, err := s.loadUserRolesAndPermissions(ctx, user.ID)
 	if err != nil {
 		return generated.UserInfo{}, err
-	}
-
-	roleNames := make([]string, len(roles))
-	for i, role := range roles {
-		roleNames[i] = role.Name
 	}
 
 	return generated.UserInfo{
@@ -304,14 +315,9 @@ func (s *Server) issueLoginResponse(ctx context.Context, user *ent.User) (genera
 		return generated.LoginResponse{}, fmt.Errorf("server and user are required")
 	}
 
-	roles, permissions, err := s.loadUserRolesAndPermissions(ctx, user.ID)
+	roleNames, permissions, err := s.loadUserRolesAndPermissions(ctx, user.ID)
 	if err != nil {
 		return generated.LoginResponse{}, err
-	}
-
-	roleNames := make([]string, len(roles))
-	for i, role := range roles {
-		roleNames[i] = role.Name
 	}
 
 	sessionVersion, err := s.currentAuthSessionVersion(ctx, user.ID)

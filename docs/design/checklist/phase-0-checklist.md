@@ -81,7 +81,7 @@
   - [x] **River Built-in Cleanup**: `CompletedJobRetentionPeriod=24h` — *Configured in `internal/infrastructure/database.go` River client init*
   - [x] **Shared pgxpool stability baseline**: Ent + River + sqlc share one pool
   - [x] **Production DB tuning moved out of Phase 0**: autovacuum, `river_health`, Prometheus metrics, and alert thresholds are tracked in [DEFERRED_FOLLOWUPS.md §Phase 0 Follow-ups](../DEFERRED_FOLLOWUPS.md#phase-0-follow-ups)
-- [x] Auth token/session baseline — *JWT-based auth is implemented in Phase 5; server-side browser sessions are replaced, and active revocation is RFC-0008 future scope*
+- [x] Auth token/session baseline — *JWT-based auth is implemented in Phase 5; server-side browser sessions are replaced, session-version revocation is implemented, and session listing/admin APIs remain RFC-0008 future scope*
 - [x] Logger (zap) configured — *AtomicLevel + HTTPHandler for runtime hot-reload*
 - [x] Graceful Shutdown — *Signal handling (SIGINT/SIGTERM) in `cmd/server/main.go`*
 - [x] **Worker Pool (Coding Standard - Required)** (ADR-0031):
@@ -139,7 +139,7 @@ items were reclassified as follows:
 |------|------------|
 | `stdlib.OpenDBFromPool` for Ent | Complete in `internal/infrastructure/database.go` |
 | River stability runtime baseline | Complete; production DB tuning tracked in [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md#phase-0-follow-ups) |
-| Auth token/session semantics | Complete via JWT + DB-bootstrapped secrets; active revocation deferred to [RFC-0008](../../rfc/RFC-0008-extended-auth.md) |
+| Auth token/session semantics | Complete via JWT + DB-bootstrapped secrets + session-version revocation; session listing/admin APIs remain [RFC-0008](../../rfc/RFC-0008-extended-auth.md) future scope |
 | Admin seed (ADR-0018) | Complete in `cmd/seed/main.go` |
 | OpenAPI 3.1 compat check | Complete and enforced through `REQUIRE_OPENAPI_COMPAT=1 make api-compat` |
 | Traceability manifest CI | Complete via `check_master_flow_traceability.go` |

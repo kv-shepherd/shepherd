@@ -59,7 +59,7 @@ WHERE
 -- name: SetDomainEventStatus :execrows
 UPDATE domain_events
 SET status = $2
-WHERE id = $1;
+WHERE id = $1 AND status = 'PENDING';
 
 -- name: ResetPowerRetryTicket :execrows
 UPDATE tickets
@@ -68,14 +68,16 @@ SET
     reject_reason = NULL,
     updated_at = NOW()
 WHERE
-    id = $1
-    AND parent_ticket_id = $2
+    id = sqlc.arg(id)
+    AND event_id = sqlc.arg(event_id)
+    AND parent_ticket_id = sqlc.arg(parent_ticket_id)
+    AND status IN ('FAILED', 'REJECTED')
     AND operation_type = 'POWER';
 
 -- name: ResetDomainEventForRetry :execrows
 UPDATE domain_events
 SET status = 'PENDING'
-WHERE id = $1;
+WHERE id = $1 AND status IN ('FAILED', 'CANCELLED');
 
 -- name: InsertDomainEvent :exec
 INSERT INTO domain_events (

@@ -5,6 +5,8 @@ set -euo pipefail
 
 BASE_REF="${PUBLIC_HYGIENE_BASE_REF:-origin/main}"
 violations=()
+email_re='[[:alnum:]._%+-]+@[[:alnum:].-]+[.][[:alpha:]]{2,}'
+private_path_re="(^|[[:space:]\`\"'(<])([.][.]/)*private/([[:alnum:]_.-]*enterprise|[[:alnum:]_.-]*internal|[[:alnum:]_.-]*repo)(/|[[:space:]\`\"'>)]|$)"
 
 skip_path() {
   case "$1" in
@@ -29,20 +31,52 @@ check_line() {
   local file="$1"
   local line_no="$2"
   local line="$3"
+  local rest="$line"
 
-  while IFS= read -r email; do
-    [ -n "$email" ] || continue
+  while [[ $rest =~ $email_re ]]; do
+    local email="${BASH_REMATCH[0]}"
     local domain="${email##*@}"
-    domain="$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]')"
+    domain="${domain,,}"
     if ! allowed_email_domain "$domain"; then
       violations+=("${file}:${line_no}: non-reserved email fixture '${email}' must use example.com/org/net or a documented project contact domain")
     fi
-  done < <(printf '%s\n' "$line" | grep -Eio '[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}' || true)
+    rest="${rest#*"${email}"}"
+  done
 
-  if printf '%s\n' "$line" | grep -Eiq '(^|[[:space:]`"'\''(<])(\.\./)*private/([[:alnum:]_.-]*enterprise|[[:alnum:]_.-]*internal|[[:alnum:]_.-]*repo)(/|[[:space:]`"'\''>)]|$)'; then
+  if [[ ${line,,} =~ $private_path_re ]]; then
     violations+=("${file}:${line_no}: private repository path markers must not be introduced into public source")
   fi
 }
+
+run_self_test() {
+  violations=()
+  local disallowed_email="alice@corp"
+  disallowed_email+=".invalid"
+  local private_marker="../pri"
+  private_marker+="vate/internal/repo"
+
+  check_line "fixture.txt" 1 "reserved addresses alice@example.com OPS@KV-SHEPHERD.IO are allowed"
+  if [ "${#violations[@]}" -ne 0 ]; then
+    printf 'FAIL: public hygiene self-test expected reserved addresses to pass, got %d issue(s)\n' "${#violations[@]}"
+    printf ' - %s\n' "${violations[@]}"
+    exit 1
+  fi
+
+  check_line "fixture.txt" 2 "reject direct user fixture ${disallowed_email}"
+  check_line "fixture.txt" 3 "reject path ${private_marker}"
+  if [ "${#violations[@]}" -ne 2 ]; then
+    printf 'FAIL: public hygiene self-test expected 2 issue(s), got %d\n' "${#violations[@]}"
+    printf ' - %s\n' "${violations[@]}"
+    exit 1
+  fi
+
+  echo "OK: public hygiene self-test passed"
+}
+
+if [ "${1:-}" = "--self-test" ]; then
+  run_self_test
+  exit 0
+fi
 
 scan_diff_stream() {
   local file=""

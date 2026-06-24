@@ -13,9 +13,9 @@ import (
 )
 
 type postgresLoginAttemptStore struct {
-	pool    *pgxpool.Pool
-	init    sync.Once
-	initErr error
+	pool        *pgxpool.Pool
+	initMu      sync.Mutex
+	initialized bool
 }
 
 const (
@@ -80,6 +80,7 @@ WHERE bucket_key = ANY($1);`
 	deleteLoginRateLimitBucketsSQL = `
 DELETE FROM login_rate_limit_buckets
 WHERE bucket_key = ANY($1);`
+	loginRateLimitSchemaInitTimeout = 5 * time.Second
 )
 
 func newPostgresLoginAttemptStore(pool *pgxpool.Pool) loginAttemptStore {
@@ -97,7 +98,7 @@ func (s *postgresLoginAttemptStore) Allow(ctx context.Context, keys []string, no
 	if len(keys) == 0 {
 		return 0, nil
 	}
-	if err := s.ensureSchema(); err != nil {
+	if err := s.ensureSchema(ctx); err != nil {
 		return 0, err
 	}
 	var blockedUntil time.Time
@@ -134,7 +135,7 @@ func (s *postgresLoginAttemptStore) RecordFailure(ctx context.Context, keys []st
 	if len(keys) == 0 {
 		return nil
 	}
-	if err := s.ensureSchema(); err != nil {
+	if err := s.ensureSchema(ctx); err != nil {
 		return err
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -167,7 +168,7 @@ func (s *postgresLoginAttemptStore) RecordSuccess(ctx context.Context, keys []st
 	if len(keys) == 0 {
 		return nil
 	}
-	if err := s.ensureSchema(); err != nil {
+	if err := s.ensureSchema(ctx); err != nil {
 		return err
 	}
 	return pgx.BeginFunc(ctx, s.pool, func(tx pgx.Tx) error {
@@ -184,17 +185,28 @@ func (s *postgresLoginAttemptStore) RecordSuccess(ctx context.Context, keys []st
 	})
 }
 
-func (s *postgresLoginAttemptStore) ensureSchema() error {
+func (s *postgresLoginAttemptStore) ensureSchema(ctx context.Context) error {
 	if s == nil || s.pool == nil {
 		return nil
 	}
-	s.init.Do(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cancel()
+	if ctx == nil {
+		ctx = context.Background()
+	}
 
-		s.initErr = ensureLoginAttemptStoreSchema(ctx, s.pool)
-	})
-	return s.initErr
+	s.initMu.Lock()
+	defer s.initMu.Unlock()
+	if s.initialized {
+		return nil
+	}
+
+	schemaCtx, cancel := context.WithTimeout(ctx, loginRateLimitSchemaInitTimeout)
+	defer cancel()
+
+	if err := ensureLoginAttemptStoreSchema(schemaCtx, s.pool); err != nil {
+		return err
+	}
+	s.initialized = true
+	return nil
 }
 
 func ensureLoginAttemptStoreSchema(ctx context.Context, exec pgxExecutor) error {

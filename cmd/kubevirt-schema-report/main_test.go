@@ -10,11 +10,11 @@ func TestBuildReportInstancesize(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildReport(instancesize) error = %v", err)
 	}
-	if report.FromVersion != "1.8.1" {
-		t.Fatalf("FromVersion = %q, want %q", report.FromVersion, "1.8.1")
+	if report.FromVersion != "1.8.2" {
+		t.Fatalf("FromVersion = %q, want %q", report.FromVersion, "1.8.2")
 	}
-	if report.ToVersion != "1.8.2" {
-		t.Fatalf("ToVersion = %q, want %q", report.ToVersion, "1.8.2")
+	if report.ToVersion != "1.8.4" {
+		t.Fatalf("ToVersion = %q, want %q", report.ToVersion, "1.8.4")
 	}
 	if len(report.SchemaPathsAdded) != 0 {
 		t.Fatalf("SchemaPathsAdded length = %d, want 0 for patch baseline refresh", len(report.SchemaPathsAdded))

@@ -4,12 +4,14 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/auditlog"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
@@ -56,7 +58,7 @@ func TestGetCurrentUser_IncludesPermissions(t *testing.T) {
 	role, err := client.Role.Create().
 		SetID("role-1").
 		SetName("Operator").
-		SetPermissions([]string{"vm:read", "system:read"}).
+		SetPermissions([]string{"vm:read", "system:read", " vm:read ", "", "legacy:compat"}).
 		SetEnabled(true).
 		Save(t.Context())
 	if err != nil {
@@ -93,6 +95,97 @@ func TestGetCurrentUser_IncludesPermissions(t *testing.T) {
 	}
 	if got.Permissions[0] != "system:read" || got.Permissions[1] != "vm:read" {
 		t.Fatalf("permissions not sorted/stable: %+v", got.Permissions)
+	}
+}
+
+func TestGetCurrentUser_DeduplicatesAndSortsActiveRoleNames(t *testing.T) {
+	t.Parallel()
+	gin.SetMode(gin.TestMode)
+
+	client := testutil.OpenEntPostgres(t, "auth_handler_me_role_names")
+	server := NewServer(ServerDeps{EntClient: client})
+
+	user, err := client.User.Create().
+		SetID("user-role-names").
+		SetUsername("role.names").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed user: %v", err)
+	}
+
+	alphaRole, err := client.Role.Create().
+		SetID("role-alpha").
+		SetName("alpha").
+		SetPermissions([]string{"system:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed alpha role: %v", err)
+	}
+	betaRole, err := client.Role.Create().
+		SetID("role-beta").
+		SetName("beta").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed beta role: %v", err)
+	}
+	disabledRole, err := client.Role.Create().
+		SetID("role-disabled").
+		SetName("disabled").
+		SetPermissions([]string{"platform:admin"}).
+		SetEnabled(false).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed disabled role: %v", err)
+	}
+
+	bindings := []struct {
+		id        string
+		role      *ent.Role
+		scopeType string
+		scopeID   string
+	}{
+		{id: "rb-beta-global", role: betaRole, scopeType: scopeTypeGlobal},
+		{id: "rb-alpha-global", role: alphaRole, scopeType: scopeTypeGlobal},
+		{id: "rb-beta-system", role: betaRole, scopeType: scopeTypeSystem, scopeID: "system-a"},
+		{id: "rb-disabled-global", role: disabledRole, scopeType: scopeTypeGlobal},
+	}
+	for _, binding := range bindings {
+		create := client.RoleBinding.Create().
+			SetID(binding.id).
+			SetUser(user).
+			SetRole(binding.role).
+			SetScopeType(binding.scopeType).
+			SetCreatedBy("seed")
+		if binding.scopeID != "" {
+			create = create.SetScopeID(binding.scopeID)
+		}
+		if _, createErr := create.Save(t.Context()); createErr != nil {
+			t.Fatalf("seed role binding %s: %v", binding.id, createErr)
+		}
+	}
+
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	req := httptest.NewRequest(http.MethodGet, "/auth/me", http.NoBody)
+	req = req.WithContext(middleware.SetUserContext(req.Context(), user.ID, user.Username, nil))
+	c.Request = req
+
+	server.GetCurrentUser(c)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+
+	var got generated.UserInfo
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode user info: %v", err)
+	}
+	wantRoles := []string{"alpha", "beta"}
+	if !slices.Equal(got.Roles, wantRoles) {
+		t.Fatalf("roles = %#v, want %#v", got.Roles, wantRoles)
 	}
 }
 

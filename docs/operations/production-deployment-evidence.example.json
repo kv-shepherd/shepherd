@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "generated_at": "2026-06-21T00:00:00Z",
+  "release": {
+    "version": "0.0.0-example",
+    "server_image": "ghcr.io/kv-shepherd/shepherd-server:0.0.0-example",
+    "web_image": "ghcr.io/kv-shepherd/shepherd-web:0.0.0-example",
+    "rollback_image_version": "0.0.0-previous"
+  },
+  "deployment": {
+    "topology": "docker_compose",
+    "database_topology": "bundled_postgres",
+    "monitoring_overlay_enabled": false,
+    "public_base_url": "https://shepherd.example.com"
+  },
+  "checks": [
+    {
+      "name": "static_governance",
+      "status": "pending"
+    },
+    {
+      "name": "monitoring_assets",
+      "status": "pending"
+    },
+    {
+      "name": "postgres_ops",
+      "status": "pending"
+    },
+    {
+      "name": "compose_config",
+      "status": "pending"
+    },
+    {
+      "name": "compose_ps",
+      "status": "pending"
+    },
+    {
+      "name": "compose_images",
+      "status": "pending"
+    },
+    {
+      "name": "health_live",
+      "status": "pending"
+    },
+    {
+      "name": "health_ready",
+      "status": "pending"
+    },
+    {
+      "name": "live_e2e_full",
+      "status": "pending"
+    },
+    {
+      "name": "rollback_record",
+      "status": "pending"
+    }
+  ],
+  "artifacts": {
+    "compose_config": {
+      "path": "evidence/compose-config.txt",
+      "exists": false
+    },
+    "compose_ps": {
+      "path": "evidence/compose-ps.json",
+      "exists": false
+    },
+    "compose_images": {
+      "path": "evidence/compose-images.json",
+      "exists": false
+    },
+    "postgres_ops_log": {
+      "path": "evidence/postgres-ops-check.log",
+      "exists": false
+    },
+    "live_e2e_evidence": {
+      "path": ".run/live-e2e/YYYYMMDD/HHMM/live-e2e.evidence.json",
+      "exists": false
+    },
+    "live_e2e_result": {
+      "path": ".run/live-e2e/YYYYMMDD/HHMM/live-e2e.result",
+      "exists": false
+    },
+    "manual_live_e2e_bundle": {
+      "path": ".run/live-e2e/YYYYMMDD/HHMM",
+      "exists": false
+    },
+    "playwright_json": {
+      "path": ".run/live-e2e/YYYYMMDD/HHMM/playwright-results.json",
+      "exists": false
+    },
+    "backend_log": {
+      "path": ".run/live-e2e/YYYYMMDD/HHMM/shepherd-e2e-server.log",
+      "exists": false
+    },
+    "rollback_record": {
+      "path": "evidence/rollback-record.txt",
+      "exists": false
+    }
+  }
+}

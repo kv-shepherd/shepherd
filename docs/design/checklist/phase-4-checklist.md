@@ -2,7 +2,7 @@
 
 > **Detailed Document**: [phases/04-governance.md](../phases/04-governance.md)
 >
-> **Implementation Status**: 🔄 Partial (~97%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system/Namespace CRUD/Batch Operations (Stage 5.E)/VNC token hardening (AES-256-GCM + shared replay marker)/Catalog Scope (ADR-0040)/Cluster Policy/VM Status Sync (ADR-0038)/Template+InstanceSize validators all completed; full resource reconciler + template lifecycle states deferred
+> **Implementation Status**: 🔄 Partial (~98%) — Approval flow/ADR-0012 atomic commit/Audit log/Delete handlers/ApprovalValidator/Confirm params/Notification system/Namespace CRUD/Batch Operations (Stage 5.E)/VNC token hardening (AES-256-GCM + shared replay marker)/Catalog Scope/Cluster Policy/VM Status Sync (ADR-0038)/Template+InstanceSize validators/User My Requests API all completed; full resource reconciler, rich revision diff/compression service, and template lifecycle states deferred
 >
 > **Last Audited**: 2026-05-08 (Session: Phase 4 V1 scope alignment)
 >
@@ -18,13 +18,13 @@
 
 | Stage | Description | Alignment | Key Gaps | Priority |
 |-------|-------------|-----------|----------|----------|
-| 5.A | VM Request Submission | ✅ 90% | Domain `PENDING` status is redundant (VM row not created until approval) | P2 |
-| 5.B | Admin Approval | ✅ 95% | Prod overcommit informational warning already surfaced in approval UI; template lifecycle follow-ups remain deferred | P3 |
-| 5.C | VM Creation Execution | ✅ 95% | Provider-side hard idempotency (AlreadyExists/object ownership check) can be further strengthened | P3 |
+| 5.A | VM Request Submission | ✅ 90% | Request path creates pending Ticket/DomainEvent records without a VM row; VM `PENDING` remains K8s scheduler wait only | P2-done |
+| 5.B | Admin Approval | ✅ 95% | Prod overcommit informational warning already surfaced in approval UI; template lifecycle follow-ups remain deferred | P3-done |
+| 5.C | VM Creation Execution | ✅ 97% | Provider-side hard idempotency now guards create-style SSA with a same-name ownership check before apply | P3-done |
 | 5.D | Delete Operations | ✅ 96% | VM hard-delete plus periodic `DELETING` tombstone retry cleanup implemented | P2-done |
 | 5.E | Batch Operations | ✅ 97% | Canonical API baseline + parent-child linkage + submit throttling (pending parent + global/min + pending child + cooldown) + parent approval dispatch to independent child workers + retry/cancel + parent projection table persisted counters + admin override APIs + `/vms/batch/power` compatibility execution + frontend queue UX (`status_url` polling / `429 Retry-After` countdown / affected-child feedback / `aria-live`) and JSON result export implemented | P2-done |
-| 5.F | Notification System | ✅ 95% | V1 inbox notification flow implemented end-to-end (API + triggers + InboxSender + NotificationBell + 90-day retention cleanup) | P3 |
-| 6 | VNC Console Access | ⚠️ 96% | Stage 6 baseline + shared PG replay marker + AES-256-GCM encrypted token envelope implemented; proxy internals + active revocation remain deferred | P2 |
+| 5.F | Notification System | ✅ 95% | V1 inbox notification flow implemented end-to-end (API + triggers + InboxSender + NotificationBell + 90-day retention cleanup) | P3-done |
+| 6 | VNC Console Access | ⚠️ 96% | Stage 6 V1 baseline + shared PG replay marker + AES-256-GCM encrypted token envelope implemented; noVNC proxy internals + VNC active revocation remain V2+ scope | V2+ |
 | Part 4 | State Machines | ✅ 90% | ~~`FAILED`, `DELETING`, `STOPPING` states~~ added; ~~`PENDING` clarified~~ as K8s-only | P2-done |
 
 ### Blocking Issues (must fix before further feature work)
@@ -135,9 +135,9 @@
 ## RevisionService
 
 - [x] `ent/schema/vm_revision.go` persistence model exists
-- [ ] Version number auto-increment
-- [ ] Supports diff calculation
-- [ ] YAML compressed storage
+- [ ] Version number auto-increment (RFC-backed future scope; not V1 governance baseline)
+- [ ] Supports diff calculation (RFC-backed future scope; not V1 governance baseline)
+- [ ] YAML compressed storage (RFC-backed future scope; not V1 governance baseline)
 
 > Rich revision diff/compression service behavior remains future scope; VM
 > lifecycle auditability does not depend on this service for the V1 governance
@@ -195,7 +195,7 @@
   - [x] Persists status, polling tier, last poll time, and ResourceVersion
   - [x] Handles expired ResourceVersion by clearing the cache and rescheduling
   - [x] Stops the poll chain for deleted DB bindings and `DELETING` tombstones
-- [x] **Resource adoption compensation schema** exists (`pending_adoptions`)
+- [x] **Resource adoption compensation workflow** exists (`pending_adoptions` schema + discovery job + platform-admin API/UI adoption workflow)
 - [ ] Full ghost/orphan reconciler with dry-run/mark/delete modes (deferred to [DEFERRED_FOLLOWUPS.md](../DEFERRED_FOLLOWUPS.md))
 - [ ] Full reconciler circuit-breaker UX and reports (deferred)
 
@@ -232,7 +232,10 @@
 - [x] **Post-Execution Ticket Status**: Worker updates ticket `APPROVED → EXECUTING → SUCCESS/FAILED`
 - [x] **VM Create Status Progression**: `vm_create` worker persists `CREATING -> RUNNING|FAILED` on execution result
 - [x] **Duplicate Pending Guard Scope**: same-resource + same-operation check with `existing_ticket_id` in error params
-- [ ] **User View - My Requests** API (deferred)
+- [x] **User View - My Requests** API implemented via `GET /api/v1/tickets?mine=true`
+  - [x] Requires authentication but not `ticket:view`
+  - [x] Filters server-side by `ticket.requester == actor`
+  - [x] Invalid ticket list enum filters return `400 INVALID_REQUEST`
 - [x] **Admin View - Approval Workbench** API (ListPending sorted oldest first)
   - [x] Default sort by `days_pending` (oldest first within priority tier)
   - [x] `priority_tier` field in response (normal/warning/urgent) — `PriorityTier()` function

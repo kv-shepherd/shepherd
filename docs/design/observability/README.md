@@ -52,9 +52,11 @@ Job args, job IDs, errors, metadata, tags, ticket IDs, VM names, namespaces,
 clusters, users, and payload values stay out of metrics.
 
 Approval/audit business metrics record only aggregate ticket status,
-operation type, batch type, and fixed audit action labels. Requesters,
-approvers, actors, ticket IDs, resource IDs, VM names, namespaces, clusters,
-audit details, and payload values stay out of metrics.
+operation type, batch type, and allowlisted fixed audit action labels. Unknown,
+future, blank, or external-provider approval actions aggregate as
+`approval.other`. Requesters, approvers, actors, ticket IDs, resource IDs, VM
+names, namespaces, clusters, audit details, and payload values stay out of
+metrics.
 
 HTTP request correlation logs record bounded ingress fields only: request ID,
 trace ID, span ID, method, normalized route, status, and duration. They do not

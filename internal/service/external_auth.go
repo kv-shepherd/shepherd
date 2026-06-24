@@ -37,9 +37,10 @@ func (s *ExternalAuthService) WithClient(client *ent.Client) *ExternalAuthServic
 
 // ExternalAuthUpsertResult captures the canonical persistence outcome.
 type ExternalAuthUpsertResult struct {
-	User    *ent.User
-	Created bool
-	Updated bool
+	User        *ent.User
+	Created     bool
+	Updated     bool
+	RBACChanged bool
 }
 
 func (s *ExternalAuthService) UpsertExternalUser(
@@ -118,14 +119,17 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 			if profileErr := s.upsertExternalProfile(ctx, createdUser.ID, normalized); profileErr != nil {
 				return nil, profileErr
 			}
-			if reconcileErr := s.reconcileExternalCohortRBAC(ctx, createdUser.ID, authProviderID, normalized.Cohorts); reconcileErr != nil {
+			rbacChanged, reconcileErr := s.reconcileExternalCohortRBAC(ctx, createdUser.ID, authProviderID, externalAuthRBACCohorts(normalized))
+			if reconcileErr != nil {
 				return nil, reconcileErr
 			}
+			return &ExternalAuthUpsertResult{
+				User:        createdUser,
+				Created:     true,
+				RBACChanged: rbacChanged,
+			}, nil
 		}
-		return &ExternalAuthUpsertResult{
-			User:    createdUser,
-			Created: true,
-		}, nil
+		return &ExternalAuthUpsertResult{User: createdUser, Created: true}, nil
 	}
 
 	if conflictErr := s.ensureExternalIdentityConflicts(ctx, authProviderID, existing.ID, normalized); conflictErr != nil {
@@ -170,14 +174,27 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 		if profileErr := s.upsertExternalProfile(ctx, updatedUser.ID, normalized); profileErr != nil {
 			return nil, profileErr
 		}
-		if reconcileErr := s.reconcileExternalCohortRBAC(ctx, updatedUser.ID, authProviderID, normalized.Cohorts); reconcileErr != nil {
+		rbacChanged, reconcileErr := s.reconcileExternalCohortRBAC(ctx, updatedUser.ID, authProviderID, externalAuthRBACCohorts(normalized))
+		if reconcileErr != nil {
 			return nil, reconcileErr
 		}
+		return &ExternalAuthUpsertResult{
+			User:        updatedUser,
+			Updated:     true,
+			RBACChanged: rbacChanged,
+		}, nil
 	}
 	return &ExternalAuthUpsertResult{
 		User:    updatedUser,
 		Updated: true,
 	}, nil
+}
+
+func externalAuthRBACCohorts(result runtimecontract.AuthResult) []runtimecontract.ExternalCohort {
+	if !result.Enabled {
+		return nil
+	}
+	return result.Cohorts
 }
 
 func (s *ExternalAuthService) findClaimableExistingUser(

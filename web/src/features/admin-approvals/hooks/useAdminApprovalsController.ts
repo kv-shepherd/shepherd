@@ -8,7 +8,7 @@ import { applyApiFieldErrors } from "@/hooks/applyApiFieldErrors";
 import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
 import { translateApiError } from "@/lib/api/errorMessage";
-import type { components } from "@/types/api.gen";
+import type { components, operations } from "@/types/api.gen";
 
 import type {
   ApprovalDecisionRequest,
@@ -42,7 +42,29 @@ interface ApprovalCreateContext {
 
 type ApproveModalAction = "approve" | "retry_failed_batch";
 type ClusterPolicy = components["schemas"]["ClusterPolicy"];
+type ClusterListQuery = NonNullable<
+  operations["listClusters"]["parameters"]["query"]
+>;
+type ClusterCompatibilityAccessMode = NonNullable<
+  ClusterListQuery["selected_dv_access_modes"]
+>[number];
 const APPROVAL_ERROR_MESSAGE_DURATION_SECONDS = 10;
+const CLUSTER_COMPATIBILITY_ACCESS_MODES = [
+  "ReadWriteOnce",
+  "ReadOnlyMany",
+  "ReadWriteMany",
+  "ReadWriteOncePod",
+] as const satisfies readonly ClusterCompatibilityAccessMode[];
+
+function normalizeClusterCompatibilityAccessModes(
+  values: readonly string[],
+): ClusterCompatibilityAccessMode[] {
+  return values.filter((value): value is ClusterCompatibilityAccessMode =>
+    CLUSTER_COMPATIBILITY_ACCESS_MODES.includes(
+      value as ClusterCompatibilityAccessMode,
+    ),
+  );
+}
 
 export function useAdminApprovalsController({
   t,
@@ -148,7 +170,7 @@ export function useAdminApprovalsController({
         params: {
           query: {
             page: 1,
-            per_page: 200,
+            per_page: 100,
           },
         },
       }),
@@ -369,8 +391,8 @@ export function useAdminApprovalsController({
   const effectiveSelectedRootVolumeModeKey = rootVolumeModeOptionKey(
     effectiveSelectedRootVolumeMode,
   );
-  const effectiveSelectedDVAccessModes = normalizeStringArray(
-    effectiveSelectedRootVolumeMode?.access_modes,
+  const effectiveSelectedDVAccessModes = normalizeClusterCompatibilityAccessModes(
+    normalizeStringArray(effectiveSelectedRootVolumeMode?.access_modes),
   );
   const effectiveSelectedDVVolumeMode = normalizeVolumeMode(
     effectiveSelectedRootVolumeMode?.volume_mode,

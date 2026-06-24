@@ -18,7 +18,7 @@ import { ensureSeedSystemAndService, getAntModal, loginWithForcePasswordSupport,
 
 const e2eUsername = process.env.E2E_USERNAME ?? 'e2e-admin';
 const e2ePassword = process.env.E2E_PASSWORD ?? 'e2e-admin-123';
-const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'admin123' : `${e2ePassword}-new`);
+const e2eNewPassword = process.env.E2E_NEW_PASSWORD ?? (e2ePassword === 'admin' ? 'ShepherdLive!2026' : `${e2ePassword}-new`);
 const e2eSystemName = process.env.E2E_SYSTEM ?? 'e2e-system';
 const e2eServiceName = process.env.E2E_SERVICE ?? 'e2e-service';
 let activePassword = e2ePassword;

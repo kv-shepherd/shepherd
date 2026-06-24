@@ -52,7 +52,19 @@ func (t *Triggers) OnTicketSubmitted(ctx context.Context, ticketID, requesterNam
 		return
 	}
 
-	params := Params{
+	if err := t.sender.SendToMany(ctx, approverIDs, approvalPendingParams(ticketID, requesterName, namespace)); err != nil {
+		// master-flow.md: "Notification write must not be dropped silently;
+		// failures must be observable."
+		logger.Error("failed to send APPROVAL_PENDING notifications",
+			zap.String("ticket_id", ticketID),
+			zap.Int("approver_count", len(approverIDs)),
+			zap.Error(err),
+		)
+	}
+}
+
+func approvalPendingParams(ticketID, requesterName, namespace string) Params {
+	return Params{
 		Type:       TypeApprovalPending,
 		Title:      "New VM request pending approval",
 		TitleKey:   TitleKeyApprovalPending,
@@ -64,16 +76,6 @@ func (t *Triggers) OnTicketSubmitted(ctx context.Context, ticketID, requesterNam
 		},
 		ResourceType: "ticket",
 		ResourceID:   ticketID,
-	}
-
-	if err := t.sender.SendToMany(ctx, approverIDs, params); err != nil {
-		// master-flow.md: "Notification write must not be dropped silently;
-		// failures must be observable."
-		logger.Error("failed to send APPROVAL_PENDING notifications",
-			zap.String("ticket_id", ticketID),
-			zap.Int("approver_count", len(approverIDs)),
-			zap.Error(err),
-		)
 	}
 }
 

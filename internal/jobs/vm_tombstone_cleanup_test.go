@@ -2,6 +2,7 @@ package jobs
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/domainevent"
+	enthook "kv-shepherd.io/shepherd/ent/hook"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/testutil"
@@ -169,6 +171,34 @@ func TestVMTombstoneCleanupWorkerWork_ToleratesPerRowDeleteFailures(t *testing.T
 	}
 	if _, err := client.VM.Get(ctx, freeID); !ent.IsNotFound(err) {
 		t.Fatalf("free tombstone get err = %v, want ent.IsNotFound", err)
+	}
+}
+
+func TestVMTombstoneCleanupWorkerWork_ReturnsContextCancellationFromDelete(t *testing.T) {
+	t.Parallel()
+	requirePostgresForVMTombstoneCleanup(t)
+
+	client := testutil.OpenEntPostgres(t, "vm_tombstone_cleanup_cancel")
+	ctx := t.Context()
+	serviceID := createVMTombstoneCleanupService(ctx, t, client)
+	vmID := createVMTombstoneForCleanupTest(ctx, t, client, serviceID, "cancel", time.Now().UTC().Add(-48*time.Hour))
+	client.VM.Use(enthook.On(
+		enthook.FixedError(errors.Join(errors.New("delete interrupted"), context.Canceled)),
+		ent.OpDeleteOne,
+	))
+
+	worker := NewVMTombstoneCleanupWorker(client, 24*time.Hour)
+	err := worker.Work(ctx, nil)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Work() error = %v, want context.Canceled", err)
+	}
+
+	stored, err := client.VM.Get(ctx, vmID)
+	if err != nil {
+		t.Fatalf("tombstone get err = %v, want row preserved after cancellation", err)
+	}
+	if stored.Status != entvm.StatusDELETING {
+		t.Fatalf("tombstone status = %s, want %s", stored.Status, entvm.StatusDELETING)
 	}
 }
 

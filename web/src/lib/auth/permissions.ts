@@ -5,6 +5,7 @@ export type AdminMenuRouteKey =
     | 'approvalTasks'
     | 'externalApprovalSystems'
     | 'clusters'
+    | 'pendingAdoptions'
     | 'namespaces'
     | 'templates'
     | 'instanceSizes'
@@ -21,6 +22,7 @@ export const ADMIN_MENU_ROUTE_PERMISSIONS: Record<AdminMenuRouteKey, readonly st
     approvalTasks: ['builtin_approval:view', 'builtin_approval:approve'],
     externalApprovalSystems: [PLATFORM_ADMIN_PERMISSION],
     clusters: ['cluster:read', 'cluster:write'],
+    pendingAdoptions: [PLATFORM_ADMIN_PERMISSION],
     namespaces: ['namespace:read', 'namespace:write'],
     templates: ['template:read', 'template:write'],
     instanceSizes: ['instance_size:read', 'instance_size:write'],

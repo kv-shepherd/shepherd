@@ -195,10 +195,12 @@ children or compensating partial results.
 
 ### ShepherdApprovalFailureAuditActionsRecent
 
-Use the fixed `action` label to identify the failure path, then inspect the
-corresponding approval audit entries in the product UI. This is an audit-derived
-business signal, not log search; keep action labels fixed and avoid adding
-resource IDs or audit details to metric labels.
+Use the allowlisted fixed `action` label to identify the failure path. The
+`approval.other` value means unknown, future, blank, or external-provider
+approval actions were aggregated to preserve the low-cardinality baseline.
+Inspect the corresponding approval audit entries in the product UI. This is an
+audit-derived business signal, not log search; keep action labels fixed and
+avoid adding resource IDs or audit details to metric labels.
 
 ## Deferred Work
 

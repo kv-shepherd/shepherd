@@ -12,6 +12,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -69,6 +70,8 @@ package_update: false
 `
 
 	seedActor = "e2e-seed"
+
+	defaultE2ESeedTimeout = 2 * time.Minute
 )
 
 type templateFixture struct {
@@ -133,6 +136,11 @@ func main() {
 }
 
 func run() error {
+	seedTimeout, err := effectiveE2ESeedTimeout()
+	if err != nil {
+		return err
+	}
+
 	cfg, err := config.Load()
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
@@ -142,7 +150,9 @@ func run() error {
 	}
 	defer func() { _ = logger.Sync() }()
 
-	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(context.Background(), seedTimeout)
+	defer cancel()
+
 	db, err := infrastructure.NewDatabaseClients(ctx, cfg.Database)
 	if err != nil {
 		return fmt.Errorf("init database: %w", err)
@@ -290,6 +300,22 @@ func envBool(key string) bool {
 	default:
 		return false
 	}
+}
+
+func effectiveE2ESeedTimeout() (time.Duration, error) {
+	raw := strings.TrimSpace(os.Getenv("E2E_SEED_TIMEOUT"))
+	if raw == "" {
+		return defaultE2ESeedTimeout, nil
+	}
+
+	timeout, err := time.ParseDuration(raw)
+	if err != nil {
+		return 0, fmt.Errorf("parse E2E_SEED_TIMEOUT: %w", err)
+	}
+	if timeout <= 0 {
+		return 0, fmt.Errorf("E2E_SEED_TIMEOUT must be greater than 0, got %s", timeout)
+	}
+	return timeout, nil
 }
 
 type clusterSeedInput struct {
@@ -1317,30 +1343,13 @@ func ensureApprovalTickets(ctx context.Context, client *ent.Client) error {
 // markNotificationRead and markAllNotificationsRead tests require at least one
 // unread notification.
 func ensureNotifications(ctx context.Context, client *ent.Client, adminID string) error {
-	notifID := "notif-e2e-seed-01"
-
-	exists, err := client.Notification.Query().
-		Where(entnotification.IDEQ(notifID)).
-		Exist(ctx)
-	if err != nil {
-		return err
-	}
-	if exists {
-		// Reset to unread for test re-runs
-		_, err := client.Notification.UpdateOneID(notifID).
-			SetRead(false).
-			ClearReadAt().
-			Save(ctx)
-		return err
-	}
-
 	// Create two unread notifications (one for markNotificationRead, one spare)
 	for _, n := range []struct {
 		id    string
 		title string
 		nType entnotification.Type
 	}{
-		{notifID, "VM creation approved", entnotification.TypeAPPROVAL_COMPLETED},
+		{"notif-e2e-seed-01", "VM creation approved", entnotification.TypeAPPROVAL_COMPLETED},
 		{"notif-e2e-seed-02", "New VM request pending", entnotification.TypeAPPROVAL_PENDING},
 	} {
 		nExists, nErr := client.Notification.Query().

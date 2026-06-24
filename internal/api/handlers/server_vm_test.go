@@ -27,6 +27,12 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	entcluster "kv-shepherd.io/shepherd/ent/cluster"
+	"kv-shepherd.io/shepherd/ent/domainevent"
+	enthook "kv-shepherd.io/shepherd/ent/hook"
+	"kv-shepherd.io/shepherd/ent/instancesize"
+	"kv-shepherd.io/shepherd/ent/namespaceregistry"
+	enttemplate "kv-shepherd.io/shepherd/ent/template"
+	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
@@ -34,6 +40,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/provider"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
+	"kv-shepherd.io/shepherd/internal/usecase"
 )
 
 type failingVMLiveStatusProvider struct {
@@ -692,7 +699,7 @@ func TestListVMs_SupportsExactAdvancedFilters(t *testing.T) {
 
 	c, w := newAuthedGinContext(t, http.MethodGet, "/vms", "", "user-search", []string{"vm:read", "platform:admin"})
 	srv.ListVMs(c, generated.ListVMsParams{
-		Status:    string(entvm.StatusRUNNING),
+		Status:    generated.ListVMsParamsStatus(entvm.StatusRUNNING),
 		Namespace: "prod-apps",
 		ClusterId: clusterAID,
 		SystemId:  systemA.ID,
@@ -714,6 +721,234 @@ func TestListVMs_SupportsExactAdvancedFilters(t *testing.T) {
 	}
 	if resp.Items[0].Id != vmAID {
 		t.Fatalf("first item id = %q, want %q", resp.Items[0].Id, vmAID)
+	}
+}
+
+func TestListVMs_RejectsInvalidStatus(t *testing.T) {
+	t.Parallel()
+
+	srv := NewServer(ServerDeps{})
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms?status=ACTIVE", "", "user-status", []string{"vm:read", "platform:admin"})
+	srv.ListVMs(c, generated.ListVMsParams{
+		Status: generated.ListVMsParamsStatus("ACTIVE"),
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}
+
+func TestListVMs_FiltersByStatusWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "list_vms_status_filter")
+	_ = logger.Init("error", "json")
+	srv := NewServer(ServerDeps{EntClient: client})
+
+	serviceID := mustCreateServiceForVM(t, client, "user-status")
+	runningID := "vm-running-" + uuid.NewString()
+	stoppedID := "vm-stopped-" + uuid.NewString()
+	for _, item := range []struct {
+		id     string
+		name   string
+		status entvm.Status
+	}{
+		{id: runningID, name: "running-vm", status: entvm.StatusRUNNING},
+		{id: stoppedID, name: "stopped-vm", status: entvm.StatusSTOPPED},
+	} {
+		_, err := client.VM.Create().
+			SetID(item.id).
+			SetName(item.name).
+			SetInstance("01").
+			SetNamespace("status-ns").
+			SetStatus(item.status).
+			SetCreatedBy("user-status").
+			SetServiceID(serviceID).
+			Save(t.Context())
+		if err != nil {
+			t.Fatalf("create %s: %v", item.name, err)
+		}
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms?status=RUNNING", "", "user-status", []string{"vm:read", "platform:admin"})
+	srv.ListVMs(c, generated.ListVMsParams{
+		Status: generated.ListVMsParamsStatus(entvm.StatusRUNNING),
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.VMList
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatalf("decode response: %v", decodeErr)
+	}
+	if len(resp.Items) != 1 {
+		t.Fatalf("items len = %d, want 1", len(resp.Items))
+	}
+	if resp.Items[0].Id != runningID {
+		t.Fatalf("items[0].id = %q, want %q", resp.Items[0].Id, runningID)
+	}
+}
+
+func TestListVMs_RejectsInvalidSortOrder(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "list_vms_invalid_sort_order")
+	_ = logger.Init("error", "json")
+	srv := NewServer(ServerDeps{EntClient: client})
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms?sort_order=sideways", "", "user-sort", []string{"vm:read", "platform:admin"})
+	srv.ListVMs(c, generated.ListVMsParams{
+		SortOrder: generated.ListVMsParamsSortOrder("sideways"),
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}
+
+func TestListVMs_RejectsInvalidSortBy(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "list_vms_invalid_sort_by")
+	_ = logger.Init("error", "json")
+	srv := NewServer(ServerDeps{EntClient: client})
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms?sort_by=owner", "", "user-sort", []string{"vm:read", "platform:admin"})
+	srv.ListVMs(c, generated.ListVMsParams{
+		SortBy: "owner",
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}
+
+func TestListVMs_SortsByCreatedAtAscendingWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "list_vms_sort_order_asc")
+	_ = logger.Init("error", "json")
+	srv := NewServer(ServerDeps{EntClient: client})
+
+	serviceID := mustCreateServiceForVM(t, client, "user-sort")
+	olderID := "vm-old-" + uuid.NewString()
+	newerID := "vm-new-" + uuid.NewString()
+	olderCreatedAt := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
+	newerCreatedAt := time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)
+
+	_, err := client.VM.Create().
+		SetID(newerID).
+		SetName("newer-" + newerID[len(newerID)-6:]).
+		SetInstance("01").
+		SetNamespace("sort-ns").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("user-sort").
+		SetServiceID(serviceID).
+		SetCreatedAt(newerCreatedAt).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create newer vm: %v", err)
+	}
+	_, err = client.VM.Create().
+		SetID(olderID).
+		SetName("older-" + olderID[len(olderID)-6:]).
+		SetInstance("01").
+		SetNamespace("sort-ns").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("user-sort").
+		SetServiceID(serviceID).
+		SetCreatedAt(olderCreatedAt).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create older vm: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms?sort_order=asc", "", "user-sort", []string{"vm:read", "platform:admin"})
+	srv.ListVMs(c, generated.ListVMsParams{
+		SortOrder: generated.ListVMsParamsSortOrderAsc,
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.VMList
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatalf("decode response: %v", decodeErr)
+	}
+	if len(resp.Items) < 2 {
+		t.Fatalf("items len = %d, want at least 2", len(resp.Items))
+	}
+	if resp.Items[0].Id != olderID {
+		t.Fatalf("first item id = %q, want older VM %q", resp.Items[0].Id, olderID)
+	}
+	if resp.Items[1].Id != newerID {
+		t.Fatalf("second item id = %q, want newer VM %q", resp.Items[1].Id, newerID)
+	}
+}
+
+func TestListVMs_SortsByNameWhenRequested(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "list_vms_sort_by_name")
+	_ = logger.Init("error", "json")
+	srv := NewServer(ServerDeps{EntClient: client})
+
+	serviceID := mustCreateServiceForVM(t, client, "user-sort")
+	laterByNameID := "vm-z-" + uuid.NewString()
+	firstByNameID := "vm-a-" + uuid.NewString()
+
+	_, err := client.VM.Create().
+		SetID(laterByNameID).
+		SetName("z-vm").
+		SetInstance("01").
+		SetNamespace("sort-ns").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("user-sort").
+		SetServiceID(serviceID).
+		SetCreatedAt(time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create z vm: %v", err)
+	}
+	_, err = client.VM.Create().
+		SetID(firstByNameID).
+		SetName("a-vm").
+		SetInstance("01").
+		SetNamespace("sort-ns").
+		SetStatus(entvm.StatusRUNNING).
+		SetCreatedBy("user-sort").
+		SetServiceID(serviceID).
+		SetCreatedAt(time.Date(2026, 1, 2, 12, 0, 0, 0, time.UTC)).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create a vm: %v", err)
+	}
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms?sort_by=name&sort_order=asc", "", "user-sort", []string{"vm:read", "platform:admin"})
+	srv.ListVMs(c, generated.ListVMsParams{
+		SortBy:    "name",
+		SortOrder: generated.ListVMsParamsSortOrderAsc,
+	})
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.VMList
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatalf("decode response: %v", decodeErr)
+	}
+	if len(resp.Items) < 2 {
+		t.Fatalf("items len = %d, want at least 2", len(resp.Items))
+	}
+	if resp.Items[0].Id != firstByNameID {
+		t.Fatalf("first item id = %q, want VM %q", resp.Items[0].Id, firstByNameID)
 	}
 }
 
@@ -824,6 +1059,220 @@ func TestGetVMFilterOptions_ReturnsReadableOptionLabels(t *testing.T) {
 	}
 	if len(resp.IpAddresses) != 2 {
 		t.Fatalf("ip addresses = %d, want 2", len(resp.IpAddresses))
+	}
+}
+
+func TestCreateVMRequest_CreatesPendingCreateTicket(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "create_vm_request_success")
+	_ = logger.Init("error", "json")
+	srv := NewServer(ServerDeps{
+		EntClient: client,
+		VMService: service.NewVMService(provider.NewMockProvider()),
+		CreateVMUC: usecase.NewCreateVMUseCase(
+			client,
+			service.NewVMService(provider.NewMockProvider()),
+			service.NewInstanceSizeService(client),
+			service.NewTemplateService(client),
+		),
+	})
+
+	actor := "user-create-" + uuid.NewString()
+	namespace := "team-prod-create"
+	serviceID, templateID, instanceSizeID := mustCreateVMRequestPrerequisites(t, client, actor, namespace)
+
+	body := mustJSON(t, map[string]any{
+		"service_id":       serviceID,
+		"template_id":      templateID,
+		"instance_size_id": instanceSizeID,
+		"namespace":        namespace,
+		"reason":           "need capacity for release validation",
+		"target_cpu_cores": 2,
+		"target_memory_gi": 4,
+		"target_disk_gb":   120,
+	})
+	c, w := newAuthedGinContext(t, http.MethodPost, "/vms/request", body, actor, []string{"vm:create", "platform:admin"})
+	srv.CreateVMRequest(c)
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var resp generated.TicketResponse
+	if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if resp.Status != generated.TicketResponseStatusPENDING {
+		t.Fatalf("status = %q, want %q", resp.Status, generated.TicketResponseStatusPENDING)
+	}
+	if resp.TicketId == "" {
+		t.Fatal("ticket_id is empty")
+	}
+
+	ticket, err := client.Ticket.Get(t.Context(), resp.TicketId)
+	if err != nil {
+		t.Fatalf("query ticket: %v", err)
+	}
+	if ticket.OperationType != entticket.OperationTypeCREATE {
+		t.Fatalf("ticket operation_type = %q, want %q", ticket.OperationType, entticket.OperationTypeCREATE)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %q, want %q", ticket.Status, entticket.StatusPENDING)
+	}
+	if ticket.Requester != actor {
+		t.Fatalf("ticket requester = %q, want %q", ticket.Requester, actor)
+	}
+	if ticket.Reason != "need capacity for release validation" {
+		t.Fatalf("ticket reason = %q", ticket.Reason)
+	}
+
+	event, err := client.DomainEvent.Get(t.Context(), ticket.EventID)
+	if err != nil {
+		t.Fatalf("query domain event: %v", err)
+	}
+	if event.EventType != string(domain.EventVMCreationRequested) {
+		t.Fatalf("event_type = %q, want %q", event.EventType, domain.EventVMCreationRequested)
+	}
+	if event.AggregateType != "vm" || event.AggregateID != serviceID {
+		t.Fatalf("aggregate = %q/%q, want vm/%q", event.AggregateType, event.AggregateID, serviceID)
+	}
+	if event.Status != domainevent.StatusPENDING {
+		t.Fatalf("event status = %q, want %q", event.Status, domainevent.StatusPENDING)
+	}
+
+	var payload domain.VMCreationPayload
+	if payloadErr := json.Unmarshal(event.Payload, &payload); payloadErr != nil {
+		t.Fatalf("decode event payload: %v", payloadErr)
+	}
+	if payload.RequesterID != actor {
+		t.Fatalf("payload requester_id = %q, want %q", payload.RequesterID, actor)
+	}
+	if payload.ServiceID != serviceID || payload.TemplateID != templateID || payload.InstanceSizeID != instanceSizeID {
+		t.Fatalf("payload ids = service:%q template:%q size:%q", payload.ServiceID, payload.TemplateID, payload.InstanceSizeID)
+	}
+	if payload.Namespace != namespace {
+		t.Fatalf("payload namespace = %q, want %q", payload.Namespace, namespace)
+	}
+	if payload.TargetCPUCores != 2 || payload.TargetMemoryGi != 4 || payload.TargetDiskGB != 120 {
+		t.Fatalf("payload targets = cpu:%v mem:%v disk:%d, want 2/4/120",
+			payload.TargetCPUCores,
+			payload.TargetMemoryGi,
+			payload.TargetDiskGB,
+		)
+	}
+
+	vmCount, err := client.VM.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count vms: %v", err)
+	}
+	if vmCount != 0 {
+		t.Fatalf("vm count = %d, want 0 because create request awaits approval", vmCount)
+	}
+}
+
+func TestDeleteVM_CreatesPendingDeleteTicket(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "delete_vm_request_success")
+	_ = logger.Init("error", "json")
+	srv := NewServer(ServerDeps{
+		EntClient:  client,
+		DeleteVMUC: usecase.NewDeleteVMUseCase(client),
+	})
+
+	actor := "user-delete-" + uuid.NewString()
+	fixture := mustCreateVMDeleteRequestPrerequisites(t, client, actor)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/vms/"+fixture.VMID+"?confirm_name="+fixture.VMName,
+		"",
+		actor,
+		[]string{"vm:delete", "platform:admin"},
+	)
+	srv.DeleteVM(c, fixture.VMID, generated.DeleteVMParams{ConfirmName: fixture.VMName})
+
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("status = %d, want %d body=%s", w.Code, http.StatusAccepted, w.Body.String())
+	}
+
+	var resp generated.DeleteVMResponse
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatalf("decode response: %v", decodeErr)
+	}
+	if resp.Status != generated.DeleteVMResponseStatusPENDING {
+		t.Fatalf("status = %q, want %q", resp.Status, generated.DeleteVMResponseStatusPENDING)
+	}
+	if resp.TicketId == "" || resp.EventId == "" {
+		t.Fatalf("response should include ticket/event IDs: %+v", resp)
+	}
+
+	ticket, ticketErr := client.Ticket.Get(t.Context(), resp.TicketId)
+	if ticketErr != nil {
+		t.Fatalf("query ticket: %v", ticketErr)
+	}
+	if ticket.EventID != resp.EventId {
+		t.Fatalf("ticket event_id = %q, want %q", ticket.EventID, resp.EventId)
+	}
+	if ticket.OperationType != entticket.OperationTypeDELETE {
+		t.Fatalf("ticket operation_type = %q, want %q", ticket.OperationType, entticket.OperationTypeDELETE)
+	}
+	if ticket.Status != entticket.StatusPENDING {
+		t.Fatalf("ticket status = %q, want %q", ticket.Status, entticket.StatusPENDING)
+	}
+	if ticket.Requester != actor {
+		t.Fatalf("ticket requester = %q, want %q", ticket.Requester, actor)
+	}
+	if ticket.Reason != "Request to delete VM "+fixture.VMName {
+		t.Fatalf("ticket reason = %q", ticket.Reason)
+	}
+
+	event, eventErr := client.DomainEvent.Get(t.Context(), resp.EventId)
+	if eventErr != nil {
+		t.Fatalf("query domain event: %v", eventErr)
+	}
+	if event.EventType != string(domain.EventVMDeletionRequested) {
+		t.Fatalf("event_type = %q, want %q", event.EventType, domain.EventVMDeletionRequested)
+	}
+	if event.AggregateType != "vm" || event.AggregateID != fixture.VMID {
+		t.Fatalf("aggregate = %q/%q, want vm/%q", event.AggregateType, event.AggregateID, fixture.VMID)
+	}
+	if event.Status != domainevent.StatusPENDING {
+		t.Fatalf("event status = %q, want %q", event.Status, domainevent.StatusPENDING)
+	}
+	if event.CreatedBy != actor {
+		t.Fatalf("event created_by = %q, want %q", event.CreatedBy, actor)
+	}
+
+	var payload domain.VMDeletePayload
+	if payloadErr := json.Unmarshal(event.Payload, &payload); payloadErr != nil {
+		t.Fatalf("decode event payload: %v", payloadErr)
+	}
+	if payload.VMID != fixture.VMID || payload.VMName != fixture.VMName {
+		t.Fatalf("payload VM identity = %q/%q, want %q/%q", payload.VMID, payload.VMName, fixture.VMID, fixture.VMName)
+	}
+	if payload.Namespace != fixture.Namespace || payload.ClusterID != fixture.ClusterID || payload.ServiceID != fixture.ServiceID {
+		t.Fatalf("payload scope = namespace:%q cluster:%q service:%q",
+			payload.Namespace,
+			payload.ClusterID,
+			payload.ServiceID,
+		)
+	}
+	if payload.Actor != actor {
+		t.Fatalf("payload actor = %q, want %q", payload.Actor, actor)
+	}
+	if payload.RequestVMStatus != string(entvm.StatusSTOPPED) {
+		t.Fatalf("payload request_vm_status = %q, want %q", payload.RequestVMStatus, entvm.StatusSTOPPED)
+	}
+
+	vmRow, vmErr := client.VM.Get(t.Context(), fixture.VMID)
+	if vmErr != nil {
+		t.Fatalf("reload vm: %v", vmErr)
+	}
+	if vmRow.Status != entvm.StatusSTOPPED {
+		t.Fatalf("vm status = %q, want %q before approval", vmRow.Status, entvm.StatusSTOPPED)
 	}
 }
 
@@ -945,6 +1394,68 @@ func TestGetVM_RefreshesStatusFromLiveCluster(t *testing.T) {
 	}
 	if resp.Status != generated.VMStatusSTOPPED {
 		t.Fatalf("vm.status = %q, want %q", resp.Status, generated.VMStatusSTOPPED)
+	}
+}
+
+func TestGetVM_DoesNotOverwriteConcurrentDeletingStatus(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "get_vm_live_status_deleting_race")
+	_ = logger.Init("error", "json")
+
+	clusterID := "cluster-" + uuid.NewString()
+	mustCreateClusterWithEnv(t, client, clusterID, entcluster.EnvironmentProd)
+
+	vmID := "vm-" + uuid.NewString()
+	vmName := "vm" + vmID[len(vmID)-4:]
+	mustCreateVMWithCluster(t, client, vmID, clusterID, "prod-ns")
+	_, err := client.VM.UpdateOneID(vmID).
+		SetPollingTier(entvm.PollingTierLow).
+		SetPollIntervalSec(1800).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("stabilize vm polling tier: %v", err)
+	}
+	injectVMStatusBeforeNextUpdate(t, client, vmID, entvm.StatusDELETING)
+
+	mock := provider.NewMockProvider()
+	mock.Seed([]*domain.VM{{
+		Name:            vmName,
+		Namespace:       "prod-ns",
+		Cluster:         clusterID,
+		Status:          domain.VMStatusStopped,
+		ResourceVersion: "rv-live-deleting-race",
+	}})
+
+	srv := NewServer(ServerDeps{
+		EntClient: client,
+		VMService: service.NewVMService(mock),
+	})
+
+	c, w := newAuthedGinContext(t, http.MethodGet, "/vms/"+vmID, "", "user-a", []string{"vm:read", "platform:admin"})
+	srv.GetVM(c, vmID)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	}
+
+	var resp generated.VM
+	if decodeErr := json.Unmarshal(w.Body.Bytes(), &resp); decodeErr != nil {
+		t.Fatalf("decode response: %v", decodeErr)
+	}
+	if resp.Status != generated.VMStatusDELETING {
+		t.Fatalf("vm.status = %q, want %q", resp.Status, generated.VMStatusDELETING)
+	}
+
+	stored, err := client.VM.Get(t.Context(), vmID)
+	if err != nil {
+		t.Fatalf("reload vm: %v", err)
+	}
+	if stored.Status != entvm.StatusDELETING {
+		t.Fatalf("stored status = %q, want %q", stored.Status, entvm.StatusDELETING)
+	}
+	if stored.LastK8sRv != nil {
+		t.Fatalf("stored last_k8s_rv = %q, want nil", *stored.LastK8sRv)
 	}
 }
 
@@ -1185,6 +1696,105 @@ func TestGetVM_ReturnsNotFound_ForUnknownID(t *testing.T) {
 
 // ---- local seed helpers ------------------------------------------------------------------
 
+type vmDeleteRequestFixture struct {
+	VMID      string
+	VMName    string
+	Namespace string
+	ServiceID string
+	ClusterID string
+}
+
+func mustCreateVMDeleteRequestPrerequisites(t *testing.T, client *ent.Client, actor string) vmDeleteRequestFixture {
+	t.Helper()
+
+	namespace := "team-prod-del-" + uuid.NewString()[:8]
+	clusterID := "cluster-" + uuid.NewString()
+	serviceID := mustCreateServiceForVM(t, client, actor)
+	vmID := "vm-delete-" + uuid.NewString()
+	vmName := "vm-del-" + vmID[len(vmID)-4:]
+
+	if _, err := client.NamespaceRegistry.Create().
+		SetID("ns-" + uuid.NewString()).
+		SetName(namespace).
+		SetEnvironment(namespaceregistry.EnvironmentProd).
+		SetCreatedBy(actor).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+	mustCreateClusterWithEnv(t, client, clusterID, entcluster.EnvironmentProd)
+
+	if _, err := client.VM.Create().
+		SetID(vmID).
+		SetName(vmName).
+		SetInstance("01").
+		SetNamespace(namespace).
+		SetStatus(entvm.StatusSTOPPED).
+		SetCreatedBy(actor).
+		SetClusterID(clusterID).
+		SetServiceID(serviceID).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create delete target vm: %v", err)
+	}
+
+	return vmDeleteRequestFixture{
+		VMID:      vmID,
+		VMName:    vmName,
+		Namespace: namespace,
+		ServiceID: serviceID,
+		ClusterID: clusterID,
+	}
+}
+
+func mustCreateVMRequestPrerequisites(t *testing.T, client *ent.Client, actor, namespace string) (serviceID, templateID, instanceSizeID string) {
+	t.Helper()
+
+	systemID := "sys-" + uuid.NewString()
+	serviceID = uuid.NewString()
+	templateID = uuid.NewString()
+	instanceSizeID = uuid.NewString()
+
+	sys := mustCreateSystem(t, client, systemID, "shop"+systemID[len(systemID)-4:], actor)
+	mustCreateService(t, client, serviceID, "api"+serviceID[len(serviceID)-4:], sys.ID, "seed")
+
+	if _, err := client.Template.Create().
+		SetID(templateID).
+		SetName("tpl-" + templateID[len(templateID)-4:]).
+		SetSourceType(service.TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/ubuntu:24.04").
+		SetCatalogScope(enttemplate.CatalogScopeProd).
+		SetCreatedBy(actor).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create template: %v", err)
+	}
+	if _, err := client.InstanceSize.Create().
+		SetID(instanceSizeID).
+		SetName("size-" + instanceSizeID[len(instanceSizeID)-4:]).
+		SetCPUCores(4).
+		SetCPURequest(2).
+		SetMemoryGi(8).
+		SetMemoryRequestGi(4).
+		SetDiskGB(80).
+		SetCatalogScope(instancesize.CatalogScopeProd).
+		SetCreatedBy(actor).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create instance size: %v", err)
+	}
+	if _, err := client.NamespaceRegistry.Create().
+		SetID("ns-" + uuid.NewString()).
+		SetName(namespace).
+		SetEnvironment(namespaceregistry.EnvironmentProd).
+		SetCreatedBy(actor).
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create namespace registry: %v", err)
+	}
+
+	return serviceID, templateID, instanceSizeID
+}
+
 func mustCreateClusterWithEnv(t *testing.T, client *ent.Client, id string, env entcluster.Environment) {
 	t.Helper()
 	mustCreateClusterWithLabels(t, client, id, "cl"+id[len(id)-4:], "cl"+id[len(id)-4:], env)
@@ -1232,6 +1842,29 @@ func mustCreateServiceForVM(t *testing.T, client *ent.Client, actor string) stri
 	_ = mustCreateSystem(t, client, sysID, "shop"+sysID[len(sysID)-4:], actor)
 	mustCreateService(t, client, svcID, "redis"+svcID[len(svcID)-4:], sysID, "seed")
 	return svcID
+}
+
+func injectVMStatusBeforeNextUpdate(t *testing.T, client *ent.Client, id string, status entvm.Status) {
+	t.Helper()
+	injected := false
+	client.VM.Use(enthook.On(func(next ent.Mutator) ent.Mutator {
+		return ent.MutateFunc(func(ctx context.Context, m ent.Mutation) (ent.Value, error) {
+			mutation, ok := m.(*ent.VMMutation)
+			if !ok {
+				return next.Mutate(ctx, m)
+			}
+			mutationID, ok := mutation.ID()
+			if !injected && ok && mutationID == id {
+				injected = true
+				if _, err := client.VM.UpdateOneID(id).
+					SetStatus(status).
+					Save(ctx); err != nil {
+					return nil, err
+				}
+			}
+			return next.Mutate(ctx, m)
+		})
+	}, ent.OpUpdateOne))
 }
 
 // findVMInList locates a VM by ID from the list, fatally fails if not found.

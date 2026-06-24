@@ -123,6 +123,7 @@ describe('getMenuRoutes', () => {
             '/admin/approval-tasks',
             '/admin/external-approval-systems',
             '/admin/clusters',
+            '/admin/pending-adoptions',
             '/admin/namespaces',
             '/admin/templates',
             '/admin/instance-sizes',

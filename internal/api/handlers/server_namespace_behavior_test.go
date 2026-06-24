@@ -182,3 +182,26 @@ func TestListNamespaces_FiltersByEnabledState(t *testing.T) {
 		t.Fatalf("items[0].name = %q, want team-enabled", resp.Items[0].Name)
 	}
 }
+
+func TestListNamespaces_RejectsInvalidEnvironment(t *testing.T) {
+	t.Parallel()
+
+	srv, _ := newAdminIdentityTestServer(t)
+
+	c, w := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/namespaces?environment=stage",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.ListNamespaces(c, generated.ListNamespacesParams{
+		Environment: generated.ListNamespacesParamsEnvironment("stage"),
+	})
+
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d, body=%s", w.Code, http.StatusBadRequest, w.Body.String())
+	}
+	assertErrorCode(t, w.Body.Bytes(), "INVALID_REQUEST")
+}

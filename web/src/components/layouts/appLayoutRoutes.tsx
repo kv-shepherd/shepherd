@@ -115,6 +115,13 @@ export const getMenuRoutes = (
             icon: <ClustersIcon />,
         },
         {
+            routeKey: 'pendingAdoptions',
+            requiredPermissions: ADMIN_MENU_ROUTE_PERMISSIONS.pendingAdoptions,
+            path: '/admin/pending-adoptions',
+            name: t('nav.pending_adoptions'),
+            icon: <ApprovalTasksIcon />,
+        },
+        {
             routeKey: 'namespaces',
             requiredPermissions: ADMIN_MENU_ROUTE_PERMISSIONS.namespaces,
             path: '/admin/namespaces',

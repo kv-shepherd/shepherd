@@ -88,6 +88,7 @@ func (s *Server) GetAdminAuditSignals(c *gin.Context) {
 		})
 		return
 	}
+	stats = observability.NormalizeBusinessMetricsStats(stats)
 
 	c.JSON(http.StatusOK, toAdminAuditSignalResponse(time.Now().UTC(), stats))
 }

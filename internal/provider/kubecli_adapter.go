@@ -18,6 +18,7 @@ import (
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/tools/clientcmd"
 	kubevirtv1 "kubevirt.io/api/core/v1"
+	instancetypev1beta1 "kubevirt.io/api/instancetype/v1beta1"
 	"kubevirt.io/client-go/kubecli"
 	kvcorev1 "kubevirt.io/client-go/kubevirt/typed/core/v1"
 	cdiv1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
@@ -336,6 +337,46 @@ func (c *kubevirtStorageProfileClient) Get(ctx context.Context, name string, opt
 	return result, err
 }
 
+func (c *kubevirtClusterClient) ListInstanceTypes(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*instancetypev1beta1.VirtualMachineInstancetypeList, error) {
+	ctx, span := startKubeClientSpan(ctx, "list", "virtualmachineinstancetypes", namespace)
+	result, err := c.client.VirtualMachineInstancetype(namespace).List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
+}
+
+func (c *kubevirtClusterClient) ListClusterInstanceTypes(ctx context.Context, opts k8smetav1.ListOptions) (*instancetypev1beta1.VirtualMachineClusterInstancetypeList, error) {
+	ctx, span := startKubeClientSpan(ctx, "list", "virtualmachineclusterinstancetypes", "")
+	result, err := c.client.VirtualMachineClusterInstancetype().List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
+}
+
+func (c *kubevirtClusterClient) ListPreferences(ctx context.Context, namespace string, opts k8smetav1.ListOptions) (*instancetypev1beta1.VirtualMachinePreferenceList, error) {
+	ctx, span := startKubeClientSpan(ctx, "list", "virtualmachinepreferences", namespace)
+	result, err := c.client.VirtualMachinePreference(namespace).List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
+}
+
+func (c *kubevirtClusterClient) ListClusterPreferences(ctx context.Context, opts k8smetav1.ListOptions) (*instancetypev1beta1.VirtualMachineClusterPreferenceList, error) {
+	ctx, span := startKubeClientSpan(ctx, "list", "virtualmachineclusterpreferences", "")
+	result, err := c.client.VirtualMachineClusterPreference().List(ctx, opts)
+	if result != nil {
+		span.SetAttributes(attribute.Int("k8s.response.items", len(result.Items)))
+	}
+	endTraceSpan(span, err)
+	return result, err
+}
+
 type kubevirtPVCClient struct {
 	client kubecli.KubevirtClient
 }
@@ -452,29 +493,53 @@ func (c *kubevirtClusterClient) KubeVirt() KubeVirtCRClient {
 // kubevirtKVCRClient implements KubeVirtCRClient via kubecli.KubevirtClient.
 // The KubeVirt CR is always: namespace="kubevirt", name="kubevirt" (singleton per cluster).
 //
-// Optimization: the CR object is fetched once per instance (sync.Once) and shared
-// between GetVersion() and GetFeatureGates(). Since KubeVirt() creates a new instance
-// per health check cycle, the cache is naturally scoped per cycle — not per application
-// lifetime. This halves K8s API calls from 2 to 1 per cluster per health check.
+// Optimization: a successfully loaded CR object is fetched once per instance and
+// shared between GetVersion() and GetFeatureGates(). Since KubeVirt() creates a
+// new instance per health check cycle, the cache is naturally scoped per cycle —
+// not per application lifetime. This halves K8s API calls from 2 to 1 per cluster
+// per health check while allowing transient failed loads to be retried.
 type kubevirtKVCRClient struct {
-	client kubecli.KubevirtClient
-	// lazy-loaded CR object (sync.Once ensures exactly one GET per instance).
-	crOnce sync.Once
-	crObj  *kubevirtv1.KubeVirt
-	crErr  error
+	client  kubecli.KubevirtClient
+	fetchCR func(context.Context) (*kubevirtv1.KubeVirt, error)
+	crMu    sync.Mutex
+	crObj   *kubevirtv1.KubeVirt
+	crReady bool
 }
 
-// loadCR performs the single K8s GET for the KubeVirt CR, cached via sync.Once.
+// loadCR performs the K8s GET for the KubeVirt CR and caches successful loads.
 func (c *kubevirtKVCRClient) loadCR(ctx context.Context) (*kubevirtv1.KubeVirt, error) {
-	c.crOnce.Do(func() {
-		traceCtx, span := startKubeClientSpan(ctx, "get", "kubevirts", kubeVirtNamespace)
-		c.crObj, c.crErr = c.client.KubeVirt(kubeVirtNamespace).Get(traceCtx, kubeVirtCRName, k8smetav1.GetOptions{})
-		if c.crErr != nil {
-			c.crErr = fmt.Errorf("get kubevirt CR %s/%s: %w", kubeVirtNamespace, kubeVirtCRName, c.crErr)
+	c.crMu.Lock()
+	defer c.crMu.Unlock()
+	if c.crReady {
+		return c.crObj, nil
+	}
+
+	fetchCR := c.fetchCR
+	if fetchCR == nil {
+		if c.client == nil {
+			return nil, fmt.Errorf("kubevirt CR client is not configured")
 		}
-		endTraceSpan(span, c.crErr)
-	})
-	return c.crObj, c.crErr
+		fetchCR = func(fetchCtx context.Context) (*kubevirtv1.KubeVirt, error) {
+			return c.client.KubeVirt(kubeVirtNamespace).Get(fetchCtx, kubeVirtCRName, k8smetav1.GetOptions{})
+		}
+	}
+
+	traceCtx, span := startKubeClientSpan(ctx, "get", "kubevirts", kubeVirtNamespace)
+	kv, err := fetchCR(traceCtx)
+	if err != nil {
+		wrapped := fmt.Errorf("get kubevirt CR %s/%s: %w", kubeVirtNamespace, kubeVirtCRName, err)
+		endTraceSpan(span, wrapped)
+		return nil, wrapped
+	}
+	if kv == nil {
+		err := fmt.Errorf("get kubevirt CR %s/%s: empty response", kubeVirtNamespace, kubeVirtCRName)
+		endTraceSpan(span, err)
+		return nil, err
+	}
+	c.crObj = kv
+	c.crReady = true
+	endTraceSpan(span, nil)
+	return c.crObj, nil
 }
 
 // GetFeatureGates reads the KubeVirt CR and returns its explicitly configured feature gates.

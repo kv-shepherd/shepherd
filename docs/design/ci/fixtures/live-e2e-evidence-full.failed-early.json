@@ -56,6 +56,7 @@
   "cluster": {
     "kubeconfig_source": "missing",
     "current_context": null,
+    "authenticated_context": null,
     "api_server_reachable": null,
     "kubernetes_version": null,
     "kubevirt_api_available": null,

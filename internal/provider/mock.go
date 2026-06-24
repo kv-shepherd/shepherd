@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -23,6 +25,10 @@ type MockProvider struct {
 	pvcs              map[string]*domain.PersistentVolumeClaim // key: namespace/name
 	storageClasses    map[string]*domain.StorageClass          // key: name
 	storageProfiles   map[string]*domain.StorageProfile        // key: name
+	instanceTypes     map[string]*domain.InstanceType          // key: namespace/name
+	clusterTypes      map[string]*domain.InstanceType          // key: name
+	preferences       map[string]*domain.Preference            // key: namespace/name
+	clusterPrefs      map[string]*domain.Preference            // key: name
 	events            map[string][]domain.ProvisioningEvent    // key: namespace/kind/name
 	pvcConsumers      map[string][]domain.ObjectReference      // key: namespace/claim
 	cloneSourceAccess map[string]cloneSourceAccessDecision     // key: source namespace
@@ -47,6 +53,10 @@ func NewMockProvider() *MockProvider {
 		pvcs:              make(map[string]*domain.PersistentVolumeClaim),
 		storageClasses:    make(map[string]*domain.StorageClass),
 		storageProfiles:   make(map[string]*domain.StorageProfile),
+		instanceTypes:     make(map[string]*domain.InstanceType),
+		clusterTypes:      make(map[string]*domain.InstanceType),
+		preferences:       make(map[string]*domain.Preference),
+		clusterPrefs:      make(map[string]*domain.Preference),
 		events:            make(map[string][]domain.ProvisioningEvent),
 		pvcConsumers:      make(map[string][]domain.ObjectReference),
 		cloneSourceAccess: make(map[string]cloneSourceAccessDecision),
@@ -73,6 +83,10 @@ func (p *MockProvider) Reset() {
 	p.pvcs = make(map[string]*domain.PersistentVolumeClaim)
 	p.storageClasses = make(map[string]*domain.StorageClass)
 	p.storageProfiles = make(map[string]*domain.StorageProfile)
+	p.instanceTypes = make(map[string]*domain.InstanceType)
+	p.clusterTypes = make(map[string]*domain.InstanceType)
+	p.preferences = make(map[string]*domain.Preference)
+	p.clusterPrefs = make(map[string]*domain.Preference)
 	p.events = make(map[string][]domain.ProvisioningEvent)
 	p.pvcConsumers = make(map[string][]domain.ObjectReference)
 	p.cloneSourceAccess = make(map[string]cloneSourceAccessDecision)
@@ -463,6 +477,50 @@ func (p *MockProvider) SeedStorageProfiles(items []*domain.StorageProfile) {
 	}
 }
 
+func (p *MockProvider) SeedInstanceTypes(namespace string, items []*domain.InstanceType) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		p.instanceTypes[namespace+"/"+item.Name] = item
+	}
+}
+
+func (p *MockProvider) SeedClusterInstanceTypes(items []*domain.InstanceType) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		p.clusterTypes[item.Name] = item
+	}
+}
+
+func (p *MockProvider) SeedPreferences(namespace string, items []*domain.Preference) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		p.preferences[namespace+"/"+item.Name] = item
+	}
+}
+
+func (p *MockProvider) SeedClusterPreferences(items []*domain.Preference) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for _, item := range items {
+		if item == nil {
+			continue
+		}
+		p.clusterPrefs[item.Name] = item
+	}
+}
+
 func (p *MockProvider) SeedEvents(ref domain.ObjectReference, items []domain.ProvisioningEvent) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -521,6 +579,30 @@ func (p *MockProvider) GetStorageProfile(_ context.Context, _, name string) (*do
 	return item, nil
 }
 
+func (p *MockProvider) ListInstanceTypes(_ context.Context, _, namespace string) ([]*domain.InstanceType, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return sortedInstanceTypeValues(p.instanceTypes, namespace+"/"), nil
+}
+
+func (p *MockProvider) ListClusterInstanceTypes(_ context.Context, _ string) ([]*domain.InstanceType, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return sortedInstanceTypeValues(p.clusterTypes, ""), nil
+}
+
+func (p *MockProvider) ListPreferences(_ context.Context, _, namespace string) ([]*domain.Preference, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return sortedPreferenceValues(p.preferences, namespace+"/"), nil
+}
+
+func (p *MockProvider) ListClusterPreferences(_ context.Context, _ string) ([]*domain.Preference, error) {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	return sortedPreferenceValues(p.clusterPrefs, ""), nil
+}
+
 func (p *MockProvider) ListEventsForObject(_ context.Context, _ string, ref domain.ObjectReference) ([]domain.ProvisioningEvent, error) {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
@@ -567,4 +649,34 @@ func eventKey(ref domain.ObjectReference) string {
 
 func pvcConsumerKey(namespace, claimName string) string {
 	return namespace + "/" + claimName
+}
+
+func sortedInstanceTypeValues(items map[string]*domain.InstanceType, prefix string) []*domain.InstanceType {
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		if prefix == "" || strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	out := make([]*domain.InstanceType, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, items[key])
+	}
+	return out
+}
+
+func sortedPreferenceValues(items map[string]*domain.Preference, prefix string) []*domain.Preference {
+	keys := make([]string, 0, len(items))
+	for key := range items {
+		if prefix == "" || strings.HasPrefix(key, prefix) {
+			keys = append(keys, key)
+		}
+	}
+	sort.Strings(keys)
+	out := make([]*domain.Preference, 0, len(keys))
+	for _, key := range keys {
+		out = append(out, items[key])
+	}
+	return out
 }

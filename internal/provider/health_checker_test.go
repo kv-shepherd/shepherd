@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	storagev1 "k8s.io/api/storage/v1"
 	k8smetav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -16,15 +17,17 @@ func init() {
 }
 
 type stubHealthStorageClassClient struct {
-	list *storagev1.StorageClassList
-	err  error
+	list    *storagev1.StorageClassList
+	err     error
+	listCtx context.Context
 }
 
 func (s *stubHealthStorageClassClient) Get(_ context.Context, _ string, _ k8smetav1.GetOptions) (*storagev1.StorageClass, error) {
 	return nil, fmt.Errorf("not implemented")
 }
 
-func (s *stubHealthStorageClassClient) List(_ context.Context, _ k8smetav1.ListOptions) (*storagev1.StorageClassList, error) {
+func (s *stubHealthStorageClassClient) List(ctx context.Context, _ k8smetav1.ListOptions) (*storagev1.StorageClassList, error) {
+	s.listCtx = ctx
 	if s.err != nil {
 		return nil, s.err
 	}
@@ -83,6 +86,22 @@ func TestClusterHealthChecker_CheckCluster_DetectsStorageClasses(t *testing.T) {
 	}
 }
 
+type capturingHealthKVCRClient struct {
+	version     string
+	versionCtxs []context.Context
+	gatesCtxs   []context.Context
+}
+
+func (s *capturingHealthKVCRClient) GetFeatureGates(ctx context.Context) ([]string, error) {
+	s.gatesCtxs = append(s.gatesCtxs, ctx)
+	return nil, nil
+}
+
+func (s *capturingHealthKVCRClient) GetVersion(ctx context.Context) (string, error) {
+	s.versionCtxs = append(s.versionCtxs, ctx)
+	return s.version, nil
+}
+
 func TestClusterHealthChecker_CheckCluster_StorageClassDetectionGracefullyDegrades(t *testing.T) {
 	t.Parallel()
 
@@ -106,4 +125,36 @@ func TestClusterHealthChecker_CheckCluster_StorageClassDetectionGracefullyDegrad
 	if len(health.StorageClasses) != 0 {
 		t.Fatalf("storage classes = %v, want empty slice", health.StorageClasses)
 	}
+}
+
+func TestClusterHealthChecker_CheckClusterUsesOperationTimeoutForK8sProbes(t *testing.T) {
+	t.Parallel()
+
+	kvCR := &capturingHealthKVCRClient{version: "1.7.0"}
+	storageClass := &stubHealthStorageClassClient{
+		list: &storagev1.StorageClassList{},
+	}
+	checker := NewClusterHealthCheckerWithTimeout(func(_ string) (KubeVirtClusterClient, error) {
+		return &stubHealthClusterClient{
+			kvCR:         kvCR,
+			storageClass: storageClass,
+		}, nil
+	}, time.Minute, 2*time.Second)
+
+	health := checker.CheckCluster(context.Background(), "cluster-a")
+	if health.Status != ClusterStatusHealthy {
+		t.Fatalf("status = %s, want %s", health.Status, ClusterStatusHealthy)
+	}
+
+	if len(kvCR.versionCtxs) != 2 {
+		t.Fatalf("version contexts = %d, want 2", len(kvCR.versionCtxs))
+	}
+	for _, captured := range kvCR.versionCtxs {
+		assertContextDeadlineWithin(captured, t)
+	}
+	if len(kvCR.gatesCtxs) != 1 {
+		t.Fatalf("feature-gates contexts = %d, want 1", len(kvCR.gatesCtxs))
+	}
+	assertContextDeadlineWithin(kvCR.gatesCtxs[0], t)
+	assertContextDeadlineWithin(storageClass.listCtx, t)
 }

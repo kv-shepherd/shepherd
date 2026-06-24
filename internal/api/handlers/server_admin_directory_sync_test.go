@@ -8,9 +8,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/riverqueue/river"
+	"github.com/riverqueue/river/riverdriver/riverpgxv5"
 
+	"kv-shepherd.io/shepherd/ent/directorysyncjob"
 	"kv-shepherd.io/shepherd/internal/api/generated"
+	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/provider"
+	"kv-shepherd.io/shepherd/internal/service"
 )
 
 type testDirectorySyncAdapter struct {
@@ -63,11 +68,13 @@ func (a *testDirectorySyncAdapter) ListDirectoryUsers(context.Context, map[strin
 
 type testScheduledDirectorySyncAdapter struct {
 	*testDirectorySyncAdapter
-	plan    *provider.ScheduledDirectoryEnrichmentPlan
-	planErr error
+	plan      *provider.ScheduledDirectoryEnrichmentPlan
+	planErr   error
+	planCalls int
 }
 
 func (a *testScheduledDirectorySyncAdapter) BuildScheduledDirectoryEnrichmentPlan(context.Context, map[string]interface{}) (*provider.ScheduledDirectoryEnrichmentPlan, error) {
+	a.planCalls++
 	if a.planErr != nil {
 		return nil, a.planErr
 	}
@@ -375,6 +382,203 @@ func TestPreviewAuthProviderDirectory_MapsProviderRequestValidationErrorToBadReq
 	}
 }
 
+func TestPreviewAuthProviderDirectory_RejectsDisabledAuthProvider(t *testing.T) {
+	srv, client := newAdminIdentityTestServer(t)
+
+	adapter := registerDirectorySyncTestAdapter(t, &testDirectorySyncAdapter{
+		supportPreview: true,
+		preview: &provider.DirectorySyncPreview{
+			TotalCount: 1,
+		},
+	})
+	providerRow, err := client.AuthProvider.Create().
+		SetID("auth-provider-directory-preview-disabled").
+		SetName("Disabled Directory Preview Provider").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{"tenant": "acme"}).
+		SetEnabled(false).
+		SetCreatedBy("admin-1").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create disabled auth provider: %v", err)
+	}
+
+	previewCtx, previewW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/auth-providers/"+providerRow.ID+"/directory/preview",
+		`{"provider_request":{"vendor_filter":{}}}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.PreviewAuthProviderDirectory(previewCtx, providerRow.ID)
+	if previewW.Code != http.StatusConflict {
+		t.Fatalf("preview status = %d, want %d, body=%s", previewW.Code, http.StatusConflict, previewW.Body.String())
+	}
+	assertErrorCode(t, previewW.Body.Bytes(), "AUTH_PROVIDER_DISABLED")
+	if adapter.lastRequest != nil {
+		t.Fatalf("disabled provider preview called adapter with request %#v", adapter.lastRequest)
+	}
+}
+
+func TestSyncAuthProviderDirectory_CreatesJobAndRiverEntryAtomically(t *testing.T) {
+	client, pool := newBatchBehaviorTestStore(t, "dss")
+	riverClient := newBatchBehaviorTestRiverClient(t, pool)
+	srv := NewServer(ServerDeps{
+		EntClient:     client,
+		Pool:          pool,
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		DirectorySync: service.NewDirectorySyncService(client),
+		RiverClient:   riverClient,
+	})
+
+	adapter := registerDirectorySyncTestAdapter(t, &testDirectorySyncAdapter{})
+	providerRow, err := client.AuthProvider.Create().
+		SetID("auth-provider-directory-sync-success-" + uuid.NewString()).
+		SetName("Directory Sync Success Provider").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{"tenant": "acme"}).
+		SetCreatedBy("admin-1").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create auth provider: %v", err)
+	}
+
+	reqCtx, reqW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/auth-providers/"+providerRow.ID+"/directory/sync",
+		`{"provider_request":{"department_ids":["eng"]}}`,
+		"admin-1",
+		[]string{"auth_provider:sync"},
+	)
+	srv.SyncAuthProviderDirectory(reqCtx, providerRow.ID)
+	if reqW.Code != http.StatusAccepted {
+		t.Fatalf("sync status = %d, want %d, body=%s", reqW.Code, http.StatusAccepted, reqW.Body.String())
+	}
+
+	jobRows, err := client.DirectorySyncJob.Query().All(t.Context())
+	if err != nil {
+		t.Fatalf("query directory sync jobs: %v", err)
+	}
+	if len(jobRows) != 1 {
+		t.Fatalf("directory sync job count = %d, want 1", len(jobRows))
+	}
+	jobRow := jobRows[0]
+	if jobRow.AuthProviderID != providerRow.ID || jobRow.Status != directorysyncjob.StatusPending || jobRow.TriggeredBy != "admin-1" {
+		t.Fatalf("job fields = provider:%q status:%q actor:%q", jobRow.AuthProviderID, jobRow.Status, jobRow.TriggeredBy)
+	}
+
+	var riverJobCount int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM river_job WHERE kind = $1 AND args->>'job_id' = $2`, jobs.DirectorySyncJobKind, jobRow.ID).Scan(&riverJobCount); err != nil {
+		t.Fatalf("query river job count: %v", err)
+	}
+	if riverJobCount != 1 {
+		t.Fatalf("river directory_sync job count = %d, want 1", riverJobCount)
+	}
+}
+
+func TestSyncAuthProviderDirectory_RejectsDisabledAuthProviderWithoutCreatingJob(t *testing.T) {
+	client, pool := newBatchBehaviorTestStore(t, "dsd")
+	riverClient := newBatchBehaviorTestRiverClient(t, pool)
+	srv := NewServer(ServerDeps{
+		EntClient:     client,
+		Pool:          pool,
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		DirectorySync: service.NewDirectorySyncService(client),
+		RiverClient:   riverClient,
+	})
+
+	adapter := registerDirectorySyncTestAdapter(t, &testDirectorySyncAdapter{
+		supportPreview: true,
+		preview:        &provider.DirectorySyncPreview{},
+	})
+	providerRow, err := client.AuthProvider.Create().
+		SetID("auth-provider-directory-sync-disabled-" + uuid.NewString()).
+		SetName("Disabled Directory Sync Provider").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{"tenant": "acme"}).
+		SetEnabled(false).
+		SetCreatedBy("admin-1").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create disabled auth provider: %v", err)
+	}
+
+	reqCtx, reqW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/auth-providers/"+providerRow.ID+"/directory/sync",
+		`{"provider_request":{"department_ids":["eng"]}}`,
+		"admin-1",
+		[]string{"auth_provider:sync"},
+	)
+	srv.SyncAuthProviderDirectory(reqCtx, providerRow.ID)
+	if reqW.Code != http.StatusConflict {
+		t.Fatalf("sync status = %d, want %d, body=%s", reqW.Code, http.StatusConflict, reqW.Body.String())
+	}
+	assertErrorCode(t, reqW.Body.Bytes(), "AUTH_PROVIDER_DISABLED")
+	if adapter.lastRequest != nil {
+		t.Fatalf("disabled provider sync called adapter with request %#v", adapter.lastRequest)
+	}
+
+	jobCount, err := client.DirectorySyncJob.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count directory sync jobs: %v", err)
+	}
+	if jobCount != 0 {
+		t.Fatalf("directory sync job count for disabled provider = %d, want 0", jobCount)
+	}
+}
+
+func TestSyncAuthProviderDirectory_EnqueueFailureRollsBackJobCreate(t *testing.T) {
+	client, pool := newBatchBehaviorTestStore(t, "dsf")
+	riverClient, err := river.NewClient(riverpgxv5.New(pool), &river.Config{})
+	if err != nil {
+		t.Fatalf("create river client without migration: %v", err)
+	}
+	srv := NewServer(ServerDeps{
+		EntClient:     client,
+		Pool:          pool,
+		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
+		DirectorySync: service.NewDirectorySyncService(client),
+		RiverClient:   riverClient,
+	})
+
+	adapter := registerDirectorySyncTestAdapter(t, &testDirectorySyncAdapter{})
+	providerRow, err := client.AuthProvider.Create().
+		SetID("auth-provider-directory-sync-cancel-" + uuid.NewString()).
+		SetName("Directory Sync Cancel Provider").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{"tenant": "acme"}).
+		SetCreatedBy("admin-1").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create auth provider: %v", err)
+	}
+
+	reqCtx, reqW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/auth-providers/"+providerRow.ID+"/directory/sync",
+		`{"provider_request":{"department_ids":["eng"]}}`,
+		"admin-1",
+		[]string{"auth_provider:sync"},
+	)
+	srv.SyncAuthProviderDirectory(reqCtx, providerRow.ID)
+	if reqW.Code != http.StatusInternalServerError {
+		t.Fatalf("sync status = %d, want %d, body=%s", reqW.Code, http.StatusInternalServerError, reqW.Body.String())
+	}
+
+	jobCount, err := client.DirectorySyncJob.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count directory sync jobs: %v", err)
+	}
+	if jobCount != 0 {
+		t.Fatalf("directory sync job count after enqueue rollback = %d, want 0", jobCount)
+	}
+}
+
 func TestGetAuthProviderDirectorySchedule_ReturnsUnsupportedWhenCapabilityMissing(t *testing.T) {
 	srv, client := newAdminIdentityTestServer(t)
 
@@ -412,6 +616,62 @@ func TestGetAuthProviderDirectorySchedule_ReturnsUnsupportedWhenCapabilityMissin
 	}
 	if resp.Enabled {
 		t.Fatal("enabled = true, want false")
+	}
+}
+
+func TestGetAuthProviderDirectorySchedule_DisabledAuthProviderReturnsDisabledStatus(t *testing.T) {
+	srv, client := newAdminIdentityTestServer(t)
+
+	adapter := registerDirectorySyncTestAdapter(t, &testScheduledDirectorySyncAdapter{
+		testDirectorySyncAdapter: &testDirectorySyncAdapter{
+			supportPreview: true,
+		},
+		plan: &provider.ScheduledDirectoryEnrichmentPlan{
+			Enabled:          true,
+			Mode:             provider.DirectoryEnrichmentModeEnrichExistingOnly,
+			JoinKeyType:      provider.DirectoryJoinKeyUsername,
+			ScheduleCron:     "* * * * *",
+			ScheduleTimezone: "UTC",
+		},
+	})
+	providerRow, err := client.AuthProvider.Create().
+		SetID("auth-provider-directory-schedule-disabled").
+		SetName("Disabled Directory Schedule Provider").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{"tenant": "acme"}).
+		SetEnabled(false).
+		SetCreatedBy("admin-1").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create disabled auth provider: %v", err)
+	}
+
+	reqCtx, reqW := newAuthedGinContext(
+		t,
+		http.MethodGet,
+		"/admin/auth-providers/"+providerRow.ID+"/directory/schedule",
+		"",
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.GetAuthProviderDirectorySchedule(reqCtx, providerRow.ID)
+	if reqW.Code != http.StatusOK {
+		t.Fatalf("schedule status = %d, want %d, body=%s", reqW.Code, http.StatusOK, reqW.Body.String())
+	}
+
+	var resp generated.DirectoryEnrichmentScheduleStatus
+	mustDecodeJSON(t, reqW.Body.Bytes(), &resp)
+	if !resp.Supported {
+		t.Fatal("supported = false, want true")
+	}
+	if resp.Enabled {
+		t.Fatal("enabled = true, want false")
+	}
+	if resp.NextRunAt != (time.Time{}) {
+		t.Fatalf("next_run_at = %s, want zero time", resp.NextRunAt)
+	}
+	if adapter.planCalls != 0 {
+		t.Fatalf("BuildScheduledDirectoryEnrichmentPlan calls = %d, want 0", adapter.planCalls)
 	}
 }
 

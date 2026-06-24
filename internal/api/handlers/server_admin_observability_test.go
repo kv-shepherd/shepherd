@@ -208,6 +208,8 @@ func TestGetAdminAuditSignalsReturnsBusinessSignals(t *testing.T) {
 				},
 				ApprovalFailureAuditActions: []observability.BusinessApprovalAuditActionCount{
 					{Action: "approval.validation_failed", Count: 3},
+					{Action: "approval.future_dynamic_failure", Count: 4},
+					{Action: "external_approval.callback.failed", Count: 5},
 				},
 			},
 		},
@@ -236,7 +238,17 @@ func TestGetAdminAuditSignalsReturnsBusinessSignals(t *testing.T) {
 	if len(resp.ApprovalTickets) != 1 || resp.ApprovalTickets[0].Count != 2 {
 		t.Fatalf("approval tickets = %#v", resp.ApprovalTickets)
 	}
-	if len(resp.ApprovalFailureAuditActions) != 1 || resp.ApprovalFailureAuditActions[0].Action != "approval.validation_failed" {
+	if len(resp.ApprovalFailureAuditActions) != 2 {
 		t.Fatalf("failure actions = %#v", resp.ApprovalFailureAuditActions)
+	}
+	failureActions := make(map[string]float64, len(resp.ApprovalFailureAuditActions))
+	for _, item := range resp.ApprovalFailureAuditActions {
+		failureActions[item.Action] = item.Count
+	}
+	if failureActions["approval.validation_failed"] != 3 {
+		t.Fatalf("validation failure action count = %v, want 3", failureActions["approval.validation_failed"])
+	}
+	if failureActions[observability.BusinessApprovalAuditOtherAction] != 9 {
+		t.Fatalf("other failure action count = %v, want 9", failureActions[observability.BusinessApprovalAuditOtherAction])
 	}
 }

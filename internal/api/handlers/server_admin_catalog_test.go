@@ -610,6 +610,59 @@ func TestUpdateRole_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	}
 }
 
+func TestDeleteRoleRejectsExternalCohortMappingReference(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminCatalogTestServer(t)
+	ctx := t.Context()
+
+	roleRow, err := client.Role.Create().
+		SetID("role-delete-cohort-mapping-in-use").
+		SetName("DeleteCohortMappingInUse").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed role: %v", err)
+	}
+	mappingRow, err := client.ExternalCohortMapping.Create().
+		SetID("mapping-delete-role-in-use").
+		SetProviderID("provider-delete-role-in-use").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleRow.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed external cohort mapping: %v", err)
+	}
+
+	deleteCtx, deleteW := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/roles/"+roleRow.ID,
+		"",
+		"admin-1",
+		[]string{"rbac:manage"},
+	)
+	srv.DeleteRole(deleteCtx, roleRow.ID)
+	if deleteW.Code != http.StatusConflict {
+		t.Fatalf("delete role status = %d, want %d, body=%s", deleteW.Code, http.StatusConflict, deleteW.Body.String())
+	}
+	var resp generated.Error
+	mustDecodeJSON(t, deleteW.Body.Bytes(), &resp)
+	if resp.Code != "ROLE_IN_USE" {
+		t.Fatalf("delete role error code = %q, want ROLE_IN_USE", resp.Code)
+	}
+	if _, err := client.Role.Get(ctx, roleRow.ID); err != nil {
+		t.Fatalf("role should remain: %v", err)
+	}
+	if _, err := client.ExternalCohortMapping.Get(ctx, mappingRow.ID); err != nil {
+		t.Fatalf("mapping should remain: %v", err)
+	}
+}
+
 func newAdminCatalogTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
