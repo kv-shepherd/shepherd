@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.9](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.8...v0.1.1-alpha.9) (2026-06-29)
+
+
+### Features
+
+* add observability baseline ([#706](https://github.com/kv-shepherd/shepherd/issues/706)) ([6ed02eb](https://github.com/kv-shepherd/shepherd/commit/6ed02eba3fbb8e20fa7dd94890a8b32aeb10c8c3)), closes [#705](https://github.com/kv-shepherd/shepherd/issues/705)
+* **adoption:** add pending VM adoption ([#719](https://github.com/kv-shepherd/shepherd/issues/719)) ([0252248](https://github.com/kv-shepherd/shepherd/commit/02522484cbe27c0fb74b2f6c9b63a82810a8a7bf)), closes [#718](https://github.com/kv-shepherd/shepherd/issues/718)
+* **observability:** add native admin console ([#709](https://github.com/kv-shepherd/shepherd/issues/709)) ([f33257c](https://github.com/kv-shepherd/shepherd/commit/f33257cc8d90e47bb3f5ce4ca4e3c273a8d2029a)), closes [#708](https://github.com/kv-shepherd/shepherd/issues/708)
+
+
+### Bug Fixes
+
+* **dev:** use public origin for redirects ([#711](https://github.com/kv-shepherd/shepherd/issues/711)) ([40f8edc](https://github.com/kv-shepherd/shepherd/commit/40f8edcb2757b6c1e985ebf5a100fd5c06516a00)), closes [#710](https://github.com/kv-shepherd/shepherd/issues/710)
+* **instance-size:** preserve marker empty objects ([#693](https://github.com/kv-shepherd/shepherd/issues/693)) ([37ac9ed](https://github.com/kv-shepherd/shepherd/commit/37ac9edf53c42eaa1cb2bc6ce4a69fc9781ad685)), closes [#692](https://github.com/kv-shepherd/shepherd/issues/692)
+* **vm:** align resource approval requests ([#713](https://github.com/kv-shepherd/shepherd/issues/713)) ([b0bd674](https://github.com/kv-shepherd/shepherd/commit/b0bd6746dd1b7dd888da2562aff7f681e3ab4303)), closes [#712](https://github.com/kv-shepherd/shepherd/issues/712)
+
+
+### Documentation
+
+* unify project links to canonical kv-shepherd.io ([#704](https://github.com/kv-shepherd/shepherd/issues/704)) ([fbdeae2](https://github.com/kv-shepherd/shepherd/commit/fbdeae23dad8f7e289ce3d2c9f3af458eb9e3673))
+
+
+### Miscellaneous
+
+* **deps:** update river stack ([9123145](https://github.com/kv-shepherd/shepherd/commit/91231454891cb6dd197168e5bd712cc2999e1823))
+* **deps:** update x crypto ([f6b4f78](https://github.com/kv-shepherd/shepherd/commit/f6b4f78510a1be19ec24755a858df5f3f9018d3e))
+* **ops:** add postgres river validation ([c9d5e53](https://github.com/kv-shepherd/shepherd/commit/c9d5e532584378084dc931b2591afd0f451b21d5)), closes [#714](https://github.com/kv-shepherd/shepherd/issues/714)
+
 ## [0.1.1-alpha.8](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.7...v0.1.1-alpha.8) (2026-05-25)
 
 
