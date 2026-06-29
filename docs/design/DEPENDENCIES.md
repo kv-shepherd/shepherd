@@ -1,7 +1,7 @@
 # Dependency Version Definitions
 
 > **Purpose**: Authoritative dependency and toolchain version reference.
-> **Last audited**: 2026-05-28.
+> **Last audited**: 2026-06-29.
 > **Primary sources**: `go.mod`, `Makefile`, `build/api.mk`, `web/package.json`,
 > `api/openapi.yaml`.
 
@@ -42,7 +42,7 @@ ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
 | `go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp` | `v1.44.0` | OTLP/HTTP trace exporter |
 | `go.opentelemetry.io/otel/exporters/stdout/stdouttrace` | `v1.44.0` | Local stdout trace exporter for tests and diagnostics |
 | `go.opentelemetry.io/otel/trace` | `v1.44.0` | Trace API helpers used by middleware tests |
-| `golang.org/x/sync` | `v0.20.0` | Semaphore/errgroup utilities |
+| `golang.org/x/sync` | `v0.21.0` | Semaphore/errgroup utilities |
 
 ### Database
 
@@ -106,7 +106,7 @@ artifact when 3.1 features require it.
 | Package | Version | Purpose |
 |---------|---------|---------|
 | `github.com/golang-jwt/jwt/v5` | `v5.3.1` | Shepherd JWTs |
-| `golang.org/x/crypto` | `v0.51.0` | bcrypt and crypto utilities |
+| `golang.org/x/crypto` | `v0.53.0` | bcrypt and crypto utilities |
 | `github.com/go-ldap/ldap/v3` | `v3.4.13` | LDAP auth provider |
 | `github.com/gorilla/websocket` | `v1.5.4-0.20250319132907-e064f32e3674` | Console websocket handling |
 
