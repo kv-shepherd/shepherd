@@ -110,11 +110,11 @@ require (
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.68.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.59.0 // indirect
-	github.com/riverqueue/river v0.37.0 // indirect
-	github.com/riverqueue/river/riverdriver v0.37.0 // indirect
-	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.37.0 // indirect
-	github.com/riverqueue/river/rivershared v0.37.0 // indirect
-	github.com/riverqueue/river/rivertype v0.37.0 // indirect
+	github.com/riverqueue/river v0.39.0 // indirect
+	github.com/riverqueue/river/riverdriver v0.39.0 // indirect
+	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.39.0 // indirect
+	github.com/riverqueue/river/rivershared v0.39.0 // indirect
+	github.com/riverqueue/river/rivertype v0.39.0 // indirect
 	github.com/robfig/cron/v3 v3.0.1 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect

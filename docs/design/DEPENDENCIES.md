@@ -28,8 +28,8 @@ ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
 | `github.com/go-playground/validator/v10` | `v10.30.2` | Request/struct validation |
 | `entgo.io/ent` | `v0.14.6` | ORM |
 | `github.com/jackc/pgx/v5` | `v5.9.2` | PostgreSQL driver and pool |
-| `github.com/riverqueue/river` | `v0.37.0` | PostgreSQL-native job queue |
-| `github.com/riverqueue/river/riverdriver/riverpgxv5` | `v0.37.0` | River pgx v5 driver |
+| `github.com/riverqueue/river` | `v0.39.0` | PostgreSQL-native job queue |
+| `github.com/riverqueue/river/riverdriver/riverpgxv5` | `v0.39.0` | River pgx v5 driver |
 | `github.com/sqlc-dev/sqlc` | `v1.30.0` | SQL code generation; invoked by `make sqlc-gen` |
 | `go.uber.org/zap` | `v1.28.0` | Structured logging |
 | `github.com/spf13/viper` | `v1.21.0` | Configuration |
@@ -231,7 +231,7 @@ require (
     entgo.io/ent v0.14.6
     github.com/gin-gonic/gin v1.12.0
     github.com/jackc/pgx/v5 v5.9.2
-    github.com/riverqueue/river v0.37.0
+    github.com/riverqueue/river v0.39.0
     github.com/oapi-codegen/oapi-codegen/v2 v2.5.1
     k8s.io/api v0.34.3
     k8s.io/apimachinery v0.34.3
