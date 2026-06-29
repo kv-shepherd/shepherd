@@ -194,10 +194,34 @@ jobs:
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           TAGS: ${{ steps.meta.outputs.tags }}
+          COSIGN_VERIFY_IDENTITY_REGEXP: ^https://github\.com/kv-shepherd/shepherd/\.github/workflows/release\.yml@refs/(heads/main|tags/v.*)$
+          COSIGN_VERIFY_OIDC_ISSUER: https://token.actions.githubusercontent.com
         run: |
+          sign_and_verify() {
+            local image_ref="$1"
+            local output
+
+            if output="$(cosign sign --yes "${image_ref}" 2>&1)"; then
+              printf '%s\n' "${output}"
+            else
+              printf '%s\n' "${output}" >&2
+              if ! grep -Eq "createLogEntryConflict|equivalent entry already exists" <<< "${output}"; then
+                return 1
+              fi
+              echo "Cosign transparency log entry already exists for ${image_ref}; verifying existing signature."
+            fi
+
+            cosign verify "${image_ref}" \
+              --certificate-identity-regexp="${COSIGN_VERIFY_IDENTITY_REGEXP}" \
+              --certificate-oidc-issuer="${COSIGN_VERIFY_OIDC_ISSUER}" \
+              >/dev/null
+          }
+
           while IFS= read -r tag; do
-            echo "Signing ${tag}@${DIGEST}"
-            cosign sign --yes "${tag}@${DIGEST}"
+            [[ -z "${tag}" ]] && continue
+            image_ref="${tag}@${DIGEST}"
+            echo "Signing ${image_ref}"
+            sign_and_verify "${image_ref}"
           done <<< "${TAGS}"
 
   # ── Attach assets to GitHub Release (created by release-please) ──
