@@ -359,6 +359,35 @@ func TestApplyInstanceSizeSnapshotOverrides_UsesCanonicalMemoryGiOnly(t *testing
 	}
 }
 
+func TestApplyInstanceSizeSnapshotOverrides_AlignsLegacyZeroRequestsToSnapshotLimits(t *testing.T) {
+	cpu := 8.0
+	cpuRequest := 8.0
+	mem := 16.0
+	memoryRequestGi := 16.0
+	disk := 10
+	snapshot := map[string]interface{}{
+		"cpu_cores":         4.0,
+		"cpu_request":       0.0,
+		"memory_gi":         8.0,
+		"memory_request_gi": 0.0,
+	}
+
+	applyInstanceSizeSnapshotOverrides(&cpu, &cpuRequest, &mem, &memoryRequestGi, &disk, snapshot)
+
+	if cpu != 4.0 {
+		t.Fatalf("cpu mismatch: got %.1f want 4.0", cpu)
+	}
+	if cpuRequest != 4.0 {
+		t.Fatalf("cpuRequest mismatch: got %.1f want 4.0", cpuRequest)
+	}
+	if mem != 8.0 {
+		t.Fatalf("memoryGi mismatch: got %.1f want 8.0", mem)
+	}
+	if memoryRequestGi != 8.0 {
+		t.Fatalf("memoryRequestGi mismatch: got %.1f want 8.0", memoryRequestGi)
+	}
+}
+
 func TestInstanceSizeForSnapshotAlignment_UsesSnapshotHugepagesCapability(t *testing.T) {
 	size := &ent.InstanceSize{
 		RequiresHugepages: false,
@@ -486,6 +515,81 @@ func TestApplyModifiedSpecOverrides_CpuLimitTakesPrecedence(t *testing.T) {
 	}
 	if spec.MemoryGi != 16 {
 		t.Fatalf("MemoryGi should use memory_limit_gi (16) over memory_gi (4): got %.1f", spec.MemoryGi)
+	}
+}
+
+func TestApplyModifiedSpecOverrides_AlignsGuaranteedRequestsForLimitOnlyOverride(t *testing.T) {
+	spec := &domain.VMSpec{
+		Name:            "vm-01",
+		CPU:             4,
+		CPURequest:      4,
+		MemoryGi:        8,
+		MemoryRequestGi: 8,
+		Image:           "test-image:1",
+	}
+
+	applyModifiedSpecOverrides(spec, map[string]interface{}{
+		"cpu_limit":       8.0,
+		"memory_limit_gi": 16.0,
+	})
+
+	if spec.CPU != 8 {
+		t.Fatalf("CPU mismatch: got %.1f, want 8", spec.CPU)
+	}
+	if spec.CPURequest != 8 {
+		t.Fatalf("CPURequest mismatch: got %.1f, want 8", spec.CPURequest)
+	}
+	if spec.MemoryGi != 16 {
+		t.Fatalf("MemoryGi mismatch: got %.1f, want 16", spec.MemoryGi)
+	}
+	if spec.MemoryRequestGi != 16 {
+		t.Fatalf("MemoryRequestGi mismatch: got %.1f, want 16", spec.MemoryRequestGi)
+	}
+}
+
+func TestApplyModifiedSpecOverrides_PreservesSharedRequestsForLimitOnlyOverride(t *testing.T) {
+	spec := &domain.VMSpec{
+		Name:            "vm-01",
+		CPU:             4,
+		CPURequest:      2,
+		MemoryGi:        8,
+		MemoryRequestGi: 4,
+		Image:           "test-image:1",
+	}
+
+	applyModifiedSpecOverrides(spec, map[string]interface{}{
+		"cpu_limit":       8.0,
+		"memory_limit_gi": 16.0,
+	})
+
+	if spec.CPURequest != 2 {
+		t.Fatalf("CPURequest mismatch: got %.1f, want 2", spec.CPURequest)
+	}
+	if spec.MemoryRequestGi != 4 {
+		t.Fatalf("MemoryRequestGi mismatch: got %.1f, want 4", spec.MemoryRequestGi)
+	}
+}
+
+func TestApplyModifiedSpecOverrides_DoesNotAlignMissingRequestsForLimitOnlyOverride(t *testing.T) {
+	spec := &domain.VMSpec{
+		Name:            "vm-01",
+		CPU:             4,
+		CPURequest:      0,
+		MemoryGi:        8,
+		MemoryRequestGi: 0,
+		Image:           "test-image:1",
+	}
+
+	applyModifiedSpecOverrides(spec, map[string]interface{}{
+		"cpu_limit":       8.0,
+		"memory_limit_gi": 16.0,
+	})
+
+	if spec.CPURequest != 0 {
+		t.Fatalf("CPURequest mismatch: got %.1f, want 0", spec.CPURequest)
+	}
+	if spec.MemoryRequestGi != 0 {
+		t.Fatalf("MemoryRequestGi mismatch: got %.1f, want 0", spec.MemoryRequestGi)
 	}
 }
 

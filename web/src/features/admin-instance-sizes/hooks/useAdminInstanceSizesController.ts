@@ -1,6 +1,7 @@
 'use client';
 
 import { App, Form } from 'antd';
+import type { FormInstance } from 'antd';
 import type { TFunction } from 'i18next';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -261,31 +262,79 @@ export function filterAdminInstanceSizes(
  * spec_text (produced by DynamicSchemaForm) is parsed into spec_overrides.
  * Overcommit checkboxes → cpu_request / memory_request_gi.
  */
+function parseSpecOverridesFromSpecText(specText?: string): Record<string, unknown> | undefined {
+    const trimmedSpecText = specText?.trim();
+    if (!trimmedSpecText || trimmedSpecText === '{}') {
+        return undefined;
+    }
+    try {
+        const parsed = JSON.parse(trimmedSpecText) as unknown;
+        if (parsed !== null && !Array.isArray(parsed) && typeof parsed === 'object') {
+            // Outbound boundary normalization: legacy paths are migrated
+            // to canonical form, then any indexed-column path that may have
+            // slipped in (preset payload, raw JSON edit, legacy DB row)
+            // is stripped so the API contract stays consistent with the
+            // backend ADR-0036 guard. Without this, the dedicated_cpu
+            // checkbox could disagree with a phantom dedicatedCpuPlacement
+            // override surviving from a preset like linux-prod.
+            return stripIndexedSpecOverridePaths(
+                normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>),
+            );
+        }
+    } catch {
+        // Malformed spec_text — ignore, send without spec_overrides
+    }
+    return undefined;
+}
+
+function resolveFormHugepagesSize(values: Pick<InstanceSizeFormValues, 'spec_text'>): string | undefined {
+    const specOverrides = parseSpecOverridesFromSpecText(values.spec_text);
+    return normalizeHugepagesPageSizeValue(
+        getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
+    );
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function validateExplicitOvercommitRequests(
+    form: FormInstance<InstanceSizeFormValues>,
+    values: InstanceSizeFormValues,
+    t: TFunction,
+): boolean {
+    const fieldErrors: Parameters<FormInstance<InstanceSizeFormValues>['setFields']>[0] = [];
+    const dedicatedCPU = values.dedicated_cpu === true;
+    const hasHugepages = Boolean(resolveFormHugepagesSize(values));
+
+    if (!dedicatedCPU && values.cpu_overcommit_enabled === true && !isPositiveFiniteNumber(values.cpu_request)) {
+        fieldErrors.push({
+            name: 'cpu_request',
+            errors: [String(t('instanceSizes.cpu_request_required', {
+                defaultValue: 'CPU request is required when CPU Overcommit is enabled.',
+            }))],
+        });
+    }
+    if (!hasHugepages && values.memory_overcommit_enabled === true && !isPositiveFiniteNumber(values.memory_request_gi)) {
+        fieldErrors.push({
+            name: 'memory_request_gi',
+            errors: [String(t('instanceSizes.memory_request_required', {
+                defaultValue: 'Memory request is required when Memory Overcommit is enabled.',
+            }))],
+        });
+    }
+    if (fieldErrors.length === 0) {
+        return true;
+    }
+    form.setFields(fieldErrors);
+    return false;
+}
+
 function formToPayload(
     values: InstanceSizeFormValues,
     mode: 'create' | 'update',
 ): InstanceSizePayload {
-    // Parse DynamicSchemaForm spec_text → spec_overrides map
-    let specOverrides: Record<string, unknown> | undefined;
-    if (values.spec_text && values.spec_text.trim() && values.spec_text.trim() !== '{}') {
-        try {
-            const parsed = JSON.parse(values.spec_text) as unknown;
-            if (parsed !== null && !Array.isArray(parsed) && typeof parsed === 'object') {
-                // Outbound boundary normalization: legacy paths are migrated
-                // to canonical form, then any indexed-column path that may have
-                // slipped in (preset payload, raw JSON edit, legacy DB row)
-                // is stripped so the API contract stays consistent with the
-                // backend ADR-0036 guard. Without this, the dedicated_cpu
-                // checkbox could disagree with a phantom dedicatedCpuPlacement
-                // override surviving from a preset like linux-prod.
-                specOverrides = stripIndexedSpecOverridePaths(
-                    normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>),
-                );
-            }
-        } catch {
-            // Malformed spec_text — ignore, send without spec_overrides
-        }
-    }
+    const specOverrides = parseSpecOverridesFromSpecText(values.spec_text);
     const hugepagesSize = normalizeHugepagesPageSizeValue(
         getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
     );
@@ -514,6 +563,9 @@ export function useAdminInstanceSizesController({
 
     const submitCreate = async () => {
         const values = await createForm.validateFields();
+        if (!validateExplicitOvercommitRequests(createForm, values, t)) {
+            return;
+        }
         const payload = formToPayload(values, 'create');
         createMutation.mutate(payload as unknown as InstanceSizeCreateRequest);
     };
@@ -523,6 +575,9 @@ export function useAdminInstanceSizesController({
             return;
         }
         const values = await editForm.validateFields();
+        if (!validateExplicitOvercommitRequests(editForm, values, t)) {
+            return;
+        }
         const payload = formToPayload(values, 'update');
         updateMutation.mutate({
             id: editingItem.id,
