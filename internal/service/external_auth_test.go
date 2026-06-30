@@ -17,6 +17,25 @@ import (
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
+func createExternalAuthProviderForTest(t *testing.T, client *ent.Client, id string) {
+	t.Helper()
+	createExternalAuthProviderForTestWithEnabled(t, client, id, true)
+}
+
+func createExternalAuthProviderForTestWithEnabled(t *testing.T, client *ent.Client, id string, enabled bool) {
+	t.Helper()
+	if _, err := client.AuthProvider.Create().
+		SetID(id).
+		SetName(id).
+		SetAuthType("test").
+		SetConfig(map[string]interface{}{}).
+		SetEnabled(enabled).
+		SetCreatedBy("test").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create auth provider %q: %v", id, err)
+	}
+}
+
 func TestExternalAuthService_UpsertExternalUser_ReconcilesManagedBindings(t *testing.T) {
 	t.Parallel()
 
@@ -951,6 +970,7 @@ func TestExternalAuthService_UpsertExternalUser_LoginOnlyClaimPreservesDirectory
 
 	client := testutil.OpenEntPostgres(t, "external_auth_service_preserves_directory_owner")
 	service := NewExternalAuthService(client)
+	createExternalAuthProviderForTest(t, client, "provider-directory")
 
 	roleEnt, err := client.Role.Create().
 		SetID("role-directory-user").
@@ -1054,6 +1074,142 @@ func TestExternalAuthService_UpsertExternalUser_LoginOnlyClaimPreservesDirectory
 	}
 	if grantCount != 1 {
 		t.Fatalf("external cohort grant count = %d, want 1", grantCount)
+	}
+}
+
+func TestExternalAuthService_UpsertExternalUser_LoginOnlyClaimRepairsMissingDirectoryOwner(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "external_auth_service_repairs_missing_owner")
+	service := NewExternalAuthService(client)
+	createExternalAuthProviderForTest(t, client, "provider-sso")
+
+	importedUser, err := client.User.Create().
+		SetID("user-imported-missing-provider").
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetDisplayName("Alice Imported").
+		SetAuthProviderID("provider-deleted").
+		SetExternalID("alice@example.com").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create imported user: %v", err)
+	}
+
+	result, err := service.UpsertExternalUser(t.Context(), "provider-sso", runtimecontract.AuthResult{
+		ExternalID:         "alice@example.com",
+		Username:           "alice@example.com",
+		DisplayName:        "Alice SSO",
+		Email:              "alice@example.com",
+		Enabled:            true,
+		DirectoryAuthority: runtimecontract.AuthDirectoryAuthorityLoginOnly,
+	})
+	if err != nil {
+		t.Fatalf("UpsertExternalUser() error = %v", err)
+	}
+	if result.Created {
+		t.Fatal("Created = true, want false")
+	}
+	if !result.Updated {
+		t.Fatal("Updated = false, want true")
+	}
+	if result.User.ID != importedUser.ID {
+		t.Fatalf("user id = %q, want %q", result.User.ID, importedUser.ID)
+	}
+	if result.User.AuthProviderID != "provider-sso" {
+		t.Fatalf("auth_provider_id = %q, want provider-sso", result.User.AuthProviderID)
+	}
+	if result.User.ExternalID != "alice@example.com" {
+		t.Fatalf("external_id = %q, want alice@example.com", result.User.ExternalID)
+	}
+}
+
+func TestExternalAuthService_UpsertExternalUser_LoginOnlyClaimRepairsDisabledDirectoryOwner(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "external_auth_service_repairs_disabled_owner")
+	service := NewExternalAuthService(client)
+	createExternalAuthProviderForTest(t, client, "provider-sso")
+	createExternalAuthProviderForTestWithEnabled(t, client, "provider-directory-disabled", false)
+
+	roleEnt, err := client.Role.Create().
+		SetID("role-disabled-owner-grant").
+		SetName("disabled_owner_grant").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	importedUser, err := client.User.Create().
+		SetID("user-imported-disabled-provider").
+		SetUsername("alice-disabled@example.com").
+		SetEmail("alice-disabled@example.com").
+		SetDisplayName("Alice Disabled Provider").
+		SetAuthProviderID("provider-directory-disabled").
+		SetExternalID("alice-disabled@example.com").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create imported user: %v", err)
+	}
+	bindingEnt, err := client.RoleBinding.Create().
+		SetID("rb-disabled-owner-grant").
+		SetUserID(importedUser.ID).
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create managed role binding: %v", err)
+	}
+	grantEnt, err := client.ExternalCohortGrant.Create().
+		SetID("grant-disabled-owner").
+		SetUserID(importedUser.ID).
+		SetProviderID("provider-directory-disabled").
+		SetBindingKey("role-disabled-owner-grant|global||").
+		SetRoleBindingID(bindingEnt.ID).
+		SetLastAppliedAt(importedUser.CreatedAt).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create external cohort grant: %v", err)
+	}
+
+	result, err := service.UpsertExternalUser(t.Context(), "provider-sso", runtimecontract.AuthResult{
+		ExternalID:         "alice-disabled@example.com",
+		Username:           "alice-disabled@example.com",
+		DisplayName:        "Alice SSO",
+		Email:              "alice-disabled@example.com",
+		Enabled:            true,
+		DirectoryAuthority: runtimecontract.AuthDirectoryAuthorityLoginOnly,
+	})
+	if err != nil {
+		t.Fatalf("UpsertExternalUser() error = %v", err)
+	}
+	if result.Created {
+		t.Fatal("Created = true, want false")
+	}
+	if !result.Updated {
+		t.Fatal("Updated = false, want true")
+	}
+	if result.User.ID != importedUser.ID {
+		t.Fatalf("user id = %q, want %q", result.User.ID, importedUser.ID)
+	}
+	if result.User.AuthProviderID != "provider-sso" {
+		t.Fatalf("auth_provider_id = %q, want provider-sso", result.User.AuthProviderID)
+	}
+	if result.User.ExternalID != "alice-disabled@example.com" {
+		t.Fatalf("external_id = %q, want alice-disabled@example.com", result.User.ExternalID)
+	}
+	if !result.RBACChanged {
+		t.Fatal("RBACChanged = false, want true after stale external cohort grant cleanup")
+	}
+	if _, getErr := client.ExternalCohortGrant.Get(t.Context(), grantEnt.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("stale external cohort grant should be deleted, err=%v", getErr)
+	}
+	if _, getErr := client.RoleBinding.Get(t.Context(), bindingEnt.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("stale managed role binding should be deleted, err=%v", getErr)
 	}
 }
 

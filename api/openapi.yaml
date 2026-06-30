@@ -6519,7 +6519,7 @@ paths:
       operationId: completeLoginAuthProviderGet
       x-frontend-consumption:
         mode: browser_callback
-        reason: External auth providers redirect browsers to this HTML bridge endpoint.
+        reason: External auth providers redirect browsers to this callback endpoint.
       security: []
       x-rbac:
         authentication: public
@@ -6542,11 +6542,19 @@ paths:
         example: redacted
       responses:
         '200':
-          description: External provider callback completed and returned the HTML bridge
+          description: Legacy external provider callback HTML bridge response retained for API compatibility
           content:
             text/html:
               schema:
                 type: string
+        '303':
+          description: External provider callback completed and redirected to the validated return target
+          headers:
+            Location:
+              description: Validated post-login return target.
+              schema:
+                type: string
+                format: uri
         '400':
           description: External provider callback failed and returned the HTML bridge
           content:
@@ -6559,7 +6567,7 @@ paths:
       operationId: completeLoginAuthProviderPost
       x-frontend-consumption:
         mode: browser_callback
-        reason: External auth providers post browsers to this HTML bridge endpoint.
+        reason: External auth providers post browsers to this callback endpoint.
       security: []
       x-rbac:
         authentication: public
@@ -6591,11 +6599,19 @@ paths:
               state: redacted
       responses:
         '200':
-          description: Login callback HTML bridge
+          description: Legacy login callback HTML bridge response retained for API compatibility
           content:
             text/html:
               schema:
                 type: string
+        '303':
+          description: Login callback completed and redirected to the validated return target
+          headers:
+            Location:
+              description: Validated post-login return target.
+              schema:
+                type: string
+                format: uri
         '400':
           description: Login callback failed
           content:
