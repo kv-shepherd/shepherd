@@ -76,8 +76,20 @@ func ResolveVMRequestTargets(
 	if resolved.CPULimit > 0 && resolved.CPURequest > resolved.CPULimit {
 		resolved.CPURequest = resolved.CPULimit
 		resolved.AdjustedCPURequest = true
+	} else if targets.TargetCPUCores != nil &&
+		defaultCPULimit > 0 &&
+		defaultCPURequest == defaultCPULimit &&
+		resolved.CPULimit > defaultCPULimit {
+		resolved.CPURequest = resolved.CPULimit
+		resolved.AdjustedCPURequest = true
 	}
 	if resolved.MemoryLimitGi > 0 && resolved.MemoryRequestGi > resolved.MemoryLimitGi {
+		resolved.MemoryRequestGi = resolved.MemoryLimitGi
+		resolved.AdjustedMemoryGiReq = true
+	} else if targets.TargetMemoryGi != nil &&
+		defaultMemoryLimitGi > 0 &&
+		defaultMemoryRequestGi == defaultMemoryLimitGi &&
+		resolved.MemoryLimitGi > defaultMemoryLimitGi {
 		resolved.MemoryRequestGi = resolved.MemoryLimitGi
 		resolved.AdjustedMemoryGiReq = true
 	}

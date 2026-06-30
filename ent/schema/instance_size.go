@@ -40,10 +40,8 @@ func (InstanceSize) Fields() []ent.Field {
 			Positive(),
 		// Overcommit support
 		field.Float("cpu_request").
-			Optional(). // Defaults to cpu_cores if not set (no overcommit)
 			Positive(),
 		field.Float("memory_request_gi").
-			Optional(). // Defaults to memory_gi if not set
 			Positive(),
 		// KubeVirt dedicatedCpuPlacement support (ADR-0018)
 		// When true, VM requires Guaranteed QoS: CPU request must equal limit.

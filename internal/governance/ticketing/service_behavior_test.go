@@ -3239,6 +3239,44 @@ func TestServiceApproveCreate_EnableOverrideWithValues_WritesModifiedSpec(t *tes
 	}
 }
 
+func TestServiceApproveCreate_HugepagesMemoryLimitOverridePersistsAlignedRequest(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_override_hugepages_memory_limit")
+	ticketID := createOverrideTestData(t, client, "hugepages-memory-limit")
+
+	if _, err := client.InstanceSize.UpdateOneID("size-override-hugepages-memory-limit").
+		SetRequiresHugepages(true).
+		SetHugepagesSize("2Mi").
+		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
+		Save(context.Background()); err != nil {
+		t.Fatalf("update instance size: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+
+	opts := ExecutionOptions{
+		ClusterID:      "cluster-1",
+		EnableOverride: true,
+		MemoryLimitGi:  16,
+	}
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+	ms := writer.modifiedSpec
+	if got, ok := ms["memory_limit_gi"].(float64); !ok || got != 16 {
+		t.Fatalf("modifiedSpec[memory_limit_gi] = %v, want 16", ms["memory_limit_gi"])
+	}
+	if got, ok := ms["memory_request_gi"].(float64); !ok || got != 16 {
+		t.Fatalf("modifiedSpec[memory_request_gi] = %v, want 16", ms["memory_request_gi"])
+	}
+}
+
 func TestServiceApproveCreate_EnableOverrideDiskOnly_WorksWithoutCPUMemory(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_override_disk_only")
@@ -3327,6 +3365,49 @@ func TestServiceApproveCreate_UserRequestedTargets_WriteModifiedSpecAndCapReques
 	if v, ok := asInt(ms["disk_gb"]); !ok || v != 120 {
 		t.Fatalf("modifiedSpec[disk_gb] = %v, want 120", ms["disk_gb"])
 	}
+}
+
+func TestServiceApproveCreate_UserRequestedTargetsGrowGuaranteedSize_WriteAlignedRequests(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_requested_targets_grow_guaranteed")
+	payload := domain.VMCreationPayload{
+		RequesterID:    "user-1",
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-override-requested-targets-grow",
+		InstanceSizeID: "size-override-requested-targets-grow",
+		Namespace:      "team-a",
+		TargetCPUCores: 6,
+		TargetMemoryGi: 8,
+	}
+	ticketID := createOverrideTestData(t, client, "requested-targets-grow", payload)
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{
+		ClusterID: "cluster-1",
+	}); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+	ms := writer.modifiedSpec
+	assertFloat64Value := func(t *testing.T, key string, expected float64) {
+		t.Helper()
+		v, ok := ms[key].(float64)
+		if !ok {
+			t.Fatalf("modifiedSpec[%q] not found or not float64: %v", key, ms[key])
+		}
+		if v != expected {
+			t.Fatalf("modifiedSpec[%q] = %f, want %f", key, v, expected)
+		}
+	}
+	assertFloat64Value(t, "cpu_limit", 6)
+	assertFloat64Value(t, "cpu_request", 6)
+	assertFloat64Value(t, "memory_limit_gi", 8)
+	assertFloat64Value(t, "memory_request_gi", 8)
 }
 
 // --------------------------------------------------------------------------

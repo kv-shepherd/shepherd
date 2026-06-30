@@ -454,6 +454,8 @@ func (g *Service) approveCreateWithConfig(
 		}
 		if opts.MemoryRequestGi > 0 {
 			modifiedSpec["memory_request_gi"] = opts.MemoryRequestGi
+		} else if opts.MemoryLimitGi > 0 && service.InstanceSizeUsesHugepages(instanceSizeEntity) && createOverride.MemoryRequestGi > 0 {
+			modifiedSpec["memory_request_gi"] = createOverride.MemoryRequestGi
 		}
 		if opts.MemoryLimitGi > 0 {
 			modifiedSpec["memory_limit_gi"] = opts.MemoryLimitGi

@@ -106,6 +106,64 @@ func TestResolveVMRequestTargets(t *testing.T) {
 	}
 }
 
+func TestResolveVMRequestTargets_AlignsGuaranteedRequestsWhenTargetsGrow(t *testing.T) {
+	t.Parallel()
+
+	resolved := ResolveVMRequestTargets(
+		2,
+		2,
+		4,
+		4,
+		80,
+		VMRequestTargets{
+			TargetCPUCores: float64Ptr(4),
+			TargetMemoryGi: float64Ptr(8),
+		},
+	)
+
+	if resolved.CPURequest != 4 {
+		t.Fatalf("CPURequest = %v, want 4", resolved.CPURequest)
+	}
+	if !resolved.AdjustedCPURequest {
+		t.Fatalf("expected CPU request adjustment, got %+v", resolved)
+	}
+	if resolved.MemoryRequestGi != 8 {
+		t.Fatalf("MemoryRequestGi = %v, want 8", resolved.MemoryRequestGi)
+	}
+	if !resolved.AdjustedMemoryGiReq {
+		t.Fatalf("expected memory request adjustment, got %+v", resolved)
+	}
+}
+
+func TestResolveVMRequestTargets_PreservesOvercommitRequestsWhenTargetsGrow(t *testing.T) {
+	t.Parallel()
+
+	resolved := ResolveVMRequestTargets(
+		4,
+		2,
+		8,
+		4,
+		80,
+		VMRequestTargets{
+			TargetCPUCores: float64Ptr(6),
+			TargetMemoryGi: float64Ptr(10),
+		},
+	)
+
+	if resolved.CPURequest != 2 {
+		t.Fatalf("CPURequest = %v, want 2", resolved.CPURequest)
+	}
+	if resolved.AdjustedCPURequest {
+		t.Fatalf("did not expect CPU request adjustment, got %+v", resolved)
+	}
+	if resolved.MemoryRequestGi != 4 {
+		t.Fatalf("MemoryRequestGi = %v, want 4", resolved.MemoryRequestGi)
+	}
+	if resolved.AdjustedMemoryGiReq {
+		t.Fatalf("did not expect memory request adjustment, got %+v", resolved)
+	}
+}
+
 func float64Ptr(value float64) *float64 {
 	return &value
 }

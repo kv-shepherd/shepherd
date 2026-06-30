@@ -114,25 +114,9 @@ func (_c *InstanceSizeCreate) SetCPURequest(v float64) *InstanceSizeCreate {
 	return _c
 }
 
-// SetNillableCPURequest sets the "cpu_request" field if the given value is not nil.
-func (_c *InstanceSizeCreate) SetNillableCPURequest(v *float64) *InstanceSizeCreate {
-	if v != nil {
-		_c.SetCPURequest(*v)
-	}
-	return _c
-}
-
 // SetMemoryRequestGi sets the "memory_request_gi" field.
 func (_c *InstanceSizeCreate) SetMemoryRequestGi(v float64) *InstanceSizeCreate {
 	_c.mutation.SetMemoryRequestGi(v)
-	return _c
-}
-
-// SetNillableMemoryRequestGi sets the "memory_request_gi" field if the given value is not nil.
-func (_c *InstanceSizeCreate) SetNillableMemoryRequestGi(v *float64) *InstanceSizeCreate {
-	if v != nil {
-		_c.SetMemoryRequestGi(*v)
-	}
 	return _c
 }
 
@@ -406,10 +390,16 @@ func (_c *InstanceSizeCreate) check() error {
 			return &ValidationError{Name: "disk_gb", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.disk_gb": %w`, err)}
 		}
 	}
+	if _, ok := _c.mutation.CPURequest(); !ok {
+		return &ValidationError{Name: "cpu_request", err: errors.New(`ent: missing required field "InstanceSize.cpu_request"`)}
+	}
 	if v, ok := _c.mutation.CPURequest(); ok {
 		if err := instancesize.CPURequestValidator(v); err != nil {
 			return &ValidationError{Name: "cpu_request", err: fmt.Errorf(`ent: validator failed for field "InstanceSize.cpu_request": %w`, err)}
 		}
+	}
+	if _, ok := _c.mutation.MemoryRequestGi(); !ok {
+		return &ValidationError{Name: "memory_request_gi", err: errors.New(`ent: missing required field "InstanceSize.memory_request_gi"`)}
 	}
 	if v, ok := _c.mutation.MemoryRequestGi(); ok {
 		if err := instancesize.MemoryRequestGiValidator(v); err != nil {

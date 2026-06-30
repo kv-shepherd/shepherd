@@ -179,12 +179,6 @@ func (_u *InstanceSizeUpdate) AddCPURequest(v float64) *InstanceSizeUpdate {
 	return _u
 }
 
-// ClearCPURequest clears the value of the "cpu_request" field.
-func (_u *InstanceSizeUpdate) ClearCPURequest() *InstanceSizeUpdate {
-	_u.mutation.ClearCPURequest()
-	return _u
-}
-
 // SetMemoryRequestGi sets the "memory_request_gi" field.
 func (_u *InstanceSizeUpdate) SetMemoryRequestGi(v float64) *InstanceSizeUpdate {
 	_u.mutation.ResetMemoryRequestGi()
@@ -203,12 +197,6 @@ func (_u *InstanceSizeUpdate) SetNillableMemoryRequestGi(v *float64) *InstanceSi
 // AddMemoryRequestGi adds value to the "memory_request_gi" field.
 func (_u *InstanceSizeUpdate) AddMemoryRequestGi(v float64) *InstanceSizeUpdate {
 	_u.mutation.AddMemoryRequestGi(v)
-	return _u
-}
-
-// ClearMemoryRequestGi clears the value of the "memory_request_gi" field.
-func (_u *InstanceSizeUpdate) ClearMemoryRequestGi() *InstanceSizeUpdate {
-	_u.mutation.ClearMemoryRequestGi()
 	return _u
 }
 
@@ -562,17 +550,11 @@ func (_u *InstanceSizeUpdate) sqlSave(ctx context.Context) (_node int, err error
 	if value, ok := _u.mutation.AddedCPURequest(); ok {
 		_spec.AddField(instancesize.FieldCPURequest, field.TypeFloat64, value)
 	}
-	if _u.mutation.CPURequestCleared() {
-		_spec.ClearField(instancesize.FieldCPURequest, field.TypeFloat64)
-	}
 	if value, ok := _u.mutation.MemoryRequestGi(); ok {
 		_spec.SetField(instancesize.FieldMemoryRequestGi, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.AddedMemoryRequestGi(); ok {
 		_spec.AddField(instancesize.FieldMemoryRequestGi, field.TypeFloat64, value)
-	}
-	if _u.mutation.MemoryRequestGiCleared() {
-		_spec.ClearField(instancesize.FieldMemoryRequestGi, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.DedicatedCPU(); ok {
 		_spec.SetField(instancesize.FieldDedicatedCPU, field.TypeBool, value)
@@ -811,12 +793,6 @@ func (_u *InstanceSizeUpdateOne) AddCPURequest(v float64) *InstanceSizeUpdateOne
 	return _u
 }
 
-// ClearCPURequest clears the value of the "cpu_request" field.
-func (_u *InstanceSizeUpdateOne) ClearCPURequest() *InstanceSizeUpdateOne {
-	_u.mutation.ClearCPURequest()
-	return _u
-}
-
 // SetMemoryRequestGi sets the "memory_request_gi" field.
 func (_u *InstanceSizeUpdateOne) SetMemoryRequestGi(v float64) *InstanceSizeUpdateOne {
 	_u.mutation.ResetMemoryRequestGi()
@@ -835,12 +811,6 @@ func (_u *InstanceSizeUpdateOne) SetNillableMemoryRequestGi(v *float64) *Instanc
 // AddMemoryRequestGi adds value to the "memory_request_gi" field.
 func (_u *InstanceSizeUpdateOne) AddMemoryRequestGi(v float64) *InstanceSizeUpdateOne {
 	_u.mutation.AddMemoryRequestGi(v)
-	return _u
-}
-
-// ClearMemoryRequestGi clears the value of the "memory_request_gi" field.
-func (_u *InstanceSizeUpdateOne) ClearMemoryRequestGi() *InstanceSizeUpdateOne {
-	_u.mutation.ClearMemoryRequestGi()
 	return _u
 }
 
@@ -1224,17 +1194,11 @@ func (_u *InstanceSizeUpdateOne) sqlSave(ctx context.Context) (_node *InstanceSi
 	if value, ok := _u.mutation.AddedCPURequest(); ok {
 		_spec.AddField(instancesize.FieldCPURequest, field.TypeFloat64, value)
 	}
-	if _u.mutation.CPURequestCleared() {
-		_spec.ClearField(instancesize.FieldCPURequest, field.TypeFloat64)
-	}
 	if value, ok := _u.mutation.MemoryRequestGi(); ok {
 		_spec.SetField(instancesize.FieldMemoryRequestGi, field.TypeFloat64, value)
 	}
 	if value, ok := _u.mutation.AddedMemoryRequestGi(); ok {
 		_spec.AddField(instancesize.FieldMemoryRequestGi, field.TypeFloat64, value)
-	}
-	if _u.mutation.MemoryRequestGiCleared() {
-		_spec.ClearField(instancesize.FieldMemoryRequestGi, field.TypeFloat64)
 	}
 	if value, ok := _u.mutation.DedicatedCPU(); ok {
 		_spec.SetField(instancesize.FieldDedicatedCPU, field.TypeBool, value)

@@ -624,16 +624,6 @@ func CPURequestLTE(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldLTE(FieldCPURequest, v))
 }
 
-// CPURequestIsNil applies the IsNil predicate on the "cpu_request" field.
-func CPURequestIsNil() predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldIsNull(FieldCPURequest))
-}
-
-// CPURequestNotNil applies the NotNil predicate on the "cpu_request" field.
-func CPURequestNotNil() predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldNotNull(FieldCPURequest))
-}
-
 // MemoryRequestGiEQ applies the EQ predicate on the "memory_request_gi" field.
 func MemoryRequestGiEQ(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldEQ(FieldMemoryRequestGi, v))
@@ -672,16 +662,6 @@ func MemoryRequestGiLT(v float64) predicate.InstanceSize {
 // MemoryRequestGiLTE applies the LTE predicate on the "memory_request_gi" field.
 func MemoryRequestGiLTE(v float64) predicate.InstanceSize {
 	return predicate.InstanceSize(sql.FieldLTE(FieldMemoryRequestGi, v))
-}
-
-// MemoryRequestGiIsNil applies the IsNil predicate on the "memory_request_gi" field.
-func MemoryRequestGiIsNil() predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldIsNull(FieldMemoryRequestGi))
-}
-
-// MemoryRequestGiNotNil applies the NotNil predicate on the "memory_request_gi" field.
-func MemoryRequestGiNotNil() predicate.InstanceSize {
-	return predicate.InstanceSize(sql.FieldNotNull(FieldMemoryRequestGi))
 }
 
 // DedicatedCPUEQ applies the EQ predicate on the "dedicated_cpu" field.

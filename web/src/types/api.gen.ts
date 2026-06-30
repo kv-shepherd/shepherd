@@ -5065,12 +5065,12 @@ export interface components {
              * @description Explicit CPU request in cores. Use cpu_cores for non-overcommitted sizes; omitted or zero values are rejected by server validation.
              * @example 1
              */
-            cpu_request?: number;
+            cpu_request: number;
             /**
              * @description Explicit memory request in Gi. Use memory_gi for non-overcommitted sizes; hugepages sizes must set this equal to memory_gi. Omitted or zero values are rejected by server validation.
              * @example 1
              */
-            memory_request_gi?: number;
+            memory_request_gi: number;
             /** @example true */
             dedicated_cpu?: boolean;
             /** @example true */

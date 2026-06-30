@@ -11385,7 +11385,7 @@ components:
     InstanceSizeCreateRequest:
       description: OpenAPI schema for Instance Size Create Request.
       type: object
-      required: [name, cpu_cores, memory_gi]
+      required: [name, cpu_cores, cpu_request, memory_gi, memory_request_gi]
       example:
         name: example-resource
         cpu_cores: 1
