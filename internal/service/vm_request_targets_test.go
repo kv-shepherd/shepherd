@@ -164,6 +164,73 @@ func TestResolveVMRequestTargets_PreservesOvercommitRequestsWhenTargetsGrow(t *t
 	}
 }
 
+func TestAlignCPULimitOnlyRequest(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		baseLimit    float64
+		baseRequest  float64
+		targetLimit  float64
+		dedicatedCPU bool
+		wantRequest  float64
+		wantAdjusted bool
+	}{
+		{
+			name:         "aligns guaranteed growth",
+			baseLimit:    4,
+			baseRequest:  4,
+			targetLimit:  8,
+			wantRequest:  8,
+			wantAdjusted: true,
+		},
+		{
+			name:         "aligns dedicated even when base request is stale",
+			baseLimit:    4,
+			baseRequest:  2,
+			targetLimit:  8,
+			dedicatedCPU: true,
+			wantRequest:  8,
+			wantAdjusted: true,
+		},
+		{
+			name:        "preserves shared growth",
+			baseLimit:   4,
+			baseRequest: 2,
+			targetLimit: 8,
+			wantRequest: 2,
+		},
+		{
+			name:         "caps request when limit shrinks",
+			baseLimit:    8,
+			baseRequest:  4,
+			targetLimit:  2,
+			wantRequest:  2,
+			wantAdjusted: true,
+		},
+	}
+
+	for _, tt := range tests {
+		tt := tt
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotRequest, gotAdjusted := AlignCPULimitOnlyRequest(
+				tt.baseLimit,
+				tt.baseRequest,
+				tt.targetLimit,
+				tt.dedicatedCPU,
+			)
+			if gotRequest != tt.wantRequest {
+				t.Fatalf("request = %v, want %v", gotRequest, tt.wantRequest)
+			}
+			if gotAdjusted != tt.wantAdjusted {
+				t.Fatalf("adjusted = %v, want %v", gotAdjusted, tt.wantAdjusted)
+			}
+		})
+	}
+}
+
 func float64Ptr(value float64) *float64 {
 	return &value
 }

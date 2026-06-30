@@ -448,6 +448,8 @@ func (g *Service) approveCreateWithConfig(
 		modifiedSpec["enable_override"] = true
 		if opts.CPURequest > 0 {
 			modifiedSpec["cpu_request"] = opts.CPURequest
+		} else if opts.CPULimit > 0 && createOverride.CPURequest > 0 && createOverride.CPURequest != instanceSizeEntity.CPURequest {
+			modifiedSpec["cpu_request"] = createOverride.CPURequest
 		}
 		if opts.CPULimit > 0 {
 			modifiedSpec["cpu_limit"] = opts.CPULimit
@@ -2103,11 +2105,23 @@ func buildCreateApprovalOverride(
 		DiskGB:          resolved.DiskGB,
 	}
 	if opts.EnableOverride {
-		if opts.CPURequest > 0 {
-			override.CPURequest = opts.CPURequest
-		}
+		baseCPULimit := override.CPULimit
+		baseCPURequest := override.CPURequest
+		effectiveDedicatedCPU := size != nil && (size.DedicatedCPU || service.HasDedicatedCPUInSpecOverrides(size.SpecOverrides))
 		if opts.CPULimit > 0 {
 			override.CPULimit = opts.CPULimit
+		}
+		if opts.CPURequest > 0 {
+			override.CPURequest = opts.CPURequest
+		} else if opts.CPULimit > 0 {
+			if alignedRequest, adjusted := service.AlignCPULimitOnlyRequest(
+				baseCPULimit,
+				baseCPURequest,
+				override.CPULimit,
+				effectiveDedicatedCPU,
+			); adjusted {
+				override.CPURequest = alignedRequest
+			}
 		}
 		if opts.MemoryRequestGi > 0 {
 			override.MemoryRequestGi = opts.MemoryRequestGi

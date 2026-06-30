@@ -251,9 +251,117 @@ func TestApprovalValidator_EvaluateClusterPlacementSelectedClusterVerdict(t *tes
 	require.Contains(t, missing.ReasonMessage, "not found")
 }
 
+func TestApprovalValidator_EvaluateClusterPlacementAlignsDedicatedCPULimitOnlyOverride(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "approval_validator_dedicated_cpu_limit_only")
+	ctx := t.Context()
+	seedApprovalOverrideCompatibilityBase(t, client, "size-dedicated")
+
+	_, err := client.InstanceSize.UpdateOneID("size-dedicated").
+		SetDedicatedCPU(true).
+		SetCPUCores(4).
+		SetCPURequest(4).
+		Save(ctx)
+	require.NoError(t, err)
+
+	cluster := seedApprovalCompatibilityCluster(t, client, "cluster-dedicated", entcluster.EnvironmentProd, true, nil, true)
+	validator := NewApprovalValidator(client)
+
+	result, err := validator.EvaluateClusterPlacement(ctx, ApprovalValidationInput{
+		ClusterID:      cluster.ID,
+		TemplateID:     "tpl-size-dedicated",
+		InstanceSizeID: "size-dedicated",
+		Namespace:      "prod-size-dedicated",
+		Override: &ApprovalResourceOverride{
+			CPULimit: 8,
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Eligible, "reason=%s message=%s", result.ReasonCode, result.ReasonMessage)
+}
+
+func TestApprovalValidator_EvaluateClusterPlacementAlignsHugepagesMemoryLimitOnlyOverride(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "approval_validator_hugepages_memory_limit_only")
+	ctx := t.Context()
+	seedApprovalOverrideCompatibilityBase(t, client, "size-hugepages")
+
+	_, err := client.InstanceSize.UpdateOneID("size-hugepages").
+		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
+		SetRequiresHugepages(true).
+		SetHugepagesSize("2Mi").
+		Save(ctx)
+	require.NoError(t, err)
+
+	cluster := seedApprovalCompatibilityCluster(
+		t,
+		client,
+		"cluster-hugepages",
+		entcluster.EnvironmentProd,
+		true,
+		[]string{"hugepages-2Mi"},
+		true,
+	)
+	validator := NewApprovalValidator(client)
+
+	result, err := validator.EvaluateClusterPlacement(ctx, ApprovalValidationInput{
+		ClusterID:      cluster.ID,
+		TemplateID:     "tpl-size-hugepages",
+		InstanceSizeID: "size-hugepages",
+		Namespace:      "prod-size-hugepages",
+		Override: &ApprovalResourceOverride{
+			MemoryLimitGi: 16,
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.True(t, result.Eligible, "reason=%s message=%s", result.ReasonCode, result.ReasonMessage)
+}
+
 type approvalCompatibilityFixture struct {
 	input    ApprovalValidationInput
 	clusters map[string]*ent.Cluster
+}
+
+func seedApprovalOverrideCompatibilityBase(t *testing.T, client *ent.Client, sizeID string) {
+	t.Helper()
+
+	ctx := t.Context()
+	namespace := "prod-" + sizeID
+	_, err := client.NamespaceRegistry.Create().
+		SetID("ns-" + sizeID).
+		SetName(namespace).
+		SetEnvironment(entnamespaceregistry.EnvironmentProd).
+		SetEnabled(true).
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.Template.Create().
+		SetID("tpl-" + sizeID).
+		SetName("tpl-" + sizeID).
+		SetSourceType(TemplateSourceCDIImageImport).
+		SetImageURL("docker://quay.io/containerdisks/fedora:40").
+		SetCatalogScope("prod").
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
+
+	_, err = client.InstanceSize.Create().
+		SetID(sizeID).
+		SetName(sizeID).
+		SetCPUCores(4).
+		SetCPURequest(4).
+		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
+		SetCatalogScope("prod").
+		SetCreatedBy("seed").
+		Save(ctx)
+	require.NoError(t, err)
 }
 
 func seedApprovalCompatibilityFixture(t *testing.T, client *ent.Client) approvalCompatibilityFixture {

@@ -3277,6 +3277,43 @@ func TestServiceApproveCreate_HugepagesMemoryLimitOverridePersistsAlignedRequest
 	}
 }
 
+func TestServiceApproveCreate_DedicatedCPULimitOverridePersistsAlignedRequest(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_override_dedicated_cpu_limit")
+	ticketID := createOverrideTestData(t, client, "dedicated-cpu-limit")
+
+	if _, err := client.InstanceSize.UpdateOneID("size-override-dedicated-cpu-limit").
+		SetDedicatedCPU(true).
+		SetCPUCores(4).
+		SetCPURequest(4).
+		Save(context.Background()); err != nil {
+		t.Fatalf("update instance size: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+
+	opts := ExecutionOptions{
+		ClusterID:      "cluster-1",
+		EnableOverride: true,
+		CPULimit:       8,
+	}
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+	ms := writer.modifiedSpec
+	if got, ok := ms["cpu_limit"].(float64); !ok || got != 8 {
+		t.Fatalf("modifiedSpec[cpu_limit] = %v, want 8", ms["cpu_limit"])
+	}
+	if got, ok := ms["cpu_request"].(float64); !ok || got != 8 {
+		t.Fatalf("modifiedSpec[cpu_request] = %v, want 8", ms["cpu_request"])
+	}
+}
+
 func TestServiceApproveCreate_EnableOverrideDiskOnly_WorksWithoutCPUMemory(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_override_disk_only")

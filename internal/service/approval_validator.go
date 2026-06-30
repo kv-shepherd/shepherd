@@ -197,11 +197,22 @@ func (v *ApprovalValidator) ValidateApproval(
 		memoryGi = size.MemoryGi
 		memoryRequestGi = size.MemoryRequestGi
 		if input.Override != nil {
+			baseCPULimit := cpuCores
+			baseCPURequest := cpuRequest
 			if input.Override.CPULimit > 0 {
 				cpuCores = input.Override.CPULimit
 			}
 			if input.Override.CPURequest > 0 {
 				cpuRequest = input.Override.CPURequest
+			} else if input.Override.CPULimit > 0 {
+				if alignedRequest, adjusted := AlignCPULimitOnlyRequest(
+					baseCPULimit,
+					baseCPURequest,
+					cpuCores,
+					effectiveDedicatedCPU,
+				); adjusted {
+					cpuRequest = alignedRequest
+				}
 			}
 			if input.Override.MemoryLimitGi > 0 {
 				memoryGi = input.Override.MemoryLimitGi
@@ -209,6 +220,11 @@ func (v *ApprovalValidator) ValidateApproval(
 			if input.Override.MemoryRequestGi > 0 {
 				memoryRequestGi = input.Override.MemoryRequestGi
 			}
+		}
+		if alignedMemoryRequest, adjusted, err := AlignHugepagesMemoryRequestGi(size, memoryGi, memoryRequestGi); err != nil {
+			return apperrors.BadRequest("HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED", err.Error())
+		} else if adjusted {
+			memoryRequestGi = alignedMemoryRequest
 		}
 		if err := ValidateHugepagesMemoryRequestGi(size, memoryGi, memoryRequestGi); err != nil {
 			return apperrors.BadRequest("HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED", err.Error())
@@ -469,11 +485,22 @@ func (v *ApprovalValidator) resolveValidationContext(
 		resolved.memoryGi = size.MemoryGi
 		resolved.memoryRequestGi = size.MemoryRequestGi
 		if input.Override != nil {
+			baseCPULimit := resolved.cpuCores
+			baseCPURequest := resolved.cpuRequest
 			if input.Override.CPULimit > 0 {
 				resolved.cpuCores = input.Override.CPULimit
 			}
 			if input.Override.CPURequest > 0 {
 				resolved.cpuRequest = input.Override.CPURequest
+			} else if input.Override.CPULimit > 0 {
+				if alignedRequest, adjusted := AlignCPULimitOnlyRequest(
+					baseCPULimit,
+					baseCPURequest,
+					resolved.cpuCores,
+					effectiveDedicatedCPU,
+				); adjusted {
+					resolved.cpuRequest = alignedRequest
+				}
 			}
 			if input.Override.MemoryLimitGi > 0 {
 				resolved.memoryGi = input.Override.MemoryLimitGi
@@ -481,6 +508,11 @@ func (v *ApprovalValidator) resolveValidationContext(
 			if input.Override.MemoryRequestGi > 0 {
 				resolved.memoryRequestGi = input.Override.MemoryRequestGi
 			}
+		}
+		if alignedMemoryRequest, adjusted, err := AlignHugepagesMemoryRequestGi(size, resolved.memoryGi, resolved.memoryRequestGi); err != nil {
+			return nil, apperrors.BadRequest("HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED", err.Error())
+		} else if adjusted {
+			resolved.memoryRequestGi = alignedMemoryRequest
 		}
 		if err := ValidateHugepagesMemoryRequestGi(size, resolved.memoryGi, resolved.memoryRequestGi); err != nil {
 			return nil, apperrors.BadRequest("HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED", err.Error())

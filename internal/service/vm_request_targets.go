@@ -96,3 +96,23 @@ func ResolveVMRequestTargets(
 
 	return resolved
 }
+
+// AlignCPULimitOnlyRequest preserves explicit shared CPU overcommit requests,
+// but keeps guaranteed/dedicated CPU shapes valid when only the limit changes.
+func AlignCPULimitOnlyRequest(
+	baseCPULimit float64,
+	baseCPURequest float64,
+	targetCPULimit float64,
+	dedicatedCPU bool,
+) (alignedRequest float64, adjusted bool) {
+	if targetCPULimit <= 0 || baseCPURequest <= 0 {
+		return baseCPURequest, false
+	}
+	if dedicatedCPU || baseCPURequest == baseCPULimit || baseCPURequest > targetCPULimit {
+		if baseCPURequest == targetCPULimit {
+			return baseCPURequest, false
+		}
+		return targetCPULimit, true
+	}
+	return baseCPURequest, false
+}

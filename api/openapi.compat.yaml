@@ -11355,17 +11355,17 @@ components:
         cpu_request:
           description: CPU request in cores. Omit to keep the stored value; set equal to cpu_cores for non-overcommitted sizes. Zero no longer clears the request and is rejected by server validation.
           x-oapi-codegen-extra-tags:
-            validate: "gte=0"
+            validate: "omitempty,gte=0.5"
           type: number
-          minimum: 0
+          minimum: 0.5
           multipleOf: 0.5
           example: 1.0
         memory_request_gi:
           description: Memory request in Gi. Omit to keep the stored value; set equal to memory_gi for non-overcommitted sizes. Zero no longer clears the request and is rejected by server validation.
           x-oapi-codegen-extra-tags:
-            validate: "gte=0"
+            validate: "omitempty,gte=0.5"
           type: number
-          minimum: 0
+          minimum: 0.5
           multipleOf: 0.5
           example: 1.0
         dedicated_cpu:
