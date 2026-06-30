@@ -257,10 +257,16 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 	if !isValidHalfStep(spec.MemoryGi) {
 		return "", fmt.Errorf("render vm yaml: memory %.1fGi is not a valid 0.5-step value (allowed: 0.5, 1.0, 1.5, ...)", spec.MemoryGi)
 	}
-	if spec.CPURequest > 0 && !isValidHalfStep(spec.CPURequest) {
+	if spec.CPURequest <= 0 {
+		return "", fmt.Errorf("render vm yaml: cpu_request must be explicit and > 0")
+	}
+	if !isValidHalfStep(spec.CPURequest) {
 		return "", fmt.Errorf("render vm yaml: cpu_request %.1f is not a valid 0.5-step value", spec.CPURequest)
 	}
-	if spec.MemoryRequestGi > 0 && !isValidHalfStep(spec.MemoryRequestGi) {
+	if spec.MemoryRequestGi <= 0 {
+		return "", fmt.Errorf("render vm yaml: memory_request_gi must be explicit and > 0")
+	}
+	if !isValidHalfStep(spec.MemoryRequestGi) {
 		return "", fmt.Errorf("render vm yaml: memory_request %.1fGi is not a valid 0.5-step value", spec.MemoryRequestGi)
 	}
 
@@ -319,17 +325,11 @@ func RenderVMSpecToYAML(namespace string, spec *VMRenderInput) (string, error) {
 
 	// Compute CPU strings.
 	cpuLimitCores := spec.CPUCores
-	cpuRequestCores := cpuLimitCores
-	if spec.CPURequest > 0 {
-		cpuRequestCores = spec.CPURequest
-	}
+	cpuRequestCores := spec.CPURequest
 
 	// Compute memory strings.
 	memoryLimit := formatGi(spec.MemoryGi)
-	memoryRequest := memoryLimit
-	if spec.MemoryRequestGi > 0 {
-		memoryRequest = formatGi(spec.MemoryRequestGi)
-	}
+	memoryRequest := formatGi(spec.MemoryRequestGi)
 
 	data := vmTemplateData{
 		Name:                       spec.Name,

@@ -11123,14 +11123,14 @@ components:
           type: number
           example: 1
         cpu_request:
-          description: CPU request override in cores. Omitted when no explicit override is stored.
+          description: Explicit CPU request in cores. Use a value lower than cpu_cores for shared overcommit sizes and equal to cpu_cores for guaranteed sizes.
           type: number
           example: 1.0
         memory_gi:
           type: number
           example: 1
         memory_request_gi:
-          description: Memory request override in Gi. Omitted when no explicit override is stored.
+          description: Explicit memory request in Gi. Use a value lower than memory_gi for shared overcommit sizes and equal to memory_gi for guaranteed or hugepages-backed sizes.
           type: number
           example: 1.0
         disk_gb:
@@ -11200,11 +11200,13 @@ components:
     InstanceSizeCreateRequest:
       description: OpenAPI schema for Instance Size Create Request.
       type: object
-      required: [name, cpu_cores, memory_gi]
+      required: [name, cpu_cores, cpu_request, memory_gi, memory_request_gi]
       example:
         name: example-resource
         cpu_cores: 1
+        cpu_request: 1
         memory_gi: 1
+        memory_request_gi: 1
       properties:
         name:
           x-oapi-codegen-extra-tags:
@@ -11243,6 +11245,7 @@ components:
           minimum: 1
           example: 1
         cpu_request:
+          description: Explicit CPU request in cores. Use cpu_cores for non-overcommitted sizes; omitted or zero values are rejected by server validation.
           x-oapi-codegen-extra-tags:
             validate: "gte=0.5"
           type: number
@@ -11250,6 +11253,7 @@ components:
           multipleOf: 0.5
           example: 1.0
         memory_request_gi:
+          description: Explicit memory request in Gi. Use memory_gi for non-overcommitted sizes; hugepages sizes must set this equal to memory_gi. Omitted or zero values are rejected by server validation.
           x-oapi-codegen-extra-tags:
             validate: "gte=0.5"
           type: number
@@ -11349,19 +11353,19 @@ components:
           minimum: 1
           example: 1
         cpu_request:
-          description: CPU request in cores. Set `0` to clear override and fall back to cpu_cores.
+          description: CPU request in cores. Omit to keep the stored value; set equal to cpu_cores for non-overcommitted sizes. Zero no longer clears the request and is rejected by server validation.
           x-oapi-codegen-extra-tags:
-            validate: "gte=0"
+            validate: "omitempty,gte=0.5"
           type: number
-          minimum: 0
+          minimum: 0.5
           multipleOf: 0.5
           example: 1.0
         memory_request_gi:
-          description: Memory request in Gi. Set `0` to clear override and fall back to memory_gi.
+          description: Memory request in Gi. Omit to keep the stored value; set equal to memory_gi for non-overcommitted sizes. Zero no longer clears the request and is rejected by server validation.
           x-oapi-codegen-extra-tags:
-            validate: "gte=0"
+            validate: "omitempty,gte=0.5"
           type: number
-          minimum: 0
+          minimum: 0.5
           multipleOf: 0.5
           example: 1.0
         dedicated_cpu:

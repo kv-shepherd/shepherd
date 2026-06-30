@@ -23,6 +23,33 @@ func TestValidateOvercommit_ValidGuaranteedQoS(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestValidateOvercommit_DedicatedCPURequiresExplicitRequest(t *testing.T) {
+	err := ValidateOvercommit(8, 0, 32, 32, true)
+	require.Error(t, err)
+
+	appErr, ok := apperrors.IsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, "DEDICATED_CPU_REQUEST_REQUIRED", appErr.Code)
+}
+
+func TestValidateOvercommit_RequiresExplicitCPURequest(t *testing.T) {
+	err := ValidateOvercommit(4, 0, 8, 4, false)
+	require.Error(t, err)
+
+	appErr, ok := apperrors.IsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, "CPU_REQUEST_REQUIRED", appErr.Code)
+}
+
+func TestValidateOvercommit_RequiresExplicitMemoryRequest(t *testing.T) {
+	err := ValidateOvercommit(4, 2, 8, 0, false)
+	require.Error(t, err)
+
+	appErr, ok := apperrors.IsAppError(err)
+	require.True(t, ok)
+	require.Equal(t, "MEMORY_REQUEST_REQUIRED", appErr.Code)
+}
+
 func TestValidateOvercommit_RejectsNonHalfStepCPU(t *testing.T) {
 	err := ValidateOvercommit(1.3, 1.3, 4, 4, false)
 	require.Error(t, err)
@@ -104,9 +131,59 @@ func TestInstanceSizeUsesHugepages(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			require.Equal(t, tc.want, instanceSizeUsesHugepages(tc.size))
+			require.Equal(t, tc.want, InstanceSizeUsesHugepages(tc.size))
 		})
 	}
+}
+
+func TestValidateHugepagesMemoryRequestGi(t *testing.T) {
+	require.NoError(t, ValidateHugepagesMemoryRequestGi(&ent.InstanceSize{
+		MemoryGi:        8,
+		MemoryRequestGi: 2,
+	}, 8, 2))
+
+	err := ValidateHugepagesMemoryRequestGi(&ent.InstanceSize{
+		MemoryGi:          8,
+		MemoryRequestGi:   0,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	}, 8, 0)
+	require.Error(t, err)
+
+	err = ValidateHugepagesMemoryRequestGi(&ent.InstanceSize{
+		MemoryGi:          8,
+		MemoryRequestGi:   4,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	}, 8, 4)
+	require.Error(t, err)
+
+	require.NoError(t, ValidateHugepagesMemoryRequestGi(&ent.InstanceSize{
+		MemoryGi:          8,
+		MemoryRequestGi:   8,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	}, 8, 8))
+}
+
+func TestAlignHugepagesMemoryRequestGi(t *testing.T) {
+	got, adjusted, err := AlignHugepagesMemoryRequestGi(&ent.InstanceSize{
+		MemoryGi:          8,
+		MemoryRequestGi:   8,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	}, 16, 8)
+	require.NoError(t, err)
+	require.True(t, adjusted)
+	require.Equal(t, 16.0, got)
+
+	_, _, err = AlignHugepagesMemoryRequestGi(&ent.InstanceSize{
+		MemoryGi:          8,
+		MemoryRequestGi:   0,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	}, 8, 0)
+	require.Error(t, err)
 }
 
 func TestMissingCapabilities(t *testing.T) {

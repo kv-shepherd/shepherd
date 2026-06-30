@@ -819,13 +819,15 @@ func liveInstanceSizeFixtures(fx fixtureConfig) []instanceSizeFixture {
 			SortOrder:    30,
 		},
 		{
-			Name:        "e2e-gpu",
-			DisplayName: "E2E GPU",
-			Description: "GPU workload example for live E2E",
-			CPUCores:    8,
-			MemoryGi:    16,
-			DiskGB:      120,
-			RequiresGPU: true,
+			Name:            "e2e-gpu",
+			DisplayName:     "E2E GPU",
+			Description:     "GPU workload example for live E2E",
+			CPUCores:        8,
+			MemoryGi:        16,
+			DiskGB:          120,
+			CPURequest:      8,
+			MemoryRequestGi: 16,
+			RequiresGPU:     true,
 			SpecOverrides: nestedSpecOverrides(
 				map[string]interface{}{
 					"template": map[string]interface{}{
@@ -851,6 +853,8 @@ func liveInstanceSizeFixtures(fx fixtureConfig) []instanceSizeFixture {
 			CPUCores:          4,
 			MemoryGi:          8,
 			DiskGB:            80,
+			CPURequest:        4,
+			MemoryRequestGi:   8,
 			RequiresHugepages: true,
 			HugepagesSize:     "2Mi",
 			SpecOverrides: nestedSpecOverrides(
@@ -872,13 +876,15 @@ func liveInstanceSizeFixtures(fx fixtureConfig) []instanceSizeFixture {
 			SortOrder:    50,
 		},
 		{
-			Name:          "e2e-sriov",
-			DisplayName:   "E2E SR-IOV",
-			Description:   "SR-IOV workload example for live E2E",
-			CPUCores:      4,
-			MemoryGi:      8,
-			DiskGB:        80,
-			RequiresSriov: true,
+			Name:            "e2e-sriov",
+			DisplayName:     "E2E SR-IOV",
+			Description:     "SR-IOV workload example for live E2E",
+			CPUCores:        4,
+			MemoryGi:        8,
+			DiskGB:          80,
+			CPURequest:      4,
+			MemoryRequestGi: 8,
+			RequiresSriov:   true,
 			SpecOverrides: nestedSpecOverrides(
 				map[string]interface{}{
 					"template": map[string]interface{}{
@@ -1058,6 +1064,13 @@ func ensureExistingInstanceSize(ctx context.Context, client *ent.Client, sizeNam
 }
 
 func upsertInstanceSizeFixture(ctx context.Context, client *ent.Client, fixture instanceSizeFixture) error {
+	if fixture.CPURequest <= 0 {
+		return fmt.Errorf("instance size fixture %q cpu_request must be explicit and > 0", fixture.Name)
+	}
+	if fixture.MemoryRequestGi <= 0 {
+		return fmt.Errorf("instance size fixture %q memory_request_gi must be explicit and > 0", fixture.Name)
+	}
+
 	obj, err := client.InstanceSize.Query().
 		Where(entinstancesize.NameEQ(fixture.Name)).
 		Only(ctx)
@@ -1073,7 +1086,9 @@ func upsertInstanceSizeFixture(ctx context.Context, client *ent.Client, fixture 
 			SetDisplayName(fixture.DisplayName).
 			SetDescription(fixture.Description).
 			SetCPUCores(fixture.CPUCores).
+			SetCPURequest(fixture.CPURequest).
 			SetMemoryGi(fixture.MemoryGi).
+			SetMemoryRequestGi(fixture.MemoryRequestGi).
 			SetDiskGB(fixture.DiskGB).
 			SetDedicatedCPU(fixture.DedicatedCPU).
 			SetRequiresGpu(fixture.RequiresGPU).
@@ -1083,12 +1098,6 @@ func upsertInstanceSizeFixture(ctx context.Context, client *ent.Client, fixture 
 			SetSortOrder(fixture.SortOrder).
 			SetEnabled(true).
 			SetCreatedBy(seedActor)
-		if fixture.CPURequest > 0 {
-			create = create.SetCPURequest(fixture.CPURequest)
-		}
-		if fixture.MemoryRequestGi > 0 {
-			create = create.SetMemoryRequestGi(fixture.MemoryRequestGi)
-		}
 		if fixture.HugepagesSize != "" {
 			create = create.SetHugepagesSize(fixture.HugepagesSize)
 		}
@@ -1103,7 +1112,9 @@ func upsertInstanceSizeFixture(ctx context.Context, client *ent.Client, fixture 
 		SetDisplayName(fixture.DisplayName).
 		SetDescription(fixture.Description).
 		SetCPUCores(fixture.CPUCores).
+		SetCPURequest(fixture.CPURequest).
 		SetMemoryGi(fixture.MemoryGi).
+		SetMemoryRequestGi(fixture.MemoryRequestGi).
 		SetDiskGB(fixture.DiskGB).
 		SetDedicatedCPU(fixture.DedicatedCPU).
 		SetRequiresGpu(fixture.RequiresGPU).
@@ -1112,16 +1123,6 @@ func upsertInstanceSizeFixture(ctx context.Context, client *ent.Client, fixture 
 		SetCatalogScope(fixture.CatalogScope).
 		SetSortOrder(fixture.SortOrder).
 		SetEnabled(true)
-	if fixture.CPURequest > 0 {
-		update = update.SetCPURequest(fixture.CPURequest)
-	} else {
-		update = update.ClearCPURequest()
-	}
-	if fixture.MemoryRequestGi > 0 {
-		update = update.SetMemoryRequestGi(fixture.MemoryRequestGi)
-	} else {
-		update = update.ClearMemoryRequestGi()
-	}
 	if fixture.HugepagesSize != "" {
 		update = update.SetHugepagesSize(fixture.HugepagesSize)
 	} else {

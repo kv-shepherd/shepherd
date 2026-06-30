@@ -225,11 +225,13 @@ func TestVMServiceValidateAndPrepare_EnsuresNamespaceFirst(t *testing.T) {
 	svc := NewVMService(infra)
 
 	spec := &domain.VMSpec{
-		Name:     "vm-a",
-		CPU:      2,
-		MemoryGi: 4,
-		DiskGB:   50,
-		Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
+		Name:            "vm-a",
+		CPU:             2,
+		CPURequest:      2,
+		MemoryGi:        4,
+		MemoryRequestGi: 4,
+		DiskGB:          50,
+		Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
 	}
 
 	result, err := svc.ValidateAndPrepare(t.Context(), "cluster-a", "team-a", spec)
@@ -257,11 +259,13 @@ func TestVMServiceExecuteK8sCreate_EnsuresNamespaceFirst(t *testing.T) {
 	svc := NewVMService(infra)
 
 	spec := &domain.VMSpec{
-		Name:     "vm-b",
-		CPU:      2,
-		MemoryGi: 4,
-		DiskGB:   50,
-		Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
+		Name:            "vm-b",
+		CPU:             2,
+		CPURequest:      2,
+		MemoryGi:        4,
+		MemoryRequestGi: 4,
+		DiskGB:          50,
+		Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
 	}
 
 	vm, err := svc.ExecuteK8sCreate(t.Context(), "cluster-b", "team-b", spec)
@@ -297,12 +301,14 @@ func TestVMServiceExecuteK8sCreate_ReturnsExistingVMOnMatchingAlreadyExists(t *t
 	svc := NewVMService(infra)
 
 	vm, err := svc.ExecuteK8sCreate(t.Context(), "cluster-existing", "team-existing", &domain.VMSpec{
-		Name:     "vm-existing",
-		CPU:      2,
-		MemoryGi: 4,
-		DiskGB:   50,
-		Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
-		Labels:   map[string]string{domain.ShepherdEventIDLabel: eventID},
+		Name:            "vm-existing",
+		CPU:             2,
+		CPURequest:      2,
+		MemoryGi:        4,
+		MemoryRequestGi: 4,
+		DiskGB:          50,
+		Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
+		Labels:          map[string]string{domain.ShepherdEventIDLabel: eventID},
 	})
 	if err != nil {
 		t.Fatalf("ExecuteK8sCreate() error = %v", err)
@@ -339,12 +345,14 @@ func TestVMServiceExecuteK8sCreate_RejectsAlreadyExistsWithDifferentEventLabel(t
 	svc := NewVMService(infra)
 
 	_, err := svc.ExecuteK8sCreate(t.Context(), "cluster-existing", "team-existing", &domain.VMSpec{
-		Name:     "vm-existing",
-		CPU:      2,
-		MemoryGi: 4,
-		DiskGB:   50,
-		Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
-		Labels:   map[string]string{domain.ShepherdEventIDLabel: "ev-requested"},
+		Name:            "vm-existing",
+		CPU:             2,
+		CPURequest:      2,
+		MemoryGi:        4,
+		MemoryRequestGi: 4,
+		DiskGB:          50,
+		Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
+		Labels:          map[string]string{domain.ShepherdEventIDLabel: "ev-requested"},
 	})
 	if err == nil {
 		t.Fatal("ExecuteK8sCreate() expected ownership mismatch error, got nil")
@@ -370,12 +378,14 @@ func TestVMServiceExecuteK8sCreate_ReturnsAlreadyExistsWhenExistingVMLookupFails
 	svc := NewVMService(infra)
 
 	_, err := svc.ExecuteK8sCreate(t.Context(), "cluster-existing", "team-existing", &domain.VMSpec{
-		Name:     "vm-existing",
-		CPU:      2,
-		MemoryGi: 4,
-		DiskGB:   50,
-		Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
-		Labels:   map[string]string{domain.ShepherdEventIDLabel: "ev-requested"},
+		Name:            "vm-existing",
+		CPU:             2,
+		CPURequest:      2,
+		MemoryGi:        4,
+		MemoryRequestGi: 4,
+		DiskGB:          50,
+		Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
+		Labels:          map[string]string{domain.ShepherdEventIDLabel: "ev-requested"},
 	})
 	if err == nil {
 		t.Fatal("ExecuteK8sCreate() expected lookup error, got nil")
@@ -507,10 +517,12 @@ func TestVMServiceExecuteK8sUpdate_ValidatesRendersAndWrapsProviderErrors(t *tes
 		infra := &namespaceProvisioningProviderStub{}
 		svc := NewVMService(infra)
 		spec := &domain.VMSpec{
-			CPU:      2,
-			MemoryGi: 4,
-			DiskGB:   50,
-			Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
+			CPU:             2,
+			CPURequest:      2,
+			MemoryGi:        4,
+			MemoryRequestGi: 4,
+			DiskGB:          50,
+			Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
 		}
 
 		vm, err := svc.ExecuteK8sUpdate(t.Context(), "cluster-update", "team-update", "vm-update", spec)
@@ -555,11 +567,13 @@ func TestVMServiceExecuteK8sUpdate_ValidatesRendersAndWrapsProviderErrors(t *tes
 		svc := NewVMService(infra)
 
 		_, err := svc.ExecuteK8sUpdate(t.Context(), "cluster-update", "team-update", "vm-update", &domain.VMSpec{
-			Name:     "vm-update",
-			CPU:      2,
-			MemoryGi: 4,
-			DiskGB:   50,
-			Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
+			Name:            "vm-update",
+			CPU:             2,
+			CPURequest:      2,
+			MemoryGi:        4,
+			MemoryRequestGi: 4,
+			DiskGB:          50,
+			Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
 		})
 		if err == nil {
 			t.Fatal("ExecuteK8sUpdate() expected provider error, got nil")
@@ -906,11 +920,13 @@ func TestVMServiceValidateAndPrepare_PropagatesNamespaceProvisioningError(t *tes
 	svc := NewVMService(infra)
 
 	_, err := svc.ValidateAndPrepare(t.Context(), "cluster-a", "team-a", &domain.VMSpec{
-		Name:     "vm-c",
-		CPU:      2,
-		MemoryGi: 4,
-		DiskGB:   50,
-		Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
+		Name:            "vm-c",
+		CPU:             2,
+		CPURequest:      2,
+		MemoryGi:        4,
+		MemoryRequestGi: 4,
+		DiskGB:          50,
+		Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
 	})
 	if err == nil {
 		t.Fatal("ValidateAndPrepare() expected namespace provisioning error, got nil")
@@ -982,11 +998,13 @@ func alreadyExistsVMError(name string) error {
 
 func validVMServiceSpec(name string) *domain.VMSpec {
 	return &domain.VMSpec{
-		Name:     name,
-		CPU:      2,
-		MemoryGi: 4,
-		DiskGB:   50,
-		Image:    "docker://quay.io/containerdisks/ubuntu:22.04",
+		Name:            name,
+		CPU:             2,
+		CPURequest:      2,
+		MemoryGi:        4,
+		MemoryRequestGi: 4,
+		DiskGB:          50,
+		Image:           "docker://quay.io/containerdisks/ubuntu:22.04",
 	}
 }
 

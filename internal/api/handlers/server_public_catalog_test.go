@@ -85,7 +85,9 @@ func TestListInstanceSizes_OmitsSpecOverridesFromPublicResponse(t *testing.T) {
 		SetID("size-public").
 		SetName("public-small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeTest).
 		SetEnabled(true).

@@ -76,11 +76,43 @@ func ResolveVMRequestTargets(
 	if resolved.CPULimit > 0 && resolved.CPURequest > resolved.CPULimit {
 		resolved.CPURequest = resolved.CPULimit
 		resolved.AdjustedCPURequest = true
+	} else if targets.TargetCPUCores != nil &&
+		defaultCPULimit > 0 &&
+		defaultCPURequest == defaultCPULimit &&
+		resolved.CPULimit > defaultCPULimit {
+		resolved.CPURequest = resolved.CPULimit
+		resolved.AdjustedCPURequest = true
 	}
 	if resolved.MemoryLimitGi > 0 && resolved.MemoryRequestGi > resolved.MemoryLimitGi {
+		resolved.MemoryRequestGi = resolved.MemoryLimitGi
+		resolved.AdjustedMemoryGiReq = true
+	} else if targets.TargetMemoryGi != nil &&
+		defaultMemoryLimitGi > 0 &&
+		defaultMemoryRequestGi == defaultMemoryLimitGi &&
+		resolved.MemoryLimitGi > defaultMemoryLimitGi {
 		resolved.MemoryRequestGi = resolved.MemoryLimitGi
 		resolved.AdjustedMemoryGiReq = true
 	}
 
 	return resolved
+}
+
+// AlignCPULimitOnlyRequest preserves explicit shared CPU overcommit requests,
+// but keeps guaranteed/dedicated CPU shapes valid when only the limit changes.
+func AlignCPULimitOnlyRequest(
+	baseCPULimit float64,
+	baseCPURequest float64,
+	targetCPULimit float64,
+	dedicatedCPU bool,
+) (alignedRequest float64, adjusted bool) {
+	if targetCPULimit <= 0 || baseCPURequest <= 0 {
+		return baseCPURequest, false
+	}
+	if dedicatedCPU || baseCPURequest == baseCPULimit || baseCPURequest > targetCPULimit {
+		if baseCPURequest == targetCPULimit {
+			return baseCPURequest, false
+		}
+		return targetCPULimit, true
+	}
+	return baseCPURequest, false
 }

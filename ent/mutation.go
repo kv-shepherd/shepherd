@@ -12643,24 +12643,10 @@ func (m *InstanceSizeMutation) AddedCPURequest() (r float64, exists bool) {
 	return *v, true
 }
 
-// ClearCPURequest clears the value of the "cpu_request" field.
-func (m *InstanceSizeMutation) ClearCPURequest() {
-	m.cpu_request = nil
-	m.addcpu_request = nil
-	m.clearedFields[instancesize.FieldCPURequest] = struct{}{}
-}
-
-// CPURequestCleared returns if the "cpu_request" field was cleared in this mutation.
-func (m *InstanceSizeMutation) CPURequestCleared() bool {
-	_, ok := m.clearedFields[instancesize.FieldCPURequest]
-	return ok
-}
-
 // ResetCPURequest resets all changes to the "cpu_request" field.
 func (m *InstanceSizeMutation) ResetCPURequest() {
 	m.cpu_request = nil
 	m.addcpu_request = nil
-	delete(m.clearedFields, instancesize.FieldCPURequest)
 }
 
 // SetMemoryRequestGi sets the "memory_request_gi" field.
@@ -12713,24 +12699,10 @@ func (m *InstanceSizeMutation) AddedMemoryRequestGi() (r float64, exists bool) {
 	return *v, true
 }
 
-// ClearMemoryRequestGi clears the value of the "memory_request_gi" field.
-func (m *InstanceSizeMutation) ClearMemoryRequestGi() {
-	m.memory_request_gi = nil
-	m.addmemory_request_gi = nil
-	m.clearedFields[instancesize.FieldMemoryRequestGi] = struct{}{}
-}
-
-// MemoryRequestGiCleared returns if the "memory_request_gi" field was cleared in this mutation.
-func (m *InstanceSizeMutation) MemoryRequestGiCleared() bool {
-	_, ok := m.clearedFields[instancesize.FieldMemoryRequestGi]
-	return ok
-}
-
 // ResetMemoryRequestGi resets all changes to the "memory_request_gi" field.
 func (m *InstanceSizeMutation) ResetMemoryRequestGi() {
 	m.memory_request_gi = nil
 	m.addmemory_request_gi = nil
-	delete(m.clearedFields, instancesize.FieldMemoryRequestGi)
 }
 
 // SetDedicatedCPU sets the "dedicated_cpu" field.
@@ -13815,12 +13787,6 @@ func (m *InstanceSizeMutation) ClearedFields() []string {
 	if m.FieldCleared(instancesize.FieldDiskGB) {
 		fields = append(fields, instancesize.FieldDiskGB)
 	}
-	if m.FieldCleared(instancesize.FieldCPURequest) {
-		fields = append(fields, instancesize.FieldCPURequest)
-	}
-	if m.FieldCleared(instancesize.FieldMemoryRequestGi) {
-		fields = append(fields, instancesize.FieldMemoryRequestGi)
-	}
 	if m.FieldCleared(instancesize.FieldHugepagesSize) {
 		fields = append(fields, instancesize.FieldHugepagesSize)
 	}
@@ -13858,12 +13824,6 @@ func (m *InstanceSizeMutation) ClearField(name string) error {
 		return nil
 	case instancesize.FieldDiskGB:
 		m.ClearDiskGB()
-		return nil
-	case instancesize.FieldCPURequest:
-		m.ClearCPURequest()
-		return nil
-	case instancesize.FieldMemoryRequestGi:
-		m.ClearMemoryRequestGi()
 		return nil
 	case instancesize.FieldHugepagesSize:
 		m.ClearHugepagesSize()

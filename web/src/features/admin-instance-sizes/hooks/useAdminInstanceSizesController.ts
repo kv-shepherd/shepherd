@@ -1,6 +1,7 @@
 'use client';
 
 import { App, Form } from 'antd';
+import type { FormInstance } from 'antd';
 import type { TFunction } from 'i18next';
 import { useEffect, useMemo, useState } from 'react';
 
@@ -261,43 +262,98 @@ export function filterAdminInstanceSizes(
  * spec_text (produced by DynamicSchemaForm) is parsed into spec_overrides.
  * Overcommit checkboxes → cpu_request / memory_request_gi.
  */
+function parseSpecOverridesFromSpecText(specText?: string): Record<string, unknown> | undefined {
+    const trimmedSpecText = specText?.trim();
+    if (!trimmedSpecText || trimmedSpecText === '{}') {
+        return undefined;
+    }
+    try {
+        const parsed = JSON.parse(trimmedSpecText) as unknown;
+        if (parsed !== null && !Array.isArray(parsed) && typeof parsed === 'object') {
+            // Outbound boundary normalization: legacy paths are migrated
+            // to canonical form, then any indexed-column path that may have
+            // slipped in (preset payload, raw JSON edit, legacy DB row)
+            // is stripped so the API contract stays consistent with the
+            // backend ADR-0036 guard. Without this, the dedicated_cpu
+            // checkbox could disagree with a phantom dedicatedCpuPlacement
+            // override surviving from a preset like linux-prod.
+            return stripIndexedSpecOverridePaths(
+                normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>),
+            );
+        }
+    } catch {
+        // Malformed spec_text — ignore, send without spec_overrides
+    }
+    return undefined;
+}
+
+function resolveFormHugepagesSize(values: Pick<InstanceSizeFormValues, 'spec_text'>): string | undefined {
+    const specOverrides = parseSpecOverridesFromSpecText(values.spec_text);
+    return normalizeHugepagesPageSizeValue(
+        getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
+    );
+}
+
+function isPositiveFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value) && value > 0;
+}
+
+function validateExplicitOvercommitRequests(
+    form: FormInstance<InstanceSizeFormValues>,
+    values: InstanceSizeFormValues,
+    t: TFunction,
+): boolean {
+    const fieldErrors: Parameters<FormInstance<InstanceSizeFormValues>['setFields']>[0] = [];
+    const dedicatedCPU = values.dedicated_cpu === true;
+    const hasHugepages = Boolean(resolveFormHugepagesSize(values));
+
+    if (!dedicatedCPU && values.cpu_overcommit_enabled === true && !isPositiveFiniteNumber(values.cpu_request)) {
+        fieldErrors.push({
+            name: 'cpu_request',
+            errors: [String(t('instanceSizes.cpu_request_required', {
+                defaultValue: 'CPU request is required when CPU Overcommit is enabled.',
+            }))],
+        });
+    }
+    if (!hasHugepages && values.memory_overcommit_enabled === true && !isPositiveFiniteNumber(values.memory_request_gi)) {
+        fieldErrors.push({
+            name: 'memory_request_gi',
+            errors: [String(t('instanceSizes.memory_request_required', {
+                defaultValue: 'Memory request is required when Memory Overcommit is enabled.',
+            }))],
+        });
+    }
+    if (fieldErrors.length === 0) {
+        return true;
+    }
+    form.setFields(fieldErrors);
+    return false;
+}
+
 function formToPayload(
     values: InstanceSizeFormValues,
     mode: 'create' | 'update',
 ): InstanceSizePayload {
-    // Parse DynamicSchemaForm spec_text → spec_overrides map
-    let specOverrides: Record<string, unknown> | undefined;
-    if (values.spec_text && values.spec_text.trim() && values.spec_text.trim() !== '{}') {
-        try {
-            const parsed = JSON.parse(values.spec_text) as unknown;
-            if (parsed !== null && !Array.isArray(parsed) && typeof parsed === 'object') {
-                // Outbound boundary normalization: legacy paths are migrated
-                // to canonical form, then any indexed-column path that may have
-                // slipped in (preset payload, raw JSON edit, legacy DB row)
-                // is stripped so the API contract stays consistent with the
-                // backend ADR-0036 guard. Without this, the dedicated_cpu
-                // checkbox could disagree with a phantom dedicatedCpuPlacement
-                // override surviving from a preset like linux-prod.
-                specOverrides = stripIndexedSpecOverridePaths(
-                    normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>),
-                );
-            }
-        } catch {
-            // Malformed spec_text — ignore, send without spec_overrides
-        }
-    }
+    const specOverrides = parseSpecOverridesFromSpecText(values.spec_text);
     const hugepagesSize = normalizeHugepagesPageSizeValue(
         getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
     );
 
-    const cpuOvercommitEnabled = values.dedicated_cpu ? false : values.cpu_overcommit_enabled;
-    // Overcommit clear semantics:
-    // - create: omit request fields when disabled
-    // - update: send 0 as clear sentinel so backend can clear persisted values
+    const dedicatedCPU = values.dedicated_cpu === true;
+    const cpuOvercommitEnabled = dedicatedCPU ? false : values.cpu_overcommit_enabled;
+    const hasHugepages = Boolean(hugepagesSize);
+    // Resource requests are always explicit. Omitting them lets Kubernetes or
+    // KubeVirt default request to limit, which can hide dropped request values.
+    // Dedicated CPU and Hugepages send aligned requests automatically because
+    // their guaranteed-resource contract requires request == limit.
     const cpuRequest =
-        cpuOvercommitEnabled ? values.cpu_request : (mode === 'update' ? 0 : undefined);
+        dedicatedCPU
+            ? values.cpu_cores
+            : (cpuOvercommitEnabled ? values.cpu_request : values.cpu_cores);
     const memoryRequestGi =
-        values.memory_overcommit_enabled ? values.memory_request_gi : (mode === 'update' ? 0 : undefined);
+        hasHugepages
+            ? values.memory_gi
+            : (values.memory_overcommit_enabled ? values.memory_request_gi : values.memory_gi);
     const explicitRootVolumeMode = values.root_volume_mode_intent === 'explicit';
     const dvAccessModes = normalizeStringList(values.dv_access_modes);
     const dvVolumeMode = typeof values.dv_volume_mode === 'string' ? values.dv_volume_mode.trim() : '';
@@ -316,7 +372,7 @@ function formToPayload(
         memory_request_gi: memoryRequestGi,
         dedicated_cpu: values.dedicated_cpu,
         requires_sriov: values.requires_sriov,
-        requires_hugepages: Boolean(hugepagesSize),
+        requires_hugepages: hasHugepages,
         hugepages_size: hugepagesSize,
         sort_order: values.sort_order,
         enabled: values.enabled,
@@ -346,6 +402,15 @@ function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormV
         sort_order?: number;
     };
     const dedicatedCPU = hasDedicatedCPURequirement(instanceSize);
+    const hugepages = resolveHugepagesRequirement(instanceSize);
+    const cpuOvercommitEnabled = !dedicatedCPU &&
+        typeof hydrated.cpu_request === 'number' &&
+        hydrated.cpu_request > 0 &&
+        hydrated.cpu_request < instanceSize.cpu_cores;
+    const memoryOvercommitEnabled = !hugepages.requiresHugepages &&
+        typeof hydrated.memory_request_gi === 'number' &&
+        hydrated.memory_request_gi > 0 &&
+        hydrated.memory_request_gi < instanceSize.memory_gi;
 
     return {
         name: instanceSize.name,
@@ -356,8 +421,8 @@ function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormV
         memory_gi: instanceSize.memory_gi,
         disk_gb: instanceSize.disk_gb,
         dedicated_cpu: dedicatedCPU,
-        cpu_overcommit_enabled: !dedicatedCPU && typeof hydrated.cpu_request === 'number' && hydrated.cpu_request > 0,
-        memory_overcommit_enabled: typeof hydrated.memory_request_gi === 'number' && hydrated.memory_request_gi > 0,
+        cpu_overcommit_enabled: cpuOvercommitEnabled,
+        memory_overcommit_enabled: memoryOvercommitEnabled,
         cpu_request: hydrated.cpu_request,
         memory_request_gi: hydrated.memory_request_gi,
         requires_sriov: instanceSize.requires_sriov,
@@ -498,6 +563,9 @@ export function useAdminInstanceSizesController({
 
     const submitCreate = async () => {
         const values = await createForm.validateFields();
+        if (!validateExplicitOvercommitRequests(createForm, values, t)) {
+            return;
+        }
         const payload = formToPayload(values, 'create');
         createMutation.mutate(payload as unknown as InstanceSizeCreateRequest);
     };
@@ -507,6 +575,9 @@ export function useAdminInstanceSizesController({
             return;
         }
         const values = await editForm.validateFields();
+        if (!validateExplicitOvercommitRequests(editForm, values, t)) {
+            return;
+        }
         const payload = formToPayload(values, 'update');
         updateMutation.mutate({
             id: editingItem.id,

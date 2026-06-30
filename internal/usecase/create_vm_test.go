@@ -266,7 +266,9 @@ func TestCreateVMUseCase_RejectsCatalogScopeMismatch(t *testing.T) {
 		SetID("size-prod").
 		SetName("prod-size").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeProd).
 		SetEnabled(true).
@@ -320,7 +322,9 @@ func TestCreateVMUseCase_RejectsSystemLabelMismatch(t *testing.T) {
 		SetID("size-linux").
 		SetName("linux-size").
 		SetCPUCores(4).
+		SetCPURequest(4).
 		SetMemoryGi(8).
+		SetMemoryRequestGi(8).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeAll).
 		SetSystemLabels([]string{service.SystemLabelOSLinux}).
@@ -383,7 +387,9 @@ func TestCreateVMUseCase_AllScopeAcceptedForMatchingNamespace(t *testing.T) {
 		SetID("size-test").
 		SetName("test-size").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeTest).
 		SetEnabled(true).
@@ -441,7 +447,9 @@ func TestCreateVMUseCase_RejectsNonRequestableTemplateSource(t *testing.T) {
 		SetID("size-test").
 		SetName("test-size").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeTest).
 		SetEnabled(true).

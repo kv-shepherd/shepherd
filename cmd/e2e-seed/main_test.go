@@ -461,7 +461,9 @@ func TestE2ESeedCatalogAndVMFixturesAreIdempotent(t *testing.T) {
 		SetName("e2e-obsolete").
 		SetDisplayName("Obsolete").
 		SetCPUCores(1).
+		SetCPURequest(1).
 		SetMemoryGi(1).
+		SetMemoryRequestGi(1).
 		SetDiskGB(10).
 		SetCreatedBy(seedActor).
 		Save(ctx); err != nil {
@@ -541,8 +543,9 @@ func TestE2ESeedCatalogAndVMFixturesAreIdempotent(t *testing.T) {
 	if _, err := client.InstanceSize.Update().
 		Where(entinstancesize.NameEQ(fx.SizeName)).
 		SetCPUCores(8).
+		SetCPURequest(7).
 		SetMemoryGi(9).
-		ClearCPURequest().
+		SetMemoryRequestGi(9).
 		SetSpecOverrides(map[string]interface{}{"stale": true}).
 		SetEnabled(false).
 		Save(ctx); err != nil {

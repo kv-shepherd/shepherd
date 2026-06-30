@@ -209,7 +209,9 @@ func TestAdminInstanceSize_DerivesHugepagesHintsFromSpecOverrides(t *testing.T) 
 			"display_name":"M4 Hugepages",
 			"catalog_scope":"prod",
 			"cpu_cores":4,
+			"cpu_request":4,
 			"memory_gi":8,
+			"memory_request_gi":8,
 			"enabled":true,
 			"spec_overrides":{
 				"spec":{
@@ -354,7 +356,9 @@ func TestDeleteAdminInstanceSize_RejectsActiveCreateRequests(t *testing.T) {
 		SetID("size-active-req").
 		SetName("m4-active-req").
 		SetCPUCores(4).
+		SetCPURequest(4).
 		SetMemoryGi(8).
+		SetMemoryRequestGi(8).
 		SetCreatedBy("admin-1").
 		Save(ctx)
 	if err != nil {
@@ -418,7 +422,9 @@ func TestAdminInstanceSizeUpdate_EmptyDvAccessModesClearsExplicitRootVolumeMode(
 		SetID(uuid.NewString()).
 		SetName("m4.block-rwx").
 		SetCPUCores(4).
+		SetCPURequest(4).
 		SetMemoryGi(8).
+		SetMemoryRequestGi(8).
 		SetDvAccessModes([]string{"ReadWriteMany"}).
 		SetDvVolumeMode("Block").
 		SetCreatedBy("test").

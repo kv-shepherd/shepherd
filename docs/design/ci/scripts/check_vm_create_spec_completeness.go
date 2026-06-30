@@ -5,6 +5,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 )
 
@@ -27,12 +28,19 @@ func main() {
 
 	requiredWorkerFragments := []string{
 		"specOverrides := resolveInstanceSizeSpecOverrides(",
-		"SpecOverrides: specOverrides,",
 		"extractSpecOverridesFromModifiedSpec(",
 	}
 	for _, fragment := range requiredWorkerFragments {
 		if !strings.Contains(workerText, fragment) {
 			violations = append(violations, fmt.Sprintf("%s: missing %q", workerFile, fragment))
+		}
+	}
+	requiredWorkerPatterns := map[string]*regexp.Regexp{
+		"SpecOverrides: specOverrides,": regexp.MustCompile(`SpecOverrides:\s*specOverrides,`),
+	}
+	for label, pattern := range requiredWorkerPatterns {
+		if !pattern.MatchString(workerText) {
+			violations = append(violations, fmt.Sprintf("%s: missing %q", workerFile, label))
 		}
 	}
 
@@ -48,11 +56,18 @@ func main() {
 	requiredServiceFragments := []string{
 		"ensureRenderedYAML(",
 		"provider.RenderVMSpecToYAML(",
-		"SpecOverrides:   spec.SpecOverrides",
 	}
 	for _, fragment := range requiredServiceFragments {
 		if !strings.Contains(serviceText, fragment) {
 			violations = append(violations, fmt.Sprintf("%s: missing %q", serviceFile, fragment))
+		}
+	}
+	requiredServicePatterns := map[string]*regexp.Regexp{
+		"SpecOverrides: spec.SpecOverrides": regexp.MustCompile(`SpecOverrides:\s*spec\.SpecOverrides`),
+	}
+	for label, pattern := range requiredServicePatterns {
+		if !pattern.MatchString(serviceText) {
+			violations = append(violations, fmt.Sprintf("%s: missing %q", serviceFile, label))
 		}
 	}
 

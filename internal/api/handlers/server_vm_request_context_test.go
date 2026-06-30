@@ -113,7 +113,9 @@ func TestVMHandler_GetVMRequestContext_CatalogAndVisibility(t *testing.T) {
 		SetID("size-test").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeTest).
 		SetSpecOverrides(map[string]interface{}{
@@ -129,7 +131,9 @@ func TestVMHandler_GetVMRequestContext_CatalogAndVisibility(t *testing.T) {
 		SetID("size-all").
 		SetName("shared").
 		SetCPUCores(3).
+		SetCPURequest(3).
 		SetMemoryGi(6).
+		SetMemoryRequestGi(6).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeAll).
 		SetSortOrder(2).
@@ -142,7 +146,9 @@ func TestVMHandler_GetVMRequestContext_CatalogAndVisibility(t *testing.T) {
 		SetID("size-prod").
 		SetName("prod-large").
 		SetCPUCores(8).
+		SetCPURequest(8).
 		SetMemoryGi(16).
+		SetMemoryRequestGi(16).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeProd).
 		SetSortOrder(3).
@@ -155,7 +161,9 @@ func TestVMHandler_GetVMRequestContext_CatalogAndVisibility(t *testing.T) {
 		SetID("size-unclassified").
 		SetName("review-me").
 		SetCPUCores(1).
+		SetCPURequest(1).
 		SetMemoryGi(2).
+		SetMemoryRequestGi(2).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeUnclassified).
 		SetSortOrder(4).
@@ -168,7 +176,9 @@ func TestVMHandler_GetVMRequestContext_CatalogAndVisibility(t *testing.T) {
 		SetID("size-disabled").
 		SetName("legacy").
 		SetCPUCores(1).
+		SetCPURequest(1).
 		SetMemoryGi(1).
+		SetMemoryRequestGi(1).
 		SetCreatedBy("seed").
 		SetSortOrder(2).
 		SetEnabled(false).
@@ -304,7 +314,9 @@ func TestVMHandler_GetVMRequestContext_OrdersCatalogDeterministically(t *testing
 		SetID("size-b").
 		SetName("medium").
 		SetCPUCores(4).
+		SetCPURequest(4).
 		SetMemoryGi(8).
+		SetMemoryRequestGi(8).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeAll).
 		SetSortOrder(20).
@@ -317,7 +329,9 @@ func TestVMHandler_GetVMRequestContext_OrdersCatalogDeterministically(t *testing
 		SetID("size-a").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeTest).
 		SetSortOrder(10).
@@ -394,7 +408,9 @@ func TestVMHandler_GetVMRequestContext_PlacementHintIsSanitized(t *testing.T) {
 		SetID(instanceSizeID).
 		SetName("prod-medium").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeProd).
 		SetSortOrder(1).
@@ -573,7 +589,9 @@ func TestVMHandler_GetVMRequestContext_PlacementHintIncludesSanitizedAdvisory(t 
 		SetID(instanceSizeID).
 		SetName("clone-medium").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		SetCatalogScope(instancesize.CatalogScopeProd).
 		SetSortOrder(1).

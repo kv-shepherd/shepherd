@@ -262,7 +262,7 @@ func ptrFloat64(v float64) *float64 {
 func TestResolveCreateRequestTargets_HugepagesAlignsMemoryRequestToLimit(t *testing.T) {
 	t.Parallel()
 
-	resolved := resolveCreateRequestTargets(&vmCreatePayload{}, &ent.InstanceSize{
+	resolved, err := resolveCreateRequestTargets(&vmCreatePayload{}, &ent.InstanceSize{
 		CPUCores:          4,
 		CPURequest:        2,
 		MemoryGi:          16,
@@ -271,6 +271,9 @@ func TestResolveCreateRequestTargets_HugepagesAlignsMemoryRequestToLimit(t *test
 		RequiresHugepages: true,
 		HugepagesSize:     "2Mi",
 	})
+	if err != nil {
+		t.Fatalf("resolveCreateRequestTargets() error = %v", err)
+	}
 
 	if resolved.MemoryRequestGi != 16 {
 		t.Fatalf("MemoryRequestGi = %v, want 16", resolved.MemoryRequestGi)
@@ -280,12 +283,30 @@ func TestResolveCreateRequestTargets_HugepagesAlignsMemoryRequestToLimit(t *test
 	}
 }
 
+func TestResolveCreateRequestTargets_HugepagesRejectsZeroMemoryRequest(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolveCreateRequestTargets(&vmCreatePayload{}, &ent.InstanceSize{
+		CPUCores:          4,
+		CPURequest:        2,
+		MemoryGi:          16,
+		MemoryRequestGi:   0,
+		DiskGB:            80,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	})
+	if err == nil {
+		t.Fatal("resolveCreateRequestTargets() error = nil, want hugepages zero request error")
+	}
+}
+
 func TestValidateCreateHugepagesApprovalOverride_RejectsExplicitMismatch(t *testing.T) {
 	t.Parallel()
 
 	err := validateCreateHugepagesApprovalOverride(&vmCreatePayload{}, &ent.InstanceSize{
 		CPUCores:          4,
 		MemoryGi:          16,
+		MemoryRequestGi:   16,
 		DiskGB:            80,
 		RequiresHugepages: true,
 		HugepagesSize:     "2Mi",
@@ -352,7 +373,9 @@ func TestServiceApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 		SetID("size-override").
 		SetName("size").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(2).
+		SetMemoryRequestGi(2).
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {
@@ -1252,7 +1275,9 @@ func TestServiceApproveBatchParent_ReturnsFirstChildValidationError(t *testing.T
 		SetID("size-1").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetDiskGB(50).
 		SetCreatedBy("seed").
 		Save(ctx)
@@ -1428,7 +1453,9 @@ func TestServiceApproveBatchParent_PreflightsCloneSourceBeforeDispatchingChildre
 		SetID("size-clone-batch").
 		SetName("size-clone-batch").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetDiskGB(40).
 		SetCreatedBy("seed").
 		Save(ctx); createErr != nil {
@@ -1575,7 +1602,9 @@ func TestServiceApproveCreate_PersistsPlacementEvaluationToAuditAndAtomicWriter(
 		SetID("size-1").
 		SetName("size").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(2).
+		SetMemoryRequestGi(2).
 		SetCatalogScope("prod").
 		SetCreatedBy("seed").
 		Save(ctx)
@@ -3040,7 +3069,9 @@ func createOverrideTestData(
 		SetID("size-override-" + suffix).
 		SetName("size-override-" + suffix).
 		SetCPUCores(4).
+		SetCPURequest(4).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {
@@ -3100,7 +3131,9 @@ func createClonePreflightTestData(t *testing.T, client *ent.Client, suffix strin
 		SetID(payload.InstanceSizeID).
 		SetName("size-clone-" + suffix).
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {
@@ -3206,6 +3239,81 @@ func TestServiceApproveCreate_EnableOverrideWithValues_WritesModifiedSpec(t *tes
 	}
 }
 
+func TestServiceApproveCreate_HugepagesMemoryLimitOverridePersistsAlignedRequest(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_override_hugepages_memory_limit")
+	ticketID := createOverrideTestData(t, client, "hugepages-memory-limit")
+
+	if _, err := client.InstanceSize.UpdateOneID("size-override-hugepages-memory-limit").
+		SetRequiresHugepages(true).
+		SetHugepagesSize("2Mi").
+		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
+		Save(context.Background()); err != nil {
+		t.Fatalf("update instance size: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+
+	opts := ExecutionOptions{
+		ClusterID:      "cluster-1",
+		EnableOverride: true,
+		MemoryLimitGi:  16,
+	}
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+	ms := writer.modifiedSpec
+	if got, ok := ms["memory_limit_gi"].(float64); !ok || got != 16 {
+		t.Fatalf("modifiedSpec[memory_limit_gi] = %v, want 16", ms["memory_limit_gi"])
+	}
+	if got, ok := ms["memory_request_gi"].(float64); !ok || got != 16 {
+		t.Fatalf("modifiedSpec[memory_request_gi] = %v, want 16", ms["memory_request_gi"])
+	}
+}
+
+func TestServiceApproveCreate_DedicatedCPULimitOverridePersistsAlignedRequest(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_override_dedicated_cpu_limit")
+	ticketID := createOverrideTestData(t, client, "dedicated-cpu-limit")
+
+	if _, err := client.InstanceSize.UpdateOneID("size-override-dedicated-cpu-limit").
+		SetDedicatedCPU(true).
+		SetCPUCores(4).
+		SetCPURequest(4).
+		Save(context.Background()); err != nil {
+		t.Fatalf("update instance size: %v", err)
+	}
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+
+	opts := ExecutionOptions{
+		ClusterID:      "cluster-1",
+		EnableOverride: true,
+		CPULimit:       8,
+	}
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", opts); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+	ms := writer.modifiedSpec
+	if got, ok := ms["cpu_limit"].(float64); !ok || got != 8 {
+		t.Fatalf("modifiedSpec[cpu_limit] = %v, want 8", ms["cpu_limit"])
+	}
+	if got, ok := ms["cpu_request"].(float64); !ok || got != 8 {
+		t.Fatalf("modifiedSpec[cpu_request] = %v, want 8", ms["cpu_request"])
+	}
+}
+
 func TestServiceApproveCreate_EnableOverrideDiskOnly_WorksWithoutCPUMemory(t *testing.T) {
 	t.Parallel()
 	client := testutil.OpenEntPostgres(t, "gateway_override_disk_only")
@@ -3294,6 +3402,49 @@ func TestServiceApproveCreate_UserRequestedTargets_WriteModifiedSpecAndCapReques
 	if v, ok := asInt(ms["disk_gb"]); !ok || v != 120 {
 		t.Fatalf("modifiedSpec[disk_gb] = %v, want 120", ms["disk_gb"])
 	}
+}
+
+func TestServiceApproveCreate_UserRequestedTargetsGrowGuaranteedSize_WriteAlignedRequests(t *testing.T) {
+	t.Parallel()
+	client := testutil.OpenEntPostgres(t, "gateway_requested_targets_grow_guaranteed")
+	payload := domain.VMCreationPayload{
+		RequesterID:    "user-1",
+		ServiceID:      "svc-1",
+		TemplateID:     "tpl-override-requested-targets-grow",
+		InstanceSizeID: "size-override-requested-targets-grow",
+		Namespace:      "team-a",
+		TargetCPUCores: 6,
+		TargetMemoryGi: 8,
+	}
+	ticketID := createOverrideTestData(t, client, "requested-targets-grow", payload)
+
+	writer := &fakeAtomicWriter{}
+	gw := NewService(client, nil, writer)
+	gw.validator = nil
+
+	if err := gw.Approve(context.Background(), ticketID, "admin-1", ExecutionOptions{
+		ClusterID: "cluster-1",
+	}); err != nil {
+		t.Fatalf("Approve() error = %v", err)
+	}
+	if !writer.called {
+		t.Fatal("atomic writer not called")
+	}
+	ms := writer.modifiedSpec
+	assertFloat64Value := func(t *testing.T, key string, expected float64) {
+		t.Helper()
+		v, ok := ms[key].(float64)
+		if !ok {
+			t.Fatalf("modifiedSpec[%q] not found or not float64: %v", key, ms[key])
+		}
+		if v != expected {
+			t.Fatalf("modifiedSpec[%q] = %f, want %f", key, v, expected)
+		}
+	}
+	assertFloat64Value(t, "cpu_limit", 6)
+	assertFloat64Value(t, "cpu_request", 6)
+	assertFloat64Value(t, "memory_limit_gi", 8)
+	assertFloat64Value(t, "memory_request_gi", 8)
 }
 
 // --------------------------------------------------------------------------
@@ -3564,7 +3715,9 @@ func TestVMServiceEndToEnd_CreateRequestApprovalAndWorker(t *testing.T) {
 		SetID(instanceSizeID).
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetDiskGB(50).
 		SetCatalogScope(instancesize.CatalogScopeProd).
 		SetCreatedBy("seed").
@@ -3875,7 +4028,9 @@ func TestServiceApproveCreate_BlocksAndKeepsPendingWhenSelectedClusterIsUnreacha
 		SetID("size-unreachable-cluster").
 		SetName("size-unreachable-cluster").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetDiskGB(50).
 		SetCreatedBy("seed").
 		Save(ctx); err != nil {
@@ -3967,10 +4122,12 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		ImageURL:   "quay.io/containerdisks/ubuntu:22.04",
 	}
 	size := &ent.InstanceSize{
-		ID:       "size-test",
-		CPUCores: 2.0,
-		MemoryGi: 4.0,
-		DiskGB:   50,
+		ID:              "size-test",
+		CPUCores:        2.0,
+		CPURequest:      2.0,
+		MemoryGi:        4.0,
+		MemoryRequestGi: 4.0,
+		DiskGB:          50,
 	}
 	payload := &vmCreatePayload{ServiceID: "svc-1", Namespace: "team-a"}
 	gw := &Service{}
@@ -4009,10 +4166,12 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		t.Parallel()
 
 		sizeWithAntiAffinity := &ent.InstanceSize{
-			ID:       "size-antiaffinity",
-			CPUCores: 2.0,
-			MemoryGi: 4.0,
-			DiskGB:   50,
+			ID:              "size-antiaffinity",
+			CPUCores:        2.0,
+			CPURequest:      2.0,
+			MemoryGi:        4.0,
+			MemoryRequestGi: 4.0,
+			DiskGB:          50,
 			SpecOverrides: map[string]interface{}{
 				"spec": map[string]interface{}{
 					"template": map[string]interface{}{
@@ -4099,6 +4258,57 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		}
 		if spec.DiskGB != 200 {
 			t.Errorf("spec.DiskGB = %d, want 200 (override)", spec.DiskGB)
+		}
+	})
+
+	t.Run("dedicated_cpu_limit_only_override_aligns_request", func(t *testing.T) {
+		t.Parallel()
+		dedicatedSize := &ent.InstanceSize{
+			ID:              "size-dedicated",
+			CPUCores:        4.0,
+			CPURequest:      4.0,
+			MemoryGi:        8.0,
+			MemoryRequestGi: 8.0,
+			DiskGB:          50,
+			DedicatedCPU:    true,
+		}
+		spec, err := gw.buildDryRunSpec(payload, tmpl, dedicatedSize, ExecutionOptions{
+			EnableOverride: true,
+			CPULimit:       8.0,
+		})
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() dedicated cpu limit-only override error = %v", err)
+		}
+		if spec.CPU != 8.0 {
+			t.Errorf("spec.CPU = %f, want 8.0", spec.CPU)
+		}
+		if spec.CPURequest != 8.0 {
+			t.Errorf("spec.CPURequest = %f, want 8.0", spec.CPURequest)
+		}
+	})
+
+	t.Run("shared_cpu_limit_only_override_preserves_request", func(t *testing.T) {
+		t.Parallel()
+		sharedSize := &ent.InstanceSize{
+			ID:              "size-shared",
+			CPUCores:        4.0,
+			CPURequest:      2.0,
+			MemoryGi:        8.0,
+			MemoryRequestGi: 4.0,
+			DiskGB:          50,
+		}
+		spec, err := gw.buildDryRunSpec(payload, tmpl, sharedSize, ExecutionOptions{
+			EnableOverride: true,
+			CPULimit:       8.0,
+		})
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() shared cpu limit-only override error = %v", err)
+		}
+		if spec.CPU != 8.0 {
+			t.Errorf("spec.CPU = %f, want 8.0", spec.CPU)
+		}
+		if spec.CPURequest != 2.0 {
+			t.Errorf("spec.CPURequest = %f, want 2.0", spec.CPURequest)
 		}
 	})
 

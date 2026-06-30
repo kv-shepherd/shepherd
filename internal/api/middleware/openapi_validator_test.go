@@ -1020,7 +1020,9 @@ func TestOpenAPIValidatorAllowsDynamicInstanceSizeSpecOverridesInRequestBody(t *
 		"name":"gpu-large",
 		"display_name":"GPU Large",
 		"cpu_cores":8,
+		"cpu_request":8,
 		"memory_gi":16,
+		"memory_request_gi":16,
 		"catalog_scope":"all",
 		"enabled":true,
 		"spec_overrides":{

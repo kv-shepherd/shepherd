@@ -238,10 +238,18 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		return fmt.Errorf("query instance size %s: %w", effectiveInstanceSizeID, err)
 	}
 	cpu := size.CPUCores
+	cpuRequest := size.CPURequest
 	memoryGi := size.MemoryGi
+	memoryRequestGi := size.MemoryRequestGi
 	diskGB := size.DiskGB
-	applyInstanceSizeSnapshotOverrides(&cpu, &memoryGi, &diskGB, ticket.InstanceSizeSnapshot)
+	applyInstanceSizeSnapshotOverrides(&cpu, &cpuRequest, &memoryGi, &memoryRequestGi, &diskGB, ticket.InstanceSizeSnapshot)
 	specOverrides := resolveInstanceSizeSpecOverrides(size.SpecOverrides, ticket.InstanceSizeSnapshot)
+	alignmentSize := instanceSizeForSnapshotAlignment(size, ticket.InstanceSizeSnapshot, specOverrides)
+	alignedMemoryRequestGi, _, alignErr := service.AlignHugepagesMemoryRequestGi(alignmentSize, memoryGi, memoryRequestGi)
+	if alignErr != nil {
+		return markFailed(fmt.Errorf("invalid hugepages memory request for event %s: %w", eventID, alignErr), true)
+	}
+	memoryRequestGi = alignedMemoryRequestGi
 	dvAccessModes, dvVolumeMode := resolveInstanceSizeDVStorage(size, ticket.InstanceSizeSnapshot)
 	if len(resolvedRootVolumeAccessModes) > 0 || resolvedRootVolumeVolumeMode != "" {
 		dvAccessModes = resolvedRootVolumeAccessModes
@@ -292,7 +300,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 			domain.ShepherdTemplateIDLabel: effectiveTemplateID,
 			domain.ShepherdEventIDLabel:    eventID,
 		},
-		SpecOverrides: specOverrides,
+		SpecOverrides:   specOverrides,
+		CPURequest:      cpuRequest,
+		MemoryRequestGi: memoryRequestGi,
 
 		// DV storage mode from InstanceSize (explicit — structural DV format change).
 		DVAccessModes: dvAccessModes,
@@ -465,19 +475,61 @@ func resolveEffectiveSelectionIDs(
 	return templateID, instanceSizeID
 }
 
-func applyInstanceSizeSnapshotOverrides(cpu, memoryGi *float64, diskGB *int, snapshot map[string]interface{}) {
-	if cpu == nil || memoryGi == nil || diskGB == nil {
+func applyInstanceSizeSnapshotOverrides(
+	cpu *float64,
+	cpuRequest *float64,
+	memoryGi *float64,
+	memoryRequestGi *float64,
+	diskGB *int,
+	snapshot map[string]interface{},
+) {
+	if cpu == nil || cpuRequest == nil || memoryGi == nil || memoryRequestGi == nil || diskGB == nil {
 		return
 	}
+	cpuFromSnapshot := false
 	if v, ok := lookupFloat64Value(snapshot, "cpu_cores", "cpu"); ok {
 		*cpu = v
+		cpuFromSnapshot = true
 	}
+	if v, ok := lookupFloat64Value(snapshot, "cpu_request"); ok {
+		*cpuRequest = v
+	} else if cpuFromSnapshot {
+		*cpuRequest = *cpu
+	}
+	memoryFromSnapshot := false
 	if v, ok := lookupFloat64Value(snapshot, "memory_gi"); ok {
 		*memoryGi = v
+		memoryFromSnapshot = true
+	}
+	if v, ok := lookupFloat64Value(snapshot, "memory_request_gi"); ok {
+		*memoryRequestGi = v
+	} else if memoryFromSnapshot {
+		*memoryRequestGi = *memoryGi
 	}
 	if v, ok := lookupIntValue(snapshot, "disk_gb", "disk"); ok && v >= 0 {
 		*diskGB = v
 	}
+}
+
+func instanceSizeForSnapshotAlignment(
+	size *ent.InstanceSize,
+	snapshot map[string]interface{},
+	specOverrides map[string]interface{},
+) *ent.InstanceSize {
+	if size == nil {
+		return nil
+	}
+	alignmentSize := *size
+	alignmentSize.SpecOverrides = specOverrides
+	if raw, ok := lookupValue(snapshot, "requires_hugepages"); ok {
+		if v, ok := raw.(bool); ok {
+			alignmentSize.RequiresHugepages = v
+		}
+	}
+	if raw, ok := lookupValue(snapshot, "hugepages_size"); ok {
+		alignmentSize.HugepagesSize = strings.TrimSpace(toString(raw))
+	}
+	return &alignmentSize
 }
 
 func resolveInstanceSizeSpecOverrides(
@@ -526,25 +578,42 @@ func applyModifiedSpecOverrides(spec *domain.VMSpec, modifiedSpec map[string]int
 	if spec == nil || len(modifiedSpec) == 0 {
 		return
 	}
+	wasCPUGuaranteed := resourceRequestMatchesLimit(spec.CPURequest, spec.CPU)
+	wasMemoryGuaranteed := resourceRequestMatchesLimit(spec.MemoryRequestGi, spec.MemoryGi)
+	cpuRequestOverride, hasCPURequestOverride := lookupPositiveFloat64Value(modifiedSpec, "cpu_request")
+	memoryRequestOverride, hasMemoryRequestOverride := lookupPositiveFloat64Value(modifiedSpec, "memory_request_gi")
+
 	// cpu_limit takes precedence over cpu for the CPU limit value.
 	if v, ok := lookupFloat64Value(modifiedSpec, "cpu_limit"); ok && v > 0 {
 		spec.CPU = v
+		if !hasCPURequestOverride && wasCPUGuaranteed {
+			spec.CPURequest = v
+		}
 	} else if v, ok := lookupFloat64Value(modifiedSpec, "cpu", "resources.cpu"); ok {
 		spec.CPU = v
+		if v > 0 && !hasCPURequestOverride && wasCPUGuaranteed {
+			spec.CPURequest = v
+		}
 	}
 	// cpu_request maps to spec.CPURequest for K8s overcommit.
-	if v, ok := lookupFloat64Value(modifiedSpec, "cpu_request"); ok && v > 0 {
-		spec.CPURequest = v
+	if hasCPURequestOverride {
+		spec.CPURequest = cpuRequestOverride
 	}
 	// memory_limit_gi takes precedence over memory_gi for the memory limit value.
 	if v, ok := lookupFloat64Value(modifiedSpec, "memory_limit_gi"); ok && v > 0 {
 		spec.MemoryGi = v
+		if !hasMemoryRequestOverride && wasMemoryGuaranteed {
+			spec.MemoryRequestGi = v
+		}
 	} else if v, ok := lookupFloat64Value(modifiedSpec, "memory_gi", "resources.memory_gi"); ok {
 		spec.MemoryGi = v
+		if v > 0 && !hasMemoryRequestOverride && wasMemoryGuaranteed {
+			spec.MemoryRequestGi = v
+		}
 	}
 	// memory_request_gi maps to spec.MemoryRequestGi for K8s overcommit.
-	if v, ok := lookupFloat64Value(modifiedSpec, "memory_request_gi"); ok && v > 0 {
-		spec.MemoryRequestGi = v
+	if hasMemoryRequestOverride {
+		spec.MemoryRequestGi = memoryRequestOverride
 	}
 	if v, ok := lookupIntValue(modifiedSpec, "disk_gb", "resources.disk_gb"); ok && v >= 0 {
 		spec.DiskGB = v
@@ -553,6 +622,10 @@ func applyModifiedSpecOverrides(spec *domain.VMSpec, modifiedSpec map[string]int
 		spec.Image = image
 	}
 	spec.SpecOverrides = applySpecOverridePatches(spec.SpecOverrides, extractSpecOverridesFromModifiedSpec(modifiedSpec))
+}
+
+func resourceRequestMatchesLimit(request, limit float64) bool {
+	return request > 0 && limit > 0 && request == limit
 }
 
 func extractSpecOverridesFromModifiedSpec(modifiedSpec map[string]interface{}) map[string]interface{} {
@@ -815,6 +888,11 @@ func lookupFloat64Value(values map[string]interface{}, paths ...string) (float64
 		}
 	}
 	return 0, false
+}
+
+func lookupPositiveFloat64Value(values map[string]interface{}, paths ...string) (float64, bool) {
+	v, ok := lookupFloat64Value(values, paths...)
+	return v, ok && v > 0
 }
 
 func lookupValue(values map[string]interface{}, path string) (interface{}, bool) {
