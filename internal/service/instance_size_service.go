@@ -39,22 +39,6 @@ func (s *InstanceSizeService) GetByID(ctx context.Context, id string) (*ent.Inst
 	return size, nil
 }
 
-// GetEffectiveCPURequest returns cpu_request if set, otherwise cpu_cores (no overcommit default).
-func GetEffectiveCPURequest(size *ent.InstanceSize) float64 {
-	if size.CPURequest > 0 {
-		return size.CPURequest
-	}
-	return size.CPUCores
-}
-
-// GetEffectiveMemoryRequest returns memory_request_gi if set, otherwise memory_gi.
-func GetEffectiveMemoryRequest(size *ent.InstanceSize) float64 {
-	if size.MemoryRequestGi > 0 {
-		return size.MemoryRequestGi
-	}
-	return size.MemoryGi
-}
-
 // InstanceSizeUsesHugepages reports whether an instance size requires hugepages,
 // either through indexed capability fields or spec overrides.
 func InstanceSizeUsesHugepages(size *ent.InstanceSize) bool {

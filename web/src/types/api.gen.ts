@@ -4971,14 +4971,14 @@ export interface components {
             /** @example 1 */
             cpu_cores: number;
             /**
-             * @description CPU request override in cores. Omitted when no explicit override is stored.
+             * @description Explicit CPU request in cores. Use a value lower than cpu_cores for shared overcommit sizes and equal to cpu_cores for guaranteed sizes.
              * @example 1
              */
             cpu_request?: number;
             /** @example 1 */
             memory_gi: number;
             /**
-             * @description Memory request override in Gi. Omitted when no explicit override is stored.
+             * @description Explicit memory request in Gi. Use a value lower than memory_gi for shared overcommit sizes and equal to memory_gi for guaranteed or hugepages-backed sizes.
              * @example 1
              */
             memory_request_gi?: number;
