@@ -17,6 +17,20 @@ import (
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
+func createExternalAuthProviderForTest(t *testing.T, client *ent.Client, id string) {
+	t.Helper()
+	if _, err := client.AuthProvider.Create().
+		SetID(id).
+		SetName(id).
+		SetAuthType("test").
+		SetConfig(map[string]interface{}{}).
+		SetEnabled(true).
+		SetCreatedBy("test").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create auth provider %q: %v", id, err)
+	}
+}
+
 func TestExternalAuthService_UpsertExternalUser_ReconcilesManagedBindings(t *testing.T) {
 	t.Parallel()
 
@@ -951,6 +965,7 @@ func TestExternalAuthService_UpsertExternalUser_LoginOnlyClaimPreservesDirectory
 
 	client := testutil.OpenEntPostgres(t, "external_auth_service_preserves_directory_owner")
 	service := NewExternalAuthService(client)
+	createExternalAuthProviderForTest(t, client, "provider-directory")
 
 	roleEnt, err := client.Role.Create().
 		SetID("role-directory-user").
@@ -1054,6 +1069,54 @@ func TestExternalAuthService_UpsertExternalUser_LoginOnlyClaimPreservesDirectory
 	}
 	if grantCount != 1 {
 		t.Fatalf("external cohort grant count = %d, want 1", grantCount)
+	}
+}
+
+func TestExternalAuthService_UpsertExternalUser_LoginOnlyClaimRepairsMissingDirectoryOwner(t *testing.T) {
+	t.Parallel()
+
+	client := testutil.OpenEntPostgres(t, "external_auth_service_repairs_missing_owner")
+	service := NewExternalAuthService(client)
+	createExternalAuthProviderForTest(t, client, "provider-sso")
+
+	importedUser, err := client.User.Create().
+		SetID("user-imported-missing-provider").
+		SetUsername("alice@example.com").
+		SetEmail("alice@example.com").
+		SetDisplayName("Alice Imported").
+		SetAuthProviderID("provider-deleted").
+		SetExternalID("alice@example.com").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create imported user: %v", err)
+	}
+
+	result, err := service.UpsertExternalUser(t.Context(), "provider-sso", runtimecontract.AuthResult{
+		ExternalID:         "alice@example.com",
+		Username:           "alice@example.com",
+		DisplayName:        "Alice SSO",
+		Email:              "alice@example.com",
+		Enabled:            true,
+		DirectoryAuthority: runtimecontract.AuthDirectoryAuthorityLoginOnly,
+	})
+	if err != nil {
+		t.Fatalf("UpsertExternalUser() error = %v", err)
+	}
+	if result.Created {
+		t.Fatal("Created = true, want false")
+	}
+	if !result.Updated {
+		t.Fatal("Updated = false, want true")
+	}
+	if result.User.ID != importedUser.ID {
+		t.Fatalf("user id = %q, want %q", result.User.ID, importedUser.ID)
+	}
+	if result.User.AuthProviderID != "provider-sso" {
+		t.Fatalf("auth_provider_id = %q, want provider-sso", result.User.AuthProviderID)
+	}
+	if result.User.ExternalID != "alice@example.com" {
+		t.Fatalf("external_id = %q, want alice@example.com", result.User.ExternalID)
 	}
 }
 

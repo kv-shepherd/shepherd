@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/ent/authprovider"
 	"kv-shepherd.io/shepherd/ent/externalcohort"
 	"kv-shepherd.io/shepherd/ent/user"
 	runtimecontract "kv-shepherd.io/shepherd/internal/provider/runtimecontract"
@@ -139,6 +140,13 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 	preserveExistingDirectoryOwner := !directoryAuthoritative &&
 		strings.TrimSpace(existing.AuthProviderID) != "" &&
 		existing.AuthProviderID != authProviderID
+	if preserveExistingDirectoryOwner {
+		preserve, preserveErr := s.existingAuthProviderExists(ctx, existing.AuthProviderID)
+		if preserveErr != nil {
+			return nil, preserveErr
+		}
+		preserveExistingDirectoryOwner = preserve
+	}
 
 	update := s.client.User.UpdateOneID(existing.ID).SetEnabled(normalized.Enabled)
 	if preserveExistingDirectoryOwner {
@@ -188,6 +196,26 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 		User:    updatedUser,
 		Updated: true,
 	}, nil
+}
+
+func (s *ExternalAuthService) existingAuthProviderExists(ctx context.Context, authProviderID string) (bool, error) {
+	if s == nil || s.client == nil {
+		return false, fmt.Errorf("external auth service is not initialized")
+	}
+	authProviderID = strings.TrimSpace(authProviderID)
+	if authProviderID == "" {
+		return false, nil
+	}
+	_, err := s.client.AuthProvider.Query().
+		Where(authprovider.IDEQ(authProviderID)).
+		Only(ctx)
+	if err == nil {
+		return true, nil
+	}
+	if ent.IsNotFound(err) {
+		return false, nil
+	}
+	return false, fmt.Errorf("query existing auth provider owner: %w", err)
 }
 
 func externalAuthRBACCohorts(result runtimecontract.AuthResult) []runtimecontract.ExternalCohort {
