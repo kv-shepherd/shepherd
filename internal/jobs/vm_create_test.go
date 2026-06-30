@@ -359,7 +359,34 @@ func TestApplyInstanceSizeSnapshotOverrides_UsesCanonicalMemoryGiOnly(t *testing
 	}
 }
 
-func TestApplyInstanceSizeSnapshotOverrides_AlignsLegacyZeroRequestsToSnapshotLimits(t *testing.T) {
+func TestApplyInstanceSizeSnapshotOverrides_NormalizesMissingLegacyRequestsToSnapshotLimits(t *testing.T) {
+	cpu := 8.0
+	cpuRequest := 8.0
+	mem := 16.0
+	memoryRequestGi := 16.0
+	disk := 10
+	snapshot := map[string]interface{}{
+		"cpu_cores": 4.0,
+		"memory_gi": 8.0,
+	}
+
+	applyInstanceSizeSnapshotOverrides(&cpu, &cpuRequest, &mem, &memoryRequestGi, &disk, snapshot)
+
+	if cpu != 4.0 {
+		t.Fatalf("cpu mismatch: got %.1f want 4.0", cpu)
+	}
+	if cpuRequest != 4.0 {
+		t.Fatalf("cpuRequest mismatch: got %.1f want 4.0", cpuRequest)
+	}
+	if mem != 8.0 {
+		t.Fatalf("memoryGi mismatch: got %.1f want 8.0", mem)
+	}
+	if memoryRequestGi != 8.0 {
+		t.Fatalf("memoryRequestGi mismatch: got %.1f want 8.0", memoryRequestGi)
+	}
+}
+
+func TestApplyInstanceSizeSnapshotOverrides_PreservesExplicitZeroRequestsForValidation(t *testing.T) {
 	cpu := 8.0
 	cpuRequest := 8.0
 	mem := 16.0
@@ -377,14 +404,14 @@ func TestApplyInstanceSizeSnapshotOverrides_AlignsLegacyZeroRequestsToSnapshotLi
 	if cpu != 4.0 {
 		t.Fatalf("cpu mismatch: got %.1f want 4.0", cpu)
 	}
-	if cpuRequest != 4.0 {
-		t.Fatalf("cpuRequest mismatch: got %.1f want 4.0", cpuRequest)
+	if cpuRequest != 0.0 {
+		t.Fatalf("cpuRequest mismatch: got %.1f want 0.0", cpuRequest)
 	}
 	if mem != 8.0 {
 		t.Fatalf("memoryGi mismatch: got %.1f want 8.0", mem)
 	}
-	if memoryRequestGi != 8.0 {
-		t.Fatalf("memoryRequestGi mismatch: got %.1f want 8.0", memoryRequestGi)
+	if memoryRequestGi != 0.0 {
+		t.Fatalf("memoryRequestGi mismatch: got %.1f want 0.0", memoryRequestGi)
 	}
 }
 

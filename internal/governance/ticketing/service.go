@@ -2033,6 +2033,9 @@ func (g *Service) buildDryRunSpec(
 	}
 
 	// Apply admin resource overrides — must match what the actual job will use.
+	baseCPULimit := spec.CPU
+	baseCPURequest := spec.CPURequest
+	effectiveDedicatedCPU := size != nil && (size.DedicatedCPU || service.HasDedicatedCPUInSpecOverrides(size.SpecOverrides))
 	if opts.EnableOverride {
 		if opts.CPULimit > 0 {
 			spec.CPU = opts.CPULimit
@@ -2042,6 +2045,15 @@ func (g *Service) buildDryRunSpec(
 		}
 		if opts.CPURequest > 0 {
 			spec.CPURequest = opts.CPURequest
+		} else if opts.CPULimit > 0 {
+			if alignedRequest, adjusted := service.AlignCPULimitOnlyRequest(
+				baseCPULimit,
+				baseCPURequest,
+				spec.CPU,
+				effectiveDedicatedCPU,
+			); adjusted {
+				spec.CPURequest = alignedRequest
+			}
 		}
 		if opts.MemoryRequestGi > 0 {
 			spec.MemoryRequestGi = opts.MemoryRequestGi

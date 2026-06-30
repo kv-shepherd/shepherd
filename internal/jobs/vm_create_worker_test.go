@@ -400,6 +400,49 @@ func TestVMCreateWorker_PreservesInstanceSizeSnapshotOvercommitRequests(t *testi
 	require.Contains(t, infra.createdSpec.RenderedYAML, `memory: "8Gi"`)
 }
 
+func TestVMCreateWorker_NormalizesLegacySnapshotMissingRequestsToSnapshotLimits(t *testing.T) {
+	t.Parallel()
+	if strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")) == "" && strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		t.Skip("PostgreSQL test DSN is not configured")
+	}
+	_ = logger.Init("error", "json")
+
+	client, fixture := seedVMCreateWorkerFixture(t, cluster.StatusHEALTHY)
+	_, err := client.Ticket.UpdateOneID(fixture.ticketID).
+		SetInstanceSizeSnapshot(map[string]interface{}{
+			"id":        fixture.sizeID,
+			"cpu_cores": 4.0,
+			"memory_gi": 8.0,
+			"disk_gb":   50,
+		}).
+		Save(t.Context())
+	require.NoError(t, err)
+	_, err = client.InstanceSize.UpdateOneID(fixture.sizeID).
+		SetCPUCores(8.0).
+		SetCPURequest(6.0).
+		SetMemoryGi(16.0).
+		SetMemoryRequestGi(12.0).
+		Save(t.Context())
+	require.NoError(t, err)
+
+	infra := &listingCreateProvider{
+		MockProvider: provider.NewMockProvider(),
+		list:         &domain.VMList{},
+	}
+	worker := NewVMCreateWorker(client, service.NewVMService(infra), nil)
+
+	err = worker.Work(t.Context(), &river.Job[VMCreateArgs]{
+		Args: VMCreateArgs{EventID: fixture.eventID},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, infra.createCalls)
+	require.NotNil(t, infra.createdSpec)
+	require.Equal(t, 4.0, infra.createdSpec.CPU)
+	require.Equal(t, 4.0, infra.createdSpec.CPURequest)
+	require.Equal(t, 8.0, infra.createdSpec.MemoryGi)
+	require.Equal(t, 8.0, infra.createdSpec.MemoryRequestGi)
+}
+
 func TestVMCreateWorker_DoesNotOverwriteConcurrentDeletingStatusOnCompletedPersistence(t *testing.T) {
 	t.Parallel()
 	if strings.TrimSpace(os.Getenv("TEST_DATABASE_URL")) == "" && strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {

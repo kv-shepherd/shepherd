@@ -486,25 +486,25 @@ func applyInstanceSizeSnapshotOverrides(
 	if cpu == nil || cpuRequest == nil || memoryGi == nil || memoryRequestGi == nil || diskGB == nil {
 		return
 	}
+	cpuFromSnapshot := false
 	if v, ok := lookupFloat64Value(snapshot, "cpu_cores", "cpu"); ok {
 		*cpu = v
+		cpuFromSnapshot = true
 	}
 	if v, ok := lookupFloat64Value(snapshot, "cpu_request"); ok {
-		if v > 0 {
-			*cpuRequest = v
-		} else {
-			*cpuRequest = *cpu
-		}
+		*cpuRequest = v
+	} else if cpuFromSnapshot {
+		*cpuRequest = *cpu
 	}
+	memoryFromSnapshot := false
 	if v, ok := lookupFloat64Value(snapshot, "memory_gi"); ok {
 		*memoryGi = v
+		memoryFromSnapshot = true
 	}
 	if v, ok := lookupFloat64Value(snapshot, "memory_request_gi"); ok {
-		if v > 0 {
-			*memoryRequestGi = v
-		} else {
-			*memoryRequestGi = *memoryGi
-		}
+		*memoryRequestGi = v
+	} else if memoryFromSnapshot {
+		*memoryRequestGi = *memoryGi
 	}
 	if v, ok := lookupIntValue(snapshot, "disk_gb", "disk"); ok && v >= 0 {
 		*diskGB = v

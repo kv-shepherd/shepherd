@@ -4261,6 +4261,57 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		}
 	})
 
+	t.Run("dedicated_cpu_limit_only_override_aligns_request", func(t *testing.T) {
+		t.Parallel()
+		dedicatedSize := &ent.InstanceSize{
+			ID:              "size-dedicated",
+			CPUCores:        4.0,
+			CPURequest:      4.0,
+			MemoryGi:        8.0,
+			MemoryRequestGi: 8.0,
+			DiskGB:          50,
+			DedicatedCPU:    true,
+		}
+		spec, err := gw.buildDryRunSpec(payload, tmpl, dedicatedSize, ExecutionOptions{
+			EnableOverride: true,
+			CPULimit:       8.0,
+		})
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() dedicated cpu limit-only override error = %v", err)
+		}
+		if spec.CPU != 8.0 {
+			t.Errorf("spec.CPU = %f, want 8.0", spec.CPU)
+		}
+		if spec.CPURequest != 8.0 {
+			t.Errorf("spec.CPURequest = %f, want 8.0", spec.CPURequest)
+		}
+	})
+
+	t.Run("shared_cpu_limit_only_override_preserves_request", func(t *testing.T) {
+		t.Parallel()
+		sharedSize := &ent.InstanceSize{
+			ID:              "size-shared",
+			CPUCores:        4.0,
+			CPURequest:      2.0,
+			MemoryGi:        8.0,
+			MemoryRequestGi: 4.0,
+			DiskGB:          50,
+		}
+		spec, err := gw.buildDryRunSpec(payload, tmpl, sharedSize, ExecutionOptions{
+			EnableOverride: true,
+			CPULimit:       8.0,
+		})
+		if err != nil {
+			t.Fatalf("buildDryRunSpec() shared cpu limit-only override error = %v", err)
+		}
+		if spec.CPU != 8.0 {
+			t.Errorf("spec.CPU = %f, want 8.0", spec.CPU)
+		}
+		if spec.CPURequest != 2.0 {
+			t.Errorf("spec.CPURequest = %f, want 2.0", spec.CPURequest)
+		}
+	})
+
 	t.Run("hugepages_memory_limit_override_aligns_request", func(t *testing.T) {
 		t.Parallel()
 		hugepagesSize := &ent.InstanceSize{
