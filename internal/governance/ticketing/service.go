@@ -1997,6 +1997,16 @@ func (g *Service) buildDryRunSpec(
 	size *ent.InstanceSize,
 	opts ExecutionOptions,
 ) (*domain.VMSpec, error) {
+	if payload == nil {
+		return nil, fmt.Errorf("payload is required for dryrun")
+	}
+	if tmpl == nil {
+		return nil, fmt.Errorf("template is required for dryrun")
+	}
+	if size == nil {
+		return nil, fmt.Errorf("instance size is required for dryrun")
+	}
+
 	// Resolve boot image (ADR-0036 semantic fields).
 	image, err := resolveTemplateImageForDryRun(tmpl)
 	if err != nil {
@@ -2035,7 +2045,7 @@ func (g *Service) buildDryRunSpec(
 	// Apply admin resource overrides — must match what the actual job will use.
 	baseCPULimit := spec.CPU
 	baseCPURequest := spec.CPURequest
-	effectiveDedicatedCPU := size != nil && (size.DedicatedCPU || service.HasDedicatedCPUInSpecOverrides(size.SpecOverrides))
+	effectiveDedicatedCPU := size.DedicatedCPU || service.HasDedicatedCPUInSpecOverrides(size.SpecOverrides)
 	if opts.EnableOverride {
 		if opts.CPULimit > 0 {
 			spec.CPU = opts.CPULimit
