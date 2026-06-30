@@ -290,14 +290,21 @@ function formToPayload(
         getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
     );
 
-    const cpuOvercommitEnabled = values.dedicated_cpu ? false : values.cpu_overcommit_enabled;
-    // Overcommit clear semantics:
-    // - create: omit request fields when disabled
-    // - update: send 0 as clear sentinel so backend can clear persisted values
+    const dedicatedCPU = values.dedicated_cpu === true;
+    const cpuOvercommitEnabled = dedicatedCPU ? false : values.cpu_overcommit_enabled;
+    const hasHugepages = Boolean(hugepagesSize);
+    // Resource requests are always explicit. Omitting them lets Kubernetes or
+    // KubeVirt default request to limit, which can hide dropped request values.
+    // Dedicated CPU and Hugepages send aligned requests automatically because
+    // their guaranteed-resource contract requires request == limit.
     const cpuRequest =
-        cpuOvercommitEnabled ? values.cpu_request : (mode === 'update' ? 0 : undefined);
+        dedicatedCPU
+            ? values.cpu_cores
+            : (cpuOvercommitEnabled ? values.cpu_request : values.cpu_cores);
     const memoryRequestGi =
-        values.memory_overcommit_enabled ? values.memory_request_gi : (mode === 'update' ? 0 : undefined);
+        hasHugepages
+            ? values.memory_gi
+            : (values.memory_overcommit_enabled ? values.memory_request_gi : values.memory_gi);
     const explicitRootVolumeMode = values.root_volume_mode_intent === 'explicit';
     const dvAccessModes = normalizeStringList(values.dv_access_modes);
     const dvVolumeMode = typeof values.dv_volume_mode === 'string' ? values.dv_volume_mode.trim() : '';
@@ -316,7 +323,7 @@ function formToPayload(
         memory_request_gi: memoryRequestGi,
         dedicated_cpu: values.dedicated_cpu,
         requires_sriov: values.requires_sriov,
-        requires_hugepages: Boolean(hugepagesSize),
+        requires_hugepages: hasHugepages,
         hugepages_size: hugepagesSize,
         sort_order: values.sort_order,
         enabled: values.enabled,
@@ -346,6 +353,15 @@ function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormV
         sort_order?: number;
     };
     const dedicatedCPU = hasDedicatedCPURequirement(instanceSize);
+    const hugepages = resolveHugepagesRequirement(instanceSize);
+    const cpuOvercommitEnabled = !dedicatedCPU &&
+        typeof hydrated.cpu_request === 'number' &&
+        hydrated.cpu_request > 0 &&
+        hydrated.cpu_request < instanceSize.cpu_cores;
+    const memoryOvercommitEnabled = !hugepages.requiresHugepages &&
+        typeof hydrated.memory_request_gi === 'number' &&
+        hydrated.memory_request_gi > 0 &&
+        hydrated.memory_request_gi < instanceSize.memory_gi;
 
     return {
         name: instanceSize.name,
@@ -356,8 +372,8 @@ function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormV
         memory_gi: instanceSize.memory_gi,
         disk_gb: instanceSize.disk_gb,
         dedicated_cpu: dedicatedCPU,
-        cpu_overcommit_enabled: !dedicatedCPU && typeof hydrated.cpu_request === 'number' && hydrated.cpu_request > 0,
-        memory_overcommit_enabled: typeof hydrated.memory_request_gi === 'number' && hydrated.memory_request_gi > 0,
+        cpu_overcommit_enabled: cpuOvercommitEnabled,
+        memory_overcommit_enabled: memoryOvercommitEnabled,
         cpu_request: hydrated.cpu_request,
         memory_request_gi: hydrated.memory_request_gi,
         requires_sriov: instanceSize.requires_sriov,

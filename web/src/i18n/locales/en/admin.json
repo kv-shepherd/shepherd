@@ -616,6 +616,7 @@
   "instanceSizes.enable_cpu_overcommit_help": "Allows CPU request to be lower than the configured ceiling to improve utilization. Under sustained load it can increase contention, jitter, and stability risk, so production usually should keep it disabled. Conflicts with Dedicated CPU.",
   "instanceSizes.enable_memory_overcommit": "Memory Overcommit",
   "instanceSizes.enable_memory_overcommit_help": "Allows Memory request to be lower than the configured ceiling to improve utilization. Under memory pressure it can increase reclaim, jitter, or OOM risk, so production usually should keep it disabled.",
+  "instanceSizes.memory_overcommit_disabled_by_hugepages": "Memory Overcommit is unavailable when Hugepages {{size}} is enabled because memory request must equal the memory limit.",
   "instanceSizes.overcommit_ratio_hint": "Can improve utilization, but under sustained load it increases stability risk. Production usually should keep it disabled.",
   "instanceSizes.request_compact": "Req {{value}}",
   "instanceSizes.gpu_devices": "GPU Devices",

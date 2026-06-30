@@ -5037,7 +5037,9 @@ export interface components {
          * @example {
          *       "name": "example-resource",
          *       "cpu_cores": 1,
-         *       "memory_gi": 1
+         *       "cpu_request": 1,
+         *       "memory_gi": 1,
+         *       "memory_request_gi": 1
          *     }
          */
         InstanceSizeCreateRequest: {
@@ -5059,9 +5061,15 @@ export interface components {
             memory_gi: number;
             /** @example 1 */
             disk_gb?: number;
-            /** @example 1 */
+            /**
+             * @description Explicit CPU request in cores. Use cpu_cores for non-overcommitted sizes; omitted or zero values are rejected by server validation.
+             * @example 1
+             */
             cpu_request?: number;
-            /** @example 1 */
+            /**
+             * @description Explicit memory request in Gi. Use memory_gi for non-overcommitted sizes; hugepages sizes must set this equal to memory_gi. Omitted or zero values are rejected by server validation.
+             * @example 1
+             */
             memory_request_gi?: number;
             /** @example true */
             dedicated_cpu?: boolean;
@@ -5129,12 +5137,12 @@ export interface components {
             /** @example 1 */
             disk_gb?: number;
             /**
-             * @description CPU request in cores. Set `0` to clear override and fall back to cpu_cores.
+             * @description CPU request in cores. Omit to keep the stored value; set equal to cpu_cores for non-overcommitted sizes. Zero no longer clears the request and is rejected by server validation.
              * @example 1
              */
             cpu_request?: number;
             /**
-             * @description Memory request in Gi. Set `0` to clear override and fall back to memory_gi.
+             * @description Memory request in Gi. Omit to keep the stored value; set equal to memory_gi for non-overcommitted sizes. Zero no longer clears the request and is rejected by server validation.
              * @example 1
              */
             memory_request_gi?: number;

@@ -2499,7 +2499,9 @@ func mustCreateBatchCreatePrerequisites(
 		SetID(sizeRawID).
 		SetName("size-" + sizeRawID[len(sizeRawID)-4:]).
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(2).
+		SetMemoryRequestGi(2).
 		SetCatalogScope(instancesize.CatalogScopeProd).
 		SetCreatedBy(actor).
 		Save(t.Context())

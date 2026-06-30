@@ -615,6 +615,7 @@
   "instanceSizes.enable_cpu_overcommit_help": "允许 CPU request 小于上限，提高资源利用率；但高负荷时会增加争抢、抖动和稳定性风险，生产环境通常建议关闭。与 Dedicated CPU 互斥。",
   "instanceSizes.enable_memory_overcommit": "Memory Overcommit",
   "instanceSizes.enable_memory_overcommit_help": "允许 Memory request 小于上限，提高资源利用率；但内存压力下可能增加回收、抖动或 OOM 风险，生产环境通常建议关闭。",
+  "instanceSizes.memory_overcommit_disabled_by_hugepages": "启用 Hugepages {{size}} 后不能选择 Memory Overcommit，因为内存 request 必须等于内存上限。",
   "instanceSizes.overcommit_ratio_hint": "可提高资源利用率，但高负荷时会增加稳定性风险；生产环境通常建议关闭。",
   "instanceSizes.request_compact": "请求 {{value}}",
   "instanceSizes.gpu_devices": "GPU 设备",

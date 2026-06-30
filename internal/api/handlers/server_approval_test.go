@@ -1473,7 +1473,9 @@ func mustCreateApprovalInstanceSize(
 		SetName("m4.large").
 		SetDisplayName("M4 Large").
 		SetCPUCores(4).
+		SetCPURequest(4).
 		SetMemoryGi(8).
+		SetMemoryRequestGi(8).
 		SetDiskGB(80).
 		SetDedicatedCPU(true).
 		SetCreatedBy("test-seed")

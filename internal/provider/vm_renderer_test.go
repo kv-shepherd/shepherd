@@ -5,6 +5,44 @@ import (
 	"testing"
 )
 
+func renderVMSpecToYAMLForTest(namespace string, spec *VMRenderInput) (string, error) {
+	if spec != nil {
+		if spec.CPURequest == 0 {
+			spec.CPURequest = spec.CPUCores
+		}
+		if spec.MemoryRequestGi == 0 {
+			spec.MemoryRequestGi = spec.MemoryGi
+		}
+	}
+	return RenderVMSpecToYAML(namespace, spec)
+}
+
+func TestRenderVMSpecToYAML_RequiresExplicitRequests(t *testing.T) {
+	spec := &VMRenderInput{
+		Name:     "vm-missing-request",
+		CPUCores: 4,
+		MemoryGi: 8,
+		Image:    "docker.io/kubevirt/centos:7",
+	}
+
+	_, err := RenderVMSpecToYAML("test-ns", spec)
+	if err == nil {
+		t.Fatal("expected missing cpu_request to be rejected")
+	}
+	if !strings.Contains(err.Error(), "cpu_request must be explicit") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	spec.CPURequest = 2
+	_, err = RenderVMSpecToYAML("test-ns", spec)
+	if err == nil {
+		t.Fatal("expected missing memory_request_gi to be rejected")
+	}
+	if !strings.Contains(err.Error(), "memory_request_gi must be explicit") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestRenderVMSpecToYAML_ContainerDisk(t *testing.T) {
 	spec := &VMRenderInput{
 		Name:     "vm-01",
@@ -17,7 +55,7 @@ func TestRenderVMSpecToYAML_ContainerDisk(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -54,7 +92,7 @@ func TestRenderVMSpecToYAML_HalfCoreAndHalfGi(t *testing.T) {
 		Image:    "docker.io/kubevirt/centos:7",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -89,7 +127,7 @@ func TestRenderVMSpecToYAML_OneAndHalfGi(t *testing.T) {
 		Image:    "docker.io/kubevirt/centos:7",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -115,7 +153,7 @@ func TestRenderVMSpecToYAML_ClonePVCImage(t *testing.T) {
 		StorageClass: "fast-sc",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -156,7 +194,7 @@ func TestRenderVMSpecToYAML_CDIImageImport(t *testing.T) {
 		StorageClass: "gold-sc",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -189,7 +227,7 @@ func TestRenderVMSpecToYAML_DirectPVCRejected(t *testing.T) {
 		Image:    "pvc:my-namespace/my-pvc",
 	}
 
-	_, err := RenderVMSpecToYAML("test-ns", spec)
+	_, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err == nil {
 		t.Fatal("expected error for unsupported direct PVC boot source")
 	}
@@ -204,7 +242,7 @@ func TestRenderVMSpecToYAML_CPUOvercommit(t *testing.T) {
 		Image:      "docker.io/kubevirt/centos:7",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -223,7 +261,7 @@ func TestRenderVMSpecToYAML_MemoryOvercommit(t *testing.T) {
 		Image:           "docker.io/kubevirt/centos:7",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -242,7 +280,7 @@ func TestRenderVMSpecToYAML_WithCloudInit(t *testing.T) {
 		CloudInit: "#cloud-config\nusers:\n  - name: admin",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -267,7 +305,7 @@ func TestRenderVMSpecToYAML_NoDisk(t *testing.T) {
 		Image:    "docker.io/kubevirt/centos:7",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -289,7 +327,7 @@ func TestRenderVMSpecToYAML_SpecOverrides(t *testing.T) {
 		},
 	}
 
-	yamlOut, err := RenderVMSpecToYAML("test-ns", spec)
+	yamlOut, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -316,7 +354,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_RejectsInvalidPath(t *testing.T) {
 		},
 	}
 
-	_, err := RenderVMSpecToYAML("test-ns", spec)
+	_, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err == nil {
 		t.Fatalf("expected error for invalid spec_overrides path, got nil")
 	}
@@ -336,7 +374,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_RejectsScalarSpecRoot(t *testing.T) {
 		},
 	}
 
-	_, err := RenderVMSpecToYAML("test-ns", spec)
+	_, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err == nil {
 		t.Fatalf("expected error for scalar spec root, got nil")
 	}
@@ -366,7 +404,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_NestedSpecObjectDeepMerge(t *testing.T
 		},
 	}
 
-	yamlOut, err := RenderVMSpecToYAML("test-ns", spec)
+	yamlOut, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -394,7 +432,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_RejectsNonStandardCPU(t *testing.T) {
 		},
 	}
 
-	_, err := RenderVMSpecToYAML("test-ns", spec)
+	_, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err == nil {
 		t.Fatalf("expected error for non-standard cpu override, got nil")
 	}
@@ -414,7 +452,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_RejectsNonStandardMemory(t *testing.T)
 		},
 	}
 
-	_, err := RenderVMSpecToYAML("test-ns", spec)
+	_, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err == nil {
 		t.Fatalf("expected error for non-standard memory override, got nil")
 	}
@@ -435,7 +473,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_AcceptsStandardResourceSteps(t *testin
 		},
 	}
 
-	_, err := RenderVMSpecToYAML("test-ns", spec)
+	_, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("expected standard override values to pass, got: %v", err)
 	}
@@ -453,7 +491,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_AcceptsNumericMemoryFloat64Mi(t *testi
 		},
 	}
 
-	_, err := RenderVMSpecToYAML("test-ns", spec)
+	_, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("expected float64 Mi override to pass, got: %v", err)
 	}
@@ -468,7 +506,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_EmptyDoesNotChange(t *testing.T) {
 		SpecOverrides: nil,
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -492,7 +530,7 @@ func TestRenderVMSpecToYAML_RejectsNonStandardCPU(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			spec := &VMRenderInput{Name: "x", CPUCores: tc.cpu, MemoryGi: 1, Image: "img"}
-			_, err := RenderVMSpecToYAML("ns", spec)
+			_, err := renderVMSpecToYAMLForTest("ns", spec)
 			if err == nil {
 				t.Fatalf("expected error for non-standard CPU %.1f", tc.cpu)
 			}
@@ -515,7 +553,7 @@ func TestRenderVMSpecToYAML_RejectsNonStandardMemory(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			spec := &VMRenderInput{Name: "x", CPUCores: 1, MemoryGi: tc.memGi, Image: "img"}
-			_, err := RenderVMSpecToYAML("ns", spec)
+			_, err := renderVMSpecToYAMLForTest("ns", spec)
 			if err == nil {
 				t.Fatalf("expected error for non-standard memory %.1fGi", tc.memGi)
 			}
@@ -541,7 +579,7 @@ func TestRenderVMSpecToYAML_AcceptsStandardSizes(t *testing.T) {
 	}
 	for _, tc := range tests {
 		spec := &VMRenderInput{Name: "x", CPUCores: tc.cpu, MemoryGi: tc.mem, Image: "img"}
-		_, err := RenderVMSpecToYAML("ns", spec)
+		_, err := renderVMSpecToYAMLForTest("ns", spec)
 		if err != nil {
 			t.Errorf("unexpected error for standard size cpu=%.1f mem=%.1fGi: %v", tc.cpu, tc.mem, err)
 		}
@@ -561,7 +599,7 @@ func TestRenderVMSpecToYAML_ValidationErrors(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			_, err := RenderVMSpecToYAML("ns", tc.spec)
+			_, err := renderVMSpecToYAMLForTest("ns", tc.spec)
 			if err == nil {
 				t.Fatalf("expected error for %q", tc.name)
 			}
@@ -577,7 +615,7 @@ func TestRenderVMSpecToYAML_RoundtripExtractName(t *testing.T) {
 		Image:    "docker.io/kubevirt/centos:7",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -602,7 +640,7 @@ func TestRenderVMSpecToYAML_RoundtripWithOverrides(t *testing.T) {
 		},
 	}
 
-	yamlOut, err := RenderVMSpecToYAML("test-ns", spec)
+	yamlOut, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -658,7 +696,7 @@ func TestRenderVMSpecToYAML_ResolvesServiceIDPlaceholderInAffinity(t *testing.T)
 		},
 	}
 
-	yamlOut, err := RenderVMSpecToYAML("test-ns", spec)
+	yamlOut, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -765,7 +803,7 @@ func TestRenderVMSpecToYAML_DVAccessModesAndVolumeMode(t *testing.T) {
 		DVVolumeMode:  "Block",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -795,7 +833,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_CPUModel(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -818,7 +856,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_BridgeNetwork(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -848,7 +886,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_EvictionStrategy(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -875,7 +913,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_LivenessProbe(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -908,7 +946,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_DeviceOptimizations(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -942,7 +980,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_TemplateAnnotations(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -978,7 +1016,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_NestedNodeSelectorPreservesLiteralDots
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1038,7 +1076,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_SourceStyleDisksAndNetworks(t *testing
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1072,7 +1110,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_TerminationGracePeriod(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1093,7 +1131,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_GuestMemory(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1114,7 +1152,7 @@ func TestRenderVMSpecToYAML_SpecOverrides_Architecture(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1140,7 +1178,7 @@ func TestRenderVMSpecToYAML_NormalizesDefaultInterfaceAndNetworkWhenEmptyObjects
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1172,7 +1210,7 @@ func TestRenderVMSpecToYAML_RemovesManagedCloudInitDiskWhenTemplateHasNoCloudIni
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1212,7 +1250,7 @@ func TestRenderVMSpecToYAML_RestoresBaseCloudInitVolumeWhenOverridesDropIt(t *te
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1232,7 +1270,7 @@ func TestRenderVMSpecToYAML_NoNetworkByDefault(t *testing.T) {
 		Image:    "docker.io/kubevirt/centos:7",
 	}
 
-	yaml, err := RenderVMSpecToYAML("test-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("test-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}
@@ -1292,7 +1330,7 @@ func TestRenderVMSpecToYAML_ProductionGradeFullSpec(t *testing.T) {
 		},
 	}
 
-	yaml, err := RenderVMSpecToYAML("prod-ns", spec)
+	yaml, err := renderVMSpecToYAMLForTest("prod-ns", spec)
 	if err != nil {
 		t.Fatalf("RenderVMSpecToYAML returned error: %v", err)
 	}

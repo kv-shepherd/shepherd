@@ -159,6 +159,7 @@ describe('useAdminInstanceSizesController', () => {
     expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
       requires_hugepages: true,
       hugepages_size: '2Mi',
+      memory_request_gi: 8,
     }));
   });
 
@@ -241,7 +242,7 @@ describe('useAdminInstanceSizesController', () => {
     expect(messageErrorMock).not.toHaveBeenCalled();
   });
 
-  it('submits update payload with cpu_request=0 and memory_request_gi=0 when overcommit is disabled', async () => {
+  it('submits update payload with request values aligned to limits when overcommit is disabled', async () => {
     const createMutate = vi.fn();
     const updateMutate = vi.fn();
 
@@ -287,8 +288,8 @@ describe('useAdminInstanceSizesController', () => {
     expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({
       id: 'size-1',
       body: expect.objectContaining({
-        cpu_request: 0,
-        memory_request_gi: 0,
+        cpu_request: 4,
+        memory_request_gi: 8,
       }),
     }));
   });
@@ -622,7 +623,7 @@ describe('useAdminInstanceSizesController', () => {
     }));
   });
 
-  it('normalizes dedicated cpu create payload by clearing cpu overcommit request', async () => {
+  it('normalizes dedicated cpu create payload by aligning cpu request to limit', async () => {
     const createMutate = vi.fn();
 
     useApiMutationMock
@@ -653,9 +654,10 @@ describe('useAdminInstanceSizesController', () => {
       dedicated_cpu: true,
       catalog_scope: 'prod',
       cpu_cores: 8,
+      cpu_request: 8,
       memory_gi: 16,
     }));
     const payload = createMutate.mock.calls[0]?.[0] as Record<string, unknown>;
-    expect(payload).not.toHaveProperty('cpu_request');
+    expect(payload.cpu_request).toBe(8);
   });
 });

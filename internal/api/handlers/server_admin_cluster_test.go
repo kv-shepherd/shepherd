@@ -299,7 +299,9 @@ func TestListClusters_CreateCompatibilityFilterReturnsOnlyCompatibleTargets(t *t
 		SetID("sz-1").
 		SetName("gpu-small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetRequiresGpu(true).
 		SetCatalogScope("prod").
 		SetCreatedBy("test").
@@ -424,7 +426,9 @@ func TestListClusters_CreateCompatibilityFilterCanIncludeIncompatibleWithReasons
 		SetID("sz-1").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCatalogScope("prod").
 		SetCreatedBy("test").
 		Save(ctx)
@@ -575,7 +579,9 @@ func TestListClusters_CreateCompatibilityFilterMarksExplicitStorageClassRequirem
 		SetID("sz-1").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCatalogScope("prod").
 		SetCreatedBy("test").
 		Save(ctx)
@@ -700,7 +706,9 @@ func TestListClusters_CreateCompatibilityFilterReturnsCloneFallbackAdvisory(t *t
 		SetID("sz-1").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCatalogScope("prod").
 		SetCreatedBy("test").
 		Save(ctx)
@@ -826,7 +834,9 @@ func TestListClusters_CreateCompatibilityFilterResolvedRootVolumeKeepsModeOption
 		SetID("sz-1").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCatalogScope("prod").
 		SetCreatedBy("test").
 		Save(ctx)

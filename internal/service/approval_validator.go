@@ -210,8 +210,8 @@ func (v *ApprovalValidator) ValidateApproval(
 				memoryRequestGi = input.Override.MemoryRequestGi
 			}
 		}
-		if instanceSizeUsesHugepages(size) && memoryGi > 0 {
-			memoryRequestGi = memoryGi
+		if err := ValidateHugepagesMemoryRequestGi(size, memoryGi, memoryRequestGi); err != nil {
+			return apperrors.BadRequest("HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED", err.Error())
 		}
 		if err := ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi, effectiveDedicatedCPU); err != nil {
 			return err
@@ -482,8 +482,8 @@ func (v *ApprovalValidator) resolveValidationContext(
 				resolved.memoryRequestGi = input.Override.MemoryRequestGi
 			}
 		}
-		if instanceSizeUsesHugepages(size) && resolved.memoryGi > 0 {
-			resolved.memoryRequestGi = resolved.memoryGi
+		if err := ValidateHugepagesMemoryRequestGi(size, resolved.memoryGi, resolved.memoryRequestGi); err != nil {
+			return nil, apperrors.BadRequest("HUGEPAGES_MEMORY_REQUEST_ALIGNMENT_REQUIRED", err.Error())
 		}
 		if err := ValidateOvercommit(
 			resolved.cpuCores,
@@ -685,12 +685,14 @@ func validateNamespaceClusterEnvironment(namespaceEnv, clusterEnv string) error 
 }
 
 // ValidateOvercommit checks overcommit constraints per master-flow.md Stage 5.B.
-// KubeVirt dedicatedCpuPlacement requires Guaranteed QoS: CPU request == limit.
+// Requests must be explicit so Kubernetes/KubeVirt defaulting cannot hide a
+// dropped request value by silently matching request to limit.
 //
 // Rules:
-//  1. dedicatedCPU + overcommit (cpu_request != cpu_cores) → BLOCKING ERROR
-//  2. cpu_request > cpu_cores → BLOCKING ERROR (invalid overcommit ratio)
-//  3. memory_request > memory_limit → BLOCKING ERROR
+//  1. cpu_request and memory_request_gi are required whenever their limits exist
+//  2. dedicatedCPU requires cpu_request equal to cpu_cores
+//  3. cpu_request > cpu_cores → BLOCKING ERROR (invalid overcommit ratio)
+//  4. memory_request > memory_limit → BLOCKING ERROR
 func ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi float64, dedicatedCPU bool) error {
 	if cpuCores > 0 && !IsHalfStep(cpuCores) {
 		return apperrors.BadRequest("OVERCOMMIT_INVALID",
@@ -708,28 +710,50 @@ func ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi float64,
 		return apperrors.BadRequest("OVERCOMMIT_INVALID",
 			fmt.Sprintf("memory request (%.3gGi) must use 0.5-step values (0.5Gi, 1.0Gi, 1.5Gi, ...)", memoryRequestGi))
 	}
-
-	// cpu_request == 0 means "use cpu_cores" (no overcommit).
-	overcommitActive := cpuRequest > 0 && cpuRequest != cpuCores
-
-	// Rule 1: Dedicated CPU + overcommit is mutually exclusive.
-	// KubeVirt: dedicatedCpuPlacement requires Guaranteed QoS (request == limit).
-	if dedicatedCPU && overcommitActive {
-		return apperrors.BadRequest("DEDICATED_CPU_OVERCOMMIT_CONFLICT",
-			fmt.Sprintf("dedicated CPU requires Guaranteed QoS: CPU request (%.1f) must equal CPU limit (%.1f); overcommit is not allowed with dedicatedCpuPlacement",
-				cpuRequest, cpuCores))
+	if err := ValidateDedicatedCPURequest(cpuCores, cpuRequest, dedicatedCPU); err != nil {
+		return err
+	}
+	if cpuCores > 0 && cpuRequest <= 0 {
+		return apperrors.BadRequest("CPU_REQUEST_REQUIRED",
+			"cpu_request must be explicit and > 0; zero or empty cpu_request is not allowed because Kubernetes/KubeVirt default it to the CPU limit")
+	}
+	if memoryGi > 0 && memoryRequestGi <= 0 {
+		return apperrors.BadRequest("MEMORY_REQUEST_REQUIRED",
+			"memory_request_gi must be explicit and > 0; zero or empty memory_request_gi is not allowed because Kubernetes defaults it to the memory limit")
 	}
 
-	// Rule 2: CPU request cannot exceed limit (invalid overcommit direction).
-	if overcommitActive && cpuRequest > cpuCores {
+	// Rule 3: CPU request cannot exceed limit (invalid overcommit direction).
+	if cpuRequest > cpuCores {
 		return apperrors.BadRequest("OVERCOMMIT_INVALID",
 			fmt.Sprintf("CPU request (%.1f) cannot exceed CPU limit (%.1f)", cpuRequest, cpuCores))
 	}
 
-	// Rule 3: Memory request cannot exceed limit.
-	if memoryRequestGi > 0 && memoryRequestGi > memoryGi {
+	// Rule 4: Memory request cannot exceed limit.
+	if memoryRequestGi > memoryGi {
 		return apperrors.BadRequest("OVERCOMMIT_INVALID",
 			fmt.Sprintf("memory request (%.1fGi) cannot exceed memory limit (%.1fGi)", memoryRequestGi, memoryGi))
+	}
+	return nil
+}
+
+// ValidateDedicatedCPURequest enforces the explicit Guaranteed QoS contract for
+// KubeVirt dedicatedCpuPlacement.
+func ValidateDedicatedCPURequest(cpuCores, cpuRequest float64, dedicatedCPU bool) error {
+	if !dedicatedCPU {
+		return nil
+	}
+	if cpuCores <= 0 {
+		return apperrors.BadRequest("DEDICATED_CPU_REQUEST_REQUIRED",
+			"dedicated CPU requires CPU limit to be > 0")
+	}
+	if cpuRequest <= 0 {
+		return apperrors.BadRequest("DEDICATED_CPU_REQUEST_REQUIRED",
+			fmt.Sprintf("dedicated CPU requires explicit CPU request equal to CPU limit (%.1f); zero or empty cpu_request is not allowed", cpuCores))
+	}
+	if cpuRequest != cpuCores {
+		return apperrors.BadRequest("DEDICATED_CPU_OVERCOMMIT_CONFLICT",
+			fmt.Sprintf("dedicated CPU requires Guaranteed QoS: CPU request (%.1f) must equal CPU limit (%.1f); overcommit is not allowed with dedicatedCpuPlacement",
+				cpuRequest, cpuCores))
 	}
 	return nil
 }
@@ -773,17 +797,6 @@ func ExtractRequiredCapabilities(size *ent.InstanceSize) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func instanceSizeUsesHugepages(size *ent.InstanceSize) bool {
-	if size == nil {
-		return false
-	}
-	hugepagesSize := normalizeHugepagesSize(size.HugepagesSize)
-	if hugepagesSize == "" {
-		hugepagesSize = normalizeHugepagesSize(extractHugepagesSize(size.SpecOverrides))
-	}
-	return size.RequiresHugepages || hugepagesSize != ""
 }
 
 // MissingCapabilities returns capabilities required by InstanceSize but unavailable on cluster.

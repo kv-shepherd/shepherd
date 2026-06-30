@@ -54,3 +54,66 @@ func GetEffectiveMemoryRequest(size *ent.InstanceSize) float64 {
 	}
 	return size.MemoryGi
 }
+
+// InstanceSizeUsesHugepages reports whether an instance size requires hugepages,
+// either through indexed capability fields or spec overrides.
+func InstanceSizeUsesHugepages(size *ent.InstanceSize) bool {
+	if size == nil {
+		return false
+	}
+	hugepagesSize := normalizeHugepagesSize(size.HugepagesSize)
+	if hugepagesSize == "" {
+		hugepagesSize = normalizeHugepagesSize(extractHugepagesSize(size.SpecOverrides))
+	}
+	return size.RequiresHugepages || hugepagesSize != ""
+}
+
+// ValidateHugepagesMemoryRequestGi enforces the Kubernetes hugepages scheduling
+// rule: hugepages-backed memory cannot be overcommitted, so memory request must
+// be explicitly set and equal the effective memory limit.
+func ValidateHugepagesMemoryRequestGi(
+	size *ent.InstanceSize,
+	memoryLimitGi float64,
+	memoryRequestGi float64,
+) error {
+	if !InstanceSizeUsesHugepages(size) {
+		return nil
+	}
+	if memoryLimitGi <= 0 {
+		return fmt.Errorf("hugepages-backed memory requires memory limit to be > 0")
+	}
+	if memoryRequestGi <= 0 {
+		return fmt.Errorf("hugepages-backed memory requires explicit memory_request_gi equal to memory_gi")
+	}
+	if memoryRequestGi != memoryLimitGi {
+		return fmt.Errorf(
+			"hugepages-backed memory requires memory_request_gi (%.1fGi) to equal memory_gi (%.1fGi)",
+			memoryRequestGi,
+			memoryLimitGi,
+		)
+	}
+	return nil
+}
+
+// AlignHugepagesMemoryRequestGi returns the aligned memory request only after
+// the base hugepages request is explicitly configured. It never converts a zero
+// request into a limit; zero is a configuration error.
+func AlignHugepagesMemoryRequestGi(
+	size *ent.InstanceSize,
+	memoryLimitGi float64,
+	memoryRequestGi float64,
+) (alignedRequestGi float64, adjusted bool, err error) {
+	if !InstanceSizeUsesHugepages(size) {
+		return memoryRequestGi, false, nil
+	}
+	if memoryRequestGi <= 0 {
+		return 0, false, fmt.Errorf("hugepages-backed memory requires explicit memory_request_gi equal to memory_gi")
+	}
+	if memoryLimitGi <= 0 {
+		return 0, false, fmt.Errorf("hugepages-backed memory requires memory limit to be > 0")
+	}
+	if memoryRequestGi == memoryLimitGi {
+		return memoryRequestGi, false, nil
+	}
+	return memoryLimitGi, true, nil
+}

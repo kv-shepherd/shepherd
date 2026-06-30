@@ -106,7 +106,9 @@ func TestApprovalValidator_RejectsDisallowedStorageClassByPolicy(t *testing.T) {
 		SetID("sz-1").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCatalogScope("prod").
 		SetCreatedBy("seed").
 		Save(ctx)
@@ -281,7 +283,9 @@ func seedApprovalCompatibilityFixture(t *testing.T, client *ent.Client) approval
 		SetID("size-gpu").
 		SetName("gpu-small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetRequiresGpu(true).
 		SetCatalogScope("prod").
 		SetCreatedBy("seed").

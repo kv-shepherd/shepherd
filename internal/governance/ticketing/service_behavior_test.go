@@ -262,7 +262,7 @@ func ptrFloat64(v float64) *float64 {
 func TestResolveCreateRequestTargets_HugepagesAlignsMemoryRequestToLimit(t *testing.T) {
 	t.Parallel()
 
-	resolved := resolveCreateRequestTargets(&vmCreatePayload{}, &ent.InstanceSize{
+	resolved, err := resolveCreateRequestTargets(&vmCreatePayload{}, &ent.InstanceSize{
 		CPUCores:          4,
 		CPURequest:        2,
 		MemoryGi:          16,
@@ -271,6 +271,9 @@ func TestResolveCreateRequestTargets_HugepagesAlignsMemoryRequestToLimit(t *test
 		RequiresHugepages: true,
 		HugepagesSize:     "2Mi",
 	})
+	if err != nil {
+		t.Fatalf("resolveCreateRequestTargets() error = %v", err)
+	}
 
 	if resolved.MemoryRequestGi != 16 {
 		t.Fatalf("MemoryRequestGi = %v, want 16", resolved.MemoryRequestGi)
@@ -280,12 +283,30 @@ func TestResolveCreateRequestTargets_HugepagesAlignsMemoryRequestToLimit(t *test
 	}
 }
 
+func TestResolveCreateRequestTargets_HugepagesRejectsZeroMemoryRequest(t *testing.T) {
+	t.Parallel()
+
+	_, err := resolveCreateRequestTargets(&vmCreatePayload{}, &ent.InstanceSize{
+		CPUCores:          4,
+		CPURequest:        2,
+		MemoryGi:          16,
+		MemoryRequestGi:   0,
+		DiskGB:            80,
+		RequiresHugepages: true,
+		HugepagesSize:     "2Mi",
+	})
+	if err == nil {
+		t.Fatal("resolveCreateRequestTargets() error = nil, want hugepages zero request error")
+	}
+}
+
 func TestValidateCreateHugepagesApprovalOverride_RejectsExplicitMismatch(t *testing.T) {
 	t.Parallel()
 
 	err := validateCreateHugepagesApprovalOverride(&vmCreatePayload{}, &ent.InstanceSize{
 		CPUCores:          4,
 		MemoryGi:          16,
+		MemoryRequestGi:   16,
 		DiskGB:            80,
 		RequiresHugepages: true,
 		HugepagesSize:     "2Mi",
@@ -352,7 +373,9 @@ func TestServiceApproveCreate_CallsAtomicWriterWithResolvedIDs(t *testing.T) {
 		SetID("size-override").
 		SetName("size").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(2).
+		SetMemoryRequestGi(2).
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {
@@ -1252,7 +1275,9 @@ func TestServiceApproveBatchParent_ReturnsFirstChildValidationError(t *testing.T
 		SetID("size-1").
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetDiskGB(50).
 		SetCreatedBy("seed").
 		Save(ctx)
@@ -1428,7 +1453,9 @@ func TestServiceApproveBatchParent_PreflightsCloneSourceBeforeDispatchingChildre
 		SetID("size-clone-batch").
 		SetName("size-clone-batch").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetDiskGB(40).
 		SetCreatedBy("seed").
 		Save(ctx); createErr != nil {
@@ -1575,7 +1602,9 @@ func TestServiceApproveCreate_PersistsPlacementEvaluationToAuditAndAtomicWriter(
 		SetID("size-1").
 		SetName("size").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(2).
+		SetMemoryRequestGi(2).
 		SetCatalogScope("prod").
 		SetCreatedBy("seed").
 		Save(ctx)
@@ -3040,7 +3069,9 @@ func createOverrideTestData(
 		SetID("size-override-" + suffix).
 		SetName("size-override-" + suffix).
 		SetCPUCores(4).
+		SetCPURequest(4).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {
@@ -3100,7 +3131,9 @@ func createClonePreflightTestData(t *testing.T, client *ent.Client, suffix strin
 		SetID(payload.InstanceSizeID).
 		SetName("size-clone-" + suffix).
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetCreatedBy("seed").
 		Save(context.Background())
 	if err != nil {
@@ -3564,7 +3597,9 @@ func TestVMServiceEndToEnd_CreateRequestApprovalAndWorker(t *testing.T) {
 		SetID(instanceSizeID).
 		SetName("small").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetDiskGB(50).
 		SetCatalogScope(instancesize.CatalogScopeProd).
 		SetCreatedBy("seed").
@@ -3875,7 +3910,9 @@ func TestServiceApproveCreate_BlocksAndKeepsPendingWhenSelectedClusterIsUnreacha
 		SetID("size-unreachable-cluster").
 		SetName("size-unreachable-cluster").
 		SetCPUCores(2).
+		SetCPURequest(2).
 		SetMemoryGi(4).
+		SetMemoryRequestGi(4).
 		SetDiskGB(50).
 		SetCreatedBy("seed").
 		Save(ctx); err != nil {
@@ -3967,10 +4004,12 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		ImageURL:   "quay.io/containerdisks/ubuntu:22.04",
 	}
 	size := &ent.InstanceSize{
-		ID:       "size-test",
-		CPUCores: 2.0,
-		MemoryGi: 4.0,
-		DiskGB:   50,
+		ID:              "size-test",
+		CPUCores:        2.0,
+		CPURequest:      2.0,
+		MemoryGi:        4.0,
+		MemoryRequestGi: 4.0,
+		DiskGB:          50,
 	}
 	payload := &vmCreatePayload{ServiceID: "svc-1", Namespace: "team-a"}
 	gw := &Service{}
@@ -4009,10 +4048,12 @@ func TestBuildDryRunSpec_AppliesOverrideValues(t *testing.T) {
 		t.Parallel()
 
 		sizeWithAntiAffinity := &ent.InstanceSize{
-			ID:       "size-antiaffinity",
-			CPUCores: 2.0,
-			MemoryGi: 4.0,
-			DiskGB:   50,
+			ID:              "size-antiaffinity",
+			CPUCores:        2.0,
+			CPURequest:      2.0,
+			MemoryGi:        4.0,
+			MemoryRequestGi: 4.0,
+			DiskGB:          50,
 			SpecOverrides: map[string]interface{}{
 				"spec": map[string]interface{}{
 					"template": map[string]interface{}{

@@ -238,10 +238,18 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 		return fmt.Errorf("query instance size %s: %w", effectiveInstanceSizeID, err)
 	}
 	cpu := size.CPUCores
+	cpuRequest := size.CPURequest
 	memoryGi := size.MemoryGi
+	memoryRequestGi := size.MemoryRequestGi
 	diskGB := size.DiskGB
-	applyInstanceSizeSnapshotOverrides(&cpu, &memoryGi, &diskGB, ticket.InstanceSizeSnapshot)
+	applyInstanceSizeSnapshotOverrides(&cpu, &cpuRequest, &memoryGi, &memoryRequestGi, &diskGB, ticket.InstanceSizeSnapshot)
 	specOverrides := resolveInstanceSizeSpecOverrides(size.SpecOverrides, ticket.InstanceSizeSnapshot)
+	alignmentSize := instanceSizeForSnapshotAlignment(size, ticket.InstanceSizeSnapshot, specOverrides)
+	alignedMemoryRequestGi, _, alignErr := service.AlignHugepagesMemoryRequestGi(alignmentSize, memoryGi, memoryRequestGi)
+	if alignErr != nil {
+		return markFailed(fmt.Errorf("invalid hugepages memory request for event %s: %w", eventID, alignErr), true)
+	}
+	memoryRequestGi = alignedMemoryRequestGi
 	dvAccessModes, dvVolumeMode := resolveInstanceSizeDVStorage(size, ticket.InstanceSizeSnapshot)
 	if len(resolvedRootVolumeAccessModes) > 0 || resolvedRootVolumeVolumeMode != "" {
 		dvAccessModes = resolvedRootVolumeAccessModes
@@ -292,7 +300,9 @@ func (w *VMCreateWorker) Work(ctx context.Context, job *river.Job[VMCreateArgs])
 			domain.ShepherdTemplateIDLabel: effectiveTemplateID,
 			domain.ShepherdEventIDLabel:    eventID,
 		},
-		SpecOverrides: specOverrides,
+		SpecOverrides:   specOverrides,
+		CPURequest:      cpuRequest,
+		MemoryRequestGi: memoryRequestGi,
 
 		// DV storage mode from InstanceSize (explicit — structural DV format change).
 		DVAccessModes: dvAccessModes,
@@ -465,19 +475,53 @@ func resolveEffectiveSelectionIDs(
 	return templateID, instanceSizeID
 }
 
-func applyInstanceSizeSnapshotOverrides(cpu, memoryGi *float64, diskGB *int, snapshot map[string]interface{}) {
-	if cpu == nil || memoryGi == nil || diskGB == nil {
+func applyInstanceSizeSnapshotOverrides(
+	cpu *float64,
+	cpuRequest *float64,
+	memoryGi *float64,
+	memoryRequestGi *float64,
+	diskGB *int,
+	snapshot map[string]interface{},
+) {
+	if cpu == nil || cpuRequest == nil || memoryGi == nil || memoryRequestGi == nil || diskGB == nil {
 		return
 	}
 	if v, ok := lookupFloat64Value(snapshot, "cpu_cores", "cpu"); ok {
 		*cpu = v
 	}
+	if v, ok := lookupFloat64Value(snapshot, "cpu_request"); ok {
+		*cpuRequest = v
+	}
 	if v, ok := lookupFloat64Value(snapshot, "memory_gi"); ok {
 		*memoryGi = v
+	}
+	if v, ok := lookupFloat64Value(snapshot, "memory_request_gi"); ok {
+		*memoryRequestGi = v
 	}
 	if v, ok := lookupIntValue(snapshot, "disk_gb", "disk"); ok && v >= 0 {
 		*diskGB = v
 	}
+}
+
+func instanceSizeForSnapshotAlignment(
+	size *ent.InstanceSize,
+	snapshot map[string]interface{},
+	specOverrides map[string]interface{},
+) *ent.InstanceSize {
+	if size == nil {
+		return nil
+	}
+	alignmentSize := *size
+	alignmentSize.SpecOverrides = specOverrides
+	if raw, ok := lookupValue(snapshot, "requires_hugepages"); ok {
+		if v, ok := raw.(bool); ok {
+			alignmentSize.RequiresHugepages = v
+		}
+	}
+	if raw, ok := lookupValue(snapshot, "hugepages_size"); ok {
+		alignmentSize.HugepagesSize = strings.TrimSpace(toString(raw))
+	}
+	return &alignmentSize
 }
 
 func resolveInstanceSizeSpecOverrides(

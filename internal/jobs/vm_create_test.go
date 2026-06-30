@@ -7,6 +7,7 @@ import (
 	"kv-shepherd.io/shepherd/ent"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/service"
 )
 
 func TestExtractTemplateImage(t *testing.T) {
@@ -327,24 +328,59 @@ func TestResolveEffectiveSelectionIDs(t *testing.T) {
 
 func TestApplyInstanceSizeSnapshotOverrides_UsesCanonicalMemoryGiOnly(t *testing.T) {
 	cpu := 2.0
+	cpuRequest := 1.0
 	mem := 2.0
+	memoryRequestGi := 1.0
 	disk := 10
 	snapshot := map[string]interface{}{
-		"memory_gi": 8.0,
-		"cpu_cores": 4.0,
-		"disk_gb":   80,
+		"memory_gi":         8.0,
+		"memory_request_gi": 4.0,
+		"cpu_cores":         4.0,
+		"cpu_request":       2.0,
+		"disk_gb":           80,
 	}
 
-	applyInstanceSizeSnapshotOverrides(&cpu, &mem, &disk, snapshot)
+	applyInstanceSizeSnapshotOverrides(&cpu, &cpuRequest, &mem, &memoryRequestGi, &disk, snapshot)
 
 	if cpu != 4.0 {
 		t.Fatalf("cpu mismatch: got %.1f want 4.0", cpu)
 	}
+	if cpuRequest != 2.0 {
+		t.Fatalf("cpuRequest mismatch: got %.1f want 2.0", cpuRequest)
+	}
 	if mem != 8.0 {
 		t.Fatalf("memoryGi mismatch: got %.1f want 8.0", mem)
 	}
+	if memoryRequestGi != 4.0 {
+		t.Fatalf("memoryRequestGi mismatch: got %.1f want 4.0", memoryRequestGi)
+	}
 	if disk != 80 {
 		t.Fatalf("disk mismatch: got %d want 80", disk)
+	}
+}
+
+func TestInstanceSizeForSnapshotAlignment_UsesSnapshotHugepagesCapability(t *testing.T) {
+	size := &ent.InstanceSize{
+		RequiresHugepages: false,
+		HugepagesSize:     "",
+		SpecOverrides:     nil,
+	}
+	snapshot := map[string]interface{}{
+		"requires_hugepages": false,
+		"hugepages_size":     "",
+		"spec_overrides": map[string]interface{}{
+			"spec.template.spec.domain.memory.hugepages.pageSize": "2Mi",
+		},
+	}
+	overrides := resolveInstanceSizeSpecOverrides(size.SpecOverrides, snapshot)
+
+	alignmentSize := instanceSizeForSnapshotAlignment(size, snapshot, overrides)
+
+	if !service.InstanceSizeUsesHugepages(alignmentSize) {
+		t.Fatal("expected snapshot spec_overrides hugepages to drive execution alignment")
+	}
+	if size.HugepagesSize != "" || size.RequiresHugepages {
+		t.Fatal("instanceSizeForSnapshotAlignment mutated the live instance size")
 	}
 }
 

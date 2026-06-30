@@ -57,6 +57,10 @@ import {
     systemLabelText,
 } from '@/features/catalog/systemLabels';
 import { translateApiError } from '@/lib/api/errorMessage';
+import {
+    HUGEPAGES_PAGE_SIZE_PATH,
+    normalizeHugepagesPageSizeValue,
+} from '@/lib/hugepages';
 import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
 import { useSetupGuide } from '@/features/setup-guide/hooks/useSetupGuide';
 import { useAdminInstanceSizesController } from '../hooks/useAdminInstanceSizesController';
@@ -66,7 +70,11 @@ import {
     type InstanceSizePresetKey,
 } from '../instanceSizePresets';
 import { buildResolvedInstanceSizePreview } from '../resolvedPreview';
-import { INDEXED_SPEC_OVERRIDE_PATHS } from '../specOverrides';
+import {
+    getSpecOverrideValue,
+    INDEXED_SPEC_OVERRIDE_PATHS,
+    normalizeInstanceSizeSpecOverrides,
+} from '../specOverrides';
 import {
     formatCores,
     formatMemory,
@@ -239,6 +247,13 @@ function handleInstanceSizeFormValuesChange(
     if (changedValues.cpu_overcommit_enabled === false) {
         updates.cpu_request = undefined;
     }
+    const hugepagesSize = resolveHugepagesSizeFromSpecText(
+        changedValues.spec_text ?? form.getFieldValue('spec_text'),
+    );
+    if (hugepagesSize) {
+        updates.memory_overcommit_enabled = false;
+        updates.memory_request_gi = undefined;
+    }
     if (changedValues.memory_overcommit_enabled === false) {
         updates.memory_request_gi = undefined;
     }
@@ -332,6 +347,24 @@ function renderInlineHelpLabel(label: string, helpText?: string): React.ReactNod
     );
 }
 
+function resolveHugepagesSizeFromSpecText(specText: unknown): string | undefined {
+    if (typeof specText !== 'string' || !specText.trim()) {
+        return undefined;
+    }
+    try {
+        const parsed = JSON.parse(specText) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return undefined;
+        }
+        const normalized = normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>);
+        return normalizeHugepagesPageSizeValue(
+            getSpecOverrideValue(normalized, HUGEPAGES_PAGE_SIZE_PATH),
+        );
+    } catch {
+        return undefined;
+    }
+}
+
 /**
  * Schema-driven spec_overrides section for InstanceSize modals.
  *
@@ -421,7 +454,11 @@ function InstanceSizeFormFields({
     const dedicatedCPU = Form.useWatch('dedicated_cpu', form);
     const cpuOvercommitEnabled = Form.useWatch('cpu_overcommit_enabled', form);
     const memoryOvercommitEnabled = Form.useWatch('memory_overcommit_enabled', form);
+    const specText = Form.useWatch('spec_text', form);
     const rootVolumeModeIntent = Form.useWatch('root_volume_mode_intent', form);
+    const hugepagesSize = resolveHugepagesSizeFromSpecText(specText);
+    const memoryOvercommitDisabledByHugepages = Boolean(hugepagesSize);
+    const showMemoryOvercommitFields = !!memoryOvercommitEnabled && !memoryOvercommitDisabledByHugepages;
 
     return (
         <>
@@ -562,15 +599,26 @@ function InstanceSizeFormFields({
             </Form.Item>
 
             {/* Memory Overcommit: conditional reveal */}
-            <Form.Item name="memory_overcommit_enabled" valuePropName="checked">
-                <Checkbox>
+            <Form.Item
+                name="memory_overcommit_enabled"
+                valuePropName="checked"
+                extra={
+                    memoryOvercommitDisabledByHugepages
+                        ? t('instanceSizes.memory_overcommit_disabled_by_hugepages', {
+                            size: hugepagesSize,
+                            defaultValue: 'Memory Overcommit is unavailable when Hugepages is enabled because memory request must equal the memory limit.',
+                        })
+                        : undefined
+                }
+            >
+                <Checkbox disabled={memoryOvercommitDisabledByHugepages}>
                     {renderInlineHelpLabel(
                         t('instanceSizes.enable_memory_overcommit'),
                         t('instanceSizes.enable_memory_overcommit_help')
                     )}
                 </Checkbox>
             </Form.Item>
-            {memoryOvercommitEnabled ? (
+            {showMemoryOvercommitFields ? (
                 <Card size="small" style={{ marginBottom: 16, background: '#fafafa' }}>
                     <Form.Item
                         name="memory_request_gi"

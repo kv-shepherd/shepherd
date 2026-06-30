@@ -955,18 +955,10 @@ func (s *Server) UpdateAdminInstanceSize(c *gin.Context, instanceSizeID generate
 		}
 	}
 	if req.CPURequest != nil {
-		if *req.CPURequest <= 0 {
-			update = update.ClearCPURequest()
-		} else {
-			update = update.SetCPURequest(*req.CPURequest)
-		}
+		update = update.SetCPURequest(*req.CPURequest)
 	}
 	if req.MemoryRequestGi != nil {
-		if *req.MemoryRequestGi <= 0 {
-			update = update.ClearMemoryRequestGi()
-		} else {
-			update = update.SetMemoryRequestGi(*req.MemoryRequestGi)
-		}
+		update = update.SetMemoryRequestGi(*req.MemoryRequestGi)
 	}
 	if req.DedicatedCPU != nil {
 		update = update.SetDedicatedCPU(*req.DedicatedCPU)
@@ -2947,6 +2939,13 @@ func validateInstanceSizeCreate(req instanceSizeCreateRequest) error {
 	if requiresHugepages && !hasHugepagesSize {
 		return fmt.Errorf("hugepages_size is required when requires_hugepages is true")
 	}
+	if err := service.ValidateHugepagesMemoryRequestGi(&ent.InstanceSize{
+		RequiresHugepages: requiresHugepages,
+		HugepagesSize:     hints.HugepagesSize,
+		SpecOverrides:     req.SpecOverrides,
+	}, req.MemoryGi, memoryRequestGi); err != nil {
+		return fmt.Errorf("%s", err.Error())
+	}
 	if err := validateDVStorageMode(req.DvAccessModes, derefString(req.DvVolumeMode)); err != nil {
 		return err
 	}
@@ -3001,18 +3000,18 @@ func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingSize *ent
 		}
 	}
 	if req.CPURequest != nil {
-		if *req.CPURequest < 0 {
-			return fmt.Errorf("cpu_request must be >= 0")
+		if *req.CPURequest < 0.5 {
+			return fmt.Errorf("cpu_request must be >= 0.5")
 		}
-		if *req.CPURequest > 0 && !service.IsHalfStep(*req.CPURequest) {
+		if !service.IsHalfStep(*req.CPURequest) {
 			return fmt.Errorf("cpu_request must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 		}
 	}
 	if req.MemoryRequestGi != nil {
-		if *req.MemoryRequestGi < 0 {
-			return fmt.Errorf("memory_request_gi must be >= 0")
+		if *req.MemoryRequestGi < 0.5 {
+			return fmt.Errorf("memory_request_gi must be >= 0.5")
 		}
-		if *req.MemoryRequestGi > 0 && !service.IsHalfStep(*req.MemoryRequestGi) {
+		if !service.IsHalfStep(*req.MemoryRequestGi) {
 			return fmt.Errorf("memory_request_gi must use 0.5-step values (0.5, 1.0, 1.5, ...)")
 		}
 	}
@@ -3033,23 +3032,19 @@ func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingSize *ent
 	}
 	effectiveCPURequest := existingSize.CPURequest
 	if req.CPURequest != nil {
-		if *req.CPURequest <= 0 {
-			effectiveCPURequest = 0
-		} else {
-			effectiveCPURequest = *req.CPURequest
-		}
+		effectiveCPURequest = *req.CPURequest
 	}
 	effectiveMemoryRequestGi := existingSize.MemoryRequestGi
 	if req.MemoryRequestGi != nil {
-		if *req.MemoryRequestGi <= 0 {
-			effectiveMemoryRequestGi = 0
-		} else {
-			effectiveMemoryRequestGi = *req.MemoryRequestGi
-		}
+		effectiveMemoryRequestGi = *req.MemoryRequestGi
 	}
 	effectiveDedicated := existingSize.DedicatedCPU
 	if req.DedicatedCPU != nil {
 		effectiveDedicated = *req.DedicatedCPU
+	}
+	effectiveSpecOverrides := existingSize.SpecOverrides
+	if req.SpecOverrides != nil {
+		effectiveSpecOverrides = *req.SpecOverrides
 	}
 	if err := service.ValidateOvercommit(
 		effectiveCPUCores,
@@ -3058,6 +3053,34 @@ func validateInstanceSizeUpdate(req instanceSizeUpdateRequest, existingSize *ent
 		effectiveMemoryRequestGi,
 		effectiveDedicated,
 	); err != nil {
+		return fmt.Errorf("%s", err.Error())
+	}
+	effectiveRequiresHugepages := existingSize.RequiresHugepages
+	if req.RequiresHugepages != nil {
+		effectiveRequiresHugepages = *req.RequiresHugepages
+	}
+	effectiveHugepagesSize := strings.TrimSpace(existingSize.HugepagesSize)
+	if req.HugepagesSize != nil {
+		effectiveHugepagesSize = strings.TrimSpace(*req.HugepagesSize)
+	}
+	if req.SpecOverrides != nil {
+		hints := effectiveInstanceSizeCapabilityHintsFromSpec(
+			*req.SpecOverrides,
+			req.RequiresGpu,
+			req.RequiresHugepages,
+			req.HugepagesSize,
+		)
+		effectiveRequiresHugepages = hints.RequiresHugepages
+		effectiveHugepagesSize = strings.TrimSpace(hints.HugepagesSize)
+	}
+	if effectiveRequiresHugepages && effectiveHugepagesSize == "" {
+		return fmt.Errorf("hugepages_size is required when requires_hugepages is true")
+	}
+	if err := service.ValidateHugepagesMemoryRequestGi(&ent.InstanceSize{
+		RequiresHugepages: effectiveRequiresHugepages,
+		HugepagesSize:     effectiveHugepagesSize,
+		SpecOverrides:     effectiveSpecOverrides,
+	}, effectiveMemoryGi, effectiveMemoryRequestGi); err != nil {
 		return fmt.Errorf("%s", err.Error())
 	}
 

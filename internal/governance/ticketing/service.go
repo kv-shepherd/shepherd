@@ -289,6 +289,23 @@ func (g *Service) approveCreateWithConfig(
 	if validationErr := validateCreateHugepagesApprovalOverride(payload, instanceSizeEntity, opts); validationErr != nil {
 		return validationErr
 	}
+	createOverride, overrideErr := buildCreateApprovalOverride(payload, instanceSizeEntity, opts)
+	if overrideErr != nil {
+		return apperrors.BadRequest(apperrors.CodeValidationFailed,
+			fmt.Sprintf("build approval resource override for ticket %s: %v", ticketID, overrideErr))
+	}
+	effectiveDedicatedCPU := instanceSizeEntity.DedicatedCPU ||
+		service.HasDedicatedCPUInSpecOverrides(instanceSizeEntity.SpecOverrides)
+	if overcommitErr := service.ValidateOvercommit(
+		createOverride.CPULimit,
+		createOverride.CPURequest,
+		createOverride.MemoryLimitGi,
+		createOverride.MemoryRequestGi,
+		effectiveDedicatedCPU,
+	); overcommitErr != nil {
+		return apperrors.BadRequest(apperrors.CodeValidationFailed,
+			fmt.Sprintf("resource request validation for ticket %s: %v", ticketID, overcommitErr))
+	}
 
 	var placementEvaluation map[string]interface{}
 	if g.validator != nil {
@@ -300,7 +317,7 @@ func (g *Service) approveCreateWithConfig(
 			StorageClass:   opts.StorageClass,
 			DVAccessModes:  opts.DVAccessModes,
 			DVVolumeMode:   opts.DVVolumeMode,
-			Override:       buildCreateApprovalOverride(payload, instanceSizeEntity, opts),
+			Override:       createOverride,
 		})
 		if evalErr != nil {
 			return fmt.Errorf("approval validation failed for ticket %s: %w", ticketID, evalErr)
@@ -403,21 +420,11 @@ func (g *Service) approveCreateWithConfig(
 	}
 	// ── End DryRun Pre-flight Gate ────────────────────────────────────────────────
 
-	// Stage 5.B: If admin enabled resource override, validate overcommit constraints.
+	// Stage 5.B: If admin enabled resource override, require at least one value.
 	if opts.EnableOverride {
 		// Guard: at least one override field must be non-zero to avoid a no-op override.
 		if opts.CPULimit == 0 && opts.CPURequest == 0 && opts.MemoryLimitGi == 0 && opts.MemoryRequestGi == 0 && opts.DiskGB == 0 {
 			return fmt.Errorf("enable_override is true but all resource override values are zero for ticket %s", ticketID)
-		}
-
-		cpuCores := opts.CPULimit
-		cpuRequest := opts.CPURequest
-		memoryGi := opts.MemoryLimitGi
-		memoryRequestGi := opts.MemoryRequestGi
-
-		// Reuse instanceSizeEntity loaded above (no extra DB round-trip).
-		if overcommitErr := service.ValidateOvercommit(cpuCores, cpuRequest, memoryGi, memoryRequestGi, instanceSizeEntity.DedicatedCPU); overcommitErr != nil {
-			return fmt.Errorf("resource override validation for ticket %s: %w", ticketID, overcommitErr)
 		}
 	}
 
@@ -431,7 +438,10 @@ func (g *Service) approveCreateWithConfig(
 		instanceSizeSnapshot = applyResolvedRootVolumeToInstanceSizeSnapshot(instanceSizeSnapshot, placementEvaluation)
 	}
 	modifiedSpec := cloneMap(ticket.ModifiedSpec)
-	applyRequestedCreateTargets(modifiedSpec, payload, instanceSizeEntity)
+	if applyErr := applyRequestedCreateTargets(modifiedSpec, payload, instanceSizeEntity); applyErr != nil {
+		return apperrors.BadRequest(apperrors.CodeValidationFailed,
+			fmt.Sprintf("apply requested create targets for ticket %s: %v", ticketID, applyErr))
+	}
 
 	// Merge admin resource overrides into modifiedSpec (Stage 5.B).
 	if opts.EnableOverride {
@@ -985,14 +995,17 @@ func (g *Service) modifyPayloadUsesHugepages(ctx context.Context, payload *domai
 		}
 		return false, fmt.Errorf("get instance size %s for modify approval: %w", payload.InstanceSizeID, err)
 	}
-	return instanceSizeUsesHugepages(size), nil
+	return service.InstanceSizeUsesHugepages(size), nil
 }
 
 func validateCreateHugepagesApprovalOverride(payload *vmCreatePayload, size *ent.InstanceSize, opts ExecutionOptions) error {
-	if !instanceSizeUsesHugepages(size) || !opts.EnableOverride || opts.MemoryRequestGi <= 0 {
+	if !service.InstanceSizeUsesHugepages(size) || !opts.EnableOverride || opts.MemoryRequestGi <= 0 {
 		return nil
 	}
-	resolved := resolveCreateRequestTargets(payload, size)
+	resolved, err := resolveCreateRequestTargets(payload, size)
+	if err != nil {
+		return err
+	}
 	targetMemoryLimitGi := resolved.MemoryLimitGi
 	if opts.MemoryLimitGi > 0 {
 		targetMemoryLimitGi = opts.MemoryLimitGi
@@ -1001,18 +1014,6 @@ func validateCreateHugepagesApprovalOverride(payload *vmCreatePayload, size *ent
 		return nil
 	}
 	return hugepagesMemoryRequestAlignmentError(opts.MemoryRequestGi, targetMemoryLimitGi)
-}
-
-func instanceSizeUsesHugepages(size *ent.InstanceSize) bool {
-	if size == nil {
-		return false
-	}
-	for _, capability := range service.ExtractRequiredCapabilities(size) {
-		if capability == "hugepages" || strings.HasPrefix(capability, "hugepages:") {
-			return true
-		}
-	}
-	return false
 }
 
 func hugepagesMemoryRequestAlignmentError(request, limit float64) error {
@@ -1997,7 +1998,10 @@ func (g *Service) buildDryRunSpec(
 	if err != nil {
 		return nil, fmt.Errorf("resolve image for dryrun from template %s: %w", tmpl.ID, err)
 	}
-	requestedTargets := resolveCreateRequestTargets(payload, size)
+	requestedTargets, err := resolveCreateRequestTargets(payload, size)
+	if err != nil {
+		return nil, err
+	}
 
 	spec := &domain.VMSpec{
 		Name:         "dryrun-" + payload.ServiceID, // unique per request, not persisted
@@ -2044,9 +2048,11 @@ func (g *Service) buildDryRunSpec(
 	} else if opts.DiskGB > 0 {
 		spec.DiskGB = opts.DiskGB
 	}
-	if instanceSizeUsesHugepages(size) && spec.MemoryGi > 0 {
-		spec.MemoryRequestGi = spec.MemoryGi
+	alignedMemoryRequest, _, err := service.AlignHugepagesMemoryRequestGi(size, spec.MemoryGi, spec.MemoryRequestGi)
+	if err != nil {
+		return nil, err
 	}
+	spec.MemoryRequestGi = alignedMemoryRequest
 
 	return spec, nil
 }
@@ -2054,7 +2060,7 @@ func (g *Service) buildDryRunSpec(
 func resolveCreateRequestTargets(
 	payload *vmCreatePayload,
 	size *ent.InstanceSize,
-) service.ResolvedVMRequestTargets {
+) (service.ResolvedVMRequestTargets, error) {
 	resolved := service.ResolveVMRequestTargets(
 		size.CPUCores,
 		size.CPURequest,
@@ -2067,21 +2073,26 @@ func resolveCreateRequestTargets(
 			TargetDiskGB:   payload.TargetDiskGB,
 		},
 	)
-	if instanceSizeUsesHugepages(size) &&
-		resolved.MemoryLimitGi > 0 &&
-		!float64Equal(resolved.MemoryRequestGi, resolved.MemoryLimitGi) {
-		resolved.MemoryRequestGi = resolved.MemoryLimitGi
+	alignedMemoryRequest, adjusted, err := service.AlignHugepagesMemoryRequestGi(size, resolved.MemoryLimitGi, resolved.MemoryRequestGi)
+	if err != nil {
+		return service.ResolvedVMRequestTargets{}, err
+	}
+	if adjusted {
+		resolved.MemoryRequestGi = alignedMemoryRequest
 		resolved.AdjustedMemoryGiReq = true
 	}
-	return resolved
+	return resolved, nil
 }
 
 func buildCreateApprovalOverride(
 	payload *vmCreatePayload,
 	size *ent.InstanceSize,
 	opts ExecutionOptions,
-) *service.ApprovalResourceOverride {
-	resolved := resolveCreateRequestTargets(payload, size)
+) (*service.ApprovalResourceOverride, error) {
+	resolved, err := resolveCreateRequestTargets(payload, size)
+	if err != nil {
+		return nil, err
+	}
 	override := service.ApprovalResourceOverride{
 		CPURequest:      resolved.CPURequest,
 		CPULimit:        resolved.CPULimit,
@@ -2108,18 +2119,23 @@ func buildCreateApprovalOverride(
 	} else if opts.DiskGB > 0 {
 		override.DiskGB = opts.DiskGB
 	}
-	if instanceSizeUsesHugepages(size) && override.MemoryLimitGi > 0 {
-		override.MemoryRequestGi = override.MemoryLimitGi
+	alignedMemoryRequest, _, err := service.AlignHugepagesMemoryRequestGi(size, override.MemoryLimitGi, override.MemoryRequestGi)
+	if err != nil {
+		return nil, err
 	}
-	return &override
+	override.MemoryRequestGi = alignedMemoryRequest
+	return &override, nil
 }
 
 func applyRequestedCreateTargets(
 	modifiedSpec map[string]interface{},
 	payload *vmCreatePayload,
 	size *ent.InstanceSize,
-) {
-	resolved := resolveCreateRequestTargets(payload, size)
+) error {
+	resolved, err := resolveCreateRequestTargets(payload, size)
+	if err != nil {
+		return err
+	}
 	if payload.TargetCPUCores != nil {
 		modifiedSpec["cpu_limit"] = resolved.CPULimit
 	}
@@ -2135,6 +2151,7 @@ func applyRequestedCreateTargets(
 	if payload.TargetMemoryGi != nil && resolved.AdjustedMemoryGiReq {
 		modifiedSpec["memory_request_gi"] = resolved.MemoryRequestGi
 	}
+	return nil
 }
 
 // resolveTemplateImageForDryRun extracts the boot image string from an Ent Template.
