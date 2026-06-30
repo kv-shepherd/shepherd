@@ -8,3 +8,5 @@
 2026-06-19 query validation hardening: GET /vms/batch the 'query' request parameter 'sort_by' was restricted to a list of enum values
 2026-06-30 resource request hardening: POST /admin/instance-sizes the request property 'cpu_request' became required
 2026-06-30 resource request hardening: POST /admin/instance-sizes the request property 'memory_request_gi' became required
+2026-06-30 resource request hardening: PATCH /admin/instance-sizes/{instance_size_id} the 'cpu_request' request property's min was increased to '0.50'
+2026-06-30 resource request hardening: PATCH /admin/instance-sizes/{instance_size_id} the 'memory_request_gi' request property's min was increased to '0.50'
