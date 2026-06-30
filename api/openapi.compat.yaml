@@ -6429,7 +6429,7 @@ paths:
       operationId: completeLoginAuthProviderGet
       x-frontend-consumption:
         mode: browser_callback
-        reason: External auth providers redirect browsers to this HTML bridge endpoint.
+        reason: External auth providers redirect browsers to this callback endpoint.
       security: []
       x-rbac:
         authentication: public
@@ -6451,12 +6451,14 @@ paths:
             example: redacted
           example: redacted
       responses:
-        '200':
-          description: External provider callback completed and returned the HTML bridge
-          content:
-            text/html:
+        '303':
+          description: External provider callback completed and redirected to the validated return target
+          headers:
+            Location:
+              description: Validated post-login return target.
               schema:
                 type: string
+                format: uri
         '400':
           description: External provider callback failed and returned the HTML bridge
           content:
@@ -6469,7 +6471,7 @@ paths:
       operationId: completeLoginAuthProviderPost
       x-frontend-consumption:
         mode: browser_callback
-        reason: External auth providers post browsers to this HTML bridge endpoint.
+        reason: External auth providers post browsers to this callback endpoint.
       security: []
       x-rbac:
         authentication: public
@@ -6500,12 +6502,14 @@ paths:
               code: provider-code
               state: redacted
       responses:
-        '200':
-          description: Login callback HTML bridge
-          content:
-            text/html:
+        '303':
+          description: Login callback completed and redirected to the validated return target
+          headers:
+            Location:
+              description: Validated post-login return target.
               schema:
                 type: string
+                format: uri
         '400':
           description: Login callback failed
           content:

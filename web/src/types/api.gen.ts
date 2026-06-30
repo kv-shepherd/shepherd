@@ -14860,14 +14860,14 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description External provider callback completed and returned the HTML bridge */
-            200: {
+            /** @description External provider callback completed and redirected to the validated return target */
+            303: {
                 headers: {
+                    /** @description Validated post-login return target. */
+                    Location?: string;
                     [name: string]: unknown;
                 };
-                content: {
-                    "text/html": string;
-                };
+                content?: never;
             };
             /** @description External provider callback failed and returned the HTML bridge */
             400: {
@@ -14913,14 +14913,14 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Login callback HTML bridge */
-            200: {
+            /** @description Login callback completed and redirected to the validated return target */
+            303: {
                 headers: {
+                    /** @description Validated post-login return target. */
+                    Location?: string;
                     [name: string]: unknown;
                 };
-                content: {
-                    "text/html": string;
-                };
+                content?: never;
             };
             /** @description Login callback failed */
             400: {

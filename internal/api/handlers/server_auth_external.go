@@ -432,12 +432,11 @@ func (s *Server) completeExternalAuthLogin(c *gin.Context, providerID string, ca
 	}
 
 	s.setAuthSessionCookie(c, loginResp.Token, loginResp.ExpiresAt)
-	s.renderExternalAuthBridge(c, http.StatusOK, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
-		Type:                externalAuthBridgeMessageType,
-		Success:             true,
-		ForcePasswordChange: loginResp.ForcePasswordChange,
-		ReturnTo:            stateClaims.ReturnTo,
-	})
+	c.Header("Cache-Control", "no-store")
+	c.Header("Pragma", "no-cache")
+	c.Header("Location", externalAuthSuccessRedirectTarget(stateClaims.ReturnTo, loginResp.ForcePasswordChange))
+	c.Status(http.StatusSeeOther)
+	c.Writer.WriteHeaderNow()
 }
 
 func (s *Server) resolveLoginAuthProviderAdapter(
@@ -849,6 +848,21 @@ func (s *Server) renderExternalAuthBridge(
 	c.Header("Cache-Control", "no-store")
 	c.Header("Pragma", "no-cache")
 	c.Data(status, "text/html; charset=utf-8", []byte(body))
+}
+
+func externalAuthSuccessRedirectTarget(returnTo string, forcePasswordChange bool) string {
+	returnTo = strings.TrimSpace(returnTo)
+	if !forcePasswordChange {
+		return returnTo
+	}
+	parsed, err := url.Parse(returnTo)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
+		return returnTo
+	}
+	parsed.Path = "/auth/change-password"
+	parsed.RawQuery = ""
+	parsed.Fragment = ""
+	return parsed.String()
 }
 
 func generateExternalAuthBridgeNonce() (string, error) {

@@ -385,7 +385,8 @@ func TestOpenAPIValidatorRejectsUndeclaredQueryParamInStrictMode(t *testing.T) {
 func TestOpenAPIValidatorAcceptsExternalAuthCallbackPostWithExtraFormFields(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.POST("/api/v1/auth/providers/:provider_id/callback", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
+		c.Header("Location", "https://shepherd.example.com/dashboard")
+		c.Status(http.StatusSeeOther)
 	})
 
 	req := httptest.NewRequest(
@@ -398,8 +399,8 @@ func TestOpenAPIValidatorAcceptsExternalAuthCallbackPostWithExtraFormFields(t *t
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200 for callback form body, got %d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 for callback form body, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 
@@ -600,7 +601,8 @@ func TestOpenAPIValidatorAllowsRuntimeQueryMetadataOnPublicAuthLogin(t *testing.
 func TestOpenAPIValidatorAllowsRuntimeQueryMetadataOnExternalAuthCallback(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.GET("/api/v1/auth/providers/:provider_id/callback", func(c *gin.Context) {
-		c.Data(http.StatusOK, "text/html; charset=utf-8", []byte("ok"))
+		c.Header("Location", "https://shepherd.example.com/dashboard")
+		c.Status(http.StatusSeeOther)
 	})
 
 	req := httptest.NewRequest(
@@ -615,8 +617,8 @@ func TestOpenAPIValidatorAllowsRuntimeQueryMetadataOnExternalAuthCallback(t *tes
 	resp := httptest.NewRecorder()
 	router.ServeHTTP(resp, req)
 
-	if resp.Code != http.StatusOK {
-		t.Fatalf("expected 200 for external auth callback with runtime query metadata, got %d body=%s", resp.Code, resp.Body.String())
+	if resp.Code != http.StatusSeeOther {
+		t.Fatalf("expected 303 for external auth callback with runtime query metadata, got %d body=%s", resp.Code, resp.Body.String())
 	}
 }
 

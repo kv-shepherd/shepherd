@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -485,7 +484,7 @@ func TestStartLoginAuthProvider_MapsStructuredStartErrors(t *testing.T) {
 	}
 }
 
-func TestCompleteLoginAuthProviderGet_JITProvisionsUserAndReturnsBridge(t *testing.T) {
+func TestCompleteLoginAuthProviderGet_JITProvisionsUserAndRedirectsWithSessionCookie(t *testing.T) {
 	t.Parallel()
 
 	username := "alice.external." + strings.ToLower(uuid.NewString()[:8])
@@ -549,37 +548,30 @@ func TestCompleteLoginAuthProviderGet_JITProvisionsUserAndReturnsBridge(t *testi
 		Code:  "code-1",
 		State: state,
 	})
-	if w.Code != http.StatusOK {
-		t.Fatalf("callback status = %d, want %d, body=%s", w.Code, http.StatusOK, w.Body.String())
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("callback status = %d, want %d, body=%s", w.Code, http.StatusSeeOther, w.Body.String())
 	}
-	if !strings.Contains(w.Body.String(), "shepherd.external_auth.complete") {
-		t.Fatalf("callback body missing bridge payload: %s", w.Body.String())
+	if got := w.Header().Get("Location"); got != "https://console.example.com/login" {
+		t.Fatalf("callback Location = %q, want return_to", got)
 	}
-	if !strings.Contains(w.Body.String(), `"return_to":"https://console.example.com/login"`) {
-		t.Fatalf("callback body missing return_to payload: %s", w.Body.String())
-	}
-	if strings.Contains(w.Body.String(), `"token":"`) {
-		t.Fatalf("callback body should not embed token payload: %s", w.Body.String())
-	}
-	if !strings.Contains(w.Body.String(), `window.location.replace(successTarget)`) {
-		t.Fatalf("callback body missing success redirect: %s", w.Body.String())
-	}
-	csp := w.Header().Get("Content-Security-Policy")
-	if !strings.Contains(csp, "default-src 'none'") || !strings.Contains(csp, "script-src 'nonce-") {
-		t.Fatalf("callback CSP is not restrictive enough: %s", csp)
-	}
-	if !strings.Contains(w.Body.String(), `<script nonce="`) {
-		t.Fatalf("callback bridge script missing nonce: %s", w.Body.String())
+	if got := w.Header().Get("Cache-Control"); got != "no-store" {
+		t.Fatalf("callback Cache-Control = %q, want no-store", got)
 	}
 	cookieHeader := w.Header().Get("Set-Cookie")
 	if !strings.Contains(cookieHeader, "shepherd_session=") {
 		t.Fatalf("callback response missing auth session cookie: %s", cookieHeader)
 	}
-	cookieMatch := regexp.MustCompile(`shepherd_session=([^;]+)`).FindStringSubmatch(cookieHeader)
-	if len(cookieMatch) != 2 {
-		t.Fatalf("unable to extract auth session cookie: %s", cookieHeader)
+	var sessionCookie *http.Cookie
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == srv.authSessionCookieName() {
+			sessionCookie = cookie
+			break
+		}
 	}
-	claims, err := srv.jwtCfg.ValidateToken(t.Context(), cookieMatch[1])
+	if sessionCookie == nil || strings.TrimSpace(sessionCookie.Value) == "" {
+		t.Fatalf("callback response missing non-empty session cookie: %s", cookieHeader)
+	}
+	claims, err := srv.jwtCfg.ValidateToken(t.Context(), sessionCookie.Value)
 	if err != nil {
 		t.Fatalf("validate callback token: %v", err)
 	}
@@ -892,6 +884,115 @@ func TestSubmitLoginAuthProvider_CredentialMode_RBACChangeRevokesExistingSession
 	}
 }
 
+func TestCompleteLoginAuthProviderGet_CallbackCookieAuthenticatesCurrentUser(t *testing.T) {
+	t.Parallel()
+
+	username := "alice.callback.cookie." + strings.ToLower(uuid.NewString()[:8])
+	email := username + "@example.com"
+	adapter := registerRuntimeAuthTestAdapter(t, &testRuntimeAuthAdapter{
+		callbackResp: &provider.AuthResult{
+			ExternalID:  "callback-cookie-user",
+			Username:    username,
+			DisplayName: "Alice Callback Cookie",
+			Email:       email,
+			Enabled:     true,
+			Cohorts: []provider.ExternalCohort{
+				{Kind: "group", Key: "ops", DisplayName: "Ops"},
+			},
+		},
+	})
+	srv, client, _ := newExternalAuthTestServerWithAuthSessions(t, nil)
+
+	if _, err := client.AuthProvider.Create().
+		SetID("runtime-callback-cookie").
+		SetName("Runtime Callback Cookie").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create runtime provider: %v", err)
+	}
+	role, err := client.Role.Create().
+		SetID("role-runtime-callback-cookie").
+		SetName("runtime_callback_cookie").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create mapped role: %v", err)
+	}
+	if _, err := client.ExternalCohortMapping.Create().
+		SetID("cohort-mapping-callback-cookie").
+		SetProviderID("runtime-callback-cookie").
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(role.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create external cohort mapping: %v", err)
+	}
+
+	state, err := srv.issueExternalAuthState("runtime-callback-cookie", "https://console.example.com/dashboard", "qr")
+	if err != nil {
+		t.Fatalf("issue external auth state: %v", err)
+	}
+	ctx, w := newPublicGinContext(t, http.MethodGet, "/auth/providers/runtime-callback-cookie/callback?code=code-1&state="+state, "")
+	srv.CompleteLoginAuthProviderGet(ctx, "runtime-callback-cookie", generated.CompleteLoginAuthProviderGetParams{
+		Code:  "code-1",
+		State: state,
+	})
+	if w.Code != http.StatusSeeOther {
+		t.Fatalf("callback status = %d, want %d, body=%s", w.Code, http.StatusSeeOther, w.Body.String())
+	}
+	if got := w.Header().Get("Location"); got != "https://console.example.com/dashboard" {
+		t.Fatalf("callback Location = %q, want return_to", got)
+	}
+
+	var sessionCookie *http.Cookie
+	for _, cookie := range w.Result().Cookies() {
+		if cookie.Name == srv.authSessionCookieName() {
+			sessionCookie = cookie
+			break
+		}
+	}
+	if sessionCookie == nil || strings.TrimSpace(sessionCookie.Value) == "" {
+		t.Fatalf("callback response missing non-empty session cookie: %s", w.Header().Get("Set-Cookie"))
+	}
+
+	router := gin.New()
+	router.Use(middleware.JWTAuthWithConfig(srv.jwtCfg))
+	router.GET("/auth/me", srv.GetCurrentUser)
+	meReq := httptest.NewRequest(http.MethodGet, "/auth/me", http.NoBody)
+	meReq.AddCookie(sessionCookie)
+	meW := httptest.NewRecorder()
+	router.ServeHTTP(meW, meReq)
+	if meW.Code != http.StatusOK {
+		t.Fatalf("auth/me status = %d, want %d, body=%s", meW.Code, http.StatusOK, meW.Body.String())
+	}
+
+	var me generated.UserInfo
+	mustDecodeJSON(t, meW.Body.Bytes(), &me)
+	if me.Username != username {
+		t.Fatalf("auth/me username = %q, want %q", me.Username, username)
+	}
+	if !slices.Contains(me.Permissions, "vm:read") {
+		t.Fatalf("auth/me permissions = %#v, want vm:read", me.Permissions)
+	}
+}
+
+func TestExternalAuthSuccessRedirectTarget(t *testing.T) {
+	t.Parallel()
+
+	if got := externalAuthSuccessRedirectTarget(" https://console.example.com/dashboard?tab=vms#row ", false); got != "https://console.example.com/dashboard?tab=vms#row" {
+		t.Fatalf("redirect target without password change = %q", got)
+	}
+	if got := externalAuthSuccessRedirectTarget("https://console.example.com/dashboard?tab=vms#row", true); got != "https://console.example.com/auth/change-password" {
+		t.Fatalf("redirect target with password change = %q", got)
+	}
+}
+
 func TestSubmitLoginAuthProvider_CredentialMode_DisabledResultPersistsAndRevokesSessions(t *testing.T) {
 	t.Parallel()
 
@@ -1114,7 +1215,9 @@ func newExternalAuthTestServerWithAuthSessions(t *testing.T, allowedOrigins []st
 			SigningKey: []byte("test-signing-key-0123456789abcdef"),
 			Issuer:     "shepherd-test",
 			ExpiresIn:  time.Hour,
+			CookieName: defaultAuthSessionCookieName,
 		},
+		SessionConfig:  config.SessionConfig{Cookie: defaultAuthSessionCookieName, HTTPOnly: true},
 		AllowedOrigins: allowedOrigins,
 	}), client, authSessions
 }
