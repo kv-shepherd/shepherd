@@ -353,6 +353,37 @@ func (s *ExternalAuthService) deleteExternalCohortGrant(ctx context.Context, cli
 	return nil
 }
 
+func (s *ExternalAuthService) deleteExternalCohortGrantsForUser(
+	ctx context.Context,
+	userID string,
+	retainedProviderID string,
+) (bool, error) {
+	if s == nil || s.client == nil {
+		return false, fmt.Errorf("external auth service is not initialized")
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return false, fmt.Errorf("user id is required")
+	}
+	retainedProviderID = strings.TrimSpace(retainedProviderID)
+
+	query := s.client.ExternalCohortGrant.Query().
+		Where(externalcohortgrant.UserIDEQ(userID))
+	if retainedProviderID != "" {
+		query = query.Where(externalcohortgrant.ProviderIDNEQ(retainedProviderID))
+	}
+	grants, err := query.All(ctx)
+	if err != nil {
+		return false, fmt.Errorf("query stale external cohort grants: %w", err)
+	}
+	for _, grant := range grants {
+		if err := s.deleteExternalCohortGrant(ctx, s.client, grant); err != nil {
+			return false, err
+		}
+	}
+	return len(grants) > 0, nil
+}
+
 func externalCohortRoleBindingMatchesDesired(binding *ent.RoleBinding, roleID string, desired desiredExternalCohortBinding) bool {
 	if binding == nil {
 		return false

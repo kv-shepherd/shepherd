@@ -14860,7 +14860,7 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description External provider callback completed and returned the HTML bridge */
+            /** @description Legacy external provider callback HTML bridge response retained for API compatibility */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -14868,6 +14868,15 @@ export interface operations {
                 content: {
                     "text/html": string;
                 };
+            };
+            /** @description External provider callback completed and redirected to the validated return target */
+            303: {
+                headers: {
+                    /** @description Validated post-login return target. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description External provider callback failed and returned the HTML bridge */
             400: {
@@ -14913,7 +14922,7 @@ export interface operations {
             };
         };
         responses: {
-            /** @description Login callback HTML bridge */
+            /** @description Legacy login callback HTML bridge response retained for API compatibility */
             200: {
                 headers: {
                     [name: string]: unknown;
@@ -14921,6 +14930,15 @@ export interface operations {
                 content: {
                     "text/html": string;
                 };
+            };
+            /** @description Login callback completed and redirected to the validated return target */
+            303: {
+                headers: {
+                    /** @description Validated post-login return target. */
+                    Location?: string;
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Login callback failed */
             400: {
