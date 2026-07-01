@@ -320,6 +320,33 @@ function hasEditableSpecOverrides(instanceSize: InstanceSize | undefined): boole
     return Object.keys(hydrateSpecOverridesForEditing(instanceSize)).length > 0;
 }
 
+function hasGPURequirementInSpecOverrides(specOverrides: Record<string, unknown> | undefined): boolean {
+    const normalizedSpecOverrides = normalizeInstanceSizeSpecOverrides(specOverrides);
+    const raw = getSpecOverrideValue(
+        normalizedSpecOverrides,
+        'spec.template.spec.domain.devices.gpus',
+    );
+    if (Array.isArray(raw)) {
+        return raw.length > 0;
+    }
+    if (typeof raw === 'string') {
+        return raw.trim().length > 0;
+    }
+    return raw !== undefined && raw !== null;
+}
+
+function shouldPreserveIndexedOnlyGPU(
+    existingInstanceSize: InstanceSize | undefined,
+    specOverrides: Record<string, unknown> | undefined,
+): boolean {
+    if (!existingInstanceSize?.requires_gpu || specOverrides === undefined) {
+        return false;
+    }
+    return !hasGPURequirementInSpecOverrides(
+        existingInstanceSize.spec_overrides as Record<string, unknown> | undefined,
+    );
+}
+
 function isPositiveFiniteNumber(value: unknown): value is number {
     return typeof value === 'number' && Number.isFinite(value) && value > 0;
 }
@@ -377,6 +404,8 @@ function formToPayload(
     const cpuOvercommitEnabled = dedicatedCPU ? false : values.cpu_overcommit_enabled;
     const hasHugepages = Boolean(hugepagesSize);
     const shouldClearHugepagesSize = mode === 'update' && specOverrides !== undefined && !hasHugepages;
+    const preserveIndexedOnlyGPU = mode === 'update' &&
+        shouldPreserveIndexedOnlyGPU(existingInstanceSize, specOverrides);
     // Resource requests are always explicit. Omitting them lets Kubernetes or
     // KubeVirt default request to limit, which can hide dropped request values.
     // Dedicated CPU and Hugepages send aligned requests automatically because
@@ -406,6 +435,7 @@ function formToPayload(
         cpu_request: cpuRequest,
         memory_request_gi: memoryRequestGi,
         dedicated_cpu: values.dedicated_cpu,
+        requires_gpu: preserveIndexedOnlyGPU ? true : undefined,
         requires_sriov: values.requires_sriov,
         requires_hugepages: hasHugepages,
         hugepages_size: hugepagesSize ?? (shouldClearHugepagesSize ? '' : undefined),
@@ -428,6 +458,16 @@ function formToPayload(
     return Object.fromEntries(
         Object.entries(payload).filter(([, value]) => value !== undefined)
     ) as Omit<InstanceSizeCreateRequest, 'name'> & { name?: string };
+}
+
+function getValidatedFormValues(
+    form: FormInstance<InstanceSizeFormValues>,
+    validatedValues: InstanceSizeFormValues,
+): InstanceSizeFormValues {
+    return {
+        ...(form.getFieldsValue(true) as Partial<InstanceSizeFormValues>),
+        ...validatedValues,
+    } as InstanceSizeFormValues;
 }
 
 function instanceSizeToFormValues(instanceSize: InstanceSize): InstanceSizeFormValues {
@@ -597,7 +637,7 @@ export function useAdminInstanceSizesController({
     }, [createForm, createOpen]);
 
     const submitCreate = async () => {
-        const values = await createForm.validateFields();
+        const values = getValidatedFormValues(createForm, await createForm.validateFields());
         if (!validateExplicitOvercommitRequests(createForm, values, t)) {
             return;
         }
@@ -609,7 +649,7 @@ export function useAdminInstanceSizesController({
         if (!editingItem) {
             return;
         }
-        const values = await editForm.validateFields();
+        const values = getValidatedFormValues(editForm, await editForm.validateFields());
         if (!validateExplicitOvercommitRequests(editForm, values, t)) {
             return;
         }

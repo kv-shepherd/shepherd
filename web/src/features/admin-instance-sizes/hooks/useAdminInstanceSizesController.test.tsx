@@ -20,12 +20,14 @@ const {
   messageErrorMock: vi.fn(),
   createFormState: {
     validateFields: vi.fn(),
+    getFieldsValue: vi.fn(),
     resetFields: vi.fn(),
     setFields: vi.fn(),
     setFieldsValue: vi.fn(),
   },
   editFormState: {
     validateFields: vi.fn(),
+    getFieldsValue: vi.fn(),
     resetFields: vi.fn(),
     setFields: vi.fn(),
     setFieldsValue: vi.fn(),
@@ -72,6 +74,8 @@ describe('useAdminInstanceSizesController', () => {
       isLoading: false,
       refetch: vi.fn(),
     });
+    createFormState.getFieldsValue.mockReturnValue({});
+    editFormState.getFieldsValue.mockReturnValue({});
   });
 
   /**
@@ -162,6 +166,56 @@ describe('useAdminInstanceSizesController', () => {
       requires_hugepages: true,
       hugepages_size: '2Mi',
       memory_request_gi: 8,
+    }));
+  });
+
+  it('reads preserved spec_text when the schema field is not registered', async () => {
+    const createMutate = vi.fn();
+
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: createMutate, isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    createFormState.validateFields.mockResolvedValue({
+      name: 'm4.hugepages',
+      catalog_scope: 'prod',
+      cpu_cores: 4,
+      memory_gi: 8,
+      memory_overcommit_enabled: true,
+      enabled: true,
+    });
+    createFormState.getFieldsValue.mockReturnValue({
+      spec_text: '{"spec":{"template":{"spec":{"domain":{"memory":{"hugepages":{"pageSize":"2Mi"}}}}}}}',
+    });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+
+    expect(createFormState.getFieldsValue).toHaveBeenCalledWith(true);
+    expect(createFormState.setFields).not.toHaveBeenCalled();
+    expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
+      requires_hugepages: true,
+      hugepages_size: '2Mi',
+      memory_request_gi: 8,
+      spec_overrides: {
+        spec: {
+          template: {
+            spec: {
+              domain: {
+                memory: {
+                  hugepages: {
+                    pageSize: '2Mi',
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
     }));
   });
 
@@ -353,6 +407,68 @@ describe('useAdminInstanceSizesController', () => {
     const body = updateMutate.mock.calls[0]?.[0]?.body as Record<string, unknown>;
     expect(body).not.toHaveProperty('spec_overrides');
     expect(body).not.toHaveProperty('hugepages_size');
+  });
+
+  it('preserves indexed-only gpu flag when clearing editable spec overrides', async () => {
+    const createMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 2 === 1) {
+        return { mutate: createMutate, isPending: false };
+      }
+      return { mutate: updateMutate, isPending: false };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-gpu',
+        name: 'gpu.large',
+        catalog_scope: 'prod',
+        cpu_cores: 8,
+        memory_gi: 32,
+        requires_gpu: true,
+        enabled: true,
+        spec_overrides: {
+          spec: {
+            template: {
+              spec: {
+                domain: {
+                  ioThreadsPolicy: 'auto',
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    editFormState.validateFields.mockResolvedValue({
+      name: 'gpu.large',
+      catalog_scope: 'prod',
+      cpu_cores: 8,
+      memory_gi: 32,
+      memory_overcommit_enabled: false,
+      spec_text: '{}',
+      enabled: true,
+    });
+
+    await act(async () => {
+      await result.current.submitEdit();
+    });
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'size-gpu',
+      body: expect.objectContaining({
+        requires_gpu: true,
+        spec_overrides: {},
+      }),
+    });
   });
 
   it('submits explicit root volume mode when the author pins DV access modes and volume mode', async () => {

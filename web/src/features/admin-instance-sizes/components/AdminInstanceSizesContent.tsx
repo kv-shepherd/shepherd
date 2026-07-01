@@ -560,7 +560,7 @@ function InstanceSizeFormFields({
     const dedicatedCPU = Form.useWatch('dedicated_cpu', form);
     const cpuOvercommitEnabled = Form.useWatch('cpu_overcommit_enabled', form);
     const memoryOvercommitEnabled = Form.useWatch('memory_overcommit_enabled', form);
-    const specText = Form.useWatch('spec_text', form);
+    const specText = Form.useWatch('spec_text', { form, preserve: true });
     const rootVolumeModeIntent = Form.useWatch('root_volume_mode_intent', form);
     const hugepagesSize = resolveHugepagesSizeFromSpecText(specText);
     const memoryOvercommitDisabledByHugepages = Boolean(hugepagesSize);
