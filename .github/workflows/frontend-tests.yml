@@ -57,7 +57,7 @@ jobs:
 
       - name: Restore Next.js build cache
         id: next_build_cache
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: web/.next/cache
           key: ${{ runner.os }}-nextjs-build-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.js', 'web/**/*.jsx', 'web/**/*.ts', 'web/**/*.tsx', 'web/**/*.mjs', 'web/package.json', 'web/next.config.ts', 'web/tsconfig.json') }}
@@ -99,7 +99,7 @@ jobs:
 
       - name: Restore Next.js E2E build cache
         id: next_e2e_cache
-        uses: actions/cache@2c8a9bd7457de244a408f35966fab2fb45fda9c8 # v6.0.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: web/.next-e2e/ci/cache
           key: ${{ runner.os }}-nextjs-e2e-${{ hashFiles('web/package-lock.json') }}-${{ hashFiles('web/**/*.js', 'web/**/*.jsx', 'web/**/*.ts', 'web/**/*.tsx', 'web/**/*.mjs', 'web/package.json', 'web/next.config.ts', 'web/playwright.config.ts', 'web/tsconfig.json') }}
