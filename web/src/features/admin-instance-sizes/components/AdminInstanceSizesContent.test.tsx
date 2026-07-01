@@ -195,7 +195,9 @@ describe('AdminInstanceSizesContent', () => {
 
         render(<AdminInstanceSizesContent />);
 
-        expect(await screen.findByTestId('instance-size-create-modal')).toBeInTheDocument();
+        const modal = await screen.findByTestId('instance-size-create-modal');
+        expect(within(modal).getByText('cpu.maxSockets')).toBeInTheDocument();
+        expect(within(modal).getByText('memory.maxGuest')).toBeInTheDocument();
         expect(
             consoleErrorSpy.mock.calls.some((call) =>
                 call.some((value) => String(value).includes("Field can not overwrite it")),
@@ -286,11 +288,45 @@ describe('AdminInstanceSizesContent', () => {
 
         expect(await screen.findByTestId('instance-size-edit-modal')).toBeInTheDocument();
 
+        const modal = screen.getByTestId('instance-size-edit-modal');
+        const hugepagesSelect = within(modal).getByTestId('instance-size-hugepages-size');
+        expect(within(hugepagesSelect).getByText('2Mi')).toBeInTheDocument();
+        expect(hugepagesSelect).not.toHaveClass('ant-select-disabled');
+
         const overcommitLabel = screen.getByText('instanceSizes.enable_memory_overcommit').closest('label');
         const overcommitCheckbox = within(overcommitLabel as HTMLElement).getByRole('checkbox') as HTMLInputElement;
         expect(overcommitCheckbox).not.toBeChecked();
         expect(overcommitCheckbox).toBeDisabled();
         expect(screen.queryByLabelText('instanceSizes.memory_request')).not.toBeInTheDocument();
+    });
+
+    it('disables hugepages size while memory overcommit is enabled', async () => {
+        controllerState.editOpen = true;
+        controllerState.editingItem = {
+            id: 'size-memory-overcommit',
+            name: 'm4.shared',
+        };
+        controllerState.editInitialValues = {
+            name: 'm4.shared',
+            catalog_scope: 'prod',
+            cpu_cores: 4,
+            memory_gi: 8,
+            memory_request_gi: 4,
+            memory_overcommit_enabled: true,
+            enabled: true,
+            spec_text: '{}',
+        };
+
+        render(<AdminInstanceSizesContent />);
+
+        const modal = await screen.findByTestId('instance-size-edit-modal');
+        const overcommitLabel = screen.getByText('instanceSizes.enable_memory_overcommit').closest('label');
+        const overcommitCheckbox = within(overcommitLabel as HTMLElement).getByRole('checkbox') as HTMLInputElement;
+        expect(overcommitCheckbox).toBeChecked();
+
+        const hugepagesSelect = within(modal).getByTestId('instance-size-hugepages-size');
+        expect(hugepagesSelect).toHaveClass('ant-select-disabled');
+        expect(screen.getByText('Disable Memory Overcommit before choosing Hugepages Size.')).toBeInTheDocument();
     });
 
     it('rehydrates explicit root volume mode values in the edit modal', async () => {

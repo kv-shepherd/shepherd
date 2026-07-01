@@ -50,14 +50,29 @@ function resolveMaskPath(): string {
     );
 }
 
-const MASK_PATH = resolveMaskPath();
-
-function readMask(): SchemaMask {
-    return JSON.parse(readFileSync(MASK_PATH, 'utf8')) as SchemaMask;
+function resolveAllMaskPaths(): string[] {
+    const manifest = JSON.parse(
+        readFileSync(MANIFEST_PATH, 'utf8'),
+    ) as SchemaManifest;
+    const versions = manifest.entities?.instancesize?.versions ?? {};
+    return Object.values(versions)
+        .map((entry) => entry.mask_path)
+        .filter((maskPath): maskPath is string => Boolean(maskPath))
+        .map((maskPath) => path.resolve(
+            __dirname,
+            '../../../../internal/pkg/schema',
+            maskPath,
+        ));
 }
 
-function readMaskPaths(): string[] {
-    const parsed = readMask();
+const MASK_PATH = resolveMaskPath();
+
+function readMask(maskPath = MASK_PATH): SchemaMask {
+    return JSON.parse(readFileSync(maskPath, 'utf8')) as SchemaMask;
+}
+
+function readMaskPaths(maskPath = MASK_PATH): string[] {
+    const parsed = readMask(maskPath);
     return [
         ...(parsed.quick_fields ?? []).map((field) => field.path),
         ...(parsed.advanced_fields ?? []).map((field) => field.path),
@@ -79,6 +94,14 @@ describe('instancesize.mask.json', () => {
 
         expect(paths).not.toContain('spec.template.spec.domain.cpu.maxSockets');
         expect(paths).not.toContain('spec.template.spec.domain.memory.maxGuest');
+    });
+
+    it('keeps Hugepages Size out of guided mask fields because the Memory section owns it', () => {
+        for (const maskPath of resolveAllMaskPaths()) {
+            const paths = readMaskPaths(maskPath);
+
+            expect(paths).not.toContain('spec.template.spec.domain.memory.hugepages.pageSize');
+        }
     });
 
     it('promotes high-frequency map fields into the mask', () => {

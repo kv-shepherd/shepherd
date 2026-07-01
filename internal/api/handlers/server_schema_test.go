@@ -42,9 +42,6 @@ func TestGetDynamicSchema_Instancesize_Returns200(t *testing.T) {
 	if resp.Mask.QuickFields == nil {
 		t.Error("mask.quick_fields is nil, want array")
 	}
-	if len(resp.Mask.QuickFields) == 0 {
-		t.Error("expected at least one quick_field for instancesize")
-	}
 
 	// schema_version must be set.
 	if resp.SchemaVersion == "" {
@@ -121,9 +118,7 @@ func TestGetDynamicSchema_Cluster_Returns400(t *testing.T) {
 	}
 }
 
-// TestGetDynamicSchema_InstancesizeMask_ContainsHugepages verifies that the
-// instancesize mask quick_fields contain a high-frequency path (integration check).
-func TestGetDynamicSchema_InstancesizeMask_ContainsHugepages(t *testing.T) {
+func TestGetDynamicSchema_InstancesizeMask_ExcludesHugepages(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -137,15 +132,16 @@ func TestGetDynamicSchema_InstancesizeMask_ContainsHugepages(t *testing.T) {
 	}
 
 	hugepagesPath := "spec.template.spec.domain.memory.hugepages.pageSize"
-	found := false
-	for _, f := range resp.Mask.QuickFields {
-		if f.Path == hugepagesPath {
-			found = true
-			break
+	for _, fields := range [][]generated.MaskField{
+		resp.Mask.QuickFields,
+		resp.Mask.AdvancedFields,
+		resp.Mask.ProfessionalFields,
+	} {
+		for _, f := range fields {
+			if f.Path == hugepagesPath {
+				t.Fatalf("instancesize mask must not contain path %q; got %+v", hugepagesPath, fields)
+			}
 		}
-	}
-	if !found {
-		t.Errorf("quick_fields does not contain path %q; got %+v", hugepagesPath, resp.Mask.QuickFields)
 	}
 }
 
@@ -184,7 +180,7 @@ func TestGetDynamicSchema_InstancesizeMask_ContainsIOThreadsPolicy(t *testing.T)
 	}
 }
 
-func TestGetDynamicSchema_InstancesizeMask_RetainsMetadataKeys(t *testing.T) {
+func TestGetDynamicSchema_InstancesizeMask_RetainsAdvancedMetadataKeys(t *testing.T) {
 	t.Parallel()
 	gin.SetMode(gin.TestMode)
 
@@ -197,16 +193,16 @@ func TestGetDynamicSchema_InstancesizeMask_RetainsMetadataKeys(t *testing.T) {
 		t.Fatalf("decode: %v", err)
 	}
 
-	targetPath := "spec.template.spec.domain.memory.hugepages.pageSize"
+	targetPath := "spec.template.spec.domain.cpu.model"
 	var target *generated.MaskField
-	for i := range resp.Mask.QuickFields {
-		if resp.Mask.QuickFields[i].Path == targetPath {
-			target = &resp.Mask.QuickFields[i]
+	for i := range resp.Mask.AdvancedFields {
+		if resp.Mask.AdvancedFields[i].Path == targetPath {
+			target = &resp.Mask.AdvancedFields[i]
 			break
 		}
 	}
 	if target == nil {
-		t.Fatalf("quick_fields does not contain path %q", targetPath)
+		t.Fatalf("advanced_fields does not contain path %q", targetPath)
 		return
 	}
 	if target.DisplayNameKey == "" {

@@ -68,7 +68,7 @@ interface InstanceSizeFormValues {
     memory_request_gi?: number;
     cpu_overcommit_enabled?: boolean;
     memory_overcommit_enabled?: boolean;
-    // legacy hugepages_setting removed: now driven by DynamicSchemaForm spec_text
+    // legacy hugepages_setting removed: Hugepages is encoded in spec_text.
     dedicated_cpu?: boolean;
     requires_sriov?: boolean;
     /**
