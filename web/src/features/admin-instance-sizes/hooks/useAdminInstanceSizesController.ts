@@ -287,6 +287,22 @@ function parseSpecOverridesFromSpecText(specText?: string): Record<string, unkno
     return undefined;
 }
 
+function isExplicitEmptySpecOverridesText(specText?: string): boolean {
+    const trimmedSpecText = specText?.trim();
+    if (!trimmedSpecText) {
+        return false;
+    }
+    try {
+        const parsed = JSON.parse(trimmedSpecText) as unknown;
+        return parsed !== null &&
+            !Array.isArray(parsed) &&
+            typeof parsed === 'object' &&
+            Object.keys(parsed as Record<string, unknown>).length === 0;
+    } catch {
+        return false;
+    }
+}
+
 function resolveFormHugepagesSize(values: Pick<InstanceSizeFormValues, 'spec_text'>): string | undefined {
     const specOverrides = parseSpecOverridesFromSpecText(values.spec_text);
     return normalizeHugepagesPageSizeValue(
@@ -334,7 +350,10 @@ function formToPayload(
     values: InstanceSizeFormValues,
     mode: 'create' | 'update',
 ): InstanceSizePayload {
-    const specOverrides = parseSpecOverridesFromSpecText(values.spec_text);
+    const parsedSpecOverrides = parseSpecOverridesFromSpecText(values.spec_text);
+    const specOverrides =
+        parsedSpecOverrides ??
+        (mode === 'update' && isExplicitEmptySpecOverridesText(values.spec_text) ? {} : undefined);
     const hugepagesSize = normalizeHugepagesPageSizeValue(
         getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
     );
@@ -342,6 +361,7 @@ function formToPayload(
     const dedicatedCPU = values.dedicated_cpu === true;
     const cpuOvercommitEnabled = dedicatedCPU ? false : values.cpu_overcommit_enabled;
     const hasHugepages = Boolean(hugepagesSize);
+    const shouldClearHugepagesSize = mode === 'update' && specOverrides !== undefined && !hasHugepages;
     // Resource requests are always explicit. Omitting them lets Kubernetes or
     // KubeVirt default request to limit, which can hide dropped request values.
     // Dedicated CPU and Hugepages send aligned requests automatically because
@@ -373,7 +393,7 @@ function formToPayload(
         dedicated_cpu: values.dedicated_cpu,
         requires_sriov: values.requires_sriov,
         requires_hugepages: hasHugepages,
-        hugepages_size: hugepagesSize,
+        hugepages_size: hugepagesSize ?? (shouldClearHugepagesSize ? '' : undefined),
         sort_order: values.sort_order,
         enabled: values.enabled,
         system_labels: normalizeSizeSystemLabelSelection(values.system_labels),

@@ -236,6 +236,76 @@ describe('useAdminInstanceSizesController', () => {
     }));
   });
 
+  it('submits explicit clears when hugepages is removed from an existing size', async () => {
+    const createMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 2 === 1) {
+        return { mutate: createMutate, isPending: false };
+      }
+      return { mutate: updateMutate, isPending: false };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-hugepages',
+        name: 'm4.hugepages',
+        catalog_scope: 'prod',
+        cpu_cores: 4,
+        memory_gi: 8,
+        requires_hugepages: true,
+        hugepages_size: '2Mi',
+        memory_request_gi: 8,
+        enabled: true,
+        spec_overrides: {
+          spec: {
+            template: {
+              spec: {
+                domain: {
+                  memory: {
+                    hugepages: {
+                      pageSize: '2Mi',
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+    });
+
+    editFormState.validateFields.mockResolvedValue({
+      name: 'm4.hugepages',
+      catalog_scope: 'prod',
+      cpu_cores: 4,
+      memory_gi: 8,
+      memory_overcommit_enabled: false,
+      spec_text: '{}',
+      enabled: true,
+    });
+
+    await act(async () => {
+      await result.current.submitEdit();
+    });
+
+    expect(updateMutate).toHaveBeenCalledWith({
+      id: 'size-hugepages',
+      body: expect.objectContaining({
+        requires_hugepages: false,
+        hugepages_size: '',
+        spec_overrides: {},
+        memory_request_gi: 8,
+      }),
+    });
+  });
+
   it('submits explicit root volume mode when the author pins DV access modes and volume mode', async () => {
     const createMutate = vi.fn();
 

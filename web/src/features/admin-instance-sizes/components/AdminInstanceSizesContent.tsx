@@ -387,6 +387,34 @@ function parseSpecTextForUpdate(specText: unknown): Record<string, unknown> | un
     }
 }
 
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function clonePlainRecord(value: Record<string, unknown>): Record<string, unknown> {
+    if (typeof structuredClone === 'function') {
+        return structuredClone(value) as Record<string, unknown>;
+    }
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function collectCurrentSpecOverrides(form: FormInstance): Record<string, unknown> | undefined {
+    const parsedSpec = parseSpecTextForUpdate(form.getFieldValue('spec_text'));
+    if (!parsedSpec) {
+        return undefined;
+    }
+
+    const allValues = form.getFieldsValue(true) as Record<string, unknown>;
+    if (!isPlainRecord(allValues.spec)) {
+        return parsedSpec;
+    }
+
+    return normalizeInstanceSizeSpecOverrides({
+        ...parsedSpec,
+        spec: clonePlainRecord(allValues.spec),
+    });
+}
+
 function resolveSingleHugepagesSelection(value: unknown): { kind: 'clear' } | { kind: 'valid'; value: string } | { kind: 'invalid' } {
     if (value === undefined || value === null || value === '') {
         return { kind: 'clear' };
@@ -402,25 +430,27 @@ function resolveSingleHugepagesSelection(value: unknown): { kind: 'clear' } | { 
     return { kind: 'valid', value: normalized };
 }
 
-function updateHugepagesSizeSelection(form: FormInstance, value: unknown) {
+export function buildHugepagesSizeFieldsUpdate(
+    form: FormInstance,
+    value: unknown,
+): Record<string, unknown> | undefined {
     const selection = resolveSingleHugepagesSelection(value);
     if (selection.kind === 'invalid') {
-        return;
+        return undefined;
     }
     const hugepagesSize = selection.kind === 'valid' ? selection.value : undefined;
-    const currentSpec = parseSpecTextForUpdate(form.getFieldValue('spec_text'));
+    const currentSpec = collectCurrentSpecOverrides(form);
     if (!currentSpec) {
-        return;
+        return undefined;
     }
-    const nextSpec = hugepagesSize
-        ? currentSpec
-        : unsetSpecOverrideValue(currentSpec, HUGEPAGES_PAGE_SIZE_PATH);
+    const nextSpec = unsetSpecOverrideValue(currentSpec, HUGEPAGES_PAGE_SIZE_PATH);
 
     if (hugepagesSize) {
         setNestedValue(nextSpec, HUGEPAGES_PAGE_SIZE_PATH, hugepagesSize);
     }
 
-    form.setFieldsValue({
+    return {
+        spec: nextSpec.spec,
         spec_text: JSON.stringify(nextSpec, null, 2),
         ...(hugepagesSize
             ? {
@@ -428,7 +458,15 @@ function updateHugepagesSizeSelection(form: FormInstance, value: unknown) {
                 memory_request_gi: undefined,
             }
             : {}),
-    });
+    };
+}
+
+function updateHugepagesSizeSelection(form: FormInstance, value: unknown) {
+    const fieldsUpdate = buildHugepagesSizeFieldsUpdate(form, value);
+    if (!fieldsUpdate) {
+        return;
+    }
+    form.setFieldsValue(fieldsUpdate);
 }
 
 /**
