@@ -74,6 +74,13 @@ describe('instancesize.mask.json', () => {
         expect(paths).not.toContain('spec.template.spec.domain.cpu.dedicatedCpuPlacement');
     });
 
+    it('keeps KubeVirt live update ceilings out of guided mask fields', () => {
+        const paths = readMaskPaths();
+
+        expect(paths).not.toContain('spec.template.spec.domain.cpu.maxSockets');
+        expect(paths).not.toContain('spec.template.spec.domain.memory.maxGuest');
+    });
+
     it('promotes high-frequency map fields into the mask', () => {
         const paths = readMaskPaths();
 

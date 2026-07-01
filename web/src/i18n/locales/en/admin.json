@@ -610,6 +610,8 @@
   "instanceSizes.section_basic": "Basic Info",
   "instanceSizes.section_resources": "Resource Configuration",
   "instanceSizes.section_advanced": "Advanced Settings",
+  "instanceSizes.kubevirt_hotplug_defaults_title": "KubeVirt live update ceilings",
+  "instanceSizes.kubevirt_hotplug_defaults_description": "KubeVirt can derive cpu.maxSockets and memory.maxGuest from liveUpdateConfiguration when a VM does not provide its own values. Shepherd keeps them out of guided fields; use raw JSON only for deliberate overrides.",
   "instanceSizes.section_resolved_preview": "Live Global KubeVirt JSON Preview",
   "instanceSizes.resolved_preview_help": "This preview live-merges the indexed fields above with the spec overrides below. Changes to CPU, memory, overcommit, SR-IOV, or advanced spec fields are reflected here immediately. _platform contains platform-managed indexed fields and is not part of raw KubeVirt spec.",
   "instanceSizes.enable_cpu_overcommit": "CPU Overcommit",

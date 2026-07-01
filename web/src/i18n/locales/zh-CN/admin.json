@@ -609,6 +609,8 @@
   "instanceSizes.section_basic": "基本信息",
   "instanceSizes.section_resources": "资源配置",
   "instanceSizes.section_advanced": "高级设置",
+  "instanceSizes.kubevirt_hotplug_defaults_title": "KubeVirt 热更新上限",
+  "instanceSizes.kubevirt_hotplug_defaults_description": "当 VM 未自行提供取值时，KubeVirt 可以基于 liveUpdateConfiguration 派生 cpu.maxSockets 和 memory.maxGuest。Shepherd 不把它们放入引导字段；仅在需要主动覆写时使用 raw JSON。",
   "instanceSizes.section_resolved_preview": "实时全局 KubeVirt JSON 预览",
   "instanceSizes.resolved_preview_help": "这里会实时合并上方索引字段和下方 spec 覆写。你修改 CPU、内存、超分、SR-IOV 或高级区内容时，这里都会同步变化。_platform 表示平台索引字段，不是原始 KubeVirt spec。",
   "instanceSizes.enable_cpu_overcommit": "CPU Overcommit",

@@ -742,6 +742,24 @@ function InstanceSizeFormFields({
                 {t('instanceSizes.section_advanced')}
             </Divider>
 
+            <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={t('instanceSizes.kubevirt_hotplug_defaults_title')}
+                description={(
+                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                        <Text type="secondary">
+                            {t('instanceSizes.kubevirt_hotplug_defaults_description')}
+                        </Text>
+                        <Space wrap size={[8, 8]}>
+                            <Tag color="default">cpu.maxSockets</Tag>
+                            <Tag color="default">memory.maxGuest</Tag>
+                        </Space>
+                    </Space>
+                )}
+            />
+
             {/*
              * DynamicSchemaForm renders KubeVirt spec fields driven by the
              * mask from GET /schemas/instancesize.  This replaces the previous
