@@ -264,12 +264,15 @@ export function filterAdminInstanceSizes(
  */
 function parseSpecOverridesFromSpecText(specText?: string): Record<string, unknown> | undefined {
     const trimmedSpecText = specText?.trim();
-    if (!trimmedSpecText || trimmedSpecText === '{}') {
+    if (!trimmedSpecText) {
         return undefined;
     }
     try {
         const parsed = JSON.parse(trimmedSpecText) as unknown;
         if (parsed !== null && !Array.isArray(parsed) && typeof parsed === 'object') {
+            if (Object.keys(parsed as Record<string, unknown>).length === 0) {
+                return undefined;
+            }
             // Outbound boundary normalization: legacy paths are migrated
             // to canonical form, then any indexed-column path that may have
             // slipped in (preset payload, raw JSON edit, legacy DB row)
@@ -308,6 +311,13 @@ function resolveFormHugepagesSize(values: Pick<InstanceSizeFormValues, 'spec_tex
     return normalizeHugepagesPageSizeValue(
         getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
     );
+}
+
+function hasEditableSpecOverrides(instanceSize: InstanceSize | undefined): boolean {
+    if (!instanceSize) {
+        return false;
+    }
+    return Object.keys(hydrateSpecOverridesForEditing(instanceSize)).length > 0;
 }
 
 function isPositiveFiniteNumber(value: unknown): value is number {
@@ -349,11 +359,16 @@ function validateExplicitOvercommitRequests(
 function formToPayload(
     values: InstanceSizeFormValues,
     mode: 'create' | 'update',
+    existingInstanceSize?: InstanceSize,
 ): InstanceSizePayload {
     const parsedSpecOverrides = parseSpecOverridesFromSpecText(values.spec_text);
+    const shouldSubmitEmptySpecOverrides =
+        mode === 'update' &&
+        isExplicitEmptySpecOverridesText(values.spec_text) &&
+        hasEditableSpecOverrides(existingInstanceSize);
     const specOverrides =
         parsedSpecOverrides ??
-        (mode === 'update' && isExplicitEmptySpecOverridesText(values.spec_text) ? {} : undefined);
+        (shouldSubmitEmptySpecOverrides ? {} : undefined);
     const hugepagesSize = normalizeHugepagesPageSizeValue(
         getSpecOverrideValue(specOverrides, HUGEPAGES_PAGE_SIZE_PATH),
     );
@@ -598,7 +613,7 @@ export function useAdminInstanceSizesController({
         if (!validateExplicitOvercommitRequests(editForm, values, t)) {
             return;
         }
-        const payload = formToPayload(values, 'update');
+        const payload = formToPayload(values, 'update', editingItem);
         updateMutation.mutate({
             id: editingItem.id,
             body: payload as unknown as InstanceSizeUpdateRequest,

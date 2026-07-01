@@ -306,6 +306,55 @@ describe('useAdminInstanceSizesController', () => {
     });
   });
 
+  it('preserves indexed capabilities when unchanged spec_text is empty', async () => {
+    const createMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 2 === 1) {
+        return { mutate: createMutate, isPending: false };
+      }
+      return { mutate: updateMutate, isPending: false };
+    });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-gpu',
+        name: 'gpu.large',
+        catalog_scope: 'prod',
+        cpu_cores: 8,
+        memory_gi: 32,
+        requires_gpu: true,
+        enabled: true,
+        spec_overrides: {},
+      });
+    });
+
+    editFormState.validateFields.mockResolvedValue({
+      name: 'gpu.large',
+      catalog_scope: 'prod',
+      cpu_cores: 8,
+      memory_gi: 32,
+      memory_overcommit_enabled: false,
+      spec_text: '{ }',
+      enabled: true,
+    });
+
+    await act(async () => {
+      await result.current.submitEdit();
+    });
+
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+    const body = updateMutate.mock.calls[0]?.[0]?.body as Record<string, unknown>;
+    expect(body).not.toHaveProperty('spec_overrides');
+    expect(body).not.toHaveProperty('hugepages_size');
+  });
+
   it('submits explicit root volume mode when the author pins DV access modes and volume mode', async () => {
     const createMutate = vi.fn();
 
