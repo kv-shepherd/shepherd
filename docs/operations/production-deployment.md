@@ -190,15 +190,17 @@ Before declaring a production deployment ready:
 
 2. For beta/RC readiness, production go-live, or high-risk provider/runtime
    changes, run live E2E against a real KubeVirt-capable cluster using
-   [live-e2e-validation.md](./live-e2e-validation.md). For a normal alpha patch
-   or narrow bug fix, document the deferral and require the cheaper gates first:
-   backend behavior suites, API contract checks, generated type sync, frontend
+   [live-e2e-validation.md](./live-e2e-validation.md). Production-ready evidence
+   cannot defer live E2E. For a normal alpha patch or narrow bug fix, record a
+   non-ready deferral instead and require the cheaper gates first: backend
+   behavior suites, API contract checks, generated type sync, frontend
    unit/type/build checks, and mock smoke E2E.
 
 3. Capture machine-readable production evidence.
 
    Prefer the collector so the evidence bundle, command logs, and manifest are
-   produced by one repeatable command:
+   produced by one repeatable command. Use strict mode only when live E2E has
+   passed and the deployment is being declared production-ready:
 
    ```bash
    PRODUCTION_EVIDENCE_REQUIRE_READY=true \
@@ -233,6 +235,28 @@ Before declaring a production deployment ready:
    live E2E evidence manifest path and the manual live E2E evidence bundle
    directory.
 
+   For an alpha patch or narrow bug-fix deferral, collect a non-ready evidence
+   bundle without strict mode. Do not pass `PRODUCTION_EVIDENCE_REQUIRE_READY`
+   and do not set `LIVE_E2E_EVIDENCE_FILE` unless a full live run exists:
+
+   ```bash
+   ROLLBACK_IMAGE_VERSION=<previous-version-or-image-tag> \
+   SERVER_PUBLIC_BASE_URL=https://<public-host> \
+     make production-evidence-collect
+   ```
+
+   Validate deferral evidence with the schema validator directly, without
+   `--require-production-ready`, `--require-existing-artifacts`, or
+   `--require-live-e2e-pass`:
+
+   ```bash
+   bash scripts/check_production_evidence.sh \
+     --file evidence/production-<timestamp>/production-deployment-evidence.json
+   ```
+
+   A deferral bundle is only a review record for the skipped live E2E evidence.
+   It must not be used to declare production go-live complete.
+
    For a manual fallback, start from the checked-in schema example and fill it
    with the release, image, database topology, health-check, full live E2E
    evidence manifest, manual live E2E evidence bundle, and rollback artifact
@@ -244,8 +268,8 @@ Before declaring a production deployment ready:
      evidence/production-deployment-evidence.json
    ```
 
-   Validate the generated or manually completed manifest before declaring
-   go-live complete:
+   Validate the generated or manually completed production-ready manifest before
+   declaring go-live complete:
 
    ```bash
    PRODUCTION_EVIDENCE_FILE=evidence/production-<timestamp>/production-deployment-evidence.json \
