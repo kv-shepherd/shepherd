@@ -1,13 +1,5 @@
 {
-    "quick_fields": [
-        {
-            "path": "spec.template.spec.domain.memory.hugepages.pageSize",
-            "display_name": "Hugepages Size",
-            "display_name_key": "instanceSizes.mask.hugepages_size",
-            "help_key": "instanceSizes.mask.hugepages_help",
-            "placeholder_key": "instanceSizes.mask.hugepages_placeholder"
-        }
-    ],
+    "quick_fields": [],
     "advanced_fields": [
         {
             "path": "spec.template.spec.domain.cpu.model",

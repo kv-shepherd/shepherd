@@ -172,7 +172,11 @@ vi.mock('../../admin-templates/components/DynamicSchemaForm', () => ({
     })(),
 }));
 
-import { AdminInstanceSizesContent, applyInstanceSizePreset } from './AdminInstanceSizesContent';
+import {
+    AdminInstanceSizesContent,
+    applyInstanceSizePreset,
+    buildHugepagesSizeFieldsUpdate,
+} from './AdminInstanceSizesContent';
 
 describe('AdminInstanceSizesContent', () => {
     beforeEach(() => {
@@ -195,7 +199,9 @@ describe('AdminInstanceSizesContent', () => {
 
         render(<AdminInstanceSizesContent />);
 
-        expect(await screen.findByTestId('instance-size-create-modal')).toBeInTheDocument();
+        const modal = await screen.findByTestId('instance-size-create-modal');
+        expect(within(modal).getByText('cpu.maxSockets')).toBeInTheDocument();
+        expect(within(modal).getByText('memory.maxGuest')).toBeInTheDocument();
         expect(
             consoleErrorSpy.mock.calls.some((call) =>
                 call.some((value) => String(value).includes("Field can not overwrite it")),
@@ -286,11 +292,148 @@ describe('AdminInstanceSizesContent', () => {
 
         expect(await screen.findByTestId('instance-size-edit-modal')).toBeInTheDocument();
 
+        const modal = screen.getByTestId('instance-size-edit-modal');
+        const hugepagesSelect = within(modal).getByTestId('instance-size-hugepages-size');
+        expect(within(hugepagesSelect).getByText('2Mi')).toBeInTheDocument();
+        expect(hugepagesSelect).not.toHaveClass('ant-select-disabled');
+
         const overcommitLabel = screen.getByText('instanceSizes.enable_memory_overcommit').closest('label');
         const overcommitCheckbox = within(overcommitLabel as HTMLElement).getByRole('checkbox') as HTMLInputElement;
         expect(overcommitCheckbox).not.toBeChecked();
         expect(overcommitCheckbox).toBeDisabled();
         expect(screen.queryByLabelText('instanceSizes.memory_request')).not.toBeInTheDocument();
+    });
+
+    it('disables hugepages size while memory overcommit is enabled', async () => {
+        controllerState.editOpen = true;
+        controllerState.editingItem = {
+            id: 'size-memory-overcommit',
+            name: 'm4.shared',
+        };
+        controllerState.editInitialValues = {
+            name: 'm4.shared',
+            catalog_scope: 'prod',
+            cpu_cores: 4,
+            memory_gi: 8,
+            memory_request_gi: 4,
+            memory_overcommit_enabled: true,
+            enabled: true,
+            spec_text: '{}',
+        };
+
+        render(<AdminInstanceSizesContent />);
+
+        const modal = await screen.findByTestId('instance-size-edit-modal');
+        const overcommitLabel = screen.getByText('instanceSizes.enable_memory_overcommit').closest('label');
+        const overcommitCheckbox = within(overcommitLabel as HTMLElement).getByRole('checkbox') as HTMLInputElement;
+        expect(overcommitCheckbox).toBeChecked();
+
+        const hugepagesSelect = within(modal).getByTestId('instance-size-hugepages-size');
+        expect(hugepagesSelect).toHaveClass('ant-select-disabled');
+        expect(screen.getByText('Disable Memory Overcommit before choosing Hugepages Size.')).toBeInTheDocument();
+    });
+
+    it('merges hugepages changes into the live spec form tree', () => {
+        const form = {
+            getFieldValue: vi.fn(() => JSON.stringify({
+                'spec.template.spec.domain.memory.hugepages.pageSize': '2Mi',
+                spec: {
+                    template: {
+                        spec: {
+                            domain: {
+                                cpu: {
+                                    model: 'host-model',
+                                },
+                            },
+                        },
+                    },
+                },
+            })),
+            getFieldsValue: vi.fn(() => ({
+                spec: {
+                    template: {
+                        spec: {
+                            domain: {
+                                ioThreadsPolicy: 'auto',
+                            },
+                        },
+                    },
+                },
+            })),
+        };
+
+        const update = buildHugepagesSizeFieldsUpdate(form as never, ['1Gi']);
+
+        expect(update).toMatchObject({
+            memory_overcommit_enabled: false,
+            memory_request_gi: undefined,
+        });
+        const parsedSpecText = JSON.parse(update?.spec_text as string) as Record<string, unknown>;
+        expect(parsedSpecText).toEqual({
+            spec: {
+                template: {
+                    spec: {
+                        domain: {
+                            ioThreadsPolicy: 'auto',
+                            memory: {
+                                hugepages: {
+                                    pageSize: '1Gi',
+                                },
+                            },
+                        },
+                    },
+                },
+            },
+        });
+        expect(
+            Object.prototype.hasOwnProperty.call(
+                parsedSpecText,
+                'spec.template.spec.domain.memory.hugepages.pageSize',
+            ),
+        ).toBe(false);
+        expect(update?.spec).toEqual(parsedSpecText.spec);
+    });
+
+    it('builds an explicit spec clear when hugepages is removed', () => {
+        const form = {
+            getFieldValue: vi.fn(() => JSON.stringify({
+                spec: {
+                    template: {
+                        spec: {
+                            domain: {
+                                memory: {
+                                    hugepages: {
+                                        pageSize: '2Mi',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            })),
+            getFieldsValue: vi.fn(() => ({
+                spec: {
+                    template: {
+                        spec: {
+                            domain: {
+                                memory: {
+                                    hugepages: {
+                                        pageSize: '2Mi',
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            })),
+        };
+
+        const update = buildHugepagesSizeFieldsUpdate(form as never, []);
+
+        expect(update).toEqual({
+            spec: undefined,
+            spec_text: '{}',
+        });
     });
 
     it('rehydrates explicit root volume mode values in the edit modal', async () => {

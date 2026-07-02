@@ -47,6 +47,16 @@ export function setNestedValue(target: Record<string, unknown>, path: string, va
     }
 }
 
+export function unsetSpecOverrideValue(
+    spec: Record<string, unknown> | undefined,
+    path: string,
+): Record<string, unknown> {
+    const cleaned = cloneSpecOverrides(spec);
+    delete cleaned[path];
+    unsetAndPruneAncestors(cleaned, path);
+    return cleaned;
+}
+
 function deleteNestedValue(target: Record<string, unknown>, path: string) {
     const segments = path.split('.');
     let current: Record<string, unknown> = target;

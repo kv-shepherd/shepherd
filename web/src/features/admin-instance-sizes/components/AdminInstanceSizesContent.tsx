@@ -59,6 +59,8 @@ import {
 import { translateApiError } from '@/lib/api/errorMessage';
 import {
     HUGEPAGES_PAGE_SIZE_PATH,
+    HUGEPAGES_PRESET_OPTIONS,
+    isValidHugepagesPageSizeValue,
     normalizeHugepagesPageSizeValue,
 } from '@/lib/hugepages';
 import { useAutoOpenIntent } from '@/features/setup-guide/hooks/useAutoOpenIntent';
@@ -74,6 +76,8 @@ import {
     getSpecOverrideValue,
     INDEXED_SPEC_OVERRIDE_PATHS,
     normalizeInstanceSizeSpecOverrides,
+    setNestedValue,
+    unsetSpecOverrideValue,
 } from '../specOverrides';
 import {
     formatCores,
@@ -98,7 +102,10 @@ const { Text } = Typography;
 // InstanceSize indexed columns (cpu_cores / memory_gi / dedicated_cpu / ...).
 // The same list is used at every data boundary by stripIndexedSpecOverridePaths
 // to keep spec_text clean — see specOverrides.ts for the full rationale.
-const INSTANCE_SIZE_RECOGNIZED_EXCLUDED_PATHS: string[] = [...INDEXED_SPEC_OVERRIDE_PATHS];
+const INSTANCE_SIZE_RECOGNIZED_EXCLUDED_PATHS: string[] = [
+    ...INDEXED_SPEC_OVERRIDE_PATHS,
+    HUGEPAGES_PAGE_SIZE_PATH,
+];
 
 const ROOT_VOLUME_ACCESS_MODE_OPTIONS = [
     'ReadWriteOnce',
@@ -365,10 +372,107 @@ function resolveHugepagesSizeFromSpecText(specText: unknown): string | undefined
     }
 }
 
+function parseSpecTextForUpdate(specText: unknown): Record<string, unknown> | undefined {
+    if (typeof specText !== 'string' || !specText.trim()) {
+        return {};
+    }
+    try {
+        const parsed = JSON.parse(specText) as unknown;
+        if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+            return undefined;
+        }
+        return normalizeInstanceSizeSpecOverrides(parsed as Record<string, unknown>);
+    } catch {
+        return undefined;
+    }
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+    return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+function clonePlainRecord(value: Record<string, unknown>): Record<string, unknown> {
+    if (typeof structuredClone === 'function') {
+        return structuredClone(value) as Record<string, unknown>;
+    }
+    return JSON.parse(JSON.stringify(value)) as Record<string, unknown>;
+}
+
+function collectCurrentSpecOverrides(form: FormInstance): Record<string, unknown> | undefined {
+    const parsedSpec = parseSpecTextForUpdate(form.getFieldValue('spec_text'));
+    if (!parsedSpec) {
+        return undefined;
+    }
+
+    const allValues = form.getFieldsValue(true) as Record<string, unknown>;
+    if (!isPlainRecord(allValues.spec)) {
+        return parsedSpec;
+    }
+
+    return normalizeInstanceSizeSpecOverrides({
+        ...parsedSpec,
+        spec: clonePlainRecord(allValues.spec),
+    });
+}
+
+function resolveSingleHugepagesSelection(value: unknown): { kind: 'clear' } | { kind: 'valid'; value: string } | { kind: 'invalid' } {
+    if (value === undefined || value === null || value === '') {
+        return { kind: 'clear' };
+    }
+    if (Array.isArray(value) && value.length === 0) {
+        return { kind: 'clear' };
+    }
+    const rawValue = Array.isArray(value) ? value[value.length - 1] : value;
+    const normalized = normalizeHugepagesPageSizeValue(rawValue);
+    if (!normalized || !isValidHugepagesPageSizeValue(normalized)) {
+        return { kind: 'invalid' };
+    }
+    return { kind: 'valid', value: normalized };
+}
+
+export function buildHugepagesSizeFieldsUpdate(
+    form: FormInstance,
+    value: unknown,
+): Record<string, unknown> | undefined {
+    const selection = resolveSingleHugepagesSelection(value);
+    if (selection.kind === 'invalid') {
+        return undefined;
+    }
+    const hugepagesSize = selection.kind === 'valid' ? selection.value : undefined;
+    const currentSpec = collectCurrentSpecOverrides(form);
+    if (!currentSpec) {
+        return undefined;
+    }
+    const nextSpec = unsetSpecOverrideValue(currentSpec, HUGEPAGES_PAGE_SIZE_PATH);
+
+    if (hugepagesSize) {
+        setNestedValue(nextSpec, HUGEPAGES_PAGE_SIZE_PATH, hugepagesSize);
+    }
+
+    return {
+        spec: nextSpec.spec,
+        spec_text: JSON.stringify(nextSpec, null, 2),
+        ...(hugepagesSize
+            ? {
+                memory_overcommit_enabled: false,
+                memory_request_gi: undefined,
+            }
+            : {}),
+    };
+}
+
+function updateHugepagesSizeSelection(form: FormInstance, value: unknown) {
+    const fieldsUpdate = buildHugepagesSizeFieldsUpdate(form, value);
+    if (!fieldsUpdate) {
+        return;
+    }
+    form.setFieldsValue(fieldsUpdate);
+}
+
 /**
  * Schema-driven spec_overrides section for InstanceSize modals.
  *
- * Replaces hardcoded Hugepages Select + GPU Form.List + JSON textarea.
+ * Renders low-frequency KubeVirt tuning fields from GET /schemas/instancesize.
  * Loads schema+mask from GET /schemas/instancesize (ADR-0023 Stage 1).
  *
  * Degradation chain (ADR-0023):
@@ -435,7 +539,9 @@ function InstanceSizeSpecSection({
  * Architecture:
  * - Metadata fields (cpu_cores, memory_gi, overcommit, etc.) remain as
  *   explicit Ant Design Form.Items — these are InstanceSize-specific API fields.
- * - Spec overrides (hugepages, GPU devices, CPU model, etc.) are rendered
+ * - Hugepages is explicit in the Memory section because it conflicts with
+ *   Memory Overcommit and drives request/limit alignment.
+ * - Other spec overrides (GPU devices, CPU model, etc.) are rendered
  *   schema-driven via DynamicSchemaForm (ADR-0023 Stage 1).
  *
  * The `formRef` is passed down so the parent Form's onValuesChange can
@@ -454,10 +560,11 @@ function InstanceSizeFormFields({
     const dedicatedCPU = Form.useWatch('dedicated_cpu', form);
     const cpuOvercommitEnabled = Form.useWatch('cpu_overcommit_enabled', form);
     const memoryOvercommitEnabled = Form.useWatch('memory_overcommit_enabled', form);
-    const specText = Form.useWatch('spec_text', form);
+    const specText = Form.useWatch('spec_text', { form, preserve: true });
     const rootVolumeModeIntent = Form.useWatch('root_volume_mode_intent', form);
     const hugepagesSize = resolveHugepagesSizeFromSpecText(specText);
     const memoryOvercommitDisabledByHugepages = Boolean(hugepagesSize);
+    const hugepagesDisabledByMemoryOvercommit = Boolean(memoryOvercommitEnabled && !hugepagesSize);
     const showMemoryOvercommitFields = !!memoryOvercommitEnabled && !memoryOvercommitDisabledByHugepages;
 
     return (
@@ -522,6 +629,24 @@ function InstanceSizeFormFields({
             <Divider orientation="left" plain>
                 {t('instanceSizes.section_resources')}
             </Divider>
+
+            <Alert
+                type="info"
+                showIcon
+                style={{ marginBottom: 16 }}
+                message={t('instanceSizes.kubevirt_hotplug_defaults_title')}
+                description={(
+                    <Space direction="vertical" size={6} style={{ width: '100%' }}>
+                        <Text type="secondary">
+                            {t('instanceSizes.kubevirt_hotplug_defaults_description')}
+                        </Text>
+                        <Space wrap size={[8, 8]}>
+                            <Tag color="default">cpu.maxSockets</Tag>
+                            <Tag color="default">memory.maxGuest</Tag>
+                        </Space>
+                    </Space>
+                )}
+            />
 
             <Form.Item
                 name="cpu_cores"
@@ -596,6 +721,37 @@ function InstanceSizeFormFields({
                 rules={[{ required: true }]}
             >
                 <UnitInputNumber min={0.5} step={0.5} precision={1} unit="Gi" />
+            </Form.Item>
+
+            <Form.Item
+                label={t('instanceSizes.hugepages_size')}
+                extra={
+                    hugepagesDisabledByMemoryOvercommit
+                        ? t(
+                            'instanceSizes.hugepages_disabled_by_memory_overcommit',
+                            'Disable Memory Overcommit before choosing Hugepages Size.',
+                        )
+                        : t(
+                            'instanceSizes.hugepages_help',
+                            'When Hugepages is set, Shepherd sends memory request equal to memory limit and Memory Overcommit is unavailable.',
+                        )
+                }
+            >
+                <Select
+                    mode="tags"
+                    allowClear
+                    maxTagCount={1}
+                    tokenSeparators={[',']}
+                    disabled={hugepagesDisabledByMemoryOvercommit}
+                    value={hugepagesSize ? [hugepagesSize] : []}
+                    options={HUGEPAGES_PRESET_OPTIONS.map((value) => ({
+                        label: value,
+                        value,
+                    }))}
+                    placeholder={t('instanceSizes.hugepages_placeholder')}
+                    onChange={(value) => updateHugepagesSizeSelection(form, value)}
+                    data-testid="instance-size-hugepages-size"
+                />
             </Form.Item>
 
             {/* Memory Overcommit: conditional reveal */}
@@ -745,7 +901,7 @@ function InstanceSizeFormFields({
             {/*
              * DynamicSchemaForm renders KubeVirt spec fields driven by the
              * mask from GET /schemas/instancesize.  This replaces the previous
-             * hardcoded Hugepages Select + GPU Form.List + JSON textarea.
+             * hardcoded GPU Form.List + JSON textarea.
              *
              * Data flow:
              *   spec_text (JSON string in Form) ←→ DynamicSchemaForm
