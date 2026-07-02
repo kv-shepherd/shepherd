@@ -188,8 +188,12 @@ Before declaring a production deployment ready:
    go run docs/design/ci/scripts/check_master_flow_test_matrix.go
    ```
 
-2. Run live E2E against a real KubeVirt-capable cluster using
-   [live-e2e-validation.md](./live-e2e-validation.md).
+2. For beta/RC readiness, production go-live, or high-risk provider/runtime
+   changes, run live E2E against a real KubeVirt-capable cluster using
+   [live-e2e-validation.md](./live-e2e-validation.md). For a normal alpha patch
+   or narrow bug fix, document the deferral and require the cheaper gates first:
+   backend behavior suites, API contract checks, generated type sync, frontend
+   unit/type/build checks, and mock smoke E2E.
 
 3. Capture machine-readable production evidence.
 
@@ -255,9 +259,9 @@ Before declaring a production deployment ready:
    runs the validator self-test and validates the checked-in schema example; it
    does not claim production readiness.
 
-The roadmap item "Finish live E2E validation" is not complete until the live
-E2E result comes from a real backend and real KubeVirt cluster, with cleanup
-reviewed.
+When live E2E is used for beta/RC or production-readiness evidence, the roadmap
+item is not complete until the result comes from a real backend and real
+KubeVirt cluster, with cleanup reviewed.
 
 ## Upgrade Procedure
 
