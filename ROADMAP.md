@@ -26,9 +26,13 @@ versions, storage classes, auth providers, and organization models.
 ## Near Term
 
 - Keep public documentation aligned with the current monorepo structure.
-- Finish live E2E validation for login, VM request, approval, delivery, power,
-  delete, VNC/serial console, and directory-sync paths using the documented
-  real-cluster validation SOP.
+- Keep the higher-signal everyday test surface strong: backend behavior suites,
+  API contract checks, generated type sync, frontend unit/type/build checks, and
+  mock smoke E2E remain the normal PR and alpha-release gates.
+- Keep live E2E validation available as manual beta/RC, production-readiness, or
+  high-risk provider-change evidence for login, VM request, approval, delivery,
+  power, delete, VNC/serial console, and directory-sync paths using the
+  documented real-cluster validation SOP.
 - Keep deployment documentation, monitoring packaging, and production upgrade
   guidance aligned with the operations runbooks.
 - Continue API contract checks, generated type sync, and design-governance
@@ -49,8 +53,9 @@ versions, storage classes, auth providers, and organization models.
   rule tests, runbook-link checks, and Grafana dashboard assets are accepted by
   ADR-0055. Optional Compose and Prometheus Operator monitoring packaging is
   accepted by ADR-0056. Default-off OpenTelemetry HTTP tracing plus bounded HTTP
-  and River worker correlation logs are accepted by ADR-0057. Live E2E
-  completion evidence must use the ADR-0058 machine-readable evidence bundle.
+  and River worker correlation logs are accepted by ADR-0057. When live E2E is
+  used for beta/RC or production-readiness evidence, completion evidence must
+  use the ADR-0058 machine-readable evidence bundle.
 
 ## V2+ Candidates
 

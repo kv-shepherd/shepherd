@@ -14,6 +14,14 @@ mock smoke tests.
 Mock route handlers, `test.skip()` calls, and seeded-only assertions are not
 valid evidence for live E2E completion.
 
+Live E2E is not a normal alpha patch or pull-request gate. Use the cheaper,
+more deterministic gates first: backend behavior suites, API contract checks,
+generated type sync, frontend unit/type/build checks, and mock smoke E2E. Run
+live E2E when the release claim specifically needs real KubeVirt evidence, such
+as beta/RC readiness, production go-live, a new validation cluster, or a
+high-risk change to provider, CDI clone, console, status convergence, or cluster
+policy behavior.
+
 The current Playwright configuration follows the standard CI pattern of explicit
 projects, CI retries, first-retry traces, screenshots on failure, and a
 `webServer` entry that starts a dedicated Next.js server. Live tests use the
@@ -262,10 +270,11 @@ bash docs/design/ci/scripts/check_live_e2e_evidence_manifest.sh \
   .run/live-e2e/<date>/<run>/live-e2e.evidence.json
 ```
 
-Live E2E is outside required GitHub CI. The run is long-running and depends on a
-real KubeVirt-capable cluster, kubeconfig provenance, operator cleanup review,
-and runtime credentials that GitHub-hosted CI should not own. Use the
-latest-manifest validator manually:
+Live E2E is outside required GitHub CI and outside the default alpha patch gate.
+The run is long-running and depends on a real KubeVirt-capable cluster,
+kubeconfig provenance, operator cleanup review, and runtime access material that
+GitHub-hosted CI should not own. Use the latest-manifest validator manually when
+live evidence is required:
 
 ```bash
 make ci-live-e2e-latest-evidence

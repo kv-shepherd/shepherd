@@ -7,10 +7,13 @@
 
 The live E2E runner is the manual release-evidence path for proving the
 master-flow against a real backend, PostgreSQL, and a real K8s/KubeVirt
-cluster. It is intentionally outside required GitHub CI because it needs
-operator-controlled credentials, a real cluster target, and a longer execution
-window. A release claim needs durable evidence, not just a terminal success
-line.
+cluster when that level of evidence is required. It is intended for beta/RC
+readiness, production go-live, new validation-cluster qualification, or
+high-risk provider/runtime changes. It is intentionally outside required GitHub
+CI and the default alpha patch gate because it needs operator-controlled
+runtime access, a real cluster target, and a longer execution window. A release
+claim that depends on real-cluster behavior needs durable evidence, not just a
+terminal success line.
 
 `live-e2e.evidence.json` is the machine-readable manifest that binds one run to
 its result file, logs, Playwright structured report, backend guard outcome, and
