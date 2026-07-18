@@ -34,22 +34,36 @@ type DirectorySyncApplyResult struct {
 
 // DirectorySyncService owns canonical conflict classification and persistence.
 type DirectorySyncService struct {
-	client *ent.Client
+	client                 *ent.Client
+	roleAssignmentExecutor RoleAssignmentExecutor
 }
 
 func NewDirectorySyncService(client *ent.Client) *DirectorySyncService {
 	return &DirectorySyncService{client: client}
 }
 
-// WithClient derives a transaction-scoped service instance for callers that
-// own the transaction boundary.
+// WithClient derives a service for a different Ent client. Production callers
+// that can reconcile managed RoleBindings must use WithTransaction so the
+// required user/role row locks share the write transaction.
 func (s *DirectorySyncService) WithClient(client *ent.Client) *DirectorySyncService {
 	if s == nil {
 		return &DirectorySyncService{client: client}
 	}
 	derived := *s
 	derived.client = client
+	derived.roleAssignmentExecutor = nil
 	return &derived
+}
+
+// WithTransaction derives a transaction-scoped directory service and enables
+// the role locks required by managed RoleBinding reconciliation.
+func (s *DirectorySyncService) WithTransaction(tx *ent.Tx) *DirectorySyncService {
+	if tx == nil {
+		return s.WithClient(nil)
+	}
+	derived := s.WithClient(tx.Client())
+	derived.roleAssignmentExecutor = tx
+	return derived
 }
 
 func (s *DirectorySyncService) Preview(
@@ -256,7 +270,10 @@ func (s *DirectorySyncService) ApplyRecord(
 		ProfileAttributes: record.Attributes,
 		Cohorts:           record.Cohorts,
 	}
-	externalAuth := &ExternalAuthService{client: s.client}
+	externalAuth := &ExternalAuthService{
+		client:                 s.client,
+		roleAssignmentExecutor: s.roleAssignmentExecutor,
+	}
 
 	targetUserID := directorySameExternalIdentityID(conflicts)
 	if targetUserID == "" {
@@ -369,7 +386,10 @@ func (s *DirectorySyncService) ApplyEnrichmentRecord(
 		ProfileAttributes: record.Attributes,
 		Cohorts:           record.Cohorts,
 	}
-	externalAuth := &ExternalAuthService{client: s.client}
+	externalAuth := &ExternalAuthService{
+		client:                 s.client,
+		roleAssignmentExecutor: s.roleAssignmentExecutor,
+	}
 	if err := externalAuth.syncObservedExternalCohorts(ctx, authProviderID, externalResult.Cohorts); err != nil {
 		return DirectorySyncApplyResult{}, err
 	}

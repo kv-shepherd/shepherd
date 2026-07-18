@@ -9,6 +9,23 @@ import { useApiAction, useApiGet, useApiMutation } from "@/hooks/useApiQuery";
 import { api } from "@/lib/api/client";
 import { translateApiError } from "@/lib/api/errorMessage";
 import {
+  canManageBatchOperation,
+  createBatchActionFeedback,
+  extractBatchRetryAfterSeconds,
+  extractRestartReconciliationNotice,
+  isBatchConflictError,
+  isRetryableBatchChild,
+  type BatchActionFeedback,
+  type BatchActionKind,
+  type RestartReconciliationNotice,
+} from "@/features/vm-management/batchActions";
+import {
+  clearStoredBatchRequestIntent,
+  isSameStoredBatchRequestIntent,
+  resolveStoredBatchRequestIntent,
+  type StoredBatchRequestIntent,
+} from "@/features/vm-management/batchRequestIntentStorage";
+import {
   filterCompatibleInstanceSizes,
   templateInstanceSizeCompatible,
 } from "@/features/catalog/systemLabels";
@@ -74,6 +91,21 @@ interface VMListFilters {
 
 type VMCreateFormValues = VMCreateRequest & { batch_count?: number };
 type VMModifyFormValues = VMModifyRequest;
+type VMBatchSubmitMutationInput = {
+  body: VMBatchSubmitRequest;
+  intent: StoredBatchRequestIntent;
+  submissionSequence: number;
+};
+type VMBatchPowerMutationInput = {
+  body: VMBatchPowerRequest;
+  intent: StoredBatchRequestIntent;
+  submissionSequence: number;
+};
+type VMBatchActionMutationInput = {
+  actorKey: string;
+  batchID: string;
+  targetTicketIDs: string[];
+};
 
 const TERMINAL_BATCH_STATUSES = new Set([
   "COMPLETED",
@@ -81,21 +113,17 @@ const TERMINAL_BATCH_STATUSES = new Set([
   "FAILED",
   "CANCELLED",
 ]);
-const REQUEST_TRACKED_BATCH_OPERATIONS = new Set(["CREATE", "MODIFY", "DELETE"]);
+const REQUEST_TRACKED_BATCH_OPERATIONS = new Set([
+  "CREATE",
+  "MODIFY",
+  "DELETE",
+]);
 const VM_DELETE_ALLOWED_STATUSES = new Set([
   "STOPPED",
   "FAILED",
   "NOT_FOUND",
   "UNKNOWN",
 ]);
-
-type BatchActionKind = "retry" | "cancel";
-
-interface BatchActionFeedback {
-  action: BatchActionKind;
-  affectedCount: number;
-  affectedTicketIDs: string[];
-}
 
 const VM_REQUEST_DRAFT_SAVE_DEBOUNCE_MS = 400;
 
@@ -185,26 +213,16 @@ const normalizeCreateTargetOverride = (
   return normalized;
 };
 
-const extractRetryAfterSeconds = (error: ApiErrorResponse): number => {
-  if (typeof error.retry_after_seconds === "number") {
-    return normalizeRetryAfterSeconds(error.retry_after_seconds);
-  }
-  const params = error.params as Record<string, unknown> | undefined;
-  if (
-    params &&
-    Object.prototype.hasOwnProperty.call(params, "retry_after_seconds")
-  ) {
-    return normalizeRetryAfterSeconds(params.retry_after_seconds);
-  }
-  return 0;
-};
-
 export function useVMManagementController({
   t,
 }: UseVMManagementControllerArgs) {
   const { message: messageApi } = App.useApp();
   const messageContextHolder = null;
   const user = useAuthStore((state) => state.user);
+  const currentActorKey = user?.id?.trim() ?? "";
+  const [initialActiveBatchState] = useState(() =>
+    readStoredActiveBatchState(currentActorKey),
+  );
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [filters, setFilters] = useState<VMListFilters>({
@@ -229,22 +247,32 @@ export function useVMManagementController({
     id: string;
     name: string;
   } | null>(null);
+  const [activeBatchActorKey, setActiveBatchActorKey] =
+    useState(currentActorKey);
   const [activeBatchID, setActiveBatchID] = useState(
-    () => readStoredActiveBatchState().batch_id,
+    initialActiveBatchState.batch_id,
   );
   const [activeBatchStatusURL, setActiveBatchStatusURL] = useState(
-    () => readStoredActiveBatchState().status_url,
+    initialActiveBatchState.status_url,
   );
   const [activeBatchKind, setActiveBatchKind] = useState<ActiveBatchKind | "">(
-    () => normalizeActiveBatchKind(readStoredActiveBatchState().kind),
+    normalizeActiveBatchKind(initialActiveBatchState.kind),
   );
   const [batchAutoPolling, setBatchAutoPolling] = useState(true);
   const [batchPollingIntervalMs, setBatchPollingIntervalMs] = useState(2000);
-  const [batchRateLimitUntilMs, setBatchRateLimitUntilMs] = useState(0);
+  const [batchRateLimit, setBatchRateLimit] = useState({
+    untilMs: 0,
+    contactAdmin: false,
+  });
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [lastBatchActionFeedback, setLastBatchActionFeedback] =
     useState<BatchActionFeedback | null>(null);
-  const batchActionTargetIDsRef = useRef<string[]>([]);
+  const [restartReconciliationNotice, setRestartReconciliationNotice] =
+    useState<RestartReconciliationNotice | null>(null);
+  const nextBatchSubmissionSequenceRef = useRef(0);
+  const trackedBatchSubmissionSequenceRef = useRef(0);
+  const currentCreateIntentRef = useRef<StoredBatchRequestIntent | null>(null);
+  const currentModifyIntentRef = useRef<StoredBatchRequestIntent | null>(null);
   const [form] = Form.useForm<VMCreateFormValues>();
   const [modifyForm] = Form.useForm<VMModifyFormValues>();
   const watchOptions = useMemo(
@@ -263,24 +291,30 @@ export function useVMManagementController({
   } | null>(null);
   const [deleteConfirmName, setDeleteConfirmName] = useState("");
 
+  const activeBatchOwnedByCurrentActor =
+    currentActorKey !== "" && activeBatchActorKey === currentActorKey;
+  const effectiveActiveBatchID = activeBatchOwnedByCurrentActor
+    ? activeBatchID
+    : "";
+  const effectiveActiveBatchStatusURL = activeBatchOwnedByCurrentActor
+    ? activeBatchStatusURL
+    : "";
+  const effectiveActiveBatchKind = activeBatchOwnedByCurrentActor
+    ? activeBatchKind
+    : "";
+
   const selectedTemplateId = Form.useWatch("template_id", watchOptions);
   const selectedSizeId = Form.useWatch("instance_size_id", watchOptions);
   const namespaceValue = Form.useWatch("namespace", watchOptions);
   const reasonValue = Form.useWatch("reason", watchOptions);
   const serviceIdValue = Form.useWatch("service_id", watchOptions);
   const batchCountValue = Form.useWatch("batch_count", watchOptions) ?? 1;
-  const createTargetCPUValue = Form.useWatch(
-    "target_cpu_cores",
-    watchOptions,
-  );
+  const createTargetCPUValue = Form.useWatch("target_cpu_cores", watchOptions);
   const createTargetMemoryValue = Form.useWatch(
     "target_memory_gi",
     watchOptions,
   );
-  const createTargetDiskValue = Form.useWatch(
-    "target_disk_gb",
-    watchOptions,
-  );
+  const createTargetDiskValue = Form.useWatch("target_disk_gb", watchOptions);
   const modifyTargetCPUValue = Form.useWatch(
     "target_cpu_cores",
     modifyWatchOptions,
@@ -373,13 +407,18 @@ export function useVMManagementController({
   );
 
   const batchStatusQuery = useApiGet<VMBatchStatusResponse>(
-    ["vm-batch", activeBatchID, activeBatchStatusURL],
+    [
+      "vm-batch",
+      currentActorKey,
+      effectiveActiveBatchID,
+      effectiveActiveBatchStatusURL,
+    ],
     () =>
       api.GET("/vms/batch/{batch_id}", {
-        params: { path: { batch_id: activeBatchID } },
+        params: { path: { batch_id: effectiveActiveBatchID } },
       }),
     {
-      enabled: Boolean(activeBatchID),
+      enabled: Boolean(effectiveActiveBatchID),
       retry: 3,
       retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
       refetchInterval: (query) => {
@@ -510,24 +549,53 @@ export function useVMManagementController({
     }
   }, [form, selectedSize, selectedSizeIsCompatible, selectedTemplate]);
 
+  useEffect(() => {
+    if (activeBatchActorKey === currentActorKey) {
+      return;
+    }
+    const stored = readStoredActiveBatchState(currentActorKey);
+    setActiveBatchActorKey(currentActorKey);
+    setActiveBatchID(stored.batch_id);
+    setActiveBatchStatusURL(stored.status_url);
+    setActiveBatchKind(normalizeActiveBatchKind(stored.kind));
+    setBatchAutoPolling(true);
+    setLastBatchActionFeedback(null);
+    setRestartReconciliationNotice(null);
+    setBatchRateLimit({ untilMs: 0, contactAdmin: false });
+    setNowMs(Date.now());
+    currentCreateIntentRef.current = null;
+    currentModifyIntentRef.current = null;
+    trackedBatchSubmissionSequenceRef.current = 0;
+  }, [activeBatchActorKey, currentActorKey]);
+
   const resolvedActiveBatchKind = useMemo<ActiveBatchKind | "">(
     () =>
-      activeBatchKind ||
+      effectiveActiveBatchKind ||
       inferActiveBatchKindFromOperation(batchStatusQuery.data?.operation),
-    [activeBatchKind, batchStatusQuery.data?.operation],
+    [effectiveActiveBatchKind, batchStatusQuery.data?.operation],
   );
 
   useEffect(() => {
-    if (activeBatchID.trim() === "") {
+    if (!activeBatchOwnedByCurrentActor) {
+      return;
+    }
+    if (effectiveActiveBatchID.trim() === "") {
       clearStoredActiveBatchState();
       return;
     }
     saveStoredActiveBatchState({
-      batch_id: activeBatchID,
-      status_url: activeBatchStatusURL,
+      actor_id: currentActorKey,
+      batch_id: effectiveActiveBatchID,
+      status_url: effectiveActiveBatchStatusURL,
       kind: resolvedActiveBatchKind,
     });
-  }, [activeBatchID, activeBatchStatusURL, resolvedActiveBatchKind]);
+  }, [
+    activeBatchOwnedByCurrentActor,
+    currentActorKey,
+    effectiveActiveBatchID,
+    effectiveActiveBatchStatusURL,
+    resolvedActiveBatchKind,
+  ]);
 
   useEffect(() => {
     setSavedDraft(loadVMRequestDraft(draftOwner));
@@ -627,50 +695,86 @@ export function useVMManagementController({
   }, [draftOwner, draftSnapshot]);
 
   useEffect(() => {
-    if (batchRateLimitUntilMs <= Date.now()) {
+    if (batchRateLimit.untilMs <= Date.now()) {
       return;
     }
     const timer = window.setInterval(() => {
       const now = Date.now();
       setNowMs(now);
-      setBatchRateLimitUntilMs((current) =>
-        current > 0 && now >= current ? 0 : current,
+      setBatchRateLimit((current) =>
+        now >= current.untilMs ? { untilMs: 0, contactAdmin: false } : current,
       );
     }, 1000);
     return () => window.clearInterval(timer);
-  }, [batchRateLimitUntilMs]);
+  }, [batchRateLimit.untilMs]);
 
   const batchRetryAfterSeconds = Math.max(
     0,
-    Math.ceil((batchRateLimitUntilMs - nowMs) / 1000),
+    Math.ceil((batchRateLimit.untilMs - nowMs) / 1000),
   );
   const batchRateLimited = batchRetryAfterSeconds > 0;
+  const batchRateLimitContactAdmin = batchRateLimit.contactAdmin;
+  const warnBatchRateLimited = () => {
+    messageApi.warning(
+      t(
+        batchRateLimitContactAdmin
+          ? "batch.rate_limited_contact_admin"
+          : "batch.rate_limited_wait",
+        { seconds: batchRetryAfterSeconds },
+      ),
+    );
+  };
   const selectedVMRecords = useMemo<VM[]>(
     () =>
-      (vmListQuery.data?.items ?? []).filter((vm) => selectedVMIDs.includes(vm.id)),
+      (vmListQuery.data?.items ?? []).filter((vm) =>
+        selectedVMIDs.includes(vm.id),
+      ),
     [selectedVMIDs, vmListQuery.data?.items],
   );
 
-  const setBatchRateLimitCooldown = (seconds: number) => {
+  const setBatchRateLimitCooldown = (seconds: number, contactAdmin = false) => {
     const normalized = normalizeRetryAfterSeconds(seconds);
     if (normalized <= 0) {
       return false;
     }
     const now = Date.now();
     setNowMs(now);
-    setBatchRateLimitUntilMs(now + normalized * 1000);
-    messageApi.warning(t("batch.rate_limited_wait", { seconds: normalized }));
+    const requestedUntilMs = now + normalized * 1000;
+    setBatchRateLimit((current) => {
+      const currentIsActive = current.untilMs > now;
+      return {
+        untilMs: Math.max(current.untilMs, requestedUntilMs),
+        contactAdmin: (currentIsActive && current.contactAdmin) || contactAdmin,
+      };
+    });
+    messageApi.warning(
+      t(
+        contactAdmin
+          ? "batch.rate_limited_contact_admin"
+          : "batch.rate_limited_wait",
+        { seconds: normalized },
+      ),
+    );
     return true;
   };
 
   const trackBatchSubmission = (
     resp: VMBatchSubmitResponse,
     kind: ActiveBatchKind,
-  ) => {
+    submission: VMBatchSubmitMutationInput | VMBatchPowerMutationInput,
+  ): boolean => {
+    if (
+      submission.intent.actorKey !== currentActorKey ||
+      submission.submissionSequence <= trackedBatchSubmissionSequenceRef.current
+    ) {
+      return false;
+    }
+    trackedBatchSubmissionSequenceRef.current = submission.submissionSequence;
     const trackedBatchID = parseBatchIDFromStatusURL(
       resp.status_url,
       resp.batch_id,
     );
+    setActiveBatchActorKey(currentActorKey);
     setActiveBatchID(trackedBatchID);
     setActiveBatchStatusURL(resp.status_url);
     setActiveBatchKind(kind);
@@ -682,17 +786,15 @@ export function useVMManagementController({
     setBatchPollingIntervalMs(
       intervalSeconds > 0 ? intervalSeconds * 1000 : 2000,
     );
-    setBatchRateLimitUntilMs(0);
     setNowMs(Date.now());
+    return true;
   };
 
   const pickBatchActionTargets = (action: BatchActionKind): string[] => {
     const children = batchStatusQuery.data?.children ?? [];
     if (action === "retry") {
       return children
-        .filter(
-          (child) => child.status === "FAILED" || child.status === "REJECTED",
-        )
+        .filter(isRetryableBatchChild)
         .map((child) => child.ticket_id);
     }
     return children
@@ -700,31 +802,65 @@ export function useVMManagementController({
       .map((child) => child.ticket_id);
   };
 
-  const resolveAffectedTicketIDs = (
-    resp: VMBatchActionResponse,
-    fallbackIDs: string[],
-  ): string[] => {
-    const fromResponse = (resp.affected_ticket_ids ?? [])
-      .map((id) => id.trim())
-      .filter(Boolean);
-    if (fromResponse.length > 0) {
-      return fromResponse;
-    }
-    const affectedCount = Math.max(0, Number(resp.affected_count ?? 0));
-    if (affectedCount <= 0) {
-      return [];
-    }
-    return fallbackIDs.slice(0, Math.min(affectedCount, fallbackIDs.length));
+  const recordBatchActionFeedback = (
+    action: BatchActionKind,
+    response: VMBatchActionResponse,
+    targetTicketIDs: readonly string[],
+  ) => {
+    const feedback = createBatchActionFeedback(
+      action,
+      response,
+      targetTicketIDs,
+    );
+    setLastBatchActionFeedback(feedback);
+    messageApi.success(
+      t(action === "retry" ? "batch.retry_feedback" : "batch.cancel_feedback", {
+        count: feedback.affectedCount,
+        ids:
+          feedback.affectedTicketIDs.join(", ") || t("batch.affected_ids_none"),
+      }),
+    );
   };
 
   const onBatchMutationRateLimit = (err: ApiErrorResponse): boolean => {
     if (err.code !== "BATCH_RATE_LIMITED") {
       return false;
     }
-    return setBatchRateLimitCooldown(extractRetryAfterSeconds(err));
+    return setBatchRateLimitCooldown(
+      extractBatchRetryAfterSeconds(err),
+      err.params?.contact_admin === true,
+    );
+  };
+
+  const getStableBatchRequestIntent = (
+    operationKey: string,
+    payload: unknown,
+  ) =>
+    resolveStoredBatchRequestIntent({
+      actorKey: currentActorKey,
+      operationKey,
+      payload,
+    });
+
+  const nextBatchSubmissionSequence = () => {
+    nextBatchSubmissionSequenceRef.current += 1;
+    return nextBatchSubmissionSequenceRef.current;
+  };
+
+  const batchSubmissionBelongsToCurrentActor = (
+    submission:
+      VMBatchSubmitMutationInput | VMBatchPowerMutationInput | undefined,
+  ) => !submission || submission.intent.actorKey === currentActorKey;
+
+  const captureRestartReconciliationNotice = (err: ApiErrorResponse) => {
+    const notice = extractRestartReconciliationNotice(err);
+    if (notice) {
+      setRestartReconciliationNotice(notice);
+    }
   };
 
   const applyDraftToWizard = (draft: VMRequestDraft) => {
+    currentCreateIntentRef.current = null;
     setWizardOpen(true);
     setWizardStep(normalizeDraftWizardStep(draft.wizardStep));
     setRequestMode(normalizeDraftRequestMode(draft.requestMode));
@@ -744,6 +880,7 @@ export function useVMManagementController({
   };
 
   const applyPrefillToWizard = (prefill?: VMRequestLaunchPrefill) => {
+    currentCreateIntentRef.current = null;
     setWizardOpen(true);
     setWizardStep(0);
     setRequestMode(prefill?.requestMode ?? "guided");
@@ -809,21 +946,41 @@ export function useVMManagementController({
   );
 
   const submitCreateBatch = useApiMutation<
-    VMBatchSubmitRequest,
+    VMBatchSubmitMutationInput,
     VMBatchSubmitResponse
-  >((req) => api.POST("/vms/batch", { body: req }), {
-    invalidateKeys: [["vms"], ["tickets"], ["my-tickets"], ["builtin-approval-tasks"]],
-    onSuccess: (resp) => {
-      trackBatchSubmission(resp, "request");
-      clearSavedDraft();
-      setWizardOpen(false);
-      setWizardStep(0);
-      setRequestMode("guided");
-      setSelectedSystemId("");
-      form.resetFields();
+  >(({ body }) => api.POST("/vms/batch", { body }), {
+    invalidateKeys: [
+      ["vms"],
+      ["tickets"],
+      ["my-tickets"],
+      ["builtin-approval-tasks"],
+    ],
+    onSuccess: (resp, submission) => {
+      clearStoredBatchRequestIntent(submission.intent);
+      if (!batchSubmissionBelongsToCurrentActor(submission)) {
+        return;
+      }
+      trackBatchSubmission(resp, "request", submission);
+      if (
+        isSameStoredBatchRequestIntent(
+          currentCreateIntentRef.current,
+          submission.intent,
+        )
+      ) {
+        currentCreateIntentRef.current = null;
+        clearSavedDraft();
+        setWizardOpen(false);
+        setWizardStep(0);
+        setRequestMode("guided");
+        setSelectedSystemId("");
+        form.resetFields();
+      }
       messageApi.success(t("batch.request_submitted"));
     },
-    onError: (err) => {
+    onError: (err, submission) => {
+      if (!batchSubmissionBelongsToCurrentActor(submission)) {
+        return;
+      }
       if (onBatchMutationRateLimit(err)) {
         return;
       }
@@ -832,15 +989,40 @@ export function useVMManagementController({
   });
 
   const submitVMBatch = useApiMutation<
-    VMBatchSubmitRequest,
+    VMBatchSubmitMutationInput,
     VMBatchSubmitResponse
-  >((req) => api.POST("/vms/batch", { body: req }), {
-    invalidateKeys: [["vms"], ["tickets"], ["my-tickets"], ["builtin-approval-tasks"]],
-    onSuccess: (resp) => {
-      trackBatchSubmission(resp, "request");
+  >(({ body }) => api.POST("/vms/batch", { body }), {
+    invalidateKeys: [
+      ["vms"],
+      ["tickets"],
+      ["my-tickets"],
+      ["builtin-approval-tasks"],
+    ],
+    onSuccess: (resp, submission) => {
+      clearStoredBatchRequestIntent(submission.intent);
+      if (!batchSubmissionBelongsToCurrentActor(submission)) {
+        return;
+      }
+      trackBatchSubmission(resp, "request", submission);
+      if (
+        submission.body.operation === "MODIFY" &&
+        isSameStoredBatchRequestIntent(
+          currentModifyIntentRef.current,
+          submission.intent,
+        )
+      ) {
+        currentModifyIntentRef.current = null;
+        setModifyOpen(false);
+        setModifyTargetVM(null);
+        modifyForm.resetFields();
+      }
       messageApi.success(t("batch.request_submitted"));
     },
-    onError: (err) => {
+    onError: (err, submission) => {
+      if (!batchSubmissionBelongsToCurrentActor(submission)) {
+        return;
+      }
+      captureRestartReconciliationNotice(err);
       if (onBatchMutationRateLimit(err)) {
         return;
       }
@@ -849,15 +1031,23 @@ export function useVMManagementController({
   });
 
   const submitVMBatchPower = useApiMutation<
-    VMBatchPowerRequest,
+    VMBatchPowerMutationInput,
     VMBatchSubmitResponse
-  >((req) => api.POST("/vms/batch/power", { body: req }), {
+  >(({ body }) => api.POST("/vms/batch/power", { body }), {
     invalidateKeys: [["vms"]],
-    onSuccess: (resp) => {
-      trackBatchSubmission(resp, "job");
+    onSuccess: (resp, submission) => {
+      clearStoredBatchRequestIntent(submission.intent);
+      if (!batchSubmissionBelongsToCurrentActor(submission)) {
+        return;
+      }
+      trackBatchSubmission(resp, "job", submission);
       messageApi.success(t("batch.job_submitted"));
     },
-    onError: (err) => {
+    onError: (err, submission) => {
+      if (!batchSubmissionBelongsToCurrentActor(submission)) {
+        return;
+      }
+      captureRestartReconciliationNotice(err);
       if (onBatchMutationRateLimit(err)) {
         return;
       }
@@ -865,64 +1055,93 @@ export function useVMManagementController({
     },
   });
 
-  const retryBatchMutation = useApiMutation<string, VMBatchActionResponse>(
-    (batchID) =>
+  const retryBatchMutation = useApiMutation<
+    VMBatchActionMutationInput,
+    VMBatchActionResponse
+  >(
+    (submission) =>
       api.POST("/vms/batch/{batch_id}/retry", {
-        params: { path: { batch_id: batchID } },
+        params: { path: { batch_id: submission.batchID } },
       }),
     {
       invalidateKeys: [
-        ["vm-batch", activeBatchID, activeBatchStatusURL],
+        [
+          "vm-batch",
+          currentActorKey,
+          effectiveActiveBatchID,
+          effectiveActiveBatchStatusURL,
+        ],
+        ["vm-batch-list"],
         ["vms"],
       ],
-      onSuccess: (resp) => {
+      onSuccess: (response, submission) => {
+        if (submission && submission.actorKey !== currentActorKey) {
+          return;
+        }
         setBatchAutoPolling(true);
-        const affectedTicketIDs = resolveAffectedTicketIDs(
-          resp,
-          batchActionTargetIDsRef.current,
+        recordBatchActionFeedback(
+          "retry",
+          response,
+          submission?.targetTicketIDs ?? [],
         );
-        setLastBatchActionFeedback({
-          action: "retry",
-          affectedCount: resp.affected_count,
-          affectedTicketIDs,
-        });
-        messageApi.success(t("batch.retry_submitted"));
+        void batchStatusQuery.refetch();
       },
-      onError: (err) => {
+      onError: (err, submission) => {
+        if (submission && submission.actorKey !== currentActorKey) {
+          return;
+        }
+        captureRestartReconciliationNotice(err);
         if (onBatchMutationRateLimit(err)) {
           return;
+        }
+        if (isBatchConflictError(err)) {
+          void batchStatusQuery.refetch();
         }
         messageApi.error(translateApiError(t, err));
       },
     },
   );
 
-  const cancelBatchMutation = useApiMutation<string, VMBatchActionResponse>(
-    (batchID) =>
+  const cancelBatchMutation = useApiMutation<
+    VMBatchActionMutationInput,
+    VMBatchActionResponse
+  >(
+    (submission) =>
       api.POST("/vms/batch/{batch_id}/cancel", {
-        params: { path: { batch_id: batchID } },
+        params: { path: { batch_id: submission.batchID } },
       }),
     {
       invalidateKeys: [
-        ["vm-batch", activeBatchID, activeBatchStatusURL],
+        [
+          "vm-batch",
+          currentActorKey,
+          effectiveActiveBatchID,
+          effectiveActiveBatchStatusURL,
+        ],
+        ["vm-batch-list"],
         ["vms"],
       ],
-      onSuccess: (resp) => {
+      onSuccess: (response, submission) => {
+        if (submission && submission.actorKey !== currentActorKey) {
+          return;
+        }
         setBatchAutoPolling(true);
-        const affectedTicketIDs = resolveAffectedTicketIDs(
-          resp,
-          batchActionTargetIDsRef.current,
+        recordBatchActionFeedback(
+          "cancel",
+          response,
+          submission?.targetTicketIDs ?? [],
         );
-        setLastBatchActionFeedback({
-          action: "cancel",
-          affectedCount: resp.affected_count,
-          affectedTicketIDs,
-        });
-        messageApi.success(t("batch.cancel_submitted"));
+        void batchStatusQuery.refetch();
       },
-      onError: (err) => {
+      onError: (err, submission) => {
+        if (submission && submission.actorKey !== currentActorKey) {
+          return;
+        }
         if (onBatchMutationRateLimit(err)) {
           return;
+        }
+        if (isBatchConflictError(err)) {
+          void batchStatusQuery.refetch();
         }
         messageApi.error(translateApiError(t, err));
       },
@@ -955,7 +1174,13 @@ export function useVMManagementController({
     {
       invalidateKeys: [["vms"]],
       onSuccess: () => messageApi.success(t("common:message.success")),
-      onError: (err) => messageApi.error(translateApiError(t, err)),
+      onError: (err) => {
+        const notice = extractRestartReconciliationNotice(err);
+        if (notice) {
+          setRestartReconciliationNotice(notice);
+        }
+        messageApi.error(translateApiError(t, err));
+      },
     },
   );
 
@@ -1014,6 +1239,7 @@ export function useVMManagementController({
   };
 
   const openModifyModal = (vmId: string, vmName: string) => {
+    currentModifyIntentRef.current = null;
     setModifyScope("single");
     setModifyTargetVM({ id: vmId, name: vmName });
     modifyForm.resetFields();
@@ -1025,6 +1251,7 @@ export function useVMManagementController({
       messageApi.warning(t("batch.no_selection"));
       return;
     }
+    currentModifyIntentRef.current = null;
     modifyForm.resetFields();
     setModifyTargetVM(null);
     setModifyScope("batch");
@@ -1032,6 +1259,7 @@ export function useVMManagementController({
   };
 
   const closeModifyModal = () => {
+    currentModifyIntentRef.current = null;
     setModifyOpen(false);
     setModifyTargetVM(null);
     modifyForm.resetFields();
@@ -1055,6 +1283,7 @@ export function useVMManagementController({
     }
 
     const values = modifyForm.getFieldsValue(true);
+    const normalizedReason = values.reason.trim();
     const targetCPU = normalizeOptionalTargetNumber(values.target_cpu_cores);
     const targetMemory = normalizeOptionalTargetNumber(values.target_memory_gi);
     const targetDisk = normalizeOptionalTargetNumber(values.target_disk_gb);
@@ -1088,7 +1317,7 @@ export function useVMManagementController({
     }
 
     const body: VMModifyRequest = {
-      reason: values.reason,
+      reason: normalizedReason,
       target_cpu_cores: Number(targetCPU ?? 0),
       target_memory_gi: Number(targetMemory ?? 0),
       target_disk_gb: Number(targetDisk ?? 0),
@@ -1100,24 +1329,27 @@ export function useVMManagementController({
     }
 
     if (batchRateLimited) {
-      messageApi.warning(
-        t("batch.rate_limited_wait", { seconds: batchRetryAfterSeconds }),
-      );
+      warnBatchRateLimited();
       return;
     }
-    submitVMBatch.mutate({
+    const payload: Omit<VMBatchSubmitRequest, "request_id"> = {
       operation: "MODIFY",
-      reason: values.reason,
+      reason: normalizedReason,
       items: selectedVMIDs.map((vmId) => ({
-        vm_id: vmId,
-        reason: values.reason,
+        vm_id: vmId.trim(),
+        reason: normalizedReason,
         target_cpu_cores: Number(targetCPU ?? 0),
         target_memory_gi: Number(targetMemory ?? 0),
         target_disk_gb: Number(targetDisk ?? 0),
       })),
+    };
+    const intent = getStableBatchRequestIntent("MODIFY", payload);
+    currentModifyIntentRef.current = intent;
+    submitVMBatch.mutate({
+      body: { ...payload, request_id: intent.requestId },
+      intent,
+      submissionSequence: nextBatchSubmissionSequence(),
     });
-    setModifyOpen(false);
-    modifyForm.resetFields();
   };
 
   const wizardSteps = [
@@ -1144,6 +1376,7 @@ export function useVMManagementController({
   };
 
   const closeWizard = () => {
+    currentCreateIntentRef.current = null;
     setWizardOpen(false);
     setWizardStep(0);
     setRequestMode("guided");
@@ -1211,15 +1444,13 @@ export function useVMManagementController({
       selectedSize?.disk_gb,
     );
     const singlePayload: VMCreateRequest = {
-      service_id: values.service_id,
-      template_id: values.template_id,
-      instance_size_id: values.instance_size_id,
-      namespace: values.namespace,
-      reason: values.reason,
+      service_id: values.service_id.trim(),
+      template_id: values.template_id.trim(),
+      instance_size_id: values.instance_size_id.trim(),
+      namespace: values.namespace.trim(),
+      reason: values.reason.trim(),
       ...(targetCPU !== undefined ? { target_cpu_cores: targetCPU } : {}),
-      ...(targetMemory !== undefined
-        ? { target_memory_gi: targetMemory }
-        : {}),
+      ...(targetMemory !== undefined ? { target_memory_gi: targetMemory } : {}),
       ...(targetDisk !== undefined ? { target_disk_gb: targetDisk } : {}),
     };
     const batchCount = Number(values.batch_count ?? 1);
@@ -1229,13 +1460,11 @@ export function useVMManagementController({
       return;
     }
     if (batchRateLimited) {
-      messageApi.warning(
-        t("batch.rate_limited_wait", { seconds: batchRetryAfterSeconds }),
-      );
+      warnBatchRateLimited();
       return;
     }
 
-    const batchPayload: VMBatchSubmitRequest = {
+    const batchPayload: Omit<VMBatchSubmitRequest, "request_id"> = {
       operation: "CREATE",
       reason: singlePayload.reason,
       items: Array.from({ length: batchCount }, () => ({
@@ -1251,14 +1480,18 @@ export function useVMManagementController({
         ...(targetDisk !== undefined ? { target_disk_gb: targetDisk } : {}),
       })),
     };
-    submitCreateBatch.mutate(batchPayload);
+    const intent = getStableBatchRequestIntent("CREATE", batchPayload);
+    currentCreateIntentRef.current = intent;
+    submitCreateBatch.mutate({
+      body: { ...batchPayload, request_id: intent.requestId },
+      intent,
+      submissionSequence: nextBatchSubmissionSequence(),
+    });
   };
 
   const submitBatchDeleteSelected = () => {
     if (batchRateLimited) {
-      messageApi.warning(
-        t("batch.rate_limited_wait", { seconds: batchRetryAfterSeconds }),
-      );
+      warnBatchRateLimited();
       return;
     }
     if (selectedVMIDs.length === 0) {
@@ -1281,34 +1514,54 @@ export function useVMManagementController({
       );
       return;
     }
-    submitVMBatch.mutate({
+    const deleteReason = t("batch.delete_reason").trim();
+    const batchVMIDs = selectedVMIDs.map((vmID) => vmID.trim());
+    const payload: Omit<VMBatchSubmitRequest, "request_id"> = {
       operation: "DELETE",
-      reason: t("batch.delete_reason"),
-      items: selectedVMIDs.map((vmID) => ({
+      reason: deleteReason,
+      items: batchVMIDs.map((vmID) => ({
         vm_id: vmID,
-        reason: t("batch.delete_reason"),
+        reason: deleteReason,
       })),
+    };
+    const intent = getStableBatchRequestIntent("DELETE", {
+      operation: payload.operation,
+      vm_ids: batchVMIDs,
+    });
+    submitVMBatch.mutate({
+      body: { ...payload, request_id: intent.requestId },
+      intent,
+      submissionSequence: nextBatchSubmissionSequence(),
     });
   };
 
   const submitBatchPowerSelected = (operation: VMBatchPowerAction) => {
     if (batchRateLimited) {
-      messageApi.warning(
-        t("batch.rate_limited_wait", { seconds: batchRetryAfterSeconds }),
-      );
+      warnBatchRateLimited();
       return;
     }
     if (selectedVMIDs.length === 0) {
       messageApi.warning(t("batch.no_selection"));
       return;
     }
-    submitVMBatchPower.mutate({
+    const powerReason = t("batch.power_reason", { operation }).trim();
+    const batchVMIDs = selectedVMIDs.map((vmID) => vmID.trim());
+    const payload: Omit<VMBatchPowerRequest, "request_id"> = {
       operation,
-      reason: t("batch.power_reason", { operation }),
-      items: selectedVMIDs.map((vmID) => ({
+      reason: powerReason,
+      items: batchVMIDs.map((vmID) => ({
         vm_id: vmID,
-        reason: t("batch.power_reason", { operation }),
+        reason: powerReason,
       })),
+    };
+    const intent = getStableBatchRequestIntent(`POWER:${operation}`, {
+      operation,
+      vm_ids: batchVMIDs,
+    });
+    submitVMBatchPower.mutate({
+      body: { ...payload, request_id: intent.requestId },
+      intent,
+      submissionSequence: nextBatchSubmissionSequence(),
     });
   };
 
@@ -1361,6 +1614,25 @@ export function useVMManagementController({
     });
   };
 
+  const activeBatchOperation = batchStatusQuery.data?.operation;
+  const batchActionAllowed = canManageBatchOperation(
+    user,
+    activeBatchOperation,
+  );
+  const canRetryActiveBatch =
+    batchActionAllowed &&
+    (batchStatusQuery.data?.status === "IN_PROGRESS" ||
+      batchStatusQuery.data?.status === "FAILED" ||
+      batchStatusQuery.data?.status === "PARTIAL_SUCCESS") &&
+    (batchStatusQuery.data?.children ?? []).some(isRetryableBatchChild);
+  const canCancelActiveBatch =
+    batchActionAllowed &&
+    (batchStatusQuery.data?.status === "PENDING_APPROVAL" ||
+      batchStatusQuery.data?.status === "IN_PROGRESS") &&
+    (batchStatusQuery.data?.children ?? []).some(
+      (child) => child.status === "PENDING",
+    );
+
   return {
     messageContextHolder,
     page,
@@ -1380,8 +1652,7 @@ export function useVMManagementController({
     selectedTemplate,
     selectedSize,
     placementHint: placementHintQuery.data?.placement_hint as
-      | VMPlacementHint
-      | undefined,
+      VMPlacementHint | undefined,
     placementHintLoading: placementHintQuery.isLoading,
     namespaceValue,
     reasonValue,
@@ -1425,16 +1696,19 @@ export function useVMManagementController({
     closeModifyModal,
     submitModify,
     modifySubmitDisabled,
-    activeBatchID,
+    activeBatchID: effectiveActiveBatchID,
     activeBatchKind: resolvedActiveBatchKind,
-    activeBatchStatusURL,
+    activeBatchStatusURL: effectiveActiveBatchStatusURL,
     batchStatus: batchStatusQuery.data,
     batchLoading: batchStatusQuery.isLoading,
     batchRateLimited,
+    batchRateLimitContactAdmin,
     batchRetryAfterSeconds,
     lastBatchActionFeedback,
+    canRetryActiveBatch,
+    canCancelActiveBatch,
     refreshBatch: () => {
-      if (!activeBatchID) {
+      if (!effectiveActiveBatchID) {
         return;
       }
       setBatchAutoPolling(true);
@@ -1449,30 +1723,42 @@ export function useVMManagementController({
       clearStoredActiveBatchState();
     },
     retryBatch: () => {
-      if (!activeBatchID) {
+      if (!effectiveActiveBatchID || !canRetryActiveBatch) {
         return;
       }
       if (batchRateLimited) {
-        messageApi.warning(
-          t("batch.rate_limited_wait", { seconds: batchRetryAfterSeconds }),
-        );
+        warnBatchRateLimited();
         return;
       }
-      batchActionTargetIDsRef.current = pickBatchActionTargets("retry");
-      retryBatchMutation.mutate(activeBatchID);
+      const targets = pickBatchActionTargets("retry");
+      if (targets.length === 0) {
+        messageApi.warning(t("batch.no_retryable_children"));
+        return;
+      }
+      retryBatchMutation.mutate({
+        actorKey: currentActorKey,
+        batchID: effectiveActiveBatchID,
+        targetTicketIDs: targets,
+      });
     },
     cancelBatch: () => {
-      if (!activeBatchID) {
+      if (!effectiveActiveBatchID || !canCancelActiveBatch) {
         return;
       }
       if (batchRateLimited) {
-        messageApi.warning(
-          t("batch.rate_limited_wait", { seconds: batchRetryAfterSeconds }),
-        );
+        warnBatchRateLimited();
         return;
       }
-      batchActionTargetIDsRef.current = pickBatchActionTargets("cancel");
-      cancelBatchMutation.mutate(activeBatchID);
+      const targets = pickBatchActionTargets("cancel");
+      if (targets.length === 0) {
+        messageApi.warning(t("batch.no_cancellable_children"));
+        return;
+      }
+      cancelBatchMutation.mutate({
+        actorKey: currentActorKey,
+        batchID: effectiveActiveBatchID,
+        targetTicketIDs: targets,
+      });
     },
     submitBatchDeleteSelected,
     submitBatchPowerSelected,
@@ -1487,6 +1773,8 @@ export function useVMManagementController({
     startVM: (vmId: string) => startVM.mutate(vmId),
     stopVM: (vmId: string) => stopVM.mutate(vmId),
     restartVM: (vmId: string) => restartVM.mutate(vmId),
+    restartReconciliationNotice,
+    dismissRestartReconciliation: () => setRestartReconciliationNotice(null),
     deleteVM: openDeleteModal,
     openDeleteModal,
     deleteOpen,

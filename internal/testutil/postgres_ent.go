@@ -11,13 +11,15 @@ import (
 	"testing"
 
 	"github.com/google/uuid"
-	_ "github.com/jackc/pgx/v5/stdlib" // Register pgx as the database/sql driver for Ent PostgreSQL tests.
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/enttest"
+	"kv-shepherd.io/shepherd/internal/repository/batchreplay"
 )
 
 var nonIdentChars = regexp.MustCompile(`[^a-z0-9_]+`)
@@ -71,7 +73,31 @@ func OpenEntPostgres(t *testing.T, prefix string) *ent.Client {
 
 	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, testDB))))
 	t.Cleanup(func() { _ = client.Close() })
+	for _, statement := range []string{batchreplay.EnsureHashFunctionSQL, batchreplay.EnsureLookupIndexSQL} {
+		if _, execErr := testDB.ExecContext(t.Context(), statement); execErr != nil {
+			t.Fatalf("ensure batch replay lookup support: %v", execErr)
+		}
+	}
 	return client
+}
+
+// OpenEntPostgresWithPool opens an Ent client and exposes the same underlying
+// pgxpool. Use it when the code under test coordinates Ent and raw pgx work in
+// one database session namespace.
+func OpenEntPostgresWithPool(t *testing.T, prefix string) (*ent.Client, *pgxpool.Pool) {
+	t.Helper()
+
+	pool := OpenPGXPool(t, prefix)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	t.Cleanup(func() { _ = client.Close() })
+	for _, statement := range []string{batchreplay.EnsureHashFunctionSQL, batchreplay.EnsureLookupIndexSQL} {
+		if _, execErr := pool.Exec(t.Context(), statement); execErr != nil {
+			t.Fatalf("ensure batch replay lookup support: %v", execErr)
+		}
+	}
+	return client, pool
 }
 
 func dsnWithSearchPath(dsn, schema string) (string, error) {
@@ -103,8 +129,11 @@ func newSchemaName(prefix string) string {
 	}
 
 	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")
-	const maxPostgresIdentLen = 63
-	maxBaseLen := maxPostgresIdentLen - len("t__") - len(suffix)
+	// River prefixes its longest notification topic ("river_leadership") with
+	// "<schema>.". Keep test schemas within the resulting PostgreSQL channel
+	// limit so transactional River tests work even with long test names.
+	const maxRiverSchemaLen = 63 - len(".") - len("river_leadership")
+	maxBaseLen := maxRiverSchemaLen - len("t__") - len(suffix)
 	if maxBaseLen < 1 {
 		maxBaseLen = 1
 	}

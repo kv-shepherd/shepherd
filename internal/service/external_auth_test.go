@@ -905,7 +905,7 @@ func reconcileExternalCohortRBACChangedTxForTest(
 	if err != nil {
 		t.Fatalf("begin tx: %v", err)
 	}
-	txService := service.WithClient(tx.Client())
+	txService := service.WithTransaction(tx)
 	rbacChanged, err := txService.reconcileExternalCohortRBAC(t.Context(), userID, providerID, cohorts)
 	if err != nil {
 		if rollbackErr := tx.Rollback(); rollbackErr != nil {

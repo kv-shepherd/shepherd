@@ -8,7 +8,11 @@ package jobs
 
 import (
 	"context"
+	"database/sql"
+	"encoding/json"
 	"fmt"
+	"sort"
+	"strings"
 
 	"go.uber.org/zap"
 
@@ -18,12 +22,39 @@ import (
 	"kv-shepherd.io/shepherd/ent/predicate"
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
+	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
+const batchAggregateType = "batch"
+
+type jobsTransactionRollbackError struct {
+	cause       error
+	rollbackErr error
+}
+
+func (e *jobsTransactionRollbackError) Error() string {
+	return fmt.Sprintf("%v: rollback jobs transaction: %v", e.cause, e.rollbackErr)
+}
+
+func (e *jobsTransactionRollbackError) Unwrap() []error {
+	return []error{e.cause, e.rollbackErr}
+}
+
 func withJobsTx(ctx context.Context, client *ent.Client, fn func(txClient *ent.Client) error) error {
-	tx, err := client.Tx(ctx)
+	return withJobsEntTx(ctx, client, func(_ *ent.Tx, txClient *ent.Client) error {
+		return fn(txClient)
+	})
+}
+
+// withJobsEntTx is the transaction variant for jobs that must include raw SQL
+// through the same Ent transaction. Most jobs should keep using withJobsTx.
+func withJobsEntTx(ctx context.Context, client *ent.Client, fn func(tx *ent.Tx, txClient *ent.Client) error) error {
+	// Jobs that acquire advisory or row locks must re-read mutable state after
+	// any wait. Pin READ COMMITTED so an operator-level REPEATABLE READ default
+	// cannot preserve a snapshot taken before the lock was acquired.
+	tx, err := client.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		return fmt.Errorf("begin jobs transaction: %w", err)
 	}
@@ -33,9 +64,9 @@ func withJobsTx(ctx context.Context, client *ent.Client, fn func(txClient *ent.C
 			panic(v)
 		}
 	}()
-	if err := fn(tx.Client()); err != nil {
+	if err := fn(tx, tx.Client()); err != nil {
 		if rerr := tx.Rollback(); rerr != nil {
-			return fmt.Errorf("%w: rollback jobs transaction: %w", err, rerr)
+			return &jobsTransactionRollbackError{cause: err, rollbackErr: rerr}
 		}
 		return err
 	}
@@ -235,10 +266,6 @@ func persistFailedEventAndTicketByEventWithRejectReason(ctx context.Context, cli
 	return persistFailedEventTicketAndMaybeVMByEvent(ctx, client, eventID, rejectReason, "", "")
 }
 
-func persistFailedEventAndMaybeTicketByEvent(ctx context.Context, client *ent.Client, eventID string, requireTicket bool) error {
-	return persistFailedEventTicketAndMaybeVMByEventWithTicketRequirement(ctx, client, eventID, "", "", "", requireTicket)
-}
-
 func persistFailedEventTicketAndVMByEvent(ctx context.Context, client *ent.Client, eventID, vmID string) error {
 	return persistFailedEventTicketAndMaybeVMByEvent(ctx, client, eventID, "", vmID, entvm.StatusFAILED)
 }
@@ -314,19 +341,6 @@ func persistFailedEventTicketAndMaybeVMByEventWithTicketRequirement(
 	})
 }
 
-func eventHasTicket(ctx context.Context, client *ent.Client, eventID string) (bool, error) {
-	if client == nil || eventID == "" {
-		return false, nil
-	}
-	count, err := client.Ticket.Query().
-		Where(entticket.EventIDEQ(eventID)).
-		Count(ctx)
-	if err != nil {
-		return false, err
-	}
-	return count > 0, nil
-}
-
 func updateDomainEventStatusWithExpected(
 	ctx context.Context,
 	client *ent.Client,
@@ -337,8 +351,58 @@ func updateDomainEventStatusWithExpected(
 	if client == nil || eventID == "" {
 		return nil
 	}
+	updated, err := tryUpdateDomainEventStatusWithExpected(ctx, client, eventID, next, expected...)
+	if err != nil {
+		return err
+	}
+	if !updated {
+		err := fmt.Errorf("update event %s from %v to %s: expected 1 row, got 0", eventID, domainEventStatusStrings(expected), next)
+		logger.Warn("event status update affected unexpected row count",
+			zap.String("event_id", eventID),
+			zap.Strings("expected", domainEventStatusStrings(expected)),
+			zap.String("status", next.String()),
+			zap.Int("affected", 0),
+		)
+		return err
+	}
+	return nil
+}
+
+// tryUpdateDomainEventStatusWithExpected performs a single conditional update.
+// A false result with a nil error means another transaction won the state
+// transition. Callers that use the event status as a dispatch fence can handle
+// that expected contention without turning it into a database failure.
+func tryUpdateDomainEventStatusWithExpected(
+	ctx context.Context,
+	client *ent.Client,
+	eventID string,
+	next domainevent.Status,
+	expected ...domainevent.Status,
+) (bool, error) {
+	if client == nil || eventID == "" {
+		return false, nil
+	}
 	if len(expected) == 0 {
-		return fmt.Errorf("expected event status is required for event %s", eventID)
+		return false, fmt.Errorf("expected event status is required for event %s", eventID)
+	}
+	// Every production caller supplies the client of an active jobs transaction.
+	// Lock the owning ticket before the event CAS so jobs, handlers, and
+	// ticketing all use ticket -> event -> parent order. Direct events are valid
+	// and therefore allow zero tickets; duplicate ticket ownership is corrupt
+	// and fails closed after locking at most two rows.
+	tickets, err := client.Ticket.Query().
+		Where(
+			entticket.EventIDEQ(eventID),
+			lockTicketRowForUpdate(),
+		).
+		Order(entticket.ByID()).
+		Limit(2).
+		All(ctx)
+	if err != nil {
+		return false, fmt.Errorf("lock ticket for event %s status transition: %w", eventID, err)
+	}
+	if len(tickets) > 1 {
+		return false, fmt.Errorf("lock ticket for event %s status transition: expected at most 1 row, got %d", eventID, len(tickets))
 	}
 	predicates := []predicate.DomainEvent{
 		domainevent.ID(eventID),
@@ -359,9 +423,9 @@ func updateDomainEventStatusWithExpected(
 			zap.String("status", next.String()),
 			zap.Error(err),
 		)
-		return err
+		return false, err
 	}
-	if affected != 1 {
+	if affected > 1 {
 		err := fmt.Errorf("update event %s from %v to %s: expected 1 row, got %d", eventID, domainEventStatusStrings(expected), next, affected)
 		logger.Warn("event status update affected unexpected row count",
 			zap.String("event_id", eventID),
@@ -369,9 +433,9 @@ func updateDomainEventStatusWithExpected(
 			zap.String("status", next.String()),
 			zap.Int("affected", affected),
 		)
-		return err
+		return false, err
 	}
-	return nil
+	return affected == 1, nil
 }
 
 func domainEventStatusStrings(statuses []domainevent.Status) []string {
@@ -445,28 +509,71 @@ func SyncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicket
 	return syncParentBatchStatus(ctx, client, parentTicketID, false)
 }
 
-// SyncParentBatchStatusAllowReopen recalculates a parent batch after an explicit
-// retry action. Unlike ordinary worker-driven sync, retry may intentionally
-// reopen a failed/cancelled parent or recompute it back to a terminal state when
-// no child could be retried.
-func SyncParentBatchStatusAllowReopen(ctx context.Context, client *ent.Client, parentTicketID string) error {
+// SyncParentBatchStatusInTx recalculates the parent inside a caller-owned Ent
+// transaction. Callers should invoke it after mutating child rows so child,
+// parent event/ticket, and projection changes commit or roll back together.
+func SyncParentBatchStatusInTx(ctx context.Context, tx *ent.Tx, parentTicketID string) error {
+	if tx == nil {
+		return fmt.Errorf("parent batch status sync transaction is required")
+	}
+	if strings.TrimSpace(parentTicketID) == "" {
+		return nil
+	}
+	return syncParentBatchStatusWithClient(ctx, tx.Client(), strings.TrimSpace(parentTicketID), false)
+}
+
+// LockParentBatchTicketInTx acquires the reviewed parent row lock without
+// mutating aggregate state. Recovery handlers use it to validate the exact
+// parent/event/projection identity before changing an anomalous child.
+func LockParentBatchTicketInTx(ctx context.Context, tx *ent.Tx, parentTicketID string) (*ent.Ticket, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("parent batch ticket lock transaction is required")
+	}
+	parentTicketID = strings.TrimSpace(parentTicketID)
+	if parentTicketID == "" {
+		return nil, fmt.Errorf("parent batch ticket id is required")
+	}
+	parent, err := tx.Client().Ticket.Query().
+		Where(entticket.ID(parentTicketID), lockTicketRowForUpdate()).
+		Only(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock parent batch ticket %s: %w", parentTicketID, err)
+	}
+	return parent, nil
+}
+
+// ReconcileFailedParentBatchStatus repairs the one state regression that can
+// arise when an explicit retry races a stale parent aggregation: a FAILED
+// parent with active children must return to EXECUTING. It does not reopen any
+// other terminal state.
+func ReconcileFailedParentBatchStatus(ctx context.Context, client *ent.Client, parentTicketID string) error {
 	return syncParentBatchStatus(ctx, client, parentTicketID, true)
 }
 
-func syncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicketID string, allowReopen bool) error {
+func syncParentBatchStatus(ctx context.Context, client *ent.Client, parentTicketID string, allowFailedReconcile bool) error {
 	if client == nil || parentTicketID == "" {
 		return nil
 	}
 	return withJobsTx(ctx, client, func(txClient *ent.Client) error {
-		return syncParentBatchStatusWithClient(ctx, txClient, parentTicketID, allowReopen)
+		return syncParentBatchStatusWithClient(ctx, txClient, parentTicketID, allowFailedReconcile)
 	})
 }
 
-func syncParentBatchStatusWithClient(ctx context.Context, client *ent.Client, parentTicketID string, allowReopen bool) error {
+func syncParentBatchStatusWithClient(ctx context.Context, client *ent.Client, parentTicketID string, allowFailedReconcile bool) error {
 	if client == nil || parentTicketID == "" {
 		return nil
 	}
-	parent, err := client.Ticket.Get(ctx, parentTicketID)
+	// Lock the parent row before reading any child status. Explicit retry resets
+	// children before updating this same parent row, so FOR UPDATE makes a stale
+	// aggregator wait for that transaction and then re-read its committed child
+	// state. A parent advisory lock here would invert retry's parent->child lock
+	// order because worker transactions already hold their child row.
+	parent, err := client.Ticket.Query().
+		Where(
+			entticket.ID(parentTicketID),
+			lockTicketRowForUpdate(),
+		).
+		Only(ctx)
 	if err != nil {
 		logger.Warn("failed to load parent batch ticket for status sync",
 			zap.String("parent_ticket_id", parentTicketID),
@@ -474,14 +581,12 @@ func syncParentBatchStatusWithClient(ctx context.Context, client *ent.Client, pa
 		)
 		return err
 	}
-	children, err := client.Ticket.Query().
-		Where(entticket.ParentTicketIDEQ(parentTicketID)).
-		All(ctx)
+	parentEvent, projection, err := loadExactParentBatchIdentity(ctx, client, parent)
 	if err != nil {
-		logger.Warn("failed to query child tickets for parent batch status sync",
-			zap.String("parent_ticket_id", parentTicketID),
-			zap.Error(err),
-		)
+		return err
+	}
+	children, err := loadExactParentBatchChildren(ctx, client, parent)
+	if err != nil {
 		return err
 	}
 	if len(children) == 0 {
@@ -537,36 +642,40 @@ func syncParentBatchStatusWithClient(ctx context.Context, client *ent.Client, pa
 	default:
 	}
 
-	if err := updateParentBatchTicketStatusWithExpected(
+	if updateTicketErr := updateParentBatchTicketStatusWithExpected(
 		ctx,
 		client,
-		parentTicketID,
+		parent,
 		parentStatus,
-		expectedParentBatchTicketStatuses(parentStatus, allowReopen)...,
-	); err != nil {
-		return err
+		expectedParentBatchTicketStatuses(parentStatus, allowFailedReconcile)...,
+	); updateTicketErr != nil {
+		return updateTicketErr
 	}
 
-	if err := updateDomainEventStatusWithExpected(
+	if updateEventErr := updateParentBatchEventStatusWithExpected(
 		ctx,
 		client,
-		parent.EventID,
+		parent,
+		parentEvent,
 		eventStatus,
-		expectedParentBatchEventStatuses(eventStatus, allowReopen)...,
-	); err != nil {
-		return err
+		expectedParentBatchEventStatuses(eventStatus, allowFailedReconcile)...,
+	); updateEventErr != nil {
+		return updateEventErr
 	}
 
-	if _, err := client.BatchTicket.UpdateOneID(parentTicketID).
+	projectionRows, err := client.BatchTicket.Update().
+		Where(
+			entbatchticket.ID(parent.ID),
+			entbatchticket.BatchTypeEQ(projection.BatchType),
+			entbatchticket.CreatedByEQ(projection.CreatedBy),
+		).
 		SetChildCount(len(children)).
 		SetSuccessCount(successCount).
 		SetFailedCount(failedCount).
 		SetPendingCount(activeCount).
 		SetStatus(projectionStatus).
-		Save(ctx); err != nil {
-		if ent.IsNotFound(err) {
-			return nil
-		}
+		Save(ctx)
+	if err != nil {
 		logger.Warn("failed to update batch projection counters",
 			zap.String("parent_ticket_id", parentTicketID),
 			zap.String("status", projectionStatus.String()),
@@ -574,40 +683,331 @@ func syncParentBatchStatusWithClient(ctx context.Context, client *ent.Client, pa
 		)
 		return err
 	}
+	if projectionRows != 1 {
+		return fmt.Errorf("update batch projection %s with exact identity: expected 1 row, got %d", parent.ID, projectionRows)
+	}
 	return nil
+}
+
+func loadExactParentBatchIdentity(
+	ctx context.Context,
+	client *ent.Client,
+	parent *ent.Ticket,
+) (*ent.DomainEvent, *ent.BatchTicket, error) {
+	if client == nil || parent == nil {
+		return nil, nil, fmt.Errorf("parent batch identity requires a client and parent ticket")
+	}
+	if strings.TrimSpace(parent.ParentTicketID) != "" {
+		return nil, nil, fmt.Errorf("parent batch ticket %s is itself a child ticket", parent.ID)
+	}
+	expectedEventType, expectedBatchType, ok := expectedParentBatchIdentity(parent.OperationType)
+	if !ok {
+		return nil, nil, fmt.Errorf("parent batch ticket %s has unsupported operation type %s", parent.ID, parent.OperationType)
+	}
+	parentEvent, err := client.DomainEvent.Get(ctx, parent.EventID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load parent batch event %s: %w", parent.EventID, err)
+	}
+	projection, err := client.BatchTicket.Get(ctx, parent.ID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("load parent batch projection %s: %w", parent.ID, err)
+	}
+	if strings.TrimSpace(parent.EventID) == "" ||
+		strings.TrimSpace(parent.EventID) != strings.TrimSpace(parentEvent.ID) ||
+		parentEvent.EventType != expectedEventType ||
+		strings.TrimSpace(parentEvent.AggregateType) != batchAggregateType ||
+		strings.TrimSpace(parentEvent.AggregateID) != strings.TrimSpace(parent.ID) ||
+		projection.BatchType != expectedBatchType ||
+		strings.TrimSpace(parent.Requester) == "" ||
+		strings.TrimSpace(parentEvent.CreatedBy) != strings.TrimSpace(parent.Requester) ||
+		strings.TrimSpace(projection.CreatedBy) != strings.TrimSpace(parent.Requester) {
+		return nil, nil, fmt.Errorf("parent batch %s ticket/event/projection identity is inconsistent", parent.ID)
+	}
+	return parentEvent, projection, nil
+}
+
+// ValidateParentBatchChildrenInTx locks and validates the current child set
+// using a caller-owned transaction. It locks child tickets by ID, then their
+// events by ID, and deliberately does not lock the parent. Decision paths must
+// mutate the returned tickets without querying them again so the validated
+// rows remain the decision write set. The caller owns any parent-level
+// serialization needed to prevent a new child from being inserted.
+func ValidateParentBatchChildrenInTx(
+	ctx context.Context,
+	tx *ent.Tx,
+	parent *ent.Ticket,
+) ([]*ent.Ticket, error) {
+	if tx == nil {
+		return nil, fmt.Errorf("parent batch child validation transaction is required")
+	}
+	if parent == nil || strings.TrimSpace(parent.ID) == "" {
+		return nil, fmt.Errorf("parent batch child validation requires a parent ticket")
+	}
+
+	children, err := tx.Client().Ticket.Query().
+		Where(
+			entticket.ParentTicketIDEQ(parent.ID),
+			lockTicketRowForUpdate(),
+		).
+		Order(entticket.ByID()).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock parent batch %s child tickets: %w", parent.ID, err)
+	}
+	if len(children) == 0 {
+		return children, nil
+	}
+
+	eventIDs := make([]string, 0, len(children))
+	seenEventIDs := make(map[string]string, len(children))
+	for _, child := range children {
+		if child == nil || strings.TrimSpace(child.ID) == "" || strings.TrimSpace(child.EventID) == "" {
+			return nil, fmt.Errorf("parent batch %s has a child with incomplete ticket identity", parent.ID)
+		}
+		if previousTicketID, duplicate := seenEventIDs[child.EventID]; duplicate {
+			return nil, fmt.Errorf(
+				"parent batch %s child tickets %s and %s share event %s",
+				parent.ID,
+				previousTicketID,
+				child.ID,
+				child.EventID,
+			)
+		}
+		seenEventIDs[child.EventID] = child.ID
+		eventIDs = append(eventIDs, child.EventID)
+	}
+	sort.Strings(eventIDs)
+
+	events, err := tx.Client().DomainEvent.Query().
+		Where(
+			domainevent.IDIn(eventIDs...),
+			lockDomainEventRowForUpdate(),
+		).
+		Order(domainevent.ByID()).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("lock parent batch %s child events: %w", parent.ID, err)
+	}
+	eventsByID := make(map[string]*ent.DomainEvent, len(events))
+	for _, event := range events {
+		if event != nil {
+			eventsByID[event.ID] = event
+		}
+	}
+	if len(eventsByID) != len(eventIDs) {
+		return nil, incompleteParentBatchChildEventsError(parent.ID, eventIDs, eventsByID)
+	}
+	for _, child := range children {
+		if !exactParentBatchChildIdentityMatches(parent, child, eventsByID[child.EventID]) {
+			return nil, fmt.Errorf(
+				"parent batch %s child ticket %s/event %s identity is inconsistent",
+				parent.ID,
+				child.ID,
+				child.EventID,
+			)
+		}
+	}
+	return children, nil
+}
+
+// loadExactParentBatchChildren validates every child ticket and event before
+// parent aggregation writes begin. Events are loaded in one query so large
+// batches do not turn identity validation into an N+1 read path.
+func loadExactParentBatchChildren(
+	ctx context.Context,
+	client *ent.Client,
+	parent *ent.Ticket,
+) ([]*ent.Ticket, error) {
+	if client == nil || parent == nil {
+		return nil, fmt.Errorf("parent batch children require a client and parent ticket")
+	}
+	parentID := strings.TrimSpace(parent.ID)
+	if parentID == "" {
+		return nil, fmt.Errorf("parent batch child identity requires a parent ticket id")
+	}
+	children, err := client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(parent.ID)).
+		All(ctx)
+	if err != nil {
+		logger.Warn("failed to query child tickets for parent batch status sync",
+			zap.String("parent_ticket_id", parent.ID),
+			zap.Error(err),
+		)
+		return nil, err
+	}
+	if len(children) == 0 {
+		return children, nil
+	}
+
+	eventIDs := make([]string, 0, len(children))
+	seenEventIDs := make(map[string]string, len(children))
+	for _, child := range children {
+		if child == nil || strings.TrimSpace(child.ID) == "" || strings.TrimSpace(child.EventID) == "" {
+			return nil, fmt.Errorf("parent batch %s has a child with incomplete ticket identity", parent.ID)
+		}
+		if previousTicketID, duplicate := seenEventIDs[child.EventID]; duplicate {
+			return nil, fmt.Errorf(
+				"parent batch %s child tickets %s and %s share event %s",
+				parent.ID,
+				previousTicketID,
+				child.ID,
+				child.EventID,
+			)
+		}
+		seenEventIDs[child.EventID] = child.ID
+		eventIDs = append(eventIDs, child.EventID)
+	}
+
+	events, err := client.DomainEvent.Query().
+		Where(domainevent.IDIn(eventIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load parent batch %s child events: %w", parent.ID, err)
+	}
+	eventsByID := make(map[string]*ent.DomainEvent, len(events))
+	for _, event := range events {
+		if event != nil {
+			eventsByID[event.ID] = event
+		}
+	}
+	if len(eventsByID) != len(eventIDs) {
+		return nil, incompleteParentBatchChildEventsError(parent.ID, eventIDs, eventsByID)
+	}
+
+	for _, child := range children {
+		event := eventsByID[child.EventID]
+		if !exactParentBatchChildIdentityMatches(parent, child, event) {
+			return nil, fmt.Errorf(
+				"parent batch %s child ticket %s/event %s identity is inconsistent",
+				parent.ID,
+				child.ID,
+				child.EventID,
+			)
+		}
+	}
+	return children, nil
+}
+
+func incompleteParentBatchChildEventsError(
+	parentID string,
+	eventIDs []string,
+	eventsByID map[string]*ent.DomainEvent,
+) error {
+	missingEventID := ""
+	for _, eventID := range eventIDs {
+		if _, found := eventsByID[eventID]; !found {
+			missingEventID = eventID
+			break
+		}
+	}
+
+	return fmt.Errorf(
+		"parent batch %s child event %s: expected 1 row, got 0; child event set is incomplete: expected %d events, got %d",
+		parentID,
+		missingEventID,
+		len(eventIDs),
+		len(eventsByID),
+	)
+}
+
+func exactParentBatchChildIdentityMatches(parent, child *ent.Ticket, event *ent.DomainEvent) bool {
+	if parent == nil || child == nil || event == nil ||
+		strings.TrimSpace(child.ParentTicketID) != strings.TrimSpace(parent.ID) ||
+		strings.TrimSpace(child.EventID) != strings.TrimSpace(event.ID) ||
+		child.OperationType != parent.OperationType ||
+		strings.TrimSpace(child.Requester) == "" ||
+		strings.TrimSpace(child.Requester) != strings.TrimSpace(parent.Requester) ||
+		strings.TrimSpace(event.CreatedBy) != strings.TrimSpace(child.Requester) ||
+		strings.TrimSpace(event.AggregateType) != "vm" ||
+		strings.TrimSpace(event.AggregateID) == "" {
+		return false
+	}
+
+	targetID := strings.TrimSpace(event.AggregateID)
+	switch child.OperationType {
+	case entticket.OperationTypeCREATE:
+		if event.EventType != string(domain.EventVMCreationRequested) {
+			return false
+		}
+		var payload domain.VMCreationPayload
+		return json.Unmarshal(event.Payload, &payload) == nil && strings.TrimSpace(payload.ServiceID) == targetID
+	case entticket.OperationTypeMODIFY:
+		if event.EventType != string(domain.EventVMModifyRequested) {
+			return false
+		}
+		var payload domain.VMModifyPayload
+		return json.Unmarshal(event.Payload, &payload) == nil && strings.TrimSpace(payload.VMID) == targetID
+	case entticket.OperationTypeDELETE:
+		if event.EventType != string(domain.EventVMDeletionRequested) {
+			return false
+		}
+		var payload domain.VMDeletePayload
+		return json.Unmarshal(event.Payload, &payload) == nil && strings.TrimSpace(payload.VMID) == targetID
+	case entticket.OperationTypePOWER:
+		var payload domain.VMPowerPayload
+		if json.Unmarshal(event.Payload, &payload) != nil || strings.TrimSpace(payload.VMID) != targetID {
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(payload.Operation)) {
+		case "start":
+			return event.EventType == string(domain.EventVMStartRequested)
+		case "stop":
+			return event.EventType == string(domain.EventVMStopRequested)
+		case "restart":
+			return event.EventType == string(domain.EventVMRestartRequested)
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func expectedParentBatchIdentity(operation entticket.OperationType) (string, entbatchticket.BatchType, bool) {
+	switch operation {
+	case entticket.OperationTypeCREATE:
+		return string(domain.EventBatchCreateRequested), entbatchticket.BatchTypeBATCH_CREATE, true
+	case entticket.OperationTypeMODIFY:
+		return string(domain.EventBatchModifyRequested), entbatchticket.BatchTypeBATCH_MODIFY, true
+	case entticket.OperationTypeDELETE:
+		return string(domain.EventBatchDeleteRequested), entbatchticket.BatchTypeBATCH_DELETE, true
+	case entticket.OperationTypePOWER:
+		return string(domain.EventBatchPowerRequested), entbatchticket.BatchTypeBATCH_POWER, true
+	default:
+		return "", "", false
+	}
 }
 
 func updateParentBatchTicketStatusWithExpected(
 	ctx context.Context,
 	client *ent.Client,
-	parentTicketID string,
+	parent *ent.Ticket,
 	next entticket.Status,
 	expected ...entticket.Status,
 ) error {
-	if client == nil || parentTicketID == "" {
+	if client == nil || parent == nil || parent.ID == "" {
 		return nil
 	}
+	parentTicketID := parent.ID
 	if len(expected) == 0 {
 		return fmt.Errorf("expected parent batch ticket status is required for ticket %s", parentTicketID)
 	}
-	update := client.Ticket.UpdateOneID(parentTicketID).SetStatus(next)
+	update := client.Ticket.Update().
+		Where(
+			entticket.ID(parentTicketID),
+			entticket.EventIDEQ(parent.EventID),
+			entticket.OperationTypeEQ(parent.OperationType),
+			entticket.RequesterEQ(parent.Requester),
+			entticket.ParentTicketIDIsNil(),
+		).
+		SetStatus(next)
 	if len(expected) == 1 {
 		update = update.Where(entticket.StatusEQ(expected[0]))
 	} else {
 		update = update.Where(entticket.StatusIn(expected...))
 	}
-	_, err := update.Save(ctx)
+	affected, err := update.Save(ctx)
 	if err != nil {
-		if ent.IsNotFound(err) {
-			rowErr := fmt.Errorf("update parent batch ticket %s from %v to %s: expected 1 row, got 0", parentTicketID, ticketStatusStrings(expected), next)
-			logger.Warn("parent batch ticket status update affected unexpected row count",
-				zap.String("parent_ticket_id", parentTicketID),
-				zap.Strings("expected", ticketStatusStrings(expected)),
-				zap.String("status", next.String()),
-				zap.Int("affected", 0),
-			)
-			return rowErr
-		}
 		logger.Warn("failed to update parent batch ticket status",
 			zap.String("parent_ticket_id", parentTicketID),
 			zap.Strings("expected", ticketStatusStrings(expected)),
@@ -616,84 +1016,93 @@ func updateParentBatchTicketStatusWithExpected(
 		)
 		return err
 	}
+	if affected != 1 {
+		rowErr := fmt.Errorf("update parent batch ticket %s from %v to %s with exact identity: expected 1 row, got %d", parentTicketID, ticketStatusStrings(expected), next, affected)
+		logger.Warn("parent batch ticket status update affected unexpected row count",
+			zap.String("parent_ticket_id", parentTicketID),
+			zap.Strings("expected", ticketStatusStrings(expected)),
+			zap.String("status", next.String()),
+			zap.Int("affected", affected),
+		)
+		return rowErr
+	}
 	return nil
 }
 
-func expectedParentBatchTicketStatuses(next entticket.Status, allowReopen bool) []entticket.Status {
+func updateParentBatchEventStatusWithExpected(
+	ctx context.Context,
+	client *ent.Client,
+	parent *ent.Ticket,
+	parentEvent *ent.DomainEvent,
+	next domainevent.Status,
+	expected ...domainevent.Status,
+) error {
+	if client == nil || parent == nil || parentEvent == nil {
+		return fmt.Errorf("parent batch event identity is required")
+	}
+	if len(expected) == 0 {
+		return fmt.Errorf("expected parent batch event status is required for event %s", parentEvent.ID)
+	}
+	update := client.DomainEvent.Update().
+		Where(
+			domainevent.ID(parentEvent.ID),
+			domainevent.EventTypeEQ(parentEvent.EventType),
+			domainevent.AggregateTypeEQ(batchAggregateType),
+			domainevent.AggregateIDEQ(parent.ID),
+			domainevent.CreatedByEQ(parentEvent.CreatedBy),
+		).
+		SetStatus(next)
+	if len(expected) == 1 {
+		update = update.Where(domainevent.StatusEQ(expected[0]))
+	} else {
+		update = update.Where(domainevent.StatusIn(expected...))
+	}
+	affected, err := update.Save(ctx)
+	if err != nil {
+		return fmt.Errorf("update parent batch event %s: %w", parentEvent.ID, err)
+	}
+	if affected != 1 {
+		return fmt.Errorf("update parent batch event %s from %v to %s with exact identity: expected 1 row, got %d", parentEvent.ID, domainEventStatusStrings(expected), next, affected)
+	}
+	return nil
+}
+
+func expectedParentBatchTicketStatuses(next entticket.Status, allowFailedReconcile bool) []entticket.Status {
 	switch next {
 	case entticket.StatusEXECUTING:
-		if allowReopen {
+		if allowFailedReconcile {
 			return []entticket.Status{
-				entticket.StatusPENDING,
 				entticket.StatusEXECUTING,
 				entticket.StatusFAILED,
-				entticket.StatusREJECTED,
-				entticket.StatusCANCELLED,
 			}
 		}
 		return []entticket.Status{entticket.StatusEXECUTING}
 	case entticket.StatusSUCCESS:
 		return []entticket.Status{entticket.StatusEXECUTING, entticket.StatusSUCCESS}
 	case entticket.StatusFAILED:
-		if allowReopen {
-			return []entticket.Status{
-				entticket.StatusPENDING,
-				entticket.StatusEXECUTING,
-				entticket.StatusFAILED,
-				entticket.StatusREJECTED,
-				entticket.StatusCANCELLED,
-			}
-		}
 		return []entticket.Status{entticket.StatusEXECUTING, entticket.StatusFAILED}
 	case entticket.StatusCANCELLED:
-		if allowReopen {
-			return []entticket.Status{
-				entticket.StatusPENDING,
-				entticket.StatusEXECUTING,
-				entticket.StatusFAILED,
-				entticket.StatusREJECTED,
-				entticket.StatusCANCELLED,
-			}
-		}
 		return []entticket.Status{entticket.StatusPENDING, entticket.StatusEXECUTING, entticket.StatusCANCELLED}
 	default:
 		return []entticket.Status{next}
 	}
 }
 
-func expectedParentBatchEventStatuses(next domainevent.Status, allowReopen bool) []domainevent.Status {
+func expectedParentBatchEventStatuses(next domainevent.Status, allowFailedReconcile bool) []domainevent.Status {
 	switch next {
 	case domainevent.StatusPROCESSING:
-		if allowReopen {
+		if allowFailedReconcile {
 			return []domainevent.Status{
-				domainevent.StatusPENDING,
 				domainevent.StatusPROCESSING,
 				domainevent.StatusFAILED,
-				domainevent.StatusCANCELLED,
 			}
 		}
 		return []domainevent.Status{domainevent.StatusPROCESSING}
 	case domainevent.StatusCOMPLETED:
 		return []domainevent.Status{domainevent.StatusPROCESSING, domainevent.StatusCOMPLETED}
 	case domainevent.StatusFAILED:
-		if allowReopen {
-			return []domainevent.Status{
-				domainevent.StatusPENDING,
-				domainevent.StatusPROCESSING,
-				domainevent.StatusFAILED,
-				domainevent.StatusCANCELLED,
-			}
-		}
 		return []domainevent.Status{domainevent.StatusPROCESSING, domainevent.StatusFAILED}
 	case domainevent.StatusCANCELLED:
-		if allowReopen {
-			return []domainevent.Status{
-				domainevent.StatusPENDING,
-				domainevent.StatusPROCESSING,
-				domainevent.StatusFAILED,
-				domainevent.StatusCANCELLED,
-			}
-		}
 		return []domainevent.Status{domainevent.StatusPENDING, domainevent.StatusPROCESSING, domainevent.StatusCANCELLED}
 	default:
 		return []domainevent.Status{next}

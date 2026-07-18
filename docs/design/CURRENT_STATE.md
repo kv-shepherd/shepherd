@@ -81,10 +81,17 @@ Non-blocking production, environment, and V2 follow-ups are tracked centrally in
 | VM snapshot, full VM clone, and live migration workflows | RFC-backed future scope |
 | PostgreSQL partitioning / pg_partman | RFC-backed future scope |
 | Frontend tracing, log-search monitoring, service/provider log correlation beyond the existing HTTP/River lifecycle boundary, broad business SLO metrics, advanced alert routing, and advanced dashboards | RFC-0010 future scope |
+| Batch item-limit contract | Accepted ADR-0015 says create/delete `10` and power `50`, while the current public API/runtime accepts `100`; open a dedicated issue and accept a new ADR/amendment before claiming alignment |
+| Approval template-version decision | Accepted ADR-0017, together with ADR-0015's approval-time template decision, requires the administrator's final template version to be persisted as `selected_template_version`; the current Ticket/approval contract persists an effective `template_snapshot` but exposes no independent selected-version input or field. Open a dedicated issue and accept a superseding ADR/amendment before treating snapshot-only behavior as aligned. |
 
 ## ADR Assessment
 
-No ADR changes are required for this sync:
+Most topics in this snapshot require no ADR change. The batch item-limit and
+approval template-version mismatches above are accepted-ADR contract debt. Each
+requires a dedicated issue plus a new accepted ADR/amendment; this document
+does not amend ADR-0015 or ADR-0017.
+
+The remaining assessment is unchanged:
 
 - The provider narrowing is covered by ADR-0024 and the RFC split for future
   snapshot/clone/migration features.

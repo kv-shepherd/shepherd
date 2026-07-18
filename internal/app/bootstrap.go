@@ -55,6 +55,8 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 	)
 
 	workers := river.NewWorkers()
+	batchApprovalDispatcher := &deferredBatchApprovalDispatcher{}
+	river.AddWorker(workers, jobs.NewBatchApprovalDispatchWorker(batchApprovalDispatcher))
 	for _, mod := range baseModules {
 		registrar, ok := mod.(modules.WorkerRegistrar)
 		if !ok {
@@ -75,6 +77,10 @@ func Bootstrap(ctx context.Context, cfg *config.Config) (*Application, error) {
 	if err != nil {
 		infra.Close()
 		return nil, fmt.Errorf("init approval module: %w", err)
+	}
+	if dispatchErr := batchApprovalDispatcher.setTarget(approvalModule.TicketService()); dispatchErr != nil {
+		infra.Close()
+		return nil, fmt.Errorf("wire batch approval dispatcher: %w", dispatchErr)
 	}
 
 	baseModules = append(baseModules, approvalModule)

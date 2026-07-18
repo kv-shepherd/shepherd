@@ -2,6 +2,12 @@ no-unnecessary-combinator:
     - $.paths['/vms/{vm_id}'].get.responses['200'].content['application/json'].schema.properties['console_capabilities'].allOf
     - $.paths['/vms/{vm_id}'].get.responses['200'].content['application/json'].schema.properties['provisioning'].allOf
     - $.components.schemas['VM'].properties['console_capabilities'].allOf[0].properties['preferred_console_type'].allOf
+    - $.components.schemas['VMConsoleCapabilities'].properties['preferred_console_type'].allOf
+    - $.components.schemas['ServiceWorkspaceContext'].properties['visible_vms'].items.properties['console_capabilities'].allOf[0].properties['preferred_console_type'].allOf
+    - $.components.schemas['VMList'].properties['items'].items.properties['console_capabilities'].allOf[0].properties['preferred_console_type'].allOf
+    - $.paths['/systems/{system_id}/services/{service_id}/context'].get.responses['200'].content['application/json'].schema.properties['visible_vms'].items.properties['console_capabilities'].allOf[0].properties['preferred_console_type'].allOf
+    - $.paths['/vms'].get.responses['200'].content['application/json'].schema.properties['items'].items.properties['console_capabilities'].allOf[0].properties['preferred_console_type'].allOf
+    - $.paths['/vms/{vm_id}'].get.responses['200'].content['application/json'].schema.properties['console_capabilities'].allOf[0].properties['preferred_console_type'].allOf
     - $.components.schemas['VMBatchChildStatus'].properties['provisioning'].allOf
     - $.paths['/vms/{vm_id}/console/request'].post.responses['200'].content['application/json'].schema.properties['console_type'].allOf
     - $.paths['/vms/{vm_id}/console/request'].post.requestBody.content['application/json'].schema.properties['preferred_console_type'].allOf

@@ -30,17 +30,49 @@ import (
 )
 
 const externalAuthStateTTL = 5 * time.Minute
+const externalAuthStateIssuerSuffix = "/external-auth/v2"
 const externalAuthBridgeMessageType = "shepherd.external_auth.complete"
 const externalAuthSchemeHTTP = "http"
 const externalAuthSchemeHTTPS = "https"
 const loginFailureCode = "INVALID_CREDENTIALS"
+const externalAuthFailureCode = "EXTERNAL_AUTH_FAILED"
+const externalAuthFailureMessage = "external authentication failed"
 
-var errExternalAuthUserDisabled = errors.New("external auth user disabled")
+var (
+	errExternalAuthUserDisabled        = errors.New("external auth user disabled")
+	errExternalAuthProviderUnavailable = errors.New("external auth provider unavailable")
+	errExternalAuthIdentityChanged     = errors.New("external auth identity changed before token issuance")
+)
+
+type externalAuthFailureLogFunc func(string, ...zap.Field)
+
+func (s *Server) logExternalAuthProviderFailure(
+	operation, failureClass, providerID string,
+	err error,
+) {
+	errorType := "<nil>"
+	if err != nil {
+		errorType = fmt.Sprintf("%T", err)
+	}
+	fields := []zap.Field{
+		zap.String("operation", strings.TrimSpace(operation)),
+		zap.String("failure_class", strings.TrimSpace(failureClass)),
+		zap.String("provider_id", strings.TrimSpace(providerID)),
+		zap.String("error_type", errorType),
+	}
+	const message = "external auth provider operation failed"
+	if s != nil && s.externalAuthFailureLog != nil {
+		s.externalAuthFailureLog(message, fields...)
+		return
+	}
+	logger.Warn(message, fields...)
+}
 
 type externalAuthStateClaims struct {
-	ProviderID string `json:"provider_id"`
-	ReturnTo   string `json:"return_to"`
-	LoginMode  string `json:"login_mode,omitempty"`
+	ProviderID         string `json:"provider_id"`
+	ProviderGeneration string `json:"provider_generation"`
+	ReturnTo           string `json:"return_to"`
+	LoginMode          string `json:"login_mode,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -48,6 +80,8 @@ func (c externalAuthStateClaims) Validate() error {
 	switch {
 	case strings.TrimSpace(c.ProviderID) == "":
 		return fmt.Errorf("provider_id is required")
+	case strings.TrimSpace(c.ProviderGeneration) == "":
+		return fmt.Errorf("provider_generation is required")
 	case strings.TrimSpace(c.ReturnTo) == "":
 		return fmt.Errorf("return_to is required")
 	}
@@ -108,6 +142,12 @@ func (s *Server) SubmitLoginAuthProvider(c *gin.Context, providerID generated.Pr
 		c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 		return
 	}
+	providerGeneration, generationErr := service.CaptureAuthProviderGeneration(providerRow)
+	if generationErr != nil {
+		logger.Error("failed to capture auth provider generation for credential login", zap.Error(generationErr), zap.String("provider_id", providerRow.ID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	runtimeConfig, cfgErr := s.authProviderConfig.DecryptForUse(providerRow.AuthType, providerRow.Config)
 	if cfgErr != nil {
@@ -125,9 +165,9 @@ func (s *Server) SubmitLoginAuthProvider(c *gin.Context, providerID generated.Pr
 		UserAgent:   strings.TrimSpace(c.Request.UserAgent()),
 	})
 	if err != nil {
-		logger.Warn("credential auth provider login failed", zap.Error(err), zap.String("provider_id", providerRow.ID))
 		var credentialErr *runtimecontract.AuthCredentialError
 		if errors.As(err, &credentialErr) && strings.TrimSpace(credentialErr.Code) != "" {
+			s.logExternalAuthProviderFailure("credential_authenticate", "public_provider_error", providerRow.ID, err)
 			status := http.StatusBadRequest
 			if credentialErr.Code == loginFailureCode {
 				status = http.StatusUnauthorized
@@ -139,15 +179,27 @@ func (s *Server) SubmitLoginAuthProvider(c *gin.Context, providerID generated.Pr
 			})
 			return
 		}
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+		s.logExternalAuthProviderFailure("credential_authenticate", "provider_operation_failed", providerRow.ID, err)
+		c.JSON(http.StatusBadRequest, generated.Error{
+			Code:    externalAuthFailureCode,
+			Message: externalAuthFailureMessage,
+		})
 		return
 	}
 
-	loginResp, err := s.completeExternalAuthResultLogin(ctx, c, providerRow.ID, authResult)
+	loginResp, err := s.completeExternalAuthResultLogin(ctx, c, providerRow.ID, providerGeneration, authResult)
 	if err != nil {
 		switch {
 		case errors.Is(err, errExternalAuthUserDisabled):
 			c.JSON(http.StatusForbidden, generated.Error{Code: "USER_DISABLED"})
+		case errors.Is(err, service.ErrAuthProviderGenerationChanged),
+			errors.Is(err, errExternalAuthIdentityChanged):
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "AUTH_PROVIDER_CHANGED",
+				Message: "authentication provider changed; authenticate again",
+			})
+		case errors.Is(err, errExternalAuthProviderUnavailable):
+			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 		case strings.Contains(err.Error(), "already belongs to another user"):
 			c.JSON(http.StatusConflict, generated.Error{Code: "EXTERNAL_IDENTITY_CONFLICT"})
 		default:
@@ -197,8 +249,14 @@ func (s *Server) StartLoginAuthProvider(c *gin.Context, providerID generated.Pro
 		c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 		return
 	}
+	providerGeneration, generationErr := service.CaptureAuthProviderGeneration(providerRow)
+	if generationErr != nil {
+		logger.Error("failed to capture auth provider generation for login start", zap.Error(generationErr), zap.String("provider_id", providerRow.ID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
-	state, err := s.issueExternalAuthState(providerRow.ID, returnTo.String(), req.LoginMode)
+	state, err := s.issueExternalAuthState(providerRow.ID, returnTo.String(), req.LoginMode, providerGeneration)
 	if err != nil {
 		logger.Error("failed to issue external auth state", zap.Error(err), zap.String("provider_id", providerRow.ID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -232,16 +290,20 @@ func (s *Server) StartLoginAuthProvider(c *gin.Context, providerID generated.Pro
 		UserAgent:   strings.TrimSpace(c.Request.UserAgent()),
 	})
 	if err != nil {
-		logger.Error("failed to start external auth login", zap.Error(err), zap.String("provider_id", providerRow.ID))
 		var startErr *runtimecontract.AuthStartError
 		if errors.As(err, &startErr) && strings.TrimSpace(startErr.Code) != "" {
+			s.logExternalAuthProviderFailure("login_start", "public_provider_error", providerRow.ID, err)
 			c.JSON(http.StatusBadRequest, generated.Error{
 				Code:    startErr.Code,
 				Message: strings.TrimSpace(startErr.Message),
 			})
 			return
 		}
-		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+		s.logExternalAuthProviderFailure("login_start", "provider_operation_failed", providerRow.ID, err)
+		c.JSON(http.StatusBadRequest, generated.Error{
+			Code:    externalAuthFailureCode,
+			Message: externalAuthFailureMessage,
+		})
 		return
 	}
 	if strings.TrimSpace(startResp.RedirectURL) == "" {
@@ -342,16 +404,47 @@ func (s *Server) completeExternalAuthLogin(c *gin.Context, providerID string, ca
 		return
 	}
 
-	providerRow, adapter, ok := s.resolveLoginAuthProviderAdapter(ctx, nil, providerID)
-	if !ok {
-		s.renderExternalAuthBridge(c, http.StatusNotFound, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
+	providerRow, providerErr := s.loadEnabledLoginAuthProvider(ctx, providerID)
+	if providerErr != nil {
+		status := http.StatusInternalServerError
+		code := "INTERNAL_ERROR"
+		if ent.IsNotFound(providerErr) {
+			status = http.StatusNotFound
+			code = "AUTH_PROVIDER_NOT_FOUND"
+		} else {
+			logger.Error("failed to query auth provider for callback", zap.Error(providerErr), zap.String("provider_id", providerID))
+		}
+		s.renderExternalAuthBridge(c, status, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
 			Type:     externalAuthBridgeMessageType,
 			Success:  false,
-			Code:     "AUTH_PROVIDER_NOT_FOUND",
+			Code:     code,
 			ReturnTo: stateClaims.ReturnTo,
 		})
 		return
 	}
+	providerGeneration, generationErr := service.CaptureAuthProviderGeneration(providerRow)
+	if generationErr != nil {
+		logger.Error("failed to capture auth provider generation for callback", zap.Error(generationErr), zap.String("provider_id", providerID))
+		s.renderExternalAuthBridge(c, http.StatusInternalServerError, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
+			Type:     externalAuthBridgeMessageType,
+			Success:  false,
+			Code:     "INTERNAL_ERROR",
+			ReturnTo: stateClaims.ReturnTo,
+		})
+		return
+	}
+	if bindingErr := providerGeneration.ValidateStateBinding(s.jwtCfg.SigningKey, stateClaims.ProviderGeneration); bindingErr != nil {
+		logger.Warn("external auth callback rejected stale provider generation", zap.Error(bindingErr), zap.String("provider_id", providerID))
+		s.renderExternalAuthBridge(c, http.StatusConflict, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
+			Type:     externalAuthBridgeMessageType,
+			Success:  false,
+			Code:     "AUTH_PROVIDER_CHANGED",
+			ReturnTo: stateClaims.ReturnTo,
+		})
+		return
+	}
+
+	adapter := adminglobal.Resolve(providerRow.AuthType)
 	runtimeCapability, ok := adapter.(runtimecontract.AuthRuntimeCapability)
 	if !ok || runtimeCapability == nil {
 		s.renderExternalAuthBridge(c, http.StatusNotFound, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
@@ -377,17 +470,17 @@ func (s *Server) completeExternalAuthLogin(c *gin.Context, providerID string, ca
 
 	authResult, err := runtimeCapability.CompleteLogin(ctx, runtimeConfig, callbackReq)
 	if err != nil {
-		logger.Warn("external auth provider callback failed", zap.Error(err), zap.String("provider_id", providerID))
+		s.logExternalAuthProviderFailure("login_callback", "provider_operation_failed", providerID, err)
 		s.renderExternalAuthBridge(c, http.StatusBadRequest, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
 			Type:     externalAuthBridgeMessageType,
 			Success:  false,
-			Code:     "EXTERNAL_AUTH_FAILED",
+			Code:     externalAuthFailureCode,
 			ReturnTo: stateClaims.ReturnTo,
 		})
 		return
 	}
 
-	loginResp, upsertResult, txErr := s.finalizeExternalAuthLogin(ctx, providerID, authResult)
+	loginResp, upsertResult, txErr := s.finalizeExternalAuthLogin(ctx, providerID, providerGeneration, authResult)
 	if txErr != nil {
 		switch {
 		case errors.Is(txErr, errExternalAuthUserDisabled):
@@ -395,6 +488,23 @@ func (s *Server) completeExternalAuthLogin(c *gin.Context, providerID string, ca
 				Type:     externalAuthBridgeMessageType,
 				Success:  false,
 				Code:     "USER_DISABLED",
+				ReturnTo: stateClaims.ReturnTo,
+			})
+			return
+		case errors.Is(txErr, service.ErrAuthProviderGenerationChanged),
+			errors.Is(txErr, errExternalAuthIdentityChanged):
+			s.renderExternalAuthBridge(c, http.StatusConflict, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
+				Type:     externalAuthBridgeMessageType,
+				Success:  false,
+				Code:     "AUTH_PROVIDER_CHANGED",
+				ReturnTo: stateClaims.ReturnTo,
+			})
+			return
+		case errors.Is(txErr, errExternalAuthProviderUnavailable):
+			s.renderExternalAuthBridge(c, http.StatusNotFound, stateClaims.ReturnTo, stateClaims.ReturnTo, externalAuthCallbackPayload{
+				Type:     externalAuthBridgeMessageType,
+				Success:  false,
+				Code:     "AUTH_PROVIDER_NOT_FOUND",
 				ReturnTo: stateClaims.ReturnTo,
 			})
 			return
@@ -444,12 +554,7 @@ func (s *Server) resolveLoginAuthProviderAdapter(
 	c *gin.Context,
 	providerID generated.ProviderID,
 ) (*ent.AuthProvider, admincontract.AuthProviderAdminAdapter, bool) {
-	providerRow, err := s.client.AuthProvider.Query().
-		Where(
-			authprovider.IDEQ(providerID),
-			authprovider.EnabledEQ(true),
-		).
-		Only(ctx)
+	providerRow, err := s.loadEnabledLoginAuthProvider(ctx, providerID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			if c != nil {
@@ -474,18 +579,35 @@ func (s *Server) resolveLoginAuthProviderAdapter(
 	return providerRow, adapter, true
 }
 
-func (s *Server) issueExternalAuthState(providerID, returnTo, loginMode string) (string, error) {
+func (s *Server) loadEnabledLoginAuthProvider(ctx context.Context, providerID string) (*ent.AuthProvider, error) {
+	return s.client.AuthProvider.Query().
+		Where(
+			authprovider.IDEQ(providerID),
+			authprovider.EnabledEQ(true),
+		).
+		Only(ctx)
+}
+
+func (s *Server) issueExternalAuthState(
+	providerID, returnTo, loginMode string,
+	providerGeneration service.AuthProviderGeneration,
+) (string, error) {
 	tokenID, err := uuid.NewV7()
 	if err != nil {
 		return "", fmt.Errorf("generate external auth state id: %w", err)
 	}
+	generationBinding, err := providerGeneration.StateBinding(s.jwtCfg.SigningKey)
+	if err != nil {
+		return "", fmt.Errorf("bind external auth state to provider generation: %w", err)
+	}
 	now := time.Now().UTC()
 	claims := externalAuthStateClaims{
-		ProviderID: providerID,
-		ReturnTo:   returnTo,
-		LoginMode:  strings.TrimSpace(loginMode),
+		ProviderID:         providerID,
+		ProviderGeneration: generationBinding,
+		ReturnTo:           returnTo,
+		LoginMode:          strings.TrimSpace(loginMode),
 		RegisteredClaims: jwt.RegisteredClaims{
-			Issuer:    s.jwtCfg.Issuer + "/external-auth",
+			Issuer:    s.jwtCfg.Issuer + externalAuthStateIssuerSuffix,
 			Subject:   providerID,
 			ExpiresAt: jwt.NewNumericDate(now.Add(externalAuthStateTTL)),
 			IssuedAt:  jwt.NewNumericDate(now),
@@ -507,7 +629,7 @@ func (s *Server) validateExternalAuthState(tokenString, providerID string) (*ext
 			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 		return s.jwtCfg.SigningKey, nil
-	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer(s.jwtCfg.Issuer+"/external-auth"), jwt.WithExpirationRequired())
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}), jwt.WithIssuer(s.jwtCfg.Issuer+externalAuthStateIssuerSuffix), jwt.WithExpirationRequired())
 	if err != nil {
 		return nil, err
 	}
@@ -960,22 +1082,36 @@ func firstExternalAuthCallbackValue(req runtimecontract.AuthCallbackRequest, key
 func (s *Server) finalizeExternalAuthLogin(
 	ctx context.Context,
 	providerID string,
+	providerGeneration service.AuthProviderGeneration,
 	authResult *runtimecontract.AuthResult,
 ) (generated.LoginResponse, *service.ExternalAuthUpsertResult, error) {
 	if authResult == nil {
 		return generated.LoginResponse{}, nil, fmt.Errorf("external auth result is required")
 	}
+	if err := s.ensureAuthSessionSchema(ctx); err != nil {
+		return generated.LoginResponse{}, nil, fmt.Errorf("prepare auth session state for external login: %w", err)
+	}
 
 	var upsertResult *service.ExternalAuthUpsertResult
-	var loginResp generated.LoginResponse
 	disabledUser := false
 	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
-		txServer := &Server{
-			client:       tx.Client(),
-			jwtCfg:       s.jwtCfg,
-			authSessions: s.authSessions,
+		if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+			return lockErr
 		}
-		txExternalAuth := s.externalAuth.WithClient(tx.Client())
+		providerRow, loadErr := tx.Client().AuthProvider.Get(ctx, providerID)
+		if loadErr != nil {
+			if ent.IsNotFound(loadErr) {
+				return errExternalAuthProviderUnavailable
+			}
+			return fmt.Errorf("reload auth provider for external login: %w", loadErr)
+		}
+		if generationErr := providerGeneration.Validate(providerRow); generationErr != nil {
+			return generationErr
+		}
+		if !providerRow.Enabled {
+			return errExternalAuthProviderUnavailable
+		}
+		txExternalAuth := s.externalAuth.WithTransaction(tx)
 
 		var upsertErr error
 		upsertResult, upsertErr = txExternalAuth.UpsertExternalUser(ctx, providerID, *authResult)
@@ -987,37 +1123,123 @@ func (s *Server) finalizeExternalAuthLogin(
 		}
 		if !upsertResult.User.Enabled {
 			disabledUser = true
-			return txServer.revokeUserSessions(ctx, upsertResult.User.ID, "external_auth_user_disabled")
+			return s.revokeUserSessionsTx(ctx, tx, upsertResult.User.ID, "external_auth_user_disabled")
 		}
-		if upsertResult.RBACChanged {
-			if err := txServer.revokeUserSessions(ctx, upsertResult.User.ID, "external_auth_rbac_changed"); err != nil {
+		if upsertResult.IdentityStateChanged || upsertResult.RBACChanged {
+			reason := "external_auth_rbac_changed"
+			if upsertResult.IdentityStateChanged {
+				reason = "external_auth_identity_state_changed"
+			}
+			if err := s.revokeUserSessionsTx(ctx, tx, upsertResult.User.ID, reason); err != nil {
 				return err
 			}
-		}
-
-		var issueErr error
-		loginResp, issueErr = txServer.issueLoginResponse(ctx, upsertResult.User)
-		if issueErr != nil {
-			return issueErr
 		}
 		if issueErr := txExternalAuth.RecordLogin(ctx, upsertResult.User.ID); issueErr != nil {
 			return fmt.Errorf("record last_login_at: %w", issueErr)
 		}
 		return nil
 	})
-	if err == nil && disabledUser {
+	if err != nil {
+		return generated.LoginResponse{}, upsertResult, err
+	}
+	if disabledUser {
 		return generated.LoginResponse{}, upsertResult, errExternalAuthUserDisabled
 	}
-	return loginResp, upsertResult, err
+	expectedUserID := strings.TrimSpace(upsertResult.User.ID)
+	expectedProviderID := strings.TrimSpace(providerID)
+	// UpsertExternalUser returns the canonical, normalized external identity
+	// persisted in the provisioning transaction. Bind every authorization
+	// snapshot and issuance attempt to that exact identity generation.
+	expectedExternalID := upsertResult.User.ExternalID
+	validateTokenSubject := func(currentUser *ent.User) error {
+		return validateExternalAuthTokenSubject(
+			currentUser,
+			expectedUserID,
+			expectedProviderID,
+			expectedExternalID,
+		)
+	}
+	if s.externalAuthBeforeTokenIssue != nil {
+		if hookErr := s.externalAuthBeforeTokenIssue(ctx); hookErr != nil {
+			return generated.LoginResponse{}, upsertResult, hookErr
+		}
+	}
+	for attempt := 0; attempt < loginAuthorizationSnapshotMaxRetries; attempt++ {
+		snapshot, snapshotErr := s.loadLoginAuthorizationSnapshot(ctx, expectedUserID, validateTokenSubject)
+		if snapshotErr != nil {
+			return generated.LoginResponse{}, upsertResult, snapshotErr
+		}
+
+		var loginResp generated.LoginResponse
+		if issueErr := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+			if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+				return lockErr
+			}
+			providerRow, loadErr := tx.Client().AuthProvider.Get(ctx, providerID)
+			if loadErr != nil {
+				if ent.IsNotFound(loadErr) {
+					return errExternalAuthProviderUnavailable
+				}
+				return fmt.Errorf("reload auth provider before issuing external login token: %w", loadErr)
+			}
+			if generationErr := providerGeneration.Validate(providerRow); generationErr != nil {
+				return generationErr
+			}
+			if !providerRow.Enabled {
+				return errExternalAuthProviderUnavailable
+			}
+			if lockErr := lockUserRow(ctx, tx, expectedUserID); lockErr != nil {
+				return lockErr
+			}
+			currentUser, loadUserErr := tx.Client().User.Get(ctx, expectedUserID)
+			if ent.IsNotFound(loadUserErr) {
+				return errExternalAuthIdentityChanged
+			}
+			if loadUserErr != nil {
+				return fmt.Errorf("reload external auth user before issuing token: %w", loadUserErr)
+			}
+			if identityErr := validateTokenSubject(currentUser); identityErr != nil {
+				return identityErr
+			}
+			var tokenErr error
+			loginResp, tokenErr = s.loginResponseFromAuthorizationSnapshot(snapshot)
+			return tokenErr
+		}); issueErr != nil {
+			return generated.LoginResponse{}, upsertResult, issueErr
+		}
+		if activateErr := s.activateAuthSession(ctx, expectedUserID, snapshot.SessionVersion); activateErr != nil {
+			if errors.Is(activateErr, service.ErrAuthSessionVersionChanged) {
+				continue
+			}
+			return generated.LoginResponse{}, upsertResult, activateErr
+		}
+		return loginResp, upsertResult, nil
+	}
+	return generated.LoginResponse{}, upsertResult, fmt.Errorf("authorization changed repeatedly while activating external login session")
+}
+
+func validateExternalAuthTokenSubject(
+	currentUser *ent.User,
+	expectedUserID, expectedProviderID, expectedExternalID string,
+) error {
+	if currentUser == nil ||
+		!currentUser.Enabled ||
+		strings.TrimSpace(currentUser.ID) != strings.TrimSpace(expectedUserID) ||
+		strings.TrimSpace(currentUser.AuthProviderID) != strings.TrimSpace(expectedProviderID) ||
+		currentUser.ExternalID != expectedExternalID {
+		return errExternalAuthIdentityChanged
+	}
+	return nil
 }
 
 func (s *Server) completeExternalAuthResultLogin(
 	ctx context.Context,
 	c *gin.Context,
 	providerID string,
+	providerGeneration service.AuthProviderGeneration,
 	authResult *runtimecontract.AuthResult,
 ) (generated.LoginResponse, error) {
-	loginResp, upsertResult, err := s.finalizeExternalAuthLogin(ctx, providerID, authResult)
+	loginResp, upsertResult, err := s.finalizeExternalAuthLogin(ctx, providerID, providerGeneration, authResult)
 	if err != nil {
 		return generated.LoginResponse{}, err
 	}

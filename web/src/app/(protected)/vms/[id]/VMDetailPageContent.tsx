@@ -85,6 +85,10 @@ import type {
 import { formatMemory, VM_STATUS_MAP } from "@/features/vm-management/types";
 import { PageHeader, PageSurface } from "@/components/layouts/PageSection";
 import { useAuthStore } from "@/stores/auth";
+import {
+  extractRestartReconciliationNotice,
+  type RestartReconciliationNotice,
+} from "@/features/vm-management/batchActions";
 
 const { Text, Paragraph } = Typography;
 const PROVISIONING_POLL_INTERVAL_MS = 5_000;
@@ -122,6 +126,8 @@ export default function VMDetailPage() {
   const [activeConsoleTarget, setActiveConsoleTarget] =
     useState<ResolvedConsoleTarget | null>(null);
   const [manifestViewerOpen, setManifestViewerOpen] = useState(false);
+  const [restartReconciliationNotice, setRestartReconciliationNotice] =
+    useState<RestartReconciliationNotice | null>(null);
   const consoleSectionRef = useRef<HTMLDivElement | null>(null);
 
   const {
@@ -139,7 +145,10 @@ export default function VMDetailPage() {
     },
   );
 
-  const powerMutation = useApiMutation(
+  const powerMutation = useApiMutation<
+    { action: "start" | "stop" | "restart" },
+    components["schemas"]["VMPowerAcceptedResponse"]
+  >(
     ({ action }: { action: "start" | "stop" | "restart" }) =>
       api.POST("/vms/{vm_id}/power", {
         params: { path: { vm_id: vmId } },
@@ -149,6 +158,16 @@ export default function VMDetailPage() {
       onSuccess: () => {
         void messageApi.success(t("message.action_submitted"));
         void refetch();
+      },
+      onError: (err) => {
+        const notice = extractRestartReconciliationNotice(err);
+        if (notice) {
+          setRestartReconciliationNotice(notice);
+        }
+        void messageApi.error(translateApiError(t, err));
+        if (err.status === 409) {
+          void refetch();
+        }
       },
     },
   );
@@ -607,6 +626,30 @@ export default function VMDetailPage() {
           style={{ marginBottom: 16 }}
           message={t("demo.notice_title")}
           description={t("demo.notice_description")}
+        />
+      ) : null}
+      {restartReconciliationNotice ? (
+        <Alert
+          type="warning"
+          showIcon
+          data-testid="restart-reconciliation-alert"
+          message={t("restart_reconciliation.title")}
+          description={
+            <Space direction="vertical" size={2}>
+              <Text>{t("restart_reconciliation.readonly_description")}</Text>
+              <Text copyable={{ text: restartReconciliationNotice.eventId }}>
+                {t("restart_reconciliation.event_id")}: {restartReconciliationNotice.eventId}
+              </Text>
+              <Text copyable={{ text: restartReconciliationNotice.reconciliationPath }}>
+                {t("restart_reconciliation.path")}: {restartReconciliationNotice.reconciliationPath}
+              </Text>
+            </Space>
+          }
+          action={
+            <Button onClick={() => setRestartReconciliationNotice(null)}>
+              {t("restart_reconciliation.dismiss")}
+            </Button>
+          }
         />
       ) : null}
 

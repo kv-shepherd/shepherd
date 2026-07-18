@@ -58,21 +58,26 @@ type Server struct {
 	approvalRouter           *approval.ApprovalProviderRouter // Stage 2.E: provider router
 	externalApprovalRegistry *approvalregistry.Service
 
-	authProviderConfig   *configcodec.AuthProviderConfigCodec
-	kubeconfigCodec      *kubeconfigcodec.ClusterKubeconfigCodec
-	publicBaseURL        string
-	allowedOrigins       []string
-	sessionCfg           config.SessionConfig
-	passwordPolicy       config.PasswordPolicy
-	loginRateLimitCfg    config.LoginRateLimit
-	loginRateLimiter     *loginAttemptLimiter
-	settingsMu           sync.RWMutex
-	externalAuthBaseURL  string
-	refreshClusterHealth func(context.Context, string) error
-	riverClient          *river.Client[pgx.Tx]
-	notifier             *notification.Triggers // Optional: notification trigger service
-	traceSummaryProvider observability.TraceSummaryProvider
-	businessMetrics      observability.BusinessMetricsProvider
+	authProviderConfig           *configcodec.AuthProviderConfigCodec
+	kubeconfigCodec              *kubeconfigcodec.ClusterKubeconfigCodec
+	publicBaseURL                string
+	allowedOrigins               []string
+	sessionCfg                   config.SessionConfig
+	passwordPolicy               config.PasswordPolicy
+	passwordHashGenerator        func(string) (string, error)
+	externalAuthBeforeTokenIssue func(context.Context) error
+	externalAuthFailureLog       externalAuthFailureLogFunc
+	authSessionBeforeActivate    func(context.Context, string, int64) error
+	loginRateLimitCfg            config.LoginRateLimit
+	loginRateLimiter             *loginAttemptLimiter
+	batchSubmissionGate          chan struct{}
+	settingsMu                   sync.RWMutex
+	externalAuthBaseURL          string
+	refreshClusterHealth         func(context.Context, string) error
+	riverClient                  *river.Client[pgx.Tx]
+	notifier                     *notification.Triggers // Optional: notification trigger service
+	traceSummaryProvider         observability.TraceSummaryProvider
+	businessMetrics              observability.BusinessMetricsProvider
 }
 
 // ServerDeps holds all dependencies for creating a Server.
@@ -170,19 +175,21 @@ func NewServer(deps ServerDeps) *Server {
 		approvalRouter:           approvalRouter, // Stage 2.E: provider router
 		externalApprovalRegistry: externalApprovalRegistry,
 
-		authProviderConfig:   configcodec.NewAuthProviderConfigCodec(deps.EncryptionKey),
-		kubeconfigCodec:      kubeconfigcodec.NewClusterKubeconfigCodec(deps.EncryptionKey),
-		publicBaseURL:        deps.PublicBaseURL,
-		allowedOrigins:       append([]string(nil), deps.AllowedOrigins...),
-		sessionCfg:           deps.SessionConfig,
-		passwordPolicy:       deps.PasswordPolicy,
-		loginRateLimitCfg:    normalizeLoginRateLimitConfig(deps.LoginRateLimitConfig),
-		loginRateLimiter:     newLoginAttemptLimiterWithStore(deps.LoginRateLimitConfig, newPostgresLoginAttemptStore(deps.Pool)),
-		refreshClusterHealth: deps.RefreshClusterHealth,
-		riverClient:          deps.RiverClient,
-		notifier:             deps.Notifier,
-		traceSummaryProvider: deps.TraceSummaryProvider,
-		businessMetrics:      deps.BusinessMetrics,
+		authProviderConfig:    configcodec.NewAuthProviderConfigCodec(deps.EncryptionKey),
+		kubeconfigCodec:       kubeconfigcodec.NewClusterKubeconfigCodec(deps.EncryptionKey),
+		publicBaseURL:         deps.PublicBaseURL,
+		allowedOrigins:        append([]string(nil), deps.AllowedOrigins...),
+		sessionCfg:            deps.SessionConfig,
+		passwordPolicy:        deps.PasswordPolicy,
+		passwordHashGenerator: HashPassword,
+		loginRateLimitCfg:     normalizeLoginRateLimitConfig(deps.LoginRateLimitConfig),
+		loginRateLimiter:      newLoginAttemptLimiterWithStore(deps.LoginRateLimitConfig, newPostgresLoginAttemptStore(deps.Pool)),
+		batchSubmissionGate:   make(chan struct{}, 1),
+		refreshClusterHealth:  deps.RefreshClusterHealth,
+		riverClient:           deps.RiverClient,
+		notifier:              deps.Notifier,
+		traceSummaryProvider:  deps.TraceSummaryProvider,
+		businessMetrics:       deps.BusinessMetrics,
 	}
 	initCtx, cancel := serverInitializationContext()
 	srv.loadExternalAuthPlatformSetting(initCtx)

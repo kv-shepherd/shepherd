@@ -18,30 +18,45 @@ import (
 
 // ExternalAuthService owns canonical validation and JIT user provisioning for external auth.
 type ExternalAuthService struct {
-	client *ent.Client
+	client                 *ent.Client
+	roleAssignmentExecutor RoleAssignmentExecutor
 }
 
 func NewExternalAuthService(client *ent.Client) *ExternalAuthService {
 	return &ExternalAuthService{client: client}
 }
 
-// WithClient derives a transaction-scoped service instance without constructing
-// a new dependency graph in request handlers.
+// WithClient derives a service for a different Ent client. Production callers
+// that can reconcile managed RoleBindings must use WithTransaction so the
+// required user/role row locks share the write transaction.
 func (s *ExternalAuthService) WithClient(client *ent.Client) *ExternalAuthService {
 	if s == nil {
 		return &ExternalAuthService{client: client}
 	}
 	derived := *s
 	derived.client = client
+	derived.roleAssignmentExecutor = nil
 	return &derived
+}
+
+// WithTransaction derives a transaction-scoped service and enables the row
+// locks required by managed RoleBinding writes.
+func (s *ExternalAuthService) WithTransaction(tx *ent.Tx) *ExternalAuthService {
+	if tx == nil {
+		return s.WithClient(nil)
+	}
+	derived := s.WithClient(tx.Client())
+	derived.roleAssignmentExecutor = tx
+	return derived
 }
 
 // ExternalAuthUpsertResult captures the canonical persistence outcome.
 type ExternalAuthUpsertResult struct {
-	User        *ent.User
-	Created     bool
-	Updated     bool
-	RBACChanged bool
+	User                 *ent.User
+	Created              bool
+	Updated              bool
+	RBACChanged          bool
+	IdentityStateChanged bool
 }
 
 func (s *ExternalAuthService) UpsertExternalUser(
@@ -147,6 +162,12 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 		}
 		preserveExistingDirectoryOwner = preserve
 	}
+	identityStateChanged := existing.Enabled != normalized.Enabled
+	if !preserveExistingDirectoryOwner {
+		identityStateChanged = identityStateChanged ||
+			existing.AuthProviderID != authProviderID ||
+			existing.ExternalID != normalized.ExternalID
+	}
 
 	update := s.client.User.UpdateOneID(existing.ID).SetEnabled(normalized.Enabled)
 	if preserveExistingDirectoryOwner {
@@ -200,15 +221,17 @@ func (s *ExternalAuthService) upsertExternalUserNormalized(
 		}
 		rbacChanged = rbacChanged || reconcileChanged
 		return &ExternalAuthUpsertResult{
-			User:        updatedUser,
-			Updated:     true,
-			RBACChanged: rbacChanged,
+			User:                 updatedUser,
+			Updated:              true,
+			RBACChanged:          rbacChanged,
+			IdentityStateChanged: identityStateChanged,
 		}, nil
 	}
 	return &ExternalAuthUpsertResult{
-		User:        updatedUser,
-		Updated:     true,
-		RBACChanged: rbacChanged,
+		User:                 updatedUser,
+		Updated:              true,
+		RBACChanged:          rbacChanged,
+		IdentityStateChanged: identityStateChanged,
 	}, nil
 }
 

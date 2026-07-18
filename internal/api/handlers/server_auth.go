@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -17,11 +18,38 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/service"
 
 	"kv-shepherd.io/shepherd/ent"
 )
 
-const passwordHashCost = 12
+const (
+	passwordHashCost                     = 12
+	loginAuthorizationSnapshotMaxRetries = 3
+)
+
+var (
+	errCurrentPasswordChanged       = errors.New("current password changed during request")
+	errInvalidLocalLoginCredentials = errors.New("invalid local login credentials")
+)
+
+type passwordPolicyViolationError struct {
+	cause error
+}
+
+func (e *passwordPolicyViolationError) Error() string {
+	if e == nil || e.cause == nil {
+		return "password does not satisfy the current policy"
+	}
+	return e.cause.Error()
+}
+
+func (e *passwordPolicyViolationError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+	return e.cause
+}
 
 // Login handles POST /auth/login (Stage 1.5).
 func (s *Server) Login(c *gin.Context) {
@@ -44,14 +72,13 @@ func (s *Server) Login(c *gin.Context) {
 		return
 	}
 
-	if compareErr := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(req.Password)); compareErr != nil {
+	loginResp, err := s.issueLocalLoginResponse(c.Request.Context(), user.ID, req.Password)
+	if errors.Is(err, errInvalidLocalLoginCredentials) {
 		s.recordCredentialLoginFailure(c, req.Username, "invalid_credentials")
 		s.recordLoginFailure(c, req.Username)
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "INVALID_CREDENTIALS"})
 		return
 	}
-
-	loginResp, err := s.issueLoginResponse(c.Request.Context(), user)
 	if err != nil {
 		logger.Error("failed to issue login response", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -141,22 +168,61 @@ func (s *Server) ChangePassword(c *gin.Context) {
 		return
 	}
 
-	hash, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), passwordHashCost)
+	hash, err := s.generatePasswordHash(req.NewPassword)
 	if err != nil {
 		logger.Error("failed to hash new password", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	if err := s.ensureAuthSessionSchema(ctx); err != nil {
+		logger.Error("failed to prepare auth session state for password change", zap.Error(err), zap.String("user_id", userID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if lockErr := lockUserMutation(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockUserRow(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		currentUser, getErr := tx.Client().User.Get(ctx, userID)
+		if getErr != nil {
+			return getErr
+		}
+		if compareErr := bcrypt.CompareHashAndPassword([]byte(currentUser.PasswordHash), []byte(req.OldPassword)); compareErr != nil {
+			return errCurrentPasswordChanged
+		}
+		if validationErr := s.validatePassword(
+			req.NewPassword,
+			currentUser.Username,
+			currentUser.Email,
+			currentUser.DisplayName,
+		); validationErr != nil {
+			return &passwordPolicyViolationError{cause: validationErr}
+		}
 		if err := tx.Client().User.UpdateOneID(userID).
-			SetPasswordHash(string(hash)).
+			SetPasswordHash(hash).
 			SetForcePasswordChange(false).
 			Exec(ctx); err != nil {
 			return err
 		}
-		return s.revokeUserSessions(ctx, userID, "password_changed")
+		return s.revokeUserSessionsTx(ctx, tx, userID, "password_changed")
 	}); err != nil {
+		if errors.Is(err, errCurrentPasswordChanged) {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_CURRENT_PASSWORD"})
+			return
+		}
+		var policyErr *passwordPolicyViolationError
+		if errors.As(err, &policyErr) {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: policyErr.Error()})
+			return
+		}
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
+			return
+		}
 		logger.Error("failed to update password", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -270,6 +336,13 @@ func HashPassword(password string) (string, error) {
 	return string(hash), nil
 }
 
+func (s *Server) generatePasswordHash(password string) (string, error) {
+	if s != nil && s.passwordHashGenerator != nil {
+		return s.passwordHashGenerator(password)
+	}
+	return HashPassword(password)
+}
+
 // GenerateUserID creates a new user ID.
 func GenerateUserID() string {
 	id, _ := uuid.NewV7()
@@ -310,28 +383,93 @@ func (s *Server) validatePassword(password string, identityHints ...string) erro
 	return s.passwordPolicy.ValidatePassword(password, identityHints...)
 }
 
-func (s *Server) issueLoginResponse(ctx context.Context, user *ent.User) (generated.LoginResponse, error) {
-	if s == nil || user == nil {
-		return generated.LoginResponse{}, fmt.Errorf("server and user are required")
+func (s *Server) issueLocalLoginResponse(ctx context.Context, userID, password string) (generated.LoginResponse, error) {
+	return s.issueLoginResponseWithUserValidation(ctx, userID, func(user *ent.User) error {
+		if user == nil || !user.Enabled ||
+			bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+			return errInvalidLocalLoginCredentials
+		}
+		return nil
+	})
+}
+
+func (s *Server) issueLoginResponseWithUserValidation(
+	ctx context.Context,
+	userID string,
+	validateUser func(*ent.User) error,
+) (generated.LoginResponse, error) {
+	for attempt := 0; attempt < loginAuthorizationSnapshotMaxRetries; attempt++ {
+		snapshot, err := s.loadLoginAuthorizationSnapshot(ctx, userID, validateUser)
+		if err != nil {
+			return generated.LoginResponse{}, err
+		}
+		loginResp, err := s.loginResponseFromAuthorizationSnapshot(snapshot)
+		if err != nil {
+			return generated.LoginResponse{}, err
+		}
+		if err := s.activateAuthSession(ctx, userID, snapshot.SessionVersion); err != nil {
+			if errors.Is(err, service.ErrAuthSessionVersionChanged) {
+				continue
+			}
+			return generated.LoginResponse{}, err
+		}
+		return loginResp, nil
+	}
+	return generated.LoginResponse{}, fmt.Errorf("authorization changed repeatedly while activating login session")
+}
+
+func (s *Server) loadLoginAuthorizationSnapshot(
+	ctx context.Context,
+	userID string,
+	validateUser func(*ent.User) error,
+) (*loginAuthorizationSnapshot, error) {
+	if s == nil || strings.TrimSpace(userID) == "" {
+		return nil, fmt.Errorf("server and user id are required")
 	}
 
-	roleNames, permissions, err := s.loadUserRolesAndPermissions(ctx, user.ID)
-	if err != nil {
-		return generated.LoginResponse{}, err
-	}
+	return loadStableLoginAuthorizationSnapshot(
+		ctx,
+		func(ctx context.Context) (int64, error) {
+			return s.currentAuthSessionVersion(ctx, userID)
+		},
+		func(ctx context.Context) (*ent.User, []string, []string, error) {
+			freshUser, loadErr := s.client.User.Get(ctx, userID)
+			if loadErr != nil {
+				if validateUser != nil && ent.IsNotFound(loadErr) {
+					if validationErr := validateUser(nil); validationErr != nil {
+						return nil, nil, nil, validationErr
+					}
+				}
+				return nil, nil, nil, loadErr
+			}
+			if validateUser != nil {
+				if validationErr := validateUser(freshUser); validationErr != nil {
+					return nil, nil, nil, validationErr
+				}
+			}
+			if !freshUser.Enabled {
+				return nil, nil, nil, fmt.Errorf("user is disabled")
+			}
+			roleNames, permissions, loadErr := s.loadUserRolesAndPermissions(ctx, userID)
+			return freshUser, roleNames, permissions, loadErr
+		},
+	)
+}
 
-	sessionVersion, err := s.currentAuthSessionVersion(ctx, user.ID)
-	if err != nil {
-		return generated.LoginResponse{}, err
+func (s *Server) loginResponseFromAuthorizationSnapshot(
+	snapshot *loginAuthorizationSnapshot,
+) (generated.LoginResponse, error) {
+	if s == nil || snapshot == nil || snapshot.User == nil {
+		return generated.LoginResponse{}, fmt.Errorf("server and login authorization snapshot are required")
 	}
 
 	token, expiresAt, err := middleware.GenerateTokenWithSessionVersion(
 		s.jwtCfg,
-		user.ID,
-		user.Username,
-		roleNames,
-		permissions,
-		sessionVersion,
+		snapshot.User.ID,
+		snapshot.User.Username,
+		snapshot.RoleNames,
+		snapshot.Permissions,
+		snapshot.SessionVersion,
 	)
 	if err != nil {
 		return generated.LoginResponse{}, err
@@ -339,6 +477,49 @@ func (s *Server) issueLoginResponse(ctx context.Context, user *ent.User) (genera
 	return generated.LoginResponse{
 		Token:               token,
 		ExpiresAt:           expiresAt,
-		ForcePasswordChange: user.ForcePasswordChange,
+		ForcePasswordChange: snapshot.User.ForcePasswordChange,
 	}, nil
+}
+
+type loginAuthorizationSnapshot struct {
+	User           *ent.User
+	RoleNames      []string
+	Permissions    []string
+	SessionVersion int64
+}
+
+func loadStableLoginAuthorizationSnapshot(
+	ctx context.Context,
+	loadVersion func(context.Context) (int64, error),
+	loadAuthorization func(context.Context) (*ent.User, []string, []string, error),
+) (*loginAuthorizationSnapshot, error) {
+	if loadVersion == nil || loadAuthorization == nil {
+		return nil, fmt.Errorf("login authorization snapshot loaders are required")
+	}
+	for attempt := 0; attempt < loginAuthorizationSnapshotMaxRetries; attempt++ {
+		beforeVersion, err := loadVersion(ctx)
+		if err != nil {
+			return nil, err
+		}
+		freshUser, roleNames, permissions, err := loadAuthorization(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if freshUser == nil {
+			return nil, fmt.Errorf("login authorization snapshot returned no user")
+		}
+		afterVersion, err := loadVersion(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if beforeVersion == afterVersion {
+			return &loginAuthorizationSnapshot{
+				User:           freshUser,
+				RoleNames:      roleNames,
+				Permissions:    permissions,
+				SessionVersion: afterVersion,
+			}, nil
+		}
+	}
+	return nil, fmt.Errorf("authorization changed repeatedly while issuing login token")
 }

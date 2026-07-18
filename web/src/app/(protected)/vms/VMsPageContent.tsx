@@ -52,9 +52,6 @@ export default function VMsPageContent() {
     const isCodespacesDemo = typeof window !== 'undefined'
         && isCodespacesDemoHost(window.location.hostname);
     const vm = useVMManagementController({ t });
-    const lastBatchActionFeedback = vm.lastBatchActionFeedback
-        ? `${vm.lastBatchActionFeedback.action} submitted for ${vm.lastBatchActionFeedback.affectedCount} item(s)`
-        : '';
     const setupGuide = useSetupGuide({
         vmsTotal: vm.vmData?.pagination?.total,
     });
@@ -261,6 +258,31 @@ export default function VMsPageContent() {
                 />
             ) : null}
 
+            {vm.restartReconciliationNotice ? (
+                <Alert
+                    type="warning"
+                    showIcon
+                    data-testid="restart-reconciliation-alert"
+                    message={t('restart_reconciliation.title')}
+                    description={(
+                        <Space direction="vertical" size={2}>
+                            <Text>{t('restart_reconciliation.readonly_description')}</Text>
+                            <Text copyable={{ text: vm.restartReconciliationNotice.eventId }}>
+                                {t('restart_reconciliation.event_id')}: {vm.restartReconciliationNotice.eventId}
+                            </Text>
+                            <Text copyable={{ text: vm.restartReconciliationNotice.reconciliationPath }}>
+                                {t('restart_reconciliation.path')}: {vm.restartReconciliationNotice.reconciliationPath}
+                            </Text>
+                        </Space>
+                    )}
+                    action={(
+                        <Button onClick={vm.dismissRestartReconciliation}>
+                            {t('restart_reconciliation.dismiss')}
+                        </Button>
+                    )}
+                />
+            ) : null}
+
             {vm.savedDraft && !vm.wizardOpen && (
                 <div>
                     <VMSavedDraftBanner
@@ -432,7 +454,12 @@ export default function VMsPageContent() {
                 {vm.batchRateLimited && (
                     <div className="vm-page-inline-alert">
                         <Text type="warning">
-                            {t('batch.rate_limited_wait', { seconds: vm.batchRetryAfterSeconds })}
+                            {t(
+                                vm.batchRateLimitContactAdmin
+                                    ? 'batch.rate_limited_contact_admin'
+                                    : 'batch.rate_limited_wait',
+                                { seconds: vm.batchRetryAfterSeconds },
+                            )}
                         </Text>
                     </div>
                 )}
@@ -593,6 +620,23 @@ export default function VMsPageContent() {
             />
             {vm.activeBatchID && (
                 <PageSurface className="vm-page-surface vm-page-surface--status">
+                    {vm.lastBatchActionFeedback ? (
+                        <Alert
+                            type="success"
+                            showIcon
+                            data-testid="active-batch-action-feedback"
+                            message={t(
+                                vm.lastBatchActionFeedback.action === 'retry'
+                                    ? 'batch.retry_feedback'
+                                    : 'batch.cancel_feedback',
+                                {
+                                    count: vm.lastBatchActionFeedback.affectedCount,
+                                    ids: vm.lastBatchActionFeedback.affectedTicketIDs.join(', ')
+                                        || t('batch.affected_ids_none'),
+                                },
+                            )}
+                        />
+                    ) : null}
                     <div
                         data-testid="batch-status-live"
                         aria-live="polite"
@@ -626,11 +670,33 @@ export default function VMsPageContent() {
                                     pending_count: vm.batchStatus?.pending_count ?? 0,
                                 })}
                             </Text>
-                            {lastBatchActionFeedback !== '' && (
-                                <Text type="secondary" className="vm-page-supporting-text">{lastBatchActionFeedback}</Text>
-                            )}
                         </Space>
                         <Space wrap className="copy-friendly-actions vm-page-actions">
+                            <Button
+                                data-testid="active-batch-retry"
+                                disabled={
+                                    !vm.canRetryActiveBatch
+                                    || vm.batchRateLimited
+                                    || vm.batchActionPending
+                                }
+                                loading={vm.batchActionPending}
+                                onClick={vm.retryBatch}
+                            >
+                                {t('batch.retry_failed')}
+                            </Button>
+                            <Button
+                                danger
+                                data-testid="active-batch-cancel"
+                                disabled={
+                                    !vm.canCancelActiveBatch
+                                    || vm.batchRateLimited
+                                    || vm.batchActionPending
+                                }
+                                loading={vm.batchActionPending}
+                                onClick={vm.cancelBatch}
+                            >
+                                {t('batch.cancel_pending')}
+                            </Button>
                             <Button
                                 icon={<ReloadOutlined />}
                                 onClick={vm.refreshBatch}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -13,11 +14,15 @@ import (
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
+	"kv-shepherd.io/shepherd/ent/notification"
+	"kv-shepherd.io/shepherd/ent/ratelimitexemption"
+	"kv-shepherd.io/shepherd/ent/ratelimituseroverride"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	"kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
 	"kv-shepherd.io/shepherd/ent/service"
 	entuser "kv-shepherd.io/shepherd/ent/user"
+	"kv-shepherd.io/shepherd/ent/userdirectoryprofile"
 	entuserpreference "kv-shepherd.io/shepherd/ent/userpreference"
 	entvm "kv-shepherd.io/shepherd/ent/vm"
 	"kv-shepherd.io/shepherd/internal/api/generated"
@@ -25,6 +30,11 @@ import (
 )
 
 const externalCohortRoleBindingActor = "system:external-cohort-mapper"
+
+var (
+	errRoleBindingUserDisabled = errors.New("role binding target user is disabled")
+	errRoleBindingExists       = errors.New("role binding already exists")
+)
 
 type userCreateRequest struct {
 	Username            string  `json:"username" binding:"required"`
@@ -73,7 +83,7 @@ func (s *Server) CreateUser(c *gin.Context) {
 		return
 	}
 
-	hash, err := HashPassword(password)
+	hash, err := s.generatePasswordHash(password)
 	if err != nil {
 		logger.Error("failed to hash user password", zap.Error(err), zap.String("username", username))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -146,7 +156,7 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 		return
 	}
 
-	invalidateSessions := false
+	invalidateSessions := req.Enabled != nil || req.Password != nil || req.ForcePasswordChange != nil
 	emailValue := strings.TrimSpace(valueOrEmpty(req.Email))
 	displayNameValue := strings.TrimSpace(valueOrEmpty(req.DisplayName))
 	passwordHash := ""
@@ -156,9 +166,6 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 	}
 	if req.DisplayName != nil {
 		displayNameValue = strings.TrimSpace(*req.DisplayName)
-	}
-	if req.Enabled != nil {
-		invalidateSessions = invalidateSessions || existing.Enabled != *req.Enabled
 	}
 	if req.Password != nil {
 		password := *req.Password
@@ -178,7 +185,7 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validationErr.Error()})
 			return
 		}
-		hash, hashErr := HashPassword(password)
+		hash, hashErr := s.generatePasswordHash(password)
 		if hashErr != nil {
 			logger.Error("failed to hash updated password", zap.Error(hashErr), zap.String("user_id", userID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -186,17 +193,51 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 		}
 		passwordHash = hash
 		hasPasswordUpdate = true
-		invalidateSessions = true
 	}
-	if req.ForcePasswordChange != nil {
-		if !existing.ForcePasswordChange && *req.ForcePasswordChange {
-			invalidateSessions = true
+	if invalidateSessions {
+		if schemaErr := s.ensureAuthSessionSchema(ctx); schemaErr != nil {
+			logger.Error("failed to prepare auth session state for user update", zap.Error(schemaErr), zap.String("user_id", userID))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
 		}
 	}
 
 	var updated *ent.User
 	if txErr := WithTx(ctx, s.client, func(tx *ent.Tx) error {
-		update := tx.Client().User.UpdateOneID(userID)
+		if lockErr := lockUserMutation(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		txClient := tx.Client()
+		var currentUser *ent.User
+		if hasPasswordUpdate {
+			if lockErr := lockUserRow(ctx, tx, userID); lockErr != nil {
+				return lockErr
+			}
+			var getErr error
+			currentUser, getErr = txClient.User.Get(ctx, userID)
+			if getErr != nil {
+				return getErr
+			}
+		}
+		if hasPasswordUpdate {
+			currentEmail := currentUser.Email
+			if req.Email != nil {
+				currentEmail = emailValue
+			}
+			currentDisplayName := currentUser.DisplayName
+			if req.DisplayName != nil {
+				currentDisplayName = displayNameValue
+			}
+			if validationErr := s.validatePassword(
+				*req.Password,
+				currentUser.Username,
+				currentEmail,
+				currentDisplayName,
+			); validationErr != nil {
+				return &passwordPolicyViolationError{cause: validationErr}
+			}
+		}
+		update := txClient.User.UpdateOneID(userID)
 		if req.Email != nil {
 			if emailValue == "" {
 				update = update.ClearEmail()
@@ -230,10 +271,19 @@ func (s *Server) UpdateUser(c *gin.Context, userID generated.UserID) {
 			return saveErr
 		}
 		if invalidateSessions {
-			return s.revokeUserSessions(ctx, userID, "user_updated")
+			return s.revokeUserSessionsTx(ctx, tx, userID, "user_updated")
 		}
 		return nil
 	}); txErr != nil {
+		var policyErr *passwordPolicyViolationError
+		if errors.As(txErr, &policyErr) {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: policyErr.Error()})
+			return
+		}
+		if ent.IsNotFound(txErr) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
+			return
+		}
 		if ent.IsConstraintError(txErr) {
 			c.JSON(http.StatusConflict, generated.Error{Code: "USER_NAME_OR_EMAIL_EXISTS"})
 			return
@@ -274,18 +324,58 @@ func (s *Server) DeleteUser(c *gin.Context, userID generated.UserID) {
 		return
 	}
 
-	if _, err := s.client.User.Get(ctx, userID); err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to query user for delete", zap.Error(err), zap.String("user_id", userID))
+	if err := s.ensureAuthSessionSchema(ctx); err != nil {
+		logger.Error("failed to prepare auth session state for user delete", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
 	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if lockErr := lockUserMutation(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockUserRowForDeletion(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
 		txClient := tx.Client()
+		if _, getErr := txClient.User.Get(ctx, userID); getErr != nil {
+			return getErr
+		}
+
+		ownedSystemIDs, queryErr := ownedSystemIDsForUser(ctx, txClient, userID)
+		if queryErr != nil {
+			return queryErr
+		}
+		for _, systemID := range ownedSystemIDs {
+			if lockErr := lockSystemMembership(ctx, tx, systemID); lockErr != nil {
+				return lockErr
+			}
+		}
+		for _, systemID := range ownedSystemIDs {
+			if _, loadErr := txClient.System.Get(ctx, systemID); loadErr != nil {
+				if ent.IsNotFound(loadErr) {
+					continue
+				}
+				return loadErr
+			}
+			stillOwner, ownerQueryErr := txClient.ResourceRoleBinding.Query().
+				Where(
+					resourcerolebinding.UserIDEQ(userID),
+					resourcerolebinding.ResourceTypeEQ("system"),
+					resourcerolebinding.ResourceIDEQ(systemID),
+					resourcerolebinding.RoleEQ(resourcerolebinding.RoleOwner),
+				).
+				Exist(ctx)
+			if ownerQueryErr != nil {
+				return ownerQueryErr
+			}
+			if !stillOwner {
+				continue
+			}
+			if ownerErr := ensureSystemOwnerRemains(ctx, txClient, systemID, userID); ownerErr != nil {
+				return ownerErr
+			}
+		}
 		if _, err := txClient.ExternalCohortGrant.Delete().Where(externalcohortgrant.UserIDEQ(userID)).Exec(ctx); err != nil {
 			return fmt.Errorf("delete external cohort grants: %w", err)
 		}
@@ -295,23 +385,38 @@ func (s *Server) DeleteUser(c *gin.Context, userID generated.UserID) {
 		if _, err := txClient.ResourceRoleBinding.Delete().Where(resourcerolebinding.UserIDEQ(userID)).Exec(ctx); err != nil {
 			return fmt.Errorf("delete resource role bindings: %w", err)
 		}
+		if _, err := txClient.RateLimitExemption.Delete().Where(ratelimitexemption.IDEQ(userID)).Exec(ctx); err != nil {
+			return fmt.Errorf("delete rate-limit exemption: %w", err)
+		}
+		if _, err := txClient.RateLimitUserOverride.Delete().Where(ratelimituseroverride.IDEQ(userID)).Exec(ctx); err != nil {
+			return fmt.Errorf("delete rate-limit user override: %w", err)
+		}
+		if _, err := txClient.Notification.Delete().Where(notification.HasUserWith(entuser.IDEQ(userID))).Exec(ctx); err != nil {
+			return fmt.Errorf("delete notifications: %w", err)
+		}
+		if _, err := txClient.UserDirectoryProfile.Delete().Where(userdirectoryprofile.UserIDEQ(userID)).Exec(ctx); err != nil {
+			return fmt.Errorf("delete user directory profile: %w", err)
+		}
 		if _, err := txClient.UserPreference.Delete().Where(entuserpreference.UserIDEQ(userID)).Exec(ctx); err != nil {
 			return fmt.Errorf("delete user preferences: %w", err)
 		}
 		if err := txClient.User.DeleteOneID(userID).Exec(ctx); err != nil {
 			return fmt.Errorf("delete user: %w", err)
 		}
-		return s.revokeUserSessions(ctx, userID, "user_deleted")
+		return s.revokeUserSessionsTx(ctx, tx, userID, "user_deleted")
 	}); err != nil {
-		if ent.IsNotFound(err) {
+		switch {
+		case ent.IsNotFound(err):
 			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
+			return
+		case errors.Is(err, errLastSystemOwner):
+			writeLastSystemOwnerConflict(c)
 			return
 		}
 		logger.Error("failed to delete user transactionally", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
-
 	if s.audit != nil {
 		_ = s.audit.LogAction(ctx, "user.delete", "user", userID, actor, nil)
 	}
@@ -433,17 +538,7 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userID generated.UserID) 
 		return
 	}
 
-	dupQuery := s.client.RoleBinding.Query().Where(
-		rolebinding.HasUserWith(entuser.IDEQ(userID)),
-		rolebinding.HasRoleWith(role.IDEQ(roleID)),
-		rolebinding.ScopeTypeEQ(scopeType),
-	)
-	if scopeID == "" {
-		dupQuery = dupQuery.Where(rolebinding.ScopeIDIsNil())
-	} else {
-		dupQuery = dupQuery.Where(rolebinding.ScopeIDEQ(scopeID))
-	}
-	exists, err := dupQuery.Exist(ctx)
+	exists, err := userRoleBindingExists(ctx, s.client, userID, roleID, scopeType, scopeID)
 	if err != nil {
 		logger.Error("failed to check duplicate role binding", zap.Error(err), zap.String("user_id", userID), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -456,8 +551,51 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userID generated.UserID) 
 
 	id, _ := uuid.NewV7()
 	var binding *ent.RoleBinding
+	if err := s.ensureAuthSessionSchema(ctx); err != nil {
+		logger.Error("failed to prepare auth session state for role binding create", zap.Error(err), zap.String("user_id", userID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
-		create := tx.Client().RoleBinding.Create().
+		if lockErr := lockUserMutation(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockUserRow(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockRoleRow(ctx, tx, roleID); lockErr != nil {
+			return lockErr
+		}
+
+		txClient := tx.Client()
+		currentUser, loadUserErr := txClient.User.Get(ctx, userID)
+		if loadUserErr != nil {
+			return loadUserErr
+		}
+		if !currentUser.Enabled {
+			return errRoleBindingUserDisabled
+		}
+		var loadRoleErr error
+		roleEnt, loadRoleErr = loadEnabledRoleForAssignment(ctx, txClient, roleID)
+		if loadRoleErr != nil {
+			return loadRoleErr
+		}
+		exists, duplicateErr := userRoleBindingExists(
+			ctx,
+			txClient,
+			userID,
+			roleID,
+			scopeType,
+			scopeID,
+		)
+		if duplicateErr != nil {
+			return duplicateErr
+		}
+		if exists {
+			return errRoleBindingExists
+		}
+
+		create := txClient.RoleBinding.Create().
 			SetID(id.String()).
 			SetUserID(userID).
 			SetRoleID(roleID).
@@ -475,8 +613,34 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userID generated.UserID) 
 		if saveErr != nil {
 			return saveErr
 		}
-		return s.revokeUserSessions(ctx, userID, "role_binding_created")
+		return s.revokeUserSessionsTx(ctx, tx, userID, "role_binding_created")
 	}); err != nil {
+		if errors.Is(err, errRoleBindingUserDisabled) {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "USER_DISABLED",
+				Message: "disabled users cannot receive new role bindings",
+			})
+			return
+		}
+		if errors.Is(err, errRoleAssignmentDisabled) {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "ROLE_DISABLED",
+				Message: "disabled roles cannot be assigned to users",
+			})
+			return
+		}
+		if errors.Is(err, errRoleAssignmentNotFound) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
+			return
+		}
+		if errors.Is(err, errRoleBindingExists) {
+			c.JSON(http.StatusConflict, generated.Error{Code: "ROLE_BINDING_EXISTS"})
+			return
+		}
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
+			return
+		}
 		logger.Error("failed to create role binding", zap.Error(err), zap.String("user_id", userID), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -498,6 +662,27 @@ func (s *Server) CreateUserRoleBinding(c *gin.Context, userID generated.UserID) 
 		roleEnt.Name,
 		strings.TrimSpace(roleEnt.DisplayName),
 	))
+}
+
+func userRoleBindingExists(
+	ctx context.Context,
+	client *ent.Client,
+	userID, roleID, scopeType, scopeID string,
+) (bool, error) {
+	if client == nil {
+		return false, fmt.Errorf("ent client is required")
+	}
+	query := client.RoleBinding.Query().Where(
+		rolebinding.HasUserWith(entuser.IDEQ(userID)),
+		rolebinding.HasRoleWith(role.IDEQ(roleID)),
+		rolebinding.ScopeTypeEQ(scopeType),
+	)
+	if scopeID == "" {
+		query = query.Where(rolebinding.ScopeIDIsNil())
+	} else {
+		query = query.Where(rolebinding.ScopeIDEQ(scopeID))
+	}
+	return query.Exist(ctx)
 }
 
 // DeleteUserRoleBinding handles DELETE /admin/users/{user_id}/role-bindings/{binding_id}.
@@ -523,14 +708,36 @@ func (s *Server) DeleteUserRoleBinding(c *gin.Context, userID generated.UserID, 
 		return
 	}
 
+	if err := s.ensureAuthSessionSchema(ctx); err != nil {
+		logger.Error("failed to prepare auth session state for role binding delete", zap.Error(err), zap.String("user_id", userID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
-		if _, err := tx.Client().ExternalCohortGrant.Delete().Where(externalcohortgrant.RoleBindingIDEQ(binding.ID)).Exec(ctx); err != nil {
+		if lockErr := lockUserMutation(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockUserRow(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		txClient := tx.Client()
+		currentBinding, loadErr := txClient.RoleBinding.Query().
+			Where(
+				rolebinding.IDEQ(bindingID),
+				rolebinding.HasUserWith(entuser.IDEQ(userID)),
+			).
+			Only(ctx)
+		if loadErr != nil {
+			return loadErr
+		}
+		binding = currentBinding
+		if _, err := txClient.ExternalCohortGrant.Delete().Where(externalcohortgrant.RoleBindingIDEQ(binding.ID)).Exec(ctx); err != nil {
 			return err
 		}
-		if err := tx.Client().RoleBinding.DeleteOneID(binding.ID).Exec(ctx); err != nil {
+		if err := txClient.RoleBinding.DeleteOneID(binding.ID).Exec(ctx); err != nil {
 			return err
 		}
-		return s.revokeUserSessions(ctx, userID, "role_binding_deleted")
+		return s.revokeUserSessionsTx(ctx, tx, userID, "role_binding_deleted")
 	}); err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_BINDING_NOT_FOUND"})

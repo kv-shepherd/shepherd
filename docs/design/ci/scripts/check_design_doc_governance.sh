@@ -229,6 +229,97 @@ if rg -n 'remove domain[^[:alnum:]]+`?PENDING`?|remove domain-level[^[:alnum:]]+
   fail "Design docs must not ask to remove VM PENDING; it is the K8s/KubeVirt scheduler-wait state, not pre-approval request state"
 fi
 
+workflow_storage_docs=(
+  docs/design/database/vm-lifecycle-write-model.md
+  docs/design/checklist/phase-4-checklist.md
+  docs/design/phases/04-governance.md
+  docs/design/interaction-flows/master-flow.md
+  docs/i18n/zh-CN/design/interaction-flows/master-flow.md
+)
+if rg -n 'approval_tickets' "${workflow_storage_docs[@]}" >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "Current workflow docs must use the physical tickets table, not the retired approval_tickets name"
+fi
+current_ticket_docs=(
+  docs/design/checklist/phase-1-checklist.md
+  docs/design/checklist/phase-3-checklist.md
+  docs/design/checklist/phase-4-checklist.md
+  docs/design/ci/README.md
+  docs/design/examples/README.md
+  docs/design/examples/domain/event.go
+  docs/design/examples/usecase/create_vm.go
+  docs/design/phases/01-contracts.md
+  docs/design/phases/03-service-layer.md
+  docs/design/phases/04-governance.md
+  docs/design/interaction-flows/master-flow.md
+  docs/i18n/zh-CN/design/interaction-flows/master-flow.md
+)
+if rg -n 'ApprovalTicket|ent/schema/approval_ticket\.go' "${current_ticket_docs[@]}" >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "Current workflow docs must use the Ticket entity and ent/schema/ticket.go; accepted historical ADR/RFC text is intentionally outside this gate"
+fi
+if rg -n 'CreateApprovalTicket|GetApprovalTicket|UpdateApprovalTicket' \
+  docs/design/examples/usecase/create_vm.go docs/design/phases/03-service-layer.md >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "Current sqlc documentation/examples must use generated Ticket methods such as InsertTicket and ApproveCreateTicket"
+fi
+if rg -n 'ticket\.(Payload|Namespace)|Ticket\.(Payload|Namespace)' "${current_ticket_docs[@]}" >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "Current workflow docs must read immutable request fields from DomainEvent.payload, not the Ticket entity"
+fi
+if rg -n 'CREATE/DELETE|`CREATE`/`DELETE`|enum \(`CREATE`, `DELETE`\)' \
+  docs/design/checklist/phase-4-checklist.md docs/design/phases/04-governance.md >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "Current phase-4 docs must not collapse Ticket.operation_type to the retired CREATE/DELETE subset"
+fi
+for doc in docs/design/checklist/phase-4-checklist.md docs/design/phases/01-contracts.md docs/design/phases/04-governance.md; do
+  rg -F -q '`CREATE`, `MODIFY`, `DELETE`, `POWER`, `VNC_ACCESS`' "$doc" \
+    || fail "$doc must document the complete Ticket.operation_type enum"
+done
+rg -F -q 'Values("CREATE", "MODIFY", "DELETE", "POWER", "VNC_ACCESS")' ent/schema/ticket.go \
+  || fail "ent/schema/ticket.go must retain the complete Ticket.operation_type enum"
+if rg -n 'selected_template_version' \
+  internal/repository/sqlc/schema.sql \
+  internal/repository/sqlc/models.go \
+  ent/schema/ticket.go \
+  "${current_ticket_docs[@]}" >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "Current Ticket schemas/docs must not expose the removed selected_template_version field"
+fi
+if rg -n 'template_version' ent/schema/ticket.go >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "Ticket schema comments must describe the implemented snapshot fields, not a removed template_version field"
+fi
+rg -F -q '| Approval template-version decision | Accepted ADR-0017' docs/design/CURRENT_STATE.md \
+  || fail "CURRENT_STATE.md must record the accepted ADR-0017 approval template-version contract debt"
+rg -F -q 'persists an effective `template_snapshot` but exposes no independent selected-version input or field' docs/design/CURRENT_STATE.md \
+  || fail "CURRENT_STATE.md must distinguish snapshot-only implementation from the accepted selected-version contract"
+rg -F -q 'accept a superseding ADR/amendment before treating snapshot-only behavior as aligned' docs/design/CURRENT_STATE.md \
+  || fail "CURRENT_STATE.md must require a superseding accepted decision for snapshot-only behavior"
+rg -F -q 'approval template-version mismatches above are accepted-ADR contract debt' docs/design/CURRENT_STATE.md \
+  || fail "CURRENT_STATE.md must not imply that batch limits are the only accepted-ADR contract debt"
+rg -F -q '**Known accepted-ADR contract debt:** ADR-0017 and ADR-0015 require the' docs/design/phases/04-governance.md \
+  || fail "04-governance.md must disclose the approval template-version accepted-ADR debt"
+rg -F -q 'identifies two accepted-ADR contract debts:' docs/design/README.md \
+  || fail "design README must report both accepted-ADR contract debts"
+rg -F -q 'template version (`selected_template_version`), while the current approval' docs/design/README.md \
+  || fail "design README must include the approval template-version contract debt"
+rg -F -q 'Each debt requires a dedicated issue and a new accepted ADR/amendment' docs/design/README.md \
+  || fail "design README must require an issue and accepted amendment for each contract debt"
+if rg -n 'PENDING_APPROVAL.*APPROVED|Ticket.*PENDING_APPROVAL' \
+  docs/design/phases/04-governance.md >"${legacy_refs_file}"; then
+  cat "${legacy_refs_file}" >&2
+  fail "Raw Ticket approval transitions must start at PENDING; PENDING_APPROVAL is only a public projection status"
+fi
+rg -F -q 'Insert `tickets` (`CREATE`, `PENDING`)' docs/design/database/vm-lifecycle-write-model.md \
+  || fail "VM lifecycle write model must document the physical tickets/PENDING submission row"
+rg -F -q 'are best-effort and are not part of the atomic Event/Ticket write set' docs/design/database/vm-lifecycle-write-model.md \
+  || fail "VM lifecycle write model must keep audit/notification side effects outside the atomic Event/Ticket write set"
+rg -F -q 'After commit: best-effort audit + approval routing + notification trigger' docs/design/interaction-flows/master-flow.md \
+  || fail "English master flow must document submission audit/notification work as post-commit best-effort"
+rg -F -q '提交后：best-effort 审计 + 审批路由 + 通知触发' docs/i18n/zh-CN/design/interaction-flows/master-flow.md \
+  || fail "Chinese master flow must document submission audit/notification work as post-commit best-effort"
+
 frontend_page_count="$(find web/src/app -type f -name 'page.tsx' | wc -l | tr -d '[:space:]')"
 openapi_operation_count="$(rg -c '^[[:space:]]+operationId:' api/openapi.yaml | tr -d '[:space:]')"
 ent_schema_count="$(find ent/schema -maxdepth 1 -type f -name '*.go' | wc -l | tr -d '[:space:]')"
@@ -288,8 +379,8 @@ for doc in "${operation_count_docs[@]}"; do
   rg -q "${openapi_operation_count} .*operationId|${openapi_operation_count} .*endpoints" "$doc" \
     || fail "$doc must reference the current OpenAPI operation count (${openapi_operation_count})"
 done
-if rg -n '[0-9]+ (operationIds?|endpoints)' "${operation_count_docs[@]}" >"${legacy_refs_file}"; then
-  stale_operation_refs="$(awk -v count="${openapi_operation_count}" '$0 !~ count " (operationId|operationIds|endpoints)" { print }' "${legacy_refs_file}")"
+if rg -n '[0-9]+[[:space:]]+`?(operationIds?|endpoints)' "${operation_count_docs[@]}" >"${legacy_refs_file}"; then
+  stale_operation_refs="$(awk -v count="${openapi_operation_count}" '$0 !~ count "[[:space:]]+`?(operationId|operationIds|endpoints)" { print }' "${legacy_refs_file}")"
   if [[ -n "${stale_operation_refs}" ]]; then
     printf '%s\n' "${stale_operation_refs}" >&2
     fail "Found stale OpenAPI operation count; expected ${openapi_operation_count}"
@@ -1232,8 +1323,10 @@ PY
   fi
 
   # If canonical docs changed, require traceability manifest update in the same PR.
-  if printf '%s\n' "${changed_files}" | rg -q '^(docs/design/interaction-flows/master-flow\.md|docs/design/phases/|docs/design/checklist/|docs/design/examples/)'; then
-    if ! printf '%s\n' "${changed_files}" | rg -q '^docs/design/traceability/master-flow\.json$'; then
+  # A producer pipe plus `rg -q` is nondeterministic under pipefail for large
+  # change sets: rg exits on the first match and printf can then fail with SIGPIPE.
+  if rg -q '^(docs/design/interaction-flows/master-flow\.md|docs/design/phases/|docs/design/checklist/|docs/design/examples/)' <<<"${changed_files}"; then
+    if ! rg -q '^docs/design/traceability/master-flow\.json$' <<<"${changed_files}"; then
       fail "Traceability manifest must be updated when master-flow/phases/checklists/examples/ADRs change: docs/design/traceability/master-flow.json"
     fi
   fi

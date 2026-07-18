@@ -410,8 +410,25 @@
       "adrs": [
         "docs/adr/ADR-0015-governance-model-v2.md"
       ],
+      "ci": [
+        "docs/design/ci/scripts/check_stage5e_batch_baseline.go"
+      ],
       "examples": [
-        "docs/design/examples/usecase/batch_approval.go"
+        "docs/design/database/migrations.md#batch-retry-and-idempotency-rollout",
+        "docs/design/examples/usecase/batch_approval.go",
+        "docs/design/frontend/features/batch-operations-queue.md#33-idempotency-retry-and-fence-handling",
+        "internal/usecase/batch_approval_dispatch_atomic.go",
+        "internal/usecase/batch_approval_dispatch_atomic_test.go",
+        "internal/jobs/batch_approval_dispatch.go",
+        "internal/jobs/batch_approval_dispatch_test.go",
+        "internal/governance/ticketing/service.go",
+        "internal/governance/ticketing/batch_approval_dispatch_behavior_test.go",
+        "internal/repository/sqlc/queries/ticket.sql",
+        "internal/api/handlers/server_vm.go",
+        "internal/api/handlers/server_vm_batch_idempotency_test.go",
+        "internal/api/handlers/server_vm_batch_retry_concurrency_test.go",
+        "internal/api/handlers/server_vm_batch_safety_regression_test.go",
+        "internal/jobs/vm_power_test.go"
       ]
     },
     {

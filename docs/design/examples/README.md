@@ -110,7 +110,7 @@ tx.Commit(ctx) // Single atomic commit - all succeed or all fail
 See [domain/event.go](./domain/event.go) - Claim Check pattern with immutable payloads.
 
 - Payload is **immutable** (append-only)
-- Modifications stored in `ApprovalTicket.modified_spec` (full replacement)
+- Modifications stored in `Ticket.modified_spec` (full replacement)
 - `GetEffectiveSpec()` returns the final config
 
 ### ADR-0006: Unified Async Model

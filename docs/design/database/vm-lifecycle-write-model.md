@@ -28,9 +28,10 @@
 - Pre-check (outside transaction): duplicate pending request detection.
 - Main write transaction (single commit):
   - Insert `domain_events` (`VM_CREATE_REQUESTED`, `PENDING`)
-  - Insert `approval_tickets` (`VM_CREATE`, `PENDING_APPROVAL`)
-  - Insert `audit_logs` (`vm.request_submitted`)
-  - Insert `notifications` (admin inbox)
+  - Insert `tickets` (`CREATE`, `PENDING`)
+- After commit, the use case attempts the audit write and the handler invokes
+  approval routing and admin notification triggers. These supplemental writes
+  are best-effort and are not part of the atomic Event/Ticket write set.
 
 ### Write-Set Diagram
 
@@ -39,10 +40,9 @@ User Submit
   -> duplicate check (pending ticket exists?)
   -> TX begin
        -> domain_events: PENDING
-       -> approval_tickets: PENDING_APPROVAL
-       -> audit_logs: vm.request_submitted
-       -> notifications: APPROVAL_REQUIRED
+       -> tickets: CREATE / PENDING
      TX commit
+  -> best-effort audit + approval routing + admin notification
   -> response 202 + ticket_id
 ```
 
@@ -50,7 +50,7 @@ User Submit
 
 | Entity | Before | After |
 |------|------|------|
-| `approval_tickets` | none | `PENDING_APPROVAL` |
+| `tickets` | none | `PENDING` |
 | `domain_events` | none | `PENDING` |
 | `vms` | none | none |
 | `river_job` | none | none |
@@ -61,25 +61,27 @@ User Submit
 
 ### Approve Path Transaction
 
-- Update `approval_tickets` to `APPROVED` and persist approval snapshot fields.
+- Update `tickets` to `APPROVED` and persist approval snapshot fields.
 - Update `domain_events` to `PROCESSING`.
 - Insert `vms` row with transient status `CREATING`.
 - Insert `river_job` with EventID claim-check payload.
-- Insert `audit_logs` (`vm.request_approved`) and notification for requester.
+- After commit, attempt the approval audit and requester notification as
+  best-effort supplemental writes.
 
 ### Reject Path Transaction
 
-- Update `approval_tickets` to `REJECTED`.
+- Update `tickets` to `REJECTED`.
 - Update `domain_events` to `CANCELLED`.
-- Insert `audit_logs` (`vm.request_rejected`) and requester notification.
 - No `vms` insert, no `river_job` insert.
+- After commit, attempt the rejection audit and requester notification as
+  best-effort supplemental writes.
 
 ### State Conclusions
 
 | Path | Ticket | Domain Event | VM Row | River Job |
 |------|--------|--------------|--------|-----------|
-| Approve | `PENDING_APPROVAL -> APPROVED` | `PENDING -> PROCESSING` | created (`CREATING`) | created (`available`) |
-| Reject | `PENDING_APPROVAL -> REJECTED` | `PENDING -> CANCELLED` | not created | not created |
+| Approve | `PENDING -> APPROVED` | `PENDING -> PROCESSING` | created (`CREATING`) | created (`available`) |
+| Reject | `PENDING -> REJECTED` | `PENDING -> CANCELLED` | not created | not created |
 
 ---
 
@@ -88,7 +90,7 @@ User Submit
 ### Canonical Policy
 
 - Primary resource tables (`vms`, `services`, `systems`) use hard delete.
-- `audit_logs`, `approval_tickets`, `domain_events` are retained independently and
+- `audit_logs`, `tickets`, `domain_events` are retained independently and
   archived by retention policy.
 
 ### Delete Write Patterns
@@ -110,19 +112,70 @@ User Submit
 
 ### Submission Transaction
 
-- Layer 1/L2 throttling pre-check.
-- One atomic transaction:
-  - Insert parent batch ticket.
-  - Insert all child tickets.
-  - Insert initial audit record(s).
-  - If any child insert fails, rollback all.
+- Validate immutable request shape and every item before the write transaction.
+- For new-version writers, one `READ COMMITTED` business transaction:
+  - Acquire global, actor, and non-empty operation-scoped request advisory
+    locks in canonical order.
+  - Resolve exact replay before reading mutable quotas/cooldown.
+  - Evaluate current global/user throttles under those guards.
+  - Insert the parent Ticket/Event, `batch_tickets` projection, and every child
+    Ticket/Event pair.
+  - If any check or insert fails, roll back all.
+- The handler attempts a supplemental audit write only after commit. That call
+  is best-effort, is not part of this atomic write set, and cannot provide
+  durable actor attribution.
 
 ### Execution Model
 
-- Child jobs execute independently.
-- Parent row is aggregate projection (`IN_PROGRESS`, `COMPLETED`,
-  `PARTIAL_SUCCESS`, `FAILED`, `CANCELLED`).
-- Retry/cancel writes operate on child scope first, then recompute parent aggregate.
+- Initial approval atomically claims the raw parent Ticket/Event to
+  `EXECUTING/PROCESSING`, persists the normalized execution snapshot, refreshes
+  the projection to `IN_PROGRESS`, and inserts one parent-keyed
+  `batch_approval_dispatch` River job on its dedicated queue.
+- The dispatcher reloads durable state and schedules safe `PENDING` children;
+  child jobs then execute independently. Dispatcher consistency mismatches fail
+  closed instead of rewriting children under a terminal parent.
+- Explicit retry targets only an execution-`FAILED` child below three logical
+  attempts. Generic retry conditionally resets the child Ticket and its
+  accepted-state Event, reopens the approved parent, refreshes the projection,
+  and inserts a dispatcher in one transaction. Power retry conditionally resets
+  Ticket/Event and inserts replacement River work in one transaction.
+  Approval-`REJECTED` is terminal and cannot enter execution retry.
+- Cancel performs a handler-side parent identity/state check, then uses one
+  parent-keyed transaction for exact `PENDING` child Ticket/Event cancellation
+  and parent Ticket/Event/projection aggregation. The parent row is locked and
+  updated by expected state; a concurrent mismatch rolls back the whole cancel.
+- Raw parent Ticket states are
+  `PENDING -> EXECUTING -> SUCCESS|FAILED|CANCELLED`; raw parent Event states
+  are `PENDING -> PROCESSING -> COMPLETED|FAILED|CANCELLED`. The distinct API
+  projection is
+  `PENDING_APPROVAL -> IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED`
+  and has no `APPROVED` state.
+- Parent aggregation runs under a parent-row lock. All cancelled children map
+  to `CANCELLED`; success plus failed/cancelled siblings maps to
+  `PARTIAL_SUCCESS`; other terminal outcomes with no success map to `FAILED`.
+- After a successful retry/cancel commit the handler makes a best-effort
+  supplemental audit call. The workflow requester and original/replacement
+  approver remain the durable attribution fields.
+- An ambiguous restart remains Event/Ticket `PROCESSING/EXECUTING` and cannot
+  use ordinary retry. No API can release the fence: a River job may become
+  terminal while its provider request is still in flight, so job state and an
+  operator observation do not prove that a late restart is impossible. The
+  conflict response exposes `operator-runbook:ambiguous-vm-restart`; operators
+  must drain the originating worker, preserve evidence, inspect provider state,
+  and escalate without editing workflow rows or redispatching. A safe release
+  requires a future provider receipt/idempotency or provable-cancellation
+  protocol.
+
+### Ambiguous Restart Fence Runbook
+
+1. Stop new power mutations for the VM and drain or terminate the worker that
+   claimed the event. Do not infer cancellation from River state alone.
+2. Preserve the Event, Ticket, River job, provider, and worker evidence and
+   independently inspect the VM/VMI state.
+3. Do not clear database state, call a reconciliation endpoint, or redispatch
+   restart. No public or administrative API releases this fence.
+4. Escalate for a reviewed forward recovery only after the provider can return
+   a durable operation receipt or the original request is provably cancelled.
 
 ---
 
@@ -132,12 +185,14 @@ User Submit
 
 - No approval ticket.
 - Permission check + runtime state check.
-- Token issue and access audit write (`vnc.session_started`).
+- Issue the access grant, then attempt the `vnc.session_started` audit as a
+  best-effort supplemental write.
 
 ### Production Environment
 
-- Create approval ticket (`VNC_ACCESS_REQUESTED`, `PENDING_APPROVAL`).
-- On approval: issue token and append audit + notification.
+- Create a `tickets` row (`VNC_ACCESS`, `PENDING`) paired with its DomainEvent.
+- On approval, issue the access grant; audit and notification calls run after
+  the workflow commit as best-effort supplemental writes.
 - Token usage tracking is runtime-state oriented; storage implementation is
   governed by security/ops policy and must still satisfy auditability.
 

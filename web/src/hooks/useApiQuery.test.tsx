@@ -40,7 +40,10 @@ describe('useApiGet', () => {
 
 	it('surfaces backend error payload', async () => {
 		const { wrapper } = createTestHarness();
-		const apiError: ApiErrorResponse = { code: 'NOT_FOUND', message: 'not found' };
+		const apiError: ApiErrorResponse = {
+			code: 'NOT_FOUND',
+			message: 'not found',
+		};
 
 		const { result } = renderHook(
 			() =>
@@ -76,7 +79,7 @@ describe('useApiGet', () => {
 });
 
 describe('useApiMutation', () => {
-	it('invalidates configured keys on success', async () => {
+	it('invalidates configured keys and forwards per-mutation variables on success', async () => {
 		const { wrapper, queryClient } = createTestHarness();
 		const onSuccess = vi.fn();
 		const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -101,35 +104,44 @@ describe('useApiMutation', () => {
 		});
 
 		expect(invalidateSpy).toHaveBeenCalledTimes(2);
-		expect(onSuccess).toHaveBeenCalledWith({ id: 'sys-1', name: 'demo' });
+		expect(onSuccess).toHaveBeenCalledWith({ id: 'sys-1', name: 'demo' }, 'demo');
 	});
 
-	it('calls onError when mutation fails', async () => {
+	it('forwards per-mutation variables when a mutation fails', async () => {
 		const { wrapper } = createTestHarness();
 		const onError = vi.fn();
-		const apiError: ApiErrorResponse = { code: 'CONFLICT', message: 'duplicate' };
+		const apiError: ApiErrorResponse = {
+			code: 'CONFLICT',
+			message: 'duplicate',
+		};
 
 		const { result } = renderHook(
 			() =>
 				useApiMutation(
-					async () => ({
-						error: apiError,
-						response: new Response(null, { status: 409 }),
-					}),
+					async (submission: string) => {
+						expect(submission).toBe('failed-submission');
+						return {
+							error: apiError,
+							response: new Response(null, { status: 409 }),
+						};
+					},
 					{ onError }
 				),
 			{ wrapper }
 		);
 
-		await expect(result.current.mutateAsync()).rejects.toMatchObject({
+		await expect(result.current.mutateAsync('failed-submission')).rejects.toMatchObject({
 			code: 'CONFLICT',
 			message: 'duplicate',
 			status: 409,
 		});
-		expect(onError).toHaveBeenCalledWith(expect.objectContaining({
-			code: 'CONFLICT',
-			status: 409,
-		}));
+		expect(onError).toHaveBeenCalledWith(
+			expect.objectContaining({
+				code: 'CONFLICT',
+				status: 409,
+			}),
+			'failed-submission'
+		);
 	});
 
 	it('extracts retry_after_seconds from Retry-After header', async () => {

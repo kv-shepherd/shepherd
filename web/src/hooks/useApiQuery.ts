@@ -130,24 +130,24 @@ export function useApiMutation<TResponse = unknown>(
     mutationFn: () => Promise<ApiClientResult<TResponse>>,
     options?: {
         invalidateKeys?: readonly unknown[][];
-        onSuccess?: (data: TResponse) => void;
-        onError?: (error: ApiErrorResponse) => void;
+        onSuccess?: (data: TResponse, variables: void) => void;
+        onError?: (error: ApiErrorResponse, variables: void) => void;
     }
 ): UseMutationResult<TResponse, ApiErrorResponse, void>;
 export function useApiMutation<TRequest, TResponse = unknown>(
     mutationFn: (req: TRequest) => Promise<ApiClientResult<TResponse>>,
     options?: {
         invalidateKeys?: readonly unknown[][];
-        onSuccess?: (data: TResponse) => void;
-        onError?: (error: ApiErrorResponse) => void;
+        onSuccess?: (data: TResponse, variables: TRequest) => void;
+        onError?: (error: ApiErrorResponse, variables: TRequest) => void;
     }
 ): UseMutationResult<TResponse, ApiErrorResponse, TRequest>;
 export function useApiMutation<TRequest = void, TResponse = unknown>(
     mutationFn: ((req: TRequest) => Promise<ApiClientResult<TResponse>>) | (() => Promise<ApiClientResult<TResponse>>),
     options?: {
         invalidateKeys?: readonly unknown[][];
-        onSuccess?: (data: TResponse) => void;
-        onError?: (error: ApiErrorResponse) => void;
+        onSuccess?: (data: TResponse, variables: TRequest) => void;
+        onError?: (error: ApiErrorResponse, variables: TRequest) => void;
     }
 ) {
     const queryClient = useQueryClient();
@@ -159,12 +159,12 @@ export function useApiMutation<TRequest = void, TResponse = unknown>(
             if (!response?.ok) throw normalizeApiError(undefined, response);
             return data as TResponse;
         },
-        onSuccess: async (data) => {
+        onSuccess: async (data, variables) => {
             await invalidateQueryKeys(queryClient, options?.invalidateKeys);
-            options?.onSuccess?.(data);
+            options?.onSuccess?.(data, variables);
         },
-        onError: (error) => {
-            options?.onError?.(error);
+        onError: (error, variables) => {
+            options?.onError?.(error, variables);
         },
     });
 }

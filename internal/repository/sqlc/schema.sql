@@ -45,13 +45,15 @@ CREATE TABLE tickets (
     reason text,
     reject_reason text,
     selected_cluster_id text,
-    selected_template_version integer,
     selected_storage_class text,
     template_snapshot jsonb,
     instance_size_snapshot jsonb,
     placement_evaluation jsonb,
     modified_spec jsonb,
-    parent_ticket_id text
+    parent_ticket_id text,
+    attempt_count integer NOT NULL DEFAULT 0
+        CONSTRAINT tickets_attempt_count_nonnegative CHECK (attempt_count >= 0),
+    last_attempt_at timestamptz
 );
 
 CREATE TABLE batch_tickets (
@@ -68,6 +70,23 @@ CREATE TABLE batch_tickets (
     created_by text NOT NULL,
     reason text
 );
+
+CREATE OR REPLACE FUNCTION "shepherd_batch_replay_sha256"(value text)
+RETURNS bytea
+LANGUAGE sql
+IMMUTABLE
+STRICT
+PARALLEL SAFE
+SET search_path = pg_catalog
+RETURN pg_catalog.sha256(pg_catalog.convert_to(value, 'UTF8'));
+
+CREATE INDEX "batch_tickets_replay_lookup_idx"
+ON batch_tickets (
+    created_by,
+    batch_type,
+    "shepherd_batch_replay_sha256"(BTRIM(request_id, E'\u0009\u000a\u000b\u000c\u000d\u0020\u0085\u00a0\u1680\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a\u2028\u2029\u202f\u205f\u3000'))
+)
+WHERE request_id IS NOT NULL;
 
 CREATE TABLE vms (
     id text PRIMARY KEY,

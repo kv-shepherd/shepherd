@@ -19,12 +19,12 @@ func TestNormalizeBatchOperation(t *testing.T) {
 	t.Run("create", func(t *testing.T) {
 		t.Parallel()
 
-		op, eventType, err := normalizeBatchOperation(generated.VMBatchOperation("CREATE"))
+		op, eventType, err := normalizeBatchOperation(generated.VMBatchSubmitOperation("CREATE"))
 		if err != nil {
 			t.Fatalf("normalizeBatchOperation(CREATE) returned error: %v", err)
 		}
-		if op != string(generated.VMBatchOperation("CREATE")) {
-			t.Fatalf("operation = %q, want %q", op, generated.VMBatchOperation("CREATE"))
+		if op != string(generated.VMBatchSubmitOperation("CREATE")) {
+			t.Fatalf("operation = %q, want %q", op, generated.VMBatchSubmitOperation("CREATE"))
 		}
 		if eventType != domain.EventBatchCreateRequested {
 			t.Fatalf("eventType = %q, want %q", eventType, domain.EventBatchCreateRequested)
@@ -34,12 +34,12 @@ func TestNormalizeBatchOperation(t *testing.T) {
 	t.Run("delete", func(t *testing.T) {
 		t.Parallel()
 
-		op, eventType, err := normalizeBatchOperation(generated.VMBatchOperation("DELETE"))
+		op, eventType, err := normalizeBatchOperation(generated.VMBatchSubmitOperation("DELETE"))
 		if err != nil {
 			t.Fatalf("normalizeBatchOperation(DELETE) returned error: %v", err)
 		}
-		if op != string(generated.VMBatchOperation("DELETE")) {
-			t.Fatalf("operation = %q, want %q", op, generated.VMBatchOperation("DELETE"))
+		if op != string(generated.VMBatchSubmitOperation("DELETE")) {
+			t.Fatalf("operation = %q, want %q", op, generated.VMBatchSubmitOperation("DELETE"))
 		}
 		if eventType != domain.EventBatchDeleteRequested {
 			t.Fatalf("eventType = %q, want %q", eventType, domain.EventBatchDeleteRequested)
@@ -49,7 +49,7 @@ func TestNormalizeBatchOperation(t *testing.T) {
 	t.Run("unsupported", func(t *testing.T) {
 		t.Parallel()
 
-		_, _, err := normalizeBatchOperation(generated.VMBatchOperation("POWER"))
+		_, _, err := normalizeBatchOperation(generated.VMBatchSubmitOperation("POWER"))
 		if err == nil || !strings.Contains(err.Error(), "unsupported operation") {
 			t.Fatalf("normalizeBatchOperation(POWER) error = %v, want unsupported operation", err)
 		}
@@ -124,15 +124,16 @@ func TestAggregateBatchParentStatus(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name         string
-		total        int
-		successCount int
-		failedCount  int
-		pendingCount int
-		pendingOnly  int
-		executing    int
-		cancelled    int
-		want         generated.VMBatchParentStatus
+		name          string
+		total         int
+		successCount  int
+		failedCount   int
+		pendingCount  int
+		pendingOnly   int
+		executing     int
+		cancelled     int
+		parentPending bool
+		want          generated.VMBatchParentStatus
 	}{
 		{
 			name: "zero total failed",
@@ -158,11 +159,19 @@ func TestAggregateBatchParentStatus(t *testing.T) {
 			want:        generated.VMBatchParentStatusFAILED,
 		},
 		{
-			name:         "all pending approval",
+			name:          "all pending approval",
+			total:         5,
+			pendingOnly:   5,
+			pendingCount:  5,
+			parentPending: true,
+			want:          generated.VMBatchParentStatusPENDINGAPPROVAL,
+		},
+		{
+			name:         "dispatcher queued with pending children",
 			total:        5,
 			pendingOnly:  5,
 			pendingCount: 5,
-			want:         generated.VMBatchParentStatusPENDINGAPPROVAL,
+			want:         generated.VMBatchParentStatusINPROGRESS,
 		},
 		{
 			name:         "in progress with executing children",
@@ -194,6 +203,7 @@ func TestAggregateBatchParentStatus(t *testing.T) {
 				tc.pendingOnly,
 				tc.executing,
 				tc.cancelled,
+				tc.parentPending,
 			)
 			if got != tc.want {
 				t.Fatalf("aggregateBatchParentStatus(...) = %q, want %q", got, tc.want)
@@ -263,12 +273,12 @@ func TestToBatchProjectionType(t *testing.T) {
 	}{
 		{
 			name: "delete op",
-			in:   string(generated.VMBatchOperation("DELETE")),
+			in:   string(generated.VMBatchSubmitOperation("DELETE")),
 			want: entbatchticket.BatchTypeBATCH_DELETE,
 		},
 		{
 			name: "power enum op",
-			in:   string(generated.VMBatchOperation("POWER")),
+			in:   string(generated.VMBatchSubmitOperation("POWER")),
 			want: entbatchticket.BatchTypeBATCH_POWER,
 		},
 		{
@@ -278,7 +288,7 @@ func TestToBatchProjectionType(t *testing.T) {
 		},
 		{
 			name: "fallback create",
-			in:   string(generated.VMBatchOperation("CREATE")),
+			in:   string(generated.VMBatchSubmitOperation("CREATE")),
 			want: entbatchticket.BatchTypeBATCH_CREATE,
 		},
 	}
@@ -332,7 +342,7 @@ func TestBuildBatchPayloadItems(t *testing.T) {
 	t.Run("create operation clears vm id and keeps create fields", func(t *testing.T) {
 		t.Parallel()
 
-		got := buildBatchPayloadItems(string(generated.VMBatchOperation("CREATE")), items)
+		got := buildBatchPayloadItems(string(generated.VMBatchSubmitOperation("CREATE")), items)
 		if len(got) != 1 {
 			t.Fatalf("len(payload) = %d, want 1", len(got))
 		}
@@ -381,7 +391,7 @@ func TestBuildBatchPayloadItems(t *testing.T) {
 		}
 
 		got := buildBatchPayloadItems(
-			string(generated.VMBatchOperation("DELETE")),
+			string(generated.VMBatchSubmitOperation("DELETE")),
 			items,
 			preparedBatchChild{payload: childPayload},
 		)
@@ -434,7 +444,7 @@ func TestBuildBatchPayloadItems(t *testing.T) {
 		}
 
 		got := buildBatchPayloadItems(
-			string(generated.VMBatchOperation("CREATE")),
+			string(generated.VMBatchSubmitOperation("CREATE")),
 			items,
 			preparedBatchChild{payload: childPayload},
 		)

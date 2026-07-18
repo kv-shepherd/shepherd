@@ -206,7 +206,7 @@ func Bootstrap(cfg *config.Config) (*App, error) {
 ```go
 // Single pgx transaction for:
 // 1. sqlc: Write DomainEvent
-// 2. sqlc: Create ApprovalTicket  
+// 2. sqlc: Insert Ticket
 // 3. River: InsertTx (after approval)
 // 4. Atomic commit
 
@@ -215,7 +215,7 @@ defer tx.Rollback(ctx)
 
 sqlcTx := queries.WithTx(tx)
 sqlcTx.CreateDomainEvent(ctx, ...)
-sqlcTx.CreateApprovalTicket(ctx, ...)
+sqlcTx.InsertTicket(ctx, ...)
 
 // After approval:
 riverClient.InsertTx(ctx, tx, jobArgs, nil)

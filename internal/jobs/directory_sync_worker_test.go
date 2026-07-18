@@ -5,12 +5,15 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/riverqueue/river"
+	"golang.org/x/sync/errgroup"
 
 	"kv-shepherd.io/shepherd/ent"
 	"kv-shepherd.io/shepherd/ent/directorysyncjob"
@@ -25,9 +28,12 @@ import (
 )
 
 type workerDirectorySyncAdapter struct {
-	typeKey   string
-	listUsers []provider.DirectoryUserRecord
-	listErr   error
+	typeKey      string
+	listUsers    []provider.DirectoryUserRecord
+	listErr      error
+	listReady    chan<- string
+	listProceed  <-chan struct{}
+	beforeReturn func()
 }
 
 func (a *workerDirectorySyncAdapter) Type() string { return a.typeKey }
@@ -60,7 +66,29 @@ func (a *workerDirectorySyncAdapter) PreviewDirectorySync(context.Context, map[s
 	}, nil
 }
 
-func (a *workerDirectorySyncAdapter) ListDirectoryUsers(context.Context, map[string]interface{}, map[string]interface{}) ([]provider.DirectoryUserRecord, error) {
+func (a *workerDirectorySyncAdapter) ListDirectoryUsers(
+	ctx context.Context,
+	config map[string]interface{},
+	_ map[string]interface{},
+) ([]provider.DirectoryUserRecord, error) {
+	if a.listReady != nil {
+		tenant, _ := config["tenant"].(string)
+		select {
+		case a.listReady <- tenant:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if a.listProceed != nil {
+		select {
+		case <-a.listProceed:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
+	if a.beforeReturn != nil {
+		a.beforeReturn()
+	}
 	if a.listErr != nil {
 		return nil, a.listErr
 	}
@@ -272,6 +300,101 @@ func TestDirectorySyncWorker_ClassifiesConflictsAndUpdatesCounters(t *testing.T)
 	}
 }
 
+func TestDirectorySyncWorker_RejectsProviderChangedAfterDirectoryFetch(t *testing.T) {
+	client := testutil.OpenEntPostgres(t, "directory_sync_worker_generation")
+	providerID := "directory-provider-generation"
+	jobID := "directory-job-generation"
+	ready := make(chan string, 1)
+	proceed := make(chan struct{}, 1)
+	t.Cleanup(func() {
+		select {
+		case proceed <- struct{}{}:
+		default:
+		}
+	})
+	adapter := registerWorkerDirectorySyncAdapter(t, &workerDirectorySyncAdapter{
+		listUsers: []provider.DirectoryUserRecord{
+			{
+				ExternalID:  "stale-directory-user",
+				Username:    "stale.directory.user",
+				DisplayName: "Stale Directory User",
+				Email:       "stale.directory.user@example.com",
+			},
+		},
+		listReady:   ready,
+		listProceed: proceed,
+	})
+	if _, err := client.AuthProvider.Create().
+		SetID(providerID).
+		SetName("Directory Provider Generation").
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{"tenant": "A"}).
+		SetEnabled(true).
+		SetCreatedBy("admin-1").
+		Save(t.Context()); err != nil {
+		t.Fatalf("create auth provider: %v", err)
+	}
+	createDirectorySyncWorkerJob(t, client, jobID, providerID)
+	worker := NewDirectorySyncWorker(
+		client,
+		service.NewDirectorySyncService(client),
+		nil,
+		[]byte("0123456789abcdef0123456789abcdef"),
+	)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	workGroup, workCtx := errgroup.WithContext(ctx)
+	workGroup.Go(func() error {
+		return worker.Work(workCtx, &river.Job[DirectorySyncArgs]{
+			Args: DirectorySyncArgs{JobID: jobID},
+		})
+	})
+	select {
+	case tenant := <-ready:
+		if tenant != "A" {
+			t.Fatalf("directory fetch config tenant = %q, want A", tenant)
+		}
+	case <-ctx.Done():
+		t.Fatalf("directory fetch did not start: %v", ctx.Err())
+	}
+	if err := withJobsEntTx(ctx, client, func(tx *ent.Tx, txClient *ent.Client) error {
+		if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+			return lockErr
+		}
+		_, updateErr := txClient.AuthProvider.UpdateOneID(providerID).
+			SetConfig(map[string]interface{}{"tenant": "B"}).
+			Save(ctx)
+		return updateErr
+	}); err != nil {
+		t.Fatalf("update auth provider config: %v", err)
+	}
+	proceed <- struct{}{}
+
+	if workErr := workGroup.Wait(); workErr != nil {
+		t.Fatalf("worker error = %v, want handled failed job", workErr)
+	}
+	jobRow, err := client.DirectorySyncJob.Get(t.Context(), jobID)
+	if err != nil {
+		t.Fatalf("get directory sync job: %v", err)
+	}
+	if jobRow.Status != directorysyncjob.StatusFailed {
+		t.Fatalf("job status = %s, want %s", jobRow.Status, directorysyncjob.StatusFailed)
+	}
+	if jobRow.ErrorCount != 1 || len(jobRow.Errors) != 1 || !strings.Contains(jobRow.Errors[0], "start a new sync") {
+		t.Fatalf("job errors = %#v (count %d), want one rerun-required error", jobRow.Errors, jobRow.ErrorCount)
+	}
+	userCount, err := client.User.Query().
+		Where(user.AuthProviderIDEQ(providerID)).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count provider users: %v", err)
+	}
+	if userCount != 0 {
+		t.Fatalf("provider user count = %d, want 0 after stale directory fetch", userCount)
+	}
+}
+
 func TestDirectorySyncWorker_FailurePathsPersistJobFailure(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -399,6 +522,241 @@ func TestDirectorySyncWorker_FailurePathsPersistJobFailure(t *testing.T) {
 			}
 			if tc.verify != nil {
 				tc.verify(t, client)
+			}
+		})
+	}
+}
+
+func TestDirectorySyncWorker_FailsClosedWhenProviderGenerationCannotBeCaptured(t *testing.T) {
+	client := testutil.OpenEntPostgres(t, "directory_sync_invalid_generation")
+	adapter := registerWorkerDirectorySyncAdapter(t, &workerDirectorySyncAdapter{})
+	providerID := "auth-provider-invalid-generation-" + uuid.NewString()
+	jobID := "directory-sync-invalid-generation-" + uuid.NewString()
+	createDirectorySyncWorkerAuthProvider(t, client, providerID, adapter.typeKey)
+	createDirectorySyncWorkerJob(t, client, jobID, providerID)
+	client.AuthProvider.Intercept(ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+		return ent.QuerierFunc(func(ctx context.Context, query ent.Query) (ent.Value, error) {
+			value, err := next.Query(ctx, query)
+			if err != nil {
+				return nil, err
+			}
+			providers := value.([]*ent.AuthProvider)
+			if len(providers) == 1 {
+				providers[0].Config = map[string]interface{}{"invalid": make(chan struct{})}
+			}
+			return value, nil
+		})
+	}))
+	worker := NewDirectorySyncWorker(
+		client,
+		service.NewDirectorySyncService(client),
+		nil,
+		[]byte("0123456789abcdef0123456789abcdef"),
+	)
+
+	if err := worker.Work(t.Context(), &river.Job[DirectorySyncArgs]{
+		Args: DirectorySyncArgs{JobID: jobID},
+	}); err != nil {
+		t.Fatalf("Work() error = %v, want persisted job failure", err)
+	}
+
+	jobRow, err := client.DirectorySyncJob.Get(t.Context(), jobID)
+	if err != nil {
+		t.Fatalf("get failed directory sync job: %v", err)
+	}
+	if jobRow.Status != directorysyncjob.StatusFailed || jobRow.ErrorCount != 1 {
+		t.Fatalf("job status/error count = %s/%d, want %s/1", jobRow.Status, jobRow.ErrorCount, directorysyncjob.StatusFailed)
+	}
+	if len(jobRow.Errors) != 1 || !strings.Contains(jobRow.Errors[0], "encode config") {
+		t.Fatalf("job errors = %#v, want generation encoding failure", jobRow.Errors)
+	}
+}
+
+func TestDirectorySyncWorker_AuthSessionSchemaFailurePreventsDirectoryWrites(t *testing.T) {
+	client := testutil.OpenEntPostgres(t, "directory_sync_session_schema_failure")
+	adapter := registerWorkerDirectorySyncAdapter(t, &workerDirectorySyncAdapter{
+		listUsers: []provider.DirectoryUserRecord{{
+			ExternalID: "schema-failure-user",
+			Username:   "schema.failure.user",
+		}},
+	})
+	providerID := "auth-provider-session-schema-" + uuid.NewString()
+	jobID := "directory-sync-session-schema-" + uuid.NewString()
+	createDirectorySyncWorkerAuthProvider(t, client, providerID, adapter.typeKey)
+	createDirectorySyncWorkerJob(t, client, jobID, providerID)
+	closedPool := testutil.OpenPGXPool(t, "directory_sync_closed_session_pool")
+	authSessions := service.NewAuthSessionManager(closedPool, client, 0)
+	closedPool.Close()
+	worker := NewDirectorySyncWorker(
+		client,
+		service.NewDirectorySyncService(client),
+		nil,
+		[]byte("0123456789abcdef0123456789abcdef"),
+		authSessions,
+	)
+
+	if err := worker.Work(t.Context(), &river.Job[DirectorySyncArgs]{
+		Args: DirectorySyncArgs{JobID: jobID},
+	}); err != nil {
+		t.Fatalf("Work() error = %v, want persisted job failure", err)
+	}
+
+	jobRow, err := client.DirectorySyncJob.Get(t.Context(), jobID)
+	if err != nil {
+		t.Fatalf("get failed directory sync job: %v", err)
+	}
+	if jobRow.Status != directorysyncjob.StatusFailed || jobRow.ErrorCount != 1 {
+		t.Fatalf("job status/error count = %s/%d, want %s/1", jobRow.Status, jobRow.ErrorCount, directorysyncjob.StatusFailed)
+	}
+	if len(jobRow.Errors) != 1 || !strings.Contains(jobRow.Errors[0], "initialize auth session schema") {
+		t.Fatalf("job errors = %#v, want auth-session schema failure", jobRow.Errors)
+	}
+	userCount, err := client.User.Query().
+		Where(user.AuthProviderIDEQ(providerID)).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count provider users: %v", err)
+	}
+	if userCount != 0 {
+		t.Fatalf("provider user count = %d, want 0 when session schema is unavailable", userCount)
+	}
+}
+
+func TestDirectorySyncWorker_CanceledDirectoryFetchDoesNotStartSessionSchemaMutation(t *testing.T) {
+	client, pool := testutil.OpenEntPostgresWithPool(t, "directory_sync_canceled_before_schema")
+	workCtx, cancel := context.WithCancel(t.Context())
+	adapter := registerWorkerDirectorySyncAdapter(t, &workerDirectorySyncAdapter{
+		listUsers: []provider.DirectoryUserRecord{{
+			ExternalID: "canceled-schema-user",
+			Username:   "canceled.schema.user",
+		}},
+		beforeReturn: cancel,
+	})
+	providerID := "auth-provider-canceled-schema-" + uuid.NewString()
+	jobID := "directory-sync-canceled-schema-" + uuid.NewString()
+	createDirectorySyncWorkerAuthProvider(t, client, providerID, adapter.typeKey)
+	createDirectorySyncWorkerJob(t, client, jobID, providerID)
+	authSessions := service.NewAuthSessionManager(pool, client, 0)
+	worker := NewDirectorySyncWorker(
+		client,
+		service.NewDirectorySyncService(client),
+		nil,
+		[]byte("0123456789abcdef0123456789abcdef"),
+		authSessions,
+	)
+
+	err := worker.Work(workCtx, &river.Job[DirectorySyncArgs]{
+		Args: DirectorySyncArgs{JobID: jobID},
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("Work() error = %v, want context.Canceled", err)
+	}
+
+	jobRow, err := client.DirectorySyncJob.Get(t.Context(), jobID)
+	if err != nil {
+		t.Fatalf("get canceled directory sync job: %v", err)
+	}
+	if jobRow.Status != directorysyncjob.StatusRunning || jobRow.ErrorCount != 0 {
+		t.Fatalf("job status/error count = %s/%d, want %s/0", jobRow.Status, jobRow.ErrorCount, directorysyncjob.StatusRunning)
+	}
+	userCount, err := client.User.Query().
+		Where(user.AuthProviderIDEQ(providerID)).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count provider users: %v", err)
+	}
+	if userCount != 0 {
+		t.Fatalf("provider user count = %d, want 0 after cancellation", userCount)
+	}
+}
+
+func TestDirectorySyncWorker_ScheduledProviderReloadFailuresDoNotApplyRecords(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		reloadErr error
+		disable   bool
+		wantError string
+	}{
+		{
+			name:      "provider reload failure",
+			reloadErr: errors.New("provider reload unavailable"),
+			wantError: "reload auth provider",
+		},
+		{
+			name:      "provider disabled before apply",
+			disable:   true,
+			wantError: "is disabled",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			client := testutil.OpenEntPostgres(t, "directory_sync_scheduled_reload_"+strings.ReplaceAll(tc.name, " ", "_"))
+			adapter := registerWorkerDirectorySyncAdapter(t, &workerDirectorySyncAdapter{
+				listUsers: []provider.DirectoryUserRecord{{
+					ExternalID: "scheduled-reload-user",
+					Username:   "scheduled.reload.user",
+				}},
+			})
+			providerID := "auth-provider-scheduled-reload-" + uuid.NewString()
+			jobID := "directory-sync-scheduled-reload-" + uuid.NewString()
+			createDirectorySyncWorkerAuthProvider(t, client, providerID, adapter.typeKey)
+			createDirectorySyncWorkerJob(t, client, jobID, providerID)
+			if _, err := client.DirectorySyncJob.UpdateOneID(jobID).
+				SetSyncMode(directorysyncjob.SyncModeScheduledEnrichment).
+				SetJoinKeyType("username").
+				Save(t.Context()); err != nil {
+				t.Fatalf("configure scheduled directory job: %v", err)
+			}
+			var providerReads int
+			client.AuthProvider.Intercept(ent.InterceptFunc(func(next ent.Querier) ent.Querier {
+				return ent.QuerierFunc(func(ctx context.Context, query ent.Query) (ent.Value, error) {
+					providerReads++
+					if providerReads == 2 && tc.reloadErr != nil {
+						return nil, tc.reloadErr
+					}
+					value, err := next.Query(ctx, query)
+					if err != nil {
+						return nil, err
+					}
+					if providerReads == 2 && tc.disable {
+						providers := value.([]*ent.AuthProvider)
+						if len(providers) == 1 {
+							providers[0].Enabled = false
+						}
+					}
+					return value, nil
+				})
+			}))
+			worker := NewDirectorySyncWorker(
+				client,
+				service.NewDirectorySyncService(client),
+				nil,
+				[]byte("0123456789abcdef0123456789abcdef"),
+			)
+
+			if err := worker.Work(t.Context(), &river.Job[DirectorySyncArgs]{
+				Args: DirectorySyncArgs{JobID: jobID},
+			}); err != nil {
+				t.Fatalf("Work() error = %v, want persisted job failure", err)
+			}
+
+			jobRow, err := client.DirectorySyncJob.Get(t.Context(), jobID)
+			if err != nil {
+				t.Fatalf("get directory sync job: %v", err)
+			}
+			if jobRow.Status != directorysyncjob.StatusCompleted || jobRow.ErrorCount != 1 {
+				t.Fatalf("job status/error count = %s/%d, want %s/1", jobRow.Status, jobRow.ErrorCount, directorysyncjob.StatusCompleted)
+			}
+			if len(jobRow.Errors) != 1 || !strings.Contains(jobRow.Errors[0], tc.wantError) {
+				t.Fatalf("job errors = %#v, want error containing %q", jobRow.Errors, tc.wantError)
+			}
+			userCount, err := client.User.Query().
+				Where(user.AuthProviderIDEQ(providerID)).
+				Count(t.Context())
+			if err != nil {
+				t.Fatalf("count provider users: %v", err)
+			}
+			if userCount != 0 {
+				t.Fatalf("provider user count = %d, want 0 after reload failure", userCount)
 			}
 		})
 	}
@@ -678,92 +1036,16 @@ func TestDirectorySyncWorker_ScheduledEnrichmentUpdatesExistingUsersOnly(t *test
 }
 
 func TestDirectorySyncWorker_RevokesSessionsWhenScheduledEnrichmentChangesRBAC(t *testing.T) {
-	pool := testutil.OpenPGXPool(t, "directory_enrichment_worker_revoke")
-	db := stdlib.OpenDBFromPool(pool)
-	t.Cleanup(func() { _ = db.Close() })
-	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
-	t.Cleanup(func() { _ = client.Close() })
-	authSessions := service.NewAuthSessionManager(pool, client, 0)
-
-	adapter := registerWorkerDirectorySyncAdapter(t, &workerDirectorySyncAdapter{
-		listUsers: []provider.DirectoryUserRecord{
-			{
-				ExternalID:  "ext-existing-rbac-user",
-				Username:    "existing-rbac-user",
-				DisplayName: "Existing RBAC User",
-				Cohorts: []provider.ExternalCohort{
-					{Kind: "group", Key: "ops", DisplayName: "ops"},
-				},
-			},
-		},
-	})
-
-	providerID := "auth-provider-directory-enrichment-rbac-revoke"
-	if _, createErr := client.AuthProvider.Create().
-		SetID(providerID).
-		SetName("Directory Enrichment RBAC Revoke Provider").
-		SetAuthType(adapter.typeKey).
-		SetConfig(map[string]interface{}{"tenant": "acme"}).
-		SetCreatedBy("admin-1").
-		Save(t.Context()); createErr != nil {
-		t.Fatalf("create auth provider: %v", createErr)
-	}
-	roleEnt, err := client.Role.Create().
-		SetID("role-directory-enrichment-rbac-revoke").
-		SetName("directory_enrichment_rbac_revoke").
-		SetPermissions([]string{"vm:read"}).
-		SetEnabled(true).
-		Save(t.Context())
-	if err != nil {
-		t.Fatalf("create role: %v", err)
-	}
-	if _, createErr := client.ExternalCohortMapping.Create().
-		SetID("mapping-directory-enrichment-rbac-revoke").
-		SetProviderID(providerID).
-		SetCohortKind("group").
-		SetCohortKey("ops").
-		SetRoleID(roleEnt.ID).
-		SetScopeType("global").
-		SetCreatedBy("admin-1").
-		Save(t.Context()); createErr != nil {
-		t.Fatalf("create external cohort mapping: %v", createErr)
-	}
-	existingUser, err := client.User.Create().
-		SetID("existing-rbac-user-id").
-		SetUsername("existing-rbac-user").
-		SetDisplayName("Existing RBAC User").
-		SetEmail("existing-rbac-user@example.com").
-		SetEnabled(true).
-		Save(t.Context())
-	if err != nil {
-		t.Fatalf("create existing canonical user: %v", err)
-	}
-	if _, createErr := client.DirectorySyncJob.Create().
-		SetID("directory-enrichment-rbac-revoke-job-1").
-		SetAuthProviderID(providerID).
-		SetRequestSnapshot(map[string]interface{}{"opaque": "payload"}).
-		SetConflictResolution(service.DirectoryConflictResolutionSkip).
-		SetSyncMode(service.DirectoryExecutionModeScheduledEnrichment).
-		SetJoinKeyType(string(provider.DirectoryJoinKeyUsername)).
-		SetTriggeredBy("system:directory-enrichment-scheduler").
-		Save(t.Context()); createErr != nil {
-		t.Fatalf("create directory enrichment job: %v", createErr)
-	}
-	beforeVersion, err := authSessions.CurrentSessionVersion(t.Context(), existingUser.ID)
-	if err != nil {
-		t.Fatalf("seed session version: %v", err)
-	}
-
-	worker := NewDirectorySyncWorker(client, service.NewDirectorySyncService(client), nil, []byte("0123456789abcdef0123456789abcdef"), authSessions)
-	if workerErr := worker.Work(t.Context(), &river.Job[DirectorySyncArgs]{
-		Args: DirectorySyncArgs{
-			JobID: "directory-enrichment-rbac-revoke-job-1",
-		},
+	fixture := newDirectorySyncRBACWorkerFixture(t, "directory_enrichment_worker_revoke")
+	workCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if workerErr := fixture.worker.Work(workCtx, &river.Job[DirectorySyncArgs]{
+		Args: DirectorySyncArgs{JobID: fixture.jobID},
 	}); workerErr != nil {
 		t.Fatalf("worker work: %v", workerErr)
 	}
 
-	jobRow, err := client.DirectorySyncJob.Get(t.Context(), "directory-enrichment-rbac-revoke-job-1")
+	jobRow, err := fixture.client.DirectorySyncJob.Get(t.Context(), fixture.jobID)
 	if err != nil {
 		t.Fatalf("get directory enrichment job: %v", err)
 	}
@@ -773,8 +1055,8 @@ func TestDirectorySyncWorker_RevokesSessionsWhenScheduledEnrichmentChangesRBAC(t
 	if jobRow.ErrorCount != 0 {
 		t.Fatalf("ErrorCount = %d, want 0", jobRow.ErrorCount)
 	}
-	bindingCount, err := client.RoleBinding.Query().
-		Where(rolebinding.HasUserWith(user.IDEQ(existingUser.ID))).
+	bindingCount, err := fixture.client.RoleBinding.Query().
+		Where(rolebinding.HasUserWith(user.IDEQ(fixture.userID))).
 		Count(t.Context())
 	if err != nil {
 		t.Fatalf("count role bindings: %v", err)
@@ -782,12 +1064,191 @@ func TestDirectorySyncWorker_RevokesSessionsWhenScheduledEnrichmentChangesRBAC(t
 	if bindingCount != 1 {
 		t.Fatalf("role binding count = %d, want 1", bindingCount)
 	}
-	afterVersion, err := authSessions.CurrentSessionVersion(t.Context(), existingUser.ID)
+	afterVersion, err := fixture.authSessions.CurrentSessionVersion(t.Context(), fixture.userID)
 	if err != nil {
 		t.Fatalf("read session version after directory enrichment: %v", err)
 	}
-	if afterVersion != beforeVersion+1 {
-		t.Fatalf("session version after RBAC-changing enrichment = %d, want %d", afterVersion, beforeVersion+1)
+	if afterVersion != 2 {
+		t.Fatalf("session version after RBAC-changing enrichment = %d, want 2", afterVersion)
+	}
+}
+
+func TestDirectorySyncWorker_RollsBackRBACAndSessionBumpWhenCommitFails(t *testing.T) {
+	fixture := newDirectorySyncRBACWorkerFixture(t, "directory_enrichment_worker_atomic")
+	if _, err := fixture.pool.Exec(t.Context(), `
+CREATE FUNCTION reject_directory_sync_grant_commit() RETURNS trigger
+LANGUAGE plpgsql AS $$
+BEGIN
+	RAISE EXCEPTION 'forced deferred directory sync failure';
+END;
+$$;`); err != nil {
+		t.Fatalf("create deferred failure function: %v", err)
+	}
+	if _, err := fixture.pool.Exec(t.Context(), `
+CREATE CONSTRAINT TRIGGER reject_directory_sync_grant_commit
+AFTER INSERT ON external_cohort_grants
+DEFERRABLE INITIALLY DEFERRED
+FOR EACH ROW EXECUTE FUNCTION reject_directory_sync_grant_commit();`); err != nil {
+		t.Fatalf("create deferred failure trigger: %v", err)
+	}
+
+	if workerErr := fixture.worker.Work(t.Context(), &river.Job[DirectorySyncArgs]{
+		Args: DirectorySyncArgs{JobID: fixture.jobID},
+	}); workerErr != nil {
+		t.Fatalf("worker work: %v", workerErr)
+	}
+
+	jobRow, err := fixture.client.DirectorySyncJob.Get(t.Context(), fixture.jobID)
+	if err != nil {
+		t.Fatalf("get directory enrichment job: %v", err)
+	}
+	if jobRow.Status != directorysyncjob.StatusCompleted || jobRow.ErrorCount != 1 {
+		t.Fatalf("job status/error count = %s/%d, want %s/1", jobRow.Status, jobRow.ErrorCount, directorysyncjob.StatusCompleted)
+	}
+	if len(jobRow.Errors) != 1 || !strings.Contains(jobRow.Errors[0], "forced deferred directory sync failure") {
+		t.Fatalf("job errors = %#v, want deferred commit failure", jobRow.Errors)
+	}
+
+	bindingCount, err := fixture.client.RoleBinding.Query().
+		Where(rolebinding.HasUserWith(user.IDEQ(fixture.userID))).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count role bindings after rollback: %v", err)
+	}
+	grantCount, err := fixture.client.ExternalCohortGrant.Query().Count(t.Context())
+	if err != nil {
+		t.Fatalf("count external cohort grants after rollback: %v", err)
+	}
+	profileCount, err := fixture.client.UserDirectoryProfile.Query().
+		Where(userdirectoryprofile.UserIDEQ(fixture.userID)).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count directory profiles after rollback: %v", err)
+	}
+	if bindingCount != 0 || grantCount != 0 || profileCount != 0 {
+		t.Fatalf("rolled-back business rows = bindings:%d grants:%d profiles:%d, want 0/0/0", bindingCount, grantCount, profileCount)
+	}
+
+	version, err := fixture.authSessions.CurrentSessionVersion(t.Context(), fixture.userID)
+	if err != nil {
+		t.Fatalf("read session version after rollback: %v", err)
+	}
+	if version != 1 {
+		t.Fatalf("session version after rollback = %d, want 1", version)
+	}
+}
+
+type directorySyncRBACWorkerFixture struct {
+	client       *ent.Client
+	pool         *pgxpool.Pool
+	authSessions *service.AuthSessionManager
+	worker       *DirectorySyncWorker
+	userID       string
+	jobID        string
+}
+
+func newDirectorySyncRBACWorkerFixture(t *testing.T, prefix string) directorySyncRBACWorkerFixture {
+	t.Helper()
+
+	basePool := testutil.OpenPGXPool(t, prefix)
+	poolConfig := basePool.Config().Copy()
+	basePool.Close()
+	poolConfig.MinConns = 0
+	poolConfig.MaxConns = 1
+	pool, err := pgxpool.NewWithConfig(t.Context(), poolConfig)
+	if err != nil {
+		t.Fatalf("create single-connection pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	if pingErr := pool.Ping(t.Context()); pingErr != nil {
+		t.Fatalf("ping single-connection pool: %v", pingErr)
+	}
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	t.Cleanup(func() { _ = client.Close() })
+
+	suffix := strings.ReplaceAll(uuid.NewString(), "-", "")[:10]
+	username := "existing-rbac-" + suffix
+	userID := "existing-rbac-user-" + suffix
+	providerID := "auth-provider-rbac-" + suffix
+	jobID := "directory-enrichment-job-" + suffix
+	adapter := registerWorkerDirectorySyncAdapter(t, &workerDirectorySyncAdapter{
+		listUsers: []provider.DirectoryUserRecord{
+			{
+				ExternalID:  "ext-" + userID,
+				Username:    username,
+				DisplayName: "Existing RBAC User",
+				Cohorts: []provider.ExternalCohort{
+					{Kind: "group", Key: "ops", DisplayName: "ops"},
+				},
+			},
+		},
+	})
+	if _, createErr := client.AuthProvider.Create().
+		SetID(providerID).
+		SetName("Directory Enrichment RBAC " + suffix).
+		SetAuthType(adapter.typeKey).
+		SetConfig(map[string]interface{}{"tenant": "acme"}).
+		SetCreatedBy("admin-1").
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("create auth provider: %v", createErr)
+	}
+	roleEnt, err := client.Role.Create().
+		SetID("role-directory-rbac-" + suffix).
+		SetName("directory_rbac_" + suffix).
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role: %v", err)
+	}
+	if _, createErr := client.ExternalCohortMapping.Create().
+		SetID("mapping-directory-rbac-" + suffix).
+		SetProviderID(providerID).
+		SetCohortKind("group").
+		SetCohortKey("ops").
+		SetRoleID(roleEnt.ID).
+		SetScopeType("global").
+		SetCreatedBy("admin-1").
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("create external cohort mapping: %v", createErr)
+	}
+	if _, createErr := client.User.Create().
+		SetID(userID).
+		SetUsername(username).
+		SetDisplayName("Existing RBAC User").
+		SetEmail(username + "@example.com").
+		SetEnabled(true).
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("create existing canonical user: %v", createErr)
+	}
+	if _, createErr := client.DirectorySyncJob.Create().
+		SetID(jobID).
+		SetAuthProviderID(providerID).
+		SetRequestSnapshot(map[string]interface{}{"opaque": "payload"}).
+		SetConflictResolution(service.DirectoryConflictResolutionSkip).
+		SetSyncMode(service.DirectoryExecutionModeScheduledEnrichment).
+		SetJoinKeyType(string(provider.DirectoryJoinKeyUsername)).
+		SetTriggeredBy("system:directory-enrichment-scheduler").
+		Save(t.Context()); createErr != nil {
+		t.Fatalf("create directory enrichment job: %v", createErr)
+	}
+
+	authSessions := service.NewAuthSessionManager(pool, client, 0)
+	return directorySyncRBACWorkerFixture{
+		client:       client,
+		pool:         pool,
+		authSessions: authSessions,
+		worker: NewDirectorySyncWorker(
+			client,
+			service.NewDirectorySyncService(client),
+			nil,
+			[]byte("0123456789abcdef0123456789abcdef"),
+			authSessions,
+		),
+		userID: userID,
+		jobID:  jobID,
 	}
 }
 

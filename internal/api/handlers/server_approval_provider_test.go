@@ -3,11 +3,14 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"strings"
 	"testing"
 
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/governance/approval"
+	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/provider"
 )
 
@@ -15,6 +18,7 @@ type captureApprovalProvider struct {
 	processCalled int
 	lastTicketID  string
 	lastDecision  provider.ApprovalDecision
+	processErr    error
 }
 
 func (p *captureApprovalProvider) Type() string { return "builtin-default" }
@@ -27,7 +31,49 @@ func (p *captureApprovalProvider) ProcessApproval(_ context.Context, ticketID st
 	p.processCalled++
 	p.lastTicketID = ticketID
 	p.lastDecision = decision
-	return nil
+	return p.processErr
+}
+
+func TestApproveBuiltinApprovalTask_DoesNotExposePreflightProviderCause(t *testing.T) {
+	t.Parallel()
+
+	const sentinel = "postgres://svc:super-secret@example.com Bearer token-secret-value"
+	capture := &captureApprovalProvider{processErr: apperrors.Wrap(
+		errors.New(sentinel),
+		apperrors.CodeClusterUnhealthy,
+		"approval requires live cluster preflight",
+		http.StatusServiceUnavailable,
+	).WithParams(map[string]interface{}{"reason": "CLUSTER_RUNTIME_UNAVAILABLE"})}
+	srv := NewServer(ServerDeps{ApprovalRouter: approval.NewApprovalProviderRouter(capture)})
+	body, err := json.Marshal(generated.ApprovalDecisionRequest{})
+	if err != nil {
+		t.Fatalf("marshal request: %v", err)
+	}
+	c, response := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/builtin-approval/tasks/ticket-secret/approve",
+		string(body),
+		"admin-1",
+		[]string{"builtin_approval:approve", "platform:admin"},
+	)
+	srv.ApproveBuiltinApprovalTask(c, "ticket-secret")
+	if response.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusServiceUnavailable, response.Body.String())
+	}
+	var apiErr generated.Error
+	if err := json.Unmarshal(response.Body.Bytes(), &apiErr); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if apiErr.Code != apperrors.CodeClusterUnhealthy || apiErr.Message != "approval requires live cluster preflight" {
+		t.Fatalf("public preflight error = %+v", apiErr)
+	}
+	if reason, _ := apiErr.Params["reason"].(string); reason != "CLUSTER_RUNTIME_UNAVAILABLE" {
+		t.Fatalf("public preflight reason = %q", reason)
+	}
+	if strings.Contains(response.Body.String(), sentinel) || strings.Contains(response.Body.String(), "super-secret") {
+		t.Fatalf("preflight HTTP response leaked provider cause: %s", response.Body.String())
+	}
 }
 
 func TestApproveTicketRoutesThroughApprovalProvider(t *testing.T) {

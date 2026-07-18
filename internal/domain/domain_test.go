@@ -8,6 +8,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestBatchChildMaxAttemptsIncludesInitialDispatchAndRetries(t *testing.T) {
+	t.Parallel()
+
+	const initialDispatch = 1
+	const allowedExplicitRetries = 2
+	if BatchChildMaxAttempts != initialDispatch+allowedExplicitRetries {
+		t.Fatalf(
+			"BatchChildMaxAttempts = %d, want %d logical attempts",
+			BatchChildMaxAttempts,
+			initialDispatch+allowedExplicitRetries,
+		)
+	}
+}
+
 func TestVMCreationPayload_ToJSON(t *testing.T) {
 	payload := VMCreationPayload{
 		RequesterID:    "user-1",
@@ -90,12 +104,13 @@ func TestPowerAndDeletePayload_ToJSON(t *testing.T) {
 	require.Equal(t, deletePayload, gotDelete)
 
 	powerPayload := VMPowerPayload{
-		VMID:      "vm-2",
-		VMName:    "vm-two",
-		ClusterID: "cluster-b",
-		Namespace: "prod",
-		Operation: "restart",
-		Actor:     "user-4",
+		VMID:         "vm-2",
+		VMName:       "vm-two",
+		ClusterID:    "cluster-b",
+		Namespace:    "prod",
+		Operation:    "restart",
+		Actor:        "user-4",
+		DispatchMode: VMPowerDispatchDirect,
 	}
 	data, err = powerPayload.ToJSON()
 	require.NoError(t, err)

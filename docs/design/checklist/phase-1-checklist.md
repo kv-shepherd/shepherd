@@ -38,7 +38,7 @@
   - [x] `instance` field stores instance number (e.g., "01")
 - [x] `ent/schema/vm_revision.go` - VM version history
 - [x] `ent/schema/audit_log.go` - Audit log Schema
-- [x] `ent/schema/approval_ticket.go` - Approval ticket (Governance Core)
+- [x] `ent/schema/ticket.go` - Ticket (Governance Core)
 - [x] `ent/schema/approval_policy.go` - Approval policy (Governance Core)
 - [x] `ent/schema/cluster.go` - Multi-cluster credential management
 - [x] `ent/schema/template.go` - Template definition
@@ -125,7 +125,7 @@
 > **Purpose**: Ensure generated Go types use `omitzero` tag to eliminate pointer hell.    
 > **Status**: ADR-0028 **Accepted** ✅. See [ADR-0028](../../adr/ADR-0028-oapi-codegen-optional-field-strategy.md).
 
-- [x] `go.mod` requires Go 1.25+ (enables `omitzero` support) — *Go 1.25.11*
+- [x] `go.mod` requires Go 1.25+ (enables `omitzero` support) — *Go 1.25.12*
 - [x] `api/oapi-codegen.yaml` contains:
   - [x] `output-options.prefer-skip-optional-pointer-with-omitzero: true`
 - [x] **Generated types verification** (CI enforcement via `check_openapi_critical_contract.go`):

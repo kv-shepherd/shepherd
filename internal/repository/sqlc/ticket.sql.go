@@ -62,6 +62,14 @@ SET
     instance_size_snapshot = COALESCE($5::jsonb, instance_size_snapshot),
     placement_evaluation = COALESCE($6::jsonb, placement_evaluation),
     modified_spec = COALESCE($7::jsonb, modified_spec),
+    attempt_count = CASE
+        WHEN parent_ticket_id IS NOT NULL AND attempt_count = 0 THEN 1
+        ELSE attempt_count
+    END,
+    last_attempt_at = CASE
+        WHEN parent_ticket_id IS NOT NULL AND attempt_count = 0 THEN NOW()
+        ELSE last_attempt_at
+    END,
     updated_at = NOW()
 WHERE
     id = $8
@@ -105,6 +113,14 @@ UPDATE tickets
 SET
     status = 'APPROVED',
     approver = $1,
+    attempt_count = CASE
+        WHEN parent_ticket_id IS NOT NULL AND attempt_count = 0 THEN 1
+        ELSE attempt_count
+    END,
+    last_attempt_at = CASE
+        WHEN parent_ticket_id IS NOT NULL AND attempt_count = 0 THEN NOW()
+        ELSE last_attempt_at
+    END,
     updated_at = NOW()
 WHERE
     id = $2
@@ -133,6 +149,14 @@ SET
     status = 'APPROVED',
     approver = $1,
     modified_spec = COALESCE($2::jsonb, modified_spec),
+    attempt_count = CASE
+        WHEN parent_ticket_id IS NOT NULL AND attempt_count = 0 THEN 1
+        ELSE attempt_count
+    END,
+    last_attempt_at = CASE
+        WHEN parent_ticket_id IS NOT NULL AND attempt_count = 0 THEN NOW()
+        ELSE last_attempt_at
+    END,
     updated_at = NOW()
 WHERE
     id = $3
@@ -166,6 +190,14 @@ UPDATE tickets
 SET
     status = 'APPROVED',
     approver = $1,
+    attempt_count = CASE
+        WHEN parent_ticket_id IS NOT NULL AND attempt_count = 0 THEN 1
+        ELSE attempt_count
+    END,
+    last_attempt_at = CASE
+        WHEN parent_ticket_id IS NOT NULL AND attempt_count = 0 THEN NOW()
+        ELSE last_attempt_at
+    END,
     updated_at = NOW()
 WHERE
     id = $2
@@ -182,6 +214,124 @@ type ApprovePowerTicketParams struct {
 
 func (q *Queries) ApprovePowerTicket(ctx context.Context, arg ApprovePowerTicketParams) (int64, error) {
 	result, err := q.db.Exec(ctx, approvePowerTicket, arg.Approver, arg.ID, arg.EventID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const claimBatchApprovalDispatch = `-- name: ClaimBatchApprovalDispatch :execrows
+UPDATE tickets AS parent
+SET
+    status = 'EXECUTING',
+    approver = $1,
+    selected_cluster_id = $2,
+    selected_storage_class = $3,
+    modified_spec = COALESCE(modified_spec, '{}'::jsonb) ||
+        jsonb_build_object('batch_approval_execution', $4::jsonb),
+    reject_reason = NULL,
+    updated_at = NOW()
+WHERE parent.id = $5
+  AND parent.event_id = $6
+  AND parent.parent_ticket_id IS NULL
+  AND parent.operation_type IN ('CREATE', 'MODIFY', 'DELETE', 'POWER')
+  AND parent.status = 'PENDING'
+  AND NULLIF(BTRIM(parent.requester), '') IS NOT NULL
+  AND EXISTS (
+      SELECT 1
+      FROM domain_events AS event
+      WHERE event.id = $6
+        AND event.aggregate_type = 'batch'
+        AND event.aggregate_id = $5
+        AND event.status = 'PENDING'
+        AND event.created_by = parent.requester
+        AND (
+            (parent.operation_type = 'CREATE' AND event.event_type = 'BATCH_CREATE_REQUESTED')
+            OR (parent.operation_type = 'MODIFY' AND event.event_type = 'BATCH_MODIFY_REQUESTED')
+            OR (parent.operation_type = 'DELETE' AND event.event_type = 'BATCH_DELETE_REQUESTED')
+            OR (parent.operation_type = 'POWER' AND event.event_type = 'BATCH_POWER_REQUESTED')
+        )
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM batch_tickets AS batch
+      WHERE batch.id = parent.id
+        AND batch.created_by = parent.requester
+        AND batch.status = 'PENDING_APPROVAL'
+        AND batch.batch_type::text = CASE parent.operation_type::text
+            WHEN 'CREATE' THEN 'BATCH_CREATE'
+            WHEN 'MODIFY' THEN 'BATCH_MODIFY'
+            WHEN 'DELETE' THEN 'BATCH_DELETE'
+            WHEN 'POWER' THEN 'BATCH_POWER'
+        END
+  )
+`
+
+type ClaimBatchApprovalDispatchParams struct {
+	Approver             pgtype.Text `db:"approver" json:"approver"`
+	SelectedClusterID    pgtype.Text `db:"selected_cluster_id" json:"selected_cluster_id"`
+	SelectedStorageClass pgtype.Text `db:"selected_storage_class" json:"selected_storage_class"`
+	ExecutionOptions     []byte      `db:"execution_options" json:"execution_options"`
+	ID                   string      `db:"id" json:"id"`
+	EventID              string      `db:"event_id" json:"event_id"`
+}
+
+func (q *Queries) ClaimBatchApprovalDispatch(ctx context.Context, arg ClaimBatchApprovalDispatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimBatchApprovalDispatch,
+		arg.Approver,
+		arg.SelectedClusterID,
+		arg.SelectedStorageClass,
+		arg.ExecutionOptions,
+		arg.ID,
+		arg.EventID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const claimBatchApprovalEventProcessing = `-- name: ClaimBatchApprovalEventProcessing :execrows
+UPDATE domain_events AS event
+SET status = 'PROCESSING'
+FROM tickets AS parent
+WHERE event.id = $1
+  AND parent.id = $2
+  AND parent.event_id = event.id
+  AND parent.parent_ticket_id IS NULL
+  AND NULLIF(BTRIM(parent.requester), '') IS NOT NULL
+  AND event.aggregate_type = 'batch'
+  AND event.aggregate_id = parent.id
+  AND event.status = 'PENDING'
+  AND event.created_by = parent.requester
+  AND (
+      (parent.operation_type = 'CREATE' AND event.event_type = 'BATCH_CREATE_REQUESTED')
+      OR (parent.operation_type = 'MODIFY' AND event.event_type = 'BATCH_MODIFY_REQUESTED')
+      OR (parent.operation_type = 'DELETE' AND event.event_type = 'BATCH_DELETE_REQUESTED')
+      OR (parent.operation_type = 'POWER' AND event.event_type = 'BATCH_POWER_REQUESTED')
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM batch_tickets AS batch
+      WHERE batch.id = parent.id
+        AND batch.created_by = parent.requester
+        AND batch.status = 'PENDING_APPROVAL'
+        AND batch.batch_type::text = CASE parent.operation_type::text
+            WHEN 'CREATE' THEN 'BATCH_CREATE'
+            WHEN 'MODIFY' THEN 'BATCH_MODIFY'
+            WHEN 'DELETE' THEN 'BATCH_DELETE'
+            WHEN 'POWER' THEN 'BATCH_POWER'
+        END
+  )
+`
+
+type ClaimBatchApprovalEventProcessingParams struct {
+	EventID  string `db:"event_id" json:"event_id"`
+	ParentID string `db:"parent_id" json:"parent_id"`
+}
+
+func (q *Queries) ClaimBatchApprovalEventProcessing(ctx context.Context, arg ClaimBatchApprovalEventProcessingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimBatchApprovalEventProcessing, arg.EventID, arg.ParentID)
 	if err != nil {
 		return 0, err
 	}
@@ -400,14 +550,447 @@ func (q *Queries) InsertVM(ctx context.Context, arg InsertVMParams) error {
 	return err
 }
 
-const resetDomainEventForRetry = `-- name: ResetDomainEventForRetry :execrows
-UPDATE domain_events
-SET status = 'PENDING'
-WHERE id = $1 AND status IN ('FAILED', 'CANCELLED')
+const refreshBatchApprovalProjectionForDispatch = `-- name: RefreshBatchApprovalProjectionForDispatch :execrows
+WITH parent_identity AS (
+    SELECT parent.id, parent.operation_type, parent.requester
+    FROM tickets AS parent
+    JOIN domain_events AS event ON event.id = parent.event_id
+    WHERE parent.id = $1
+      AND parent.parent_ticket_id IS NULL
+      AND parent.operation_type IN ('CREATE', 'MODIFY', 'DELETE', 'POWER')
+      AND parent.status = 'EXECUTING'
+      AND NULLIF(BTRIM(parent.requester), '') IS NOT NULL
+      AND event.aggregate_type = 'batch'
+      AND event.aggregate_id = parent.id
+      AND event.created_by = parent.requester
+      AND event.status = 'PROCESSING'
+      AND (
+          (parent.operation_type = 'CREATE' AND event.event_type = 'BATCH_CREATE_REQUESTED')
+          OR (parent.operation_type = 'MODIFY' AND event.event_type = 'BATCH_MODIFY_REQUESTED')
+          OR (parent.operation_type = 'DELETE' AND event.event_type = 'BATCH_DELETE_REQUESTED')
+          OR (parent.operation_type = 'POWER' AND event.event_type = 'BATCH_POWER_REQUESTED')
+      )
+),
+child_counts AS (
+    SELECT
+        parent.id AS parent_id,
+        COUNT(*)::integer AS child_count,
+        COUNT(*) FILTER (WHERE status = 'SUCCESS')::integer AS success_count,
+        COUNT(*) FILTER (WHERE status IN ('FAILED', 'REJECTED'))::integer AS failed_count,
+        COUNT(*) FILTER (
+            WHERE status NOT IN ('SUCCESS', 'FAILED', 'REJECTED', 'CANCELLED')
+        )::integer AS pending_count
+    FROM parent_identity AS parent
+    JOIN tickets AS child ON child.parent_ticket_id = parent.id
+    GROUP BY parent.id
+)
+UPDATE batch_tickets AS batch
+SET
+    child_count = child_counts.child_count,
+    success_count = child_counts.success_count,
+    failed_count = child_counts.failed_count,
+    pending_count = child_counts.pending_count,
+    status = 'IN_PROGRESS',
+    updated_at = NOW()
+FROM child_counts
+JOIN parent_identity AS parent ON parent.id = child_counts.parent_id
+WHERE batch.id = parent.id
+  AND batch.created_by = parent.requester
+  AND batch.status IN ('PENDING_APPROVAL', 'IN_PROGRESS', 'FAILED', 'PARTIAL_SUCCESS')
+  AND batch.batch_type::text = CASE parent.operation_type::text
+      WHEN 'CREATE' THEN 'BATCH_CREATE'
+      WHEN 'MODIFY' THEN 'BATCH_MODIFY'
+      WHEN 'DELETE' THEN 'BATCH_DELETE'
+      WHEN 'POWER' THEN 'BATCH_POWER'
+  END
+  AND child_counts.child_count > 0
 `
 
-func (q *Queries) ResetDomainEventForRetry(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, resetDomainEventForRetry, id)
+func (q *Queries) RefreshBatchApprovalProjectionForDispatch(ctx context.Context, parentID string) (int64, error) {
+	result, err := q.db.Exec(ctx, refreshBatchApprovalProjectionForDispatch, parentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const refreshBatchPowerProjectionForRetry = `-- name: RefreshBatchPowerProjectionForRetry :execrows
+WITH parent_identity AS (
+    SELECT parent.id, parent.requester
+    FROM tickets AS parent
+    JOIN domain_events AS event ON event.id = parent.event_id
+    WHERE parent.id = $1
+      AND parent.parent_ticket_id IS NULL
+      AND parent.operation_type = 'POWER'
+      AND parent.status = 'EXECUTING'
+      AND NULLIF(BTRIM(parent.requester), '') IS NOT NULL
+      AND event.aggregate_type = 'batch'
+      AND event.aggregate_id = parent.id
+      AND event.event_type = 'BATCH_POWER_REQUESTED'
+      AND event.status = 'PROCESSING'
+      AND event.created_by = parent.requester
+),
+child_counts AS (
+    SELECT
+        parent.id AS parent_id,
+        COUNT(*)::integer AS child_count,
+        COUNT(*) FILTER (WHERE child.status = 'SUCCESS')::integer AS success_count,
+        COUNT(*) FILTER (WHERE child.status IN ('FAILED', 'REJECTED'))::integer AS failed_count,
+        COUNT(*) FILTER (
+            WHERE child.status NOT IN ('SUCCESS', 'FAILED', 'REJECTED', 'CANCELLED')
+        )::integer AS pending_count
+    FROM parent_identity AS parent
+    JOIN tickets AS child ON child.parent_ticket_id = parent.id
+    GROUP BY parent.id
+)
+UPDATE batch_tickets AS batch
+SET
+    child_count = child_counts.child_count,
+    success_count = child_counts.success_count,
+    failed_count = child_counts.failed_count,
+    pending_count = child_counts.pending_count,
+    status = 'IN_PROGRESS',
+    updated_at = NOW()
+FROM child_counts
+JOIN parent_identity AS parent ON parent.id = child_counts.parent_id
+WHERE batch.id = parent.id
+  AND batch.batch_type = 'BATCH_POWER'
+  AND batch.created_by = parent.requester
+  AND batch.status IN ('IN_PROGRESS', 'FAILED', 'PARTIAL_SUCCESS')
+  AND child_counts.child_count > 0
+`
+
+func (q *Queries) RefreshBatchPowerProjectionForRetry(ctx context.Context, parentID string) (int64, error) {
+	result, err := q.db.Exec(ctx, refreshBatchPowerProjectionForRetry, parentID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reopenBatchApprovalDispatch = `-- name: ReopenBatchApprovalDispatch :execrows
+UPDATE tickets AS parent
+SET
+    status = 'EXECUTING',
+    approver = $1,
+    selected_cluster_id = $2,
+    selected_storage_class = $3,
+    modified_spec = COALESCE(modified_spec, '{}'::jsonb) ||
+        jsonb_build_object('batch_approval_execution', $4::jsonb),
+    reject_reason = NULL,
+    updated_at = NOW()
+WHERE parent.id = $5
+  AND parent.event_id = $6
+  AND parent.parent_ticket_id IS NULL
+  AND parent.operation_type IN ('CREATE', 'MODIFY', 'DELETE')
+  AND parent.status IN ('EXECUTING', 'FAILED')
+  AND NULLIF(BTRIM(parent.approver), '') IS NOT NULL
+  AND NULLIF(BTRIM(parent.requester), '') IS NOT NULL
+  AND EXISTS (
+      SELECT 1
+      FROM domain_events AS event
+      WHERE event.id = $6
+        AND event.aggregate_type = 'batch'
+        AND event.aggregate_id = $5
+        AND event.status IN ('PROCESSING', 'FAILED')
+        AND event.created_by = parent.requester
+        AND (
+            (parent.operation_type = 'CREATE' AND event.event_type = 'BATCH_CREATE_REQUESTED')
+            OR (parent.operation_type = 'MODIFY' AND event.event_type = 'BATCH_MODIFY_REQUESTED')
+            OR (parent.operation_type = 'DELETE' AND event.event_type = 'BATCH_DELETE_REQUESTED')
+        )
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM batch_tickets AS batch
+      WHERE batch.id = parent.id
+        AND batch.created_by = parent.requester
+        AND (
+            (parent.status = 'EXECUTING' AND batch.status = 'IN_PROGRESS')
+            OR (parent.status = 'FAILED' AND batch.status IN ('FAILED', 'PARTIAL_SUCCESS'))
+        )
+        AND batch.batch_type::text = CASE parent.operation_type::text
+            WHEN 'CREATE' THEN 'BATCH_CREATE'
+            WHEN 'MODIFY' THEN 'BATCH_MODIFY'
+            WHEN 'DELETE' THEN 'BATCH_DELETE'
+        END
+  )
+`
+
+type ReopenBatchApprovalDispatchParams struct {
+	Approver             pgtype.Text `db:"approver" json:"approver"`
+	SelectedClusterID    pgtype.Text `db:"selected_cluster_id" json:"selected_cluster_id"`
+	SelectedStorageClass pgtype.Text `db:"selected_storage_class" json:"selected_storage_class"`
+	ExecutionOptions     []byte      `db:"execution_options" json:"execution_options"`
+	ID                   string      `db:"id" json:"id"`
+	EventID              string      `db:"event_id" json:"event_id"`
+}
+
+func (q *Queries) ReopenBatchApprovalDispatch(ctx context.Context, arg ReopenBatchApprovalDispatchParams) (int64, error) {
+	result, err := q.db.Exec(ctx, reopenBatchApprovalDispatch,
+		arg.Approver,
+		arg.SelectedClusterID,
+		arg.SelectedStorageClass,
+		arg.ExecutionOptions,
+		arg.ID,
+		arg.EventID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const reopenBatchPowerParentForRetry = `-- name: ReopenBatchPowerParentForRetry :one
+WITH parent_update AS (
+    UPDATE tickets AS parent
+    SET
+        status = 'EXECUTING',
+        updated_at = NOW()
+    WHERE parent.id = $1
+      AND parent.parent_ticket_id IS NULL
+      AND parent.operation_type = 'POWER'
+      AND parent.status IN ('EXECUTING', 'FAILED')
+      AND NULLIF(BTRIM(parent.requester), '') IS NOT NULL
+      AND EXISTS (
+          SELECT 1
+          FROM domain_events AS event
+          WHERE event.id = parent.event_id
+            AND event.aggregate_type = 'batch'
+            AND event.aggregate_id = parent.id
+            AND event.event_type = 'BATCH_POWER_REQUESTED'
+            AND event.status IN ('PROCESSING', 'FAILED')
+            AND event.created_by = parent.requester
+      )
+      AND EXISTS (
+          SELECT 1
+          FROM batch_tickets AS batch
+          WHERE batch.id = parent.id
+            AND batch.batch_type = 'BATCH_POWER'
+            AND batch.created_by = parent.requester
+            AND (
+                (parent.status = 'EXECUTING' AND batch.status = 'IN_PROGRESS')
+                OR (parent.status = 'FAILED' AND batch.status IN ('FAILED', 'PARTIAL_SUCCESS'))
+            )
+      )
+    RETURNING parent.event_id, parent.requester
+),
+event_update AS (
+    UPDATE domain_events AS event
+    SET status = 'PROCESSING'
+    FROM parent_update
+    WHERE event.id = parent_update.event_id
+      AND event.aggregate_type = 'batch'
+      AND event.aggregate_id = $1
+      AND event.event_type = 'BATCH_POWER_REQUESTED'
+      AND event.status IN ('PROCESSING', 'FAILED')
+      AND event.created_by = parent_update.requester
+    RETURNING event.id
+)
+SELECT id FROM event_update
+`
+
+func (q *Queries) ReopenBatchPowerParentForRetry(ctx context.Context, parentID string) (string, error) {
+	row := q.db.QueryRow(ctx, reopenBatchPowerParentForRetry, parentID)
+	var id string
+	err := row.Scan(&id)
+	return id, err
+}
+
+const resetBatchApprovalRetryChild = `-- name: ResetBatchApprovalRetryChild :execrows
+UPDATE tickets AS child
+SET
+    status = 'PENDING',
+    reject_reason = NULL,
+    attempt_count = attempt_count + 1,
+    last_attempt_at = NOW(),
+    updated_at = NOW()
+WHERE child.id = $1
+  AND child.event_id = $2
+  AND child.parent_ticket_id = $3
+  AND child.status = 'FAILED'
+  AND child.operation_type <> 'POWER'
+  AND NULLIF(BTRIM(child.requester), '') IS NOT NULL
+  AND child.attempt_count >= 0
+  AND child.attempt_count < $4
+  AND EXISTS (
+      SELECT 1
+      FROM domain_events AS event
+      WHERE event.id = $2
+        AND event.aggregate_type = 'vm'
+        AND event.status IN ('PENDING', 'FAILED', 'CANCELLED')
+        AND event.created_by = child.requester
+        AND (
+            (child.operation_type = 'CREATE' AND event.event_type = 'VM_CREATION_REQUESTED')
+            OR (child.operation_type = 'MODIFY' AND event.event_type = 'VM_MODIFY_REQUESTED')
+            OR (child.operation_type = 'DELETE' AND event.event_type = 'VM_DELETION_REQUESTED')
+        )
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM tickets AS parent
+      JOIN domain_events AS parent_event ON parent_event.id = parent.event_id
+      JOIN batch_tickets AS batch ON batch.id = parent.id
+      WHERE parent.id = child.parent_ticket_id
+        AND parent.parent_ticket_id IS NULL
+        AND parent.operation_type = child.operation_type
+        AND parent.requester = child.requester
+        AND parent.status IN ('EXECUTING', 'FAILED')
+        AND parent_event.aggregate_type = 'batch'
+        AND parent_event.aggregate_id = parent.id
+        AND parent_event.created_by = parent.requester
+        AND parent_event.status IN ('PROCESSING', 'FAILED')
+        AND (
+            (parent.operation_type = 'CREATE' AND parent_event.event_type = 'BATCH_CREATE_REQUESTED')
+            OR (parent.operation_type = 'MODIFY' AND parent_event.event_type = 'BATCH_MODIFY_REQUESTED')
+            OR (parent.operation_type = 'DELETE' AND parent_event.event_type = 'BATCH_DELETE_REQUESTED')
+        )
+        AND batch.created_by = parent.requester
+        AND (
+            (parent.status = 'EXECUTING' AND batch.status = 'IN_PROGRESS')
+            OR (parent.status = 'FAILED' AND batch.status IN ('FAILED', 'PARTIAL_SUCCESS'))
+        )
+        AND batch.batch_type::text = CASE parent.operation_type::text
+            WHEN 'CREATE' THEN 'BATCH_CREATE'
+            WHEN 'MODIFY' THEN 'BATCH_MODIFY'
+            WHEN 'DELETE' THEN 'BATCH_DELETE'
+        END
+  )
+`
+
+type ResetBatchApprovalRetryChildParams struct {
+	ID             string      `db:"id" json:"id"`
+	EventID        string      `db:"event_id" json:"event_id"`
+	ParentTicketID pgtype.Text `db:"parent_ticket_id" json:"parent_ticket_id"`
+	MaxAttempts    int32       `db:"max_attempts" json:"max_attempts"`
+}
+
+func (q *Queries) ResetBatchApprovalRetryChild(ctx context.Context, arg ResetBatchApprovalRetryChildParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resetBatchApprovalRetryChild,
+		arg.ID,
+		arg.EventID,
+		arg.ParentTicketID,
+		arg.MaxAttempts,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resetBatchApprovalRetryEvent = `-- name: ResetBatchApprovalRetryEvent :execrows
+UPDATE domain_events AS event
+SET status = 'PENDING'
+FROM tickets AS child
+WHERE event.id = $1
+  AND child.id = $2
+  AND child.event_id = event.id
+  AND child.parent_ticket_id = $3
+  AND child.status = 'PENDING'
+  AND child.operation_type <> 'POWER'
+  AND NULLIF(BTRIM(child.requester), '') IS NOT NULL
+  AND event.aggregate_type = 'vm'
+  AND event.status IN ('PENDING', 'FAILED', 'CANCELLED')
+  AND event.created_by = child.requester
+  AND (
+      (child.operation_type = 'CREATE' AND event.event_type = 'VM_CREATION_REQUESTED')
+      OR (child.operation_type = 'MODIFY' AND event.event_type = 'VM_MODIFY_REQUESTED')
+      OR (child.operation_type = 'DELETE' AND event.event_type = 'VM_DELETION_REQUESTED')
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM tickets AS parent
+      JOIN domain_events AS parent_event ON parent_event.id = parent.event_id
+      JOIN batch_tickets AS batch ON batch.id = parent.id
+      WHERE parent.id = child.parent_ticket_id
+        AND parent.parent_ticket_id IS NULL
+        AND parent.operation_type = child.operation_type
+        AND parent.requester = child.requester
+        AND parent.status IN ('EXECUTING', 'FAILED')
+        AND parent_event.aggregate_type = 'batch'
+        AND parent_event.aggregate_id = parent.id
+        AND parent_event.created_by = parent.requester
+        AND parent_event.status IN ('PROCESSING', 'FAILED')
+        AND (
+            (parent.operation_type = 'CREATE' AND parent_event.event_type = 'BATCH_CREATE_REQUESTED')
+            OR (parent.operation_type = 'MODIFY' AND parent_event.event_type = 'BATCH_MODIFY_REQUESTED')
+            OR (parent.operation_type = 'DELETE' AND parent_event.event_type = 'BATCH_DELETE_REQUESTED')
+        )
+        AND batch.created_by = parent.requester
+        AND (
+            (parent.status = 'EXECUTING' AND batch.status = 'IN_PROGRESS')
+            OR (parent.status = 'FAILED' AND batch.status IN ('FAILED', 'PARTIAL_SUCCESS'))
+        )
+        AND batch.batch_type::text = CASE parent.operation_type::text
+            WHEN 'CREATE' THEN 'BATCH_CREATE'
+            WHEN 'MODIFY' THEN 'BATCH_MODIFY'
+            WHEN 'DELETE' THEN 'BATCH_DELETE'
+        END
+  )
+`
+
+type ResetBatchApprovalRetryEventParams struct {
+	EventID        string      `db:"event_id" json:"event_id"`
+	TicketID       string      `db:"ticket_id" json:"ticket_id"`
+	ParentTicketID pgtype.Text `db:"parent_ticket_id" json:"parent_ticket_id"`
+}
+
+func (q *Queries) ResetBatchApprovalRetryEvent(ctx context.Context, arg ResetBatchApprovalRetryEventParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resetBatchApprovalRetryEvent, arg.EventID, arg.TicketID, arg.ParentTicketID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const resetBatchPowerRetryEvent = `-- name: ResetBatchPowerRetryEvent :execrows
+UPDATE domain_events AS event
+SET status = 'PENDING'
+FROM tickets AS child
+WHERE event.id = $1
+  AND child.id = $2
+  AND child.event_id = event.id
+  AND child.parent_ticket_id = $3
+  AND child.operation_type = 'POWER'
+  AND child.status = 'EXECUTING'
+  AND NULLIF(BTRIM(child.requester), '') IS NOT NULL
+  AND event.aggregate_type = 'vm'
+  AND NULLIF(BTRIM(event.aggregate_id), '') IS NOT NULL
+  AND event.event_type IN ('VM_START_REQUESTED', 'VM_STOP_REQUESTED', 'VM_RESTART_REQUESTED')
+  AND event.status IN ('FAILED', 'CANCELLED')
+  AND event.created_by = child.requester
+  AND EXISTS (
+      SELECT 1
+      FROM tickets AS parent
+      JOIN domain_events AS parent_event ON parent_event.id = parent.event_id
+      JOIN batch_tickets AS batch ON batch.id = parent.id
+      WHERE parent.id = child.parent_ticket_id
+        AND parent.parent_ticket_id IS NULL
+        AND parent.operation_type = 'POWER'
+        AND parent.requester = child.requester
+        AND parent.status IN ('EXECUTING', 'FAILED')
+        AND parent_event.aggregate_type = 'batch'
+        AND parent_event.aggregate_id = parent.id
+        AND parent_event.event_type = 'BATCH_POWER_REQUESTED'
+        AND parent_event.status IN ('PROCESSING', 'FAILED')
+        AND parent_event.created_by = parent.requester
+        AND batch.batch_type = 'BATCH_POWER'
+        AND batch.created_by = parent.requester
+        AND (
+            (parent.status = 'EXECUTING' AND batch.status = 'IN_PROGRESS')
+            OR (parent.status = 'FAILED' AND batch.status IN ('FAILED', 'PARTIAL_SUCCESS'))
+        )
+  )
+`
+
+type ResetBatchPowerRetryEventParams struct {
+	EventID        string      `db:"event_id" json:"event_id"`
+	TicketID       string      `db:"ticket_id" json:"ticket_id"`
+	ParentTicketID pgtype.Text `db:"parent_ticket_id" json:"parent_ticket_id"`
+}
+
+func (q *Queries) ResetBatchPowerRetryEvent(ctx context.Context, arg ResetBatchPowerRetryEventParams) (int64, error) {
+	result, err := q.db.Exec(ctx, resetBatchPowerRetryEvent, arg.EventID, arg.TicketID, arg.ParentTicketID)
 	if err != nil {
 		return 0, err
 	}
@@ -415,27 +998,114 @@ func (q *Queries) ResetDomainEventForRetry(ctx context.Context, id string) (int6
 }
 
 const resetPowerRetryTicket = `-- name: ResetPowerRetryTicket :execrows
-UPDATE tickets
+UPDATE tickets AS child
 SET
     status = 'EXECUTING',
     reject_reason = NULL,
+    attempt_count = attempt_count + 1,
+    last_attempt_at = NOW(),
     updated_at = NOW()
-WHERE
-    id = $1
-    AND event_id = $2
-    AND parent_ticket_id = $3
-    AND status IN ('FAILED', 'REJECTED')
-    AND operation_type = 'POWER'
+WHERE child.id = $1
+  AND child.event_id = $2
+  AND child.parent_ticket_id = $3
+  AND child.status = 'FAILED'
+  AND child.operation_type = 'POWER'
+  AND NULLIF(BTRIM(child.requester), '') IS NOT NULL
+  AND child.attempt_count >= 0
+  AND child.attempt_count < $4
+  AND EXISTS (
+      SELECT 1
+      FROM domain_events AS event
+      WHERE event.id = child.event_id
+        AND event.aggregate_type = 'vm'
+        AND NULLIF(BTRIM(event.aggregate_id), '') IS NOT NULL
+        AND event.event_type IN ('VM_START_REQUESTED', 'VM_STOP_REQUESTED', 'VM_RESTART_REQUESTED')
+        AND event.status IN ('FAILED', 'CANCELLED')
+        AND event.created_by = child.requester
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM tickets AS parent
+      JOIN domain_events AS parent_event ON parent_event.id = parent.event_id
+      JOIN batch_tickets AS batch ON batch.id = parent.id
+      WHERE parent.id = child.parent_ticket_id
+        AND parent.parent_ticket_id IS NULL
+        AND parent.operation_type = 'POWER'
+        AND parent.requester = child.requester
+        AND parent.status IN ('EXECUTING', 'FAILED')
+        AND parent_event.aggregate_type = 'batch'
+        AND parent_event.aggregate_id = parent.id
+        AND parent_event.event_type = 'BATCH_POWER_REQUESTED'
+        AND parent_event.status IN ('PROCESSING', 'FAILED')
+        AND parent_event.created_by = parent.requester
+        AND batch.batch_type = 'BATCH_POWER'
+        AND batch.created_by = parent.requester
+        AND (
+            (parent.status = 'EXECUTING' AND batch.status = 'IN_PROGRESS')
+            OR (parent.status = 'FAILED' AND batch.status IN ('FAILED', 'PARTIAL_SUCCESS'))
+        )
+  )
 `
 
 type ResetPowerRetryTicketParams struct {
 	ID             string      `db:"id" json:"id"`
 	EventID        string      `db:"event_id" json:"event_id"`
 	ParentTicketID pgtype.Text `db:"parent_ticket_id" json:"parent_ticket_id"`
+	MaxAttempts    int32       `db:"max_attempts" json:"max_attempts"`
 }
 
 func (q *Queries) ResetPowerRetryTicket(ctx context.Context, arg ResetPowerRetryTicketParams) (int64, error) {
-	result, err := q.db.Exec(ctx, resetPowerRetryTicket, arg.ID, arg.EventID, arg.ParentTicketID)
+	result, err := q.db.Exec(ctx, resetPowerRetryTicket,
+		arg.ID,
+		arg.EventID,
+		arg.ParentTicketID,
+		arg.MaxAttempts,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const setBatchApprovalEventProcessing = `-- name: SetBatchApprovalEventProcessing :execrows
+UPDATE domain_events AS event
+SET status = 'PROCESSING'
+FROM tickets AS parent
+WHERE event.id = $1
+  AND parent.id = $2
+  AND parent.event_id = event.id
+  AND parent.parent_ticket_id IS NULL
+  AND NULLIF(BTRIM(parent.requester), '') IS NOT NULL
+  AND event.aggregate_type = 'batch'
+  AND event.aggregate_id = parent.id
+  AND event.status IN ('PROCESSING', 'FAILED')
+  AND event.created_by = parent.requester
+  AND (
+      (parent.operation_type = 'CREATE' AND event.event_type = 'BATCH_CREATE_REQUESTED')
+      OR (parent.operation_type = 'MODIFY' AND event.event_type = 'BATCH_MODIFY_REQUESTED')
+      OR (parent.operation_type = 'DELETE' AND event.event_type = 'BATCH_DELETE_REQUESTED')
+  )
+  AND EXISTS (
+      SELECT 1
+      FROM batch_tickets AS batch
+      WHERE batch.id = parent.id
+        AND batch.created_by = parent.requester
+        AND batch.status IN ('IN_PROGRESS', 'FAILED', 'PARTIAL_SUCCESS')
+        AND batch.batch_type::text = CASE parent.operation_type::text
+            WHEN 'CREATE' THEN 'BATCH_CREATE'
+            WHEN 'MODIFY' THEN 'BATCH_MODIFY'
+            WHEN 'DELETE' THEN 'BATCH_DELETE'
+        END
+  )
+`
+
+type SetBatchApprovalEventProcessingParams struct {
+	EventID  string `db:"event_id" json:"event_id"`
+	ParentID string `db:"parent_id" json:"parent_id"`
+}
+
+func (q *Queries) SetBatchApprovalEventProcessing(ctx context.Context, arg SetBatchApprovalEventProcessingParams) (int64, error) {
+	result, err := q.db.Exec(ctx, setBatchApprovalEventProcessing, arg.EventID, arg.ParentID)
 	if err != nil {
 		return 0, err
 	}
@@ -476,6 +1146,33 @@ type SetVMStatusParams struct {
 
 func (q *Queries) SetVMStatus(ctx context.Context, arg SetVMStatusParams) (int64, error) {
 	result, err := q.db.Exec(ctx, setVMStatus, arg.ID, arg.Status)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const startInitialBatchChildAttempt = `-- name: StartInitialBatchChildAttempt :execrows
+UPDATE tickets
+SET
+    attempt_count = 1,
+    last_attempt_at = NOW(),
+    updated_at = NOW()
+WHERE
+    id = $1
+    AND event_id = $2
+    AND parent_ticket_id = $3
+    AND attempt_count = 0
+`
+
+type StartInitialBatchChildAttemptParams struct {
+	ID             string      `db:"id" json:"id"`
+	EventID        string      `db:"event_id" json:"event_id"`
+	ParentTicketID pgtype.Text `db:"parent_ticket_id" json:"parent_ticket_id"`
+}
+
+func (q *Queries) StartInitialBatchChildAttempt(ctx context.Context, arg StartInitialBatchChildAttemptParams) (int64, error) {
+	result, err := q.db.Exec(ctx, startInitialBatchChildAttempt, arg.ID, arg.EventID, arg.ParentTicketID)
 	if err != nil {
 		return 0, err
 	}

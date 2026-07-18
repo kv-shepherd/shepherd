@@ -69,8 +69,18 @@ implementation drift. Use this order instead:
 3. If the decision itself must change, create a new ADR that amends or
    supersedes the old one.
 
-The current code-vs-design audit found no need for a new ADR. See
-[CURRENT_STATE.md §ADR Assessment](./CURRENT_STATE.md#adr-assessment).
+The current code-vs-design audit identifies two accepted-ADR contract debts:
+
+- ADR-0015 batch item limits differ from the public `100`-item contract.
+- ADR-0017, together with ADR-0015's approval-time decision, requires a final
+  template version (`selected_template_version`), while the current approval
+  contract persists only the effective snapshot.
+
+Each debt requires a dedicated issue and a new accepted ADR/amendment before
+the current behavior can be claimed as aligned. See
+[CURRENT_STATE.md §ADR Assessment](./CURRENT_STATE.md#adr-assessment),
+[04-governance.md §Admin Modification](./phases/04-governance.md#admin-modification),
+and [04-governance.md §5.6](./phases/04-governance.md#56-batch-operations-adr-0015-19).
 
 ## Project Structure
 

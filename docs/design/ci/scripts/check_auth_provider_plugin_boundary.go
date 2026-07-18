@@ -402,14 +402,22 @@ func main() {
 		},
 		{
 			path: "internal/api/handlers/server_vm_batch.go",
+			// The HTTP boundary may accept provider-neutral execution options, but
+			// retry ownership belongs to the usecase writer: it must revalidate and
+			// persist the parent, children, execution plan, and River job atomically.
+			// The handler must not reconstruct an approval decision on its own.
 			required: []string{
 				`"kv-shepherd.io/shepherd/internal/provider/approvalcontract"`,
 				"&approvalcontract.ApprovalRequest{",
-				"approvalcontract.ApprovalDecision{",
-				"approvalcontract.ApprovalExecutionOptions{",
+				"retryExecution := approvalcontract.ApprovalExecutionOptions{}",
+				"execution = domain.BatchApprovalExecutionOptions{",
+				"atomicWriter := usecase.NewApprovalAtomicWriter(s.pool, s.riverClient)",
+				"retryErr := atomicWriter.RetryBatchApprovalAndEnqueue(ctx, domain.BatchApprovalRetryInput{",
+				"Execution:      execution,",
 			},
 			forbiddenText: []string{
 				`"kv-shepherd.io/shepherd/internal/provider"`,
+				"approvalcontract.ApprovalDecision{",
 				"provider.ApprovalRequest",
 				"provider.ApprovalDecision",
 				"provider.ApprovalExecutionOptions",
@@ -784,12 +792,12 @@ func main() {
 			path: "internal/api/handlers/server.go",
 			required: []string{
 				`"kv-shepherd.io/shepherd/internal/provider/configcodec"`,
-				"authProviderConfig   *configcodec.AuthProviderConfigCodec",
-				"authProviderConfig:   configcodec.NewAuthProviderConfigCodec(deps.EncryptionKey),",
+				"*configcodec.AuthProviderConfigCodec",
+				"configcodec.NewAuthProviderConfigCodec(deps.EncryptionKey)",
 			},
 			forbiddenText: []string{
 				`"kv-shepherd.io/shepherd/internal/provider"`,
-				"authProviderConfig   *provider.AuthProviderConfigCodec",
+				"*provider.AuthProviderConfigCodec",
 				"provider.NewAuthProviderConfigCodec(",
 			},
 		},

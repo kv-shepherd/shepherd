@@ -1,7 +1,7 @@
 # Dependency Version Definitions
 
 > **Purpose**: Authoritative dependency and toolchain version reference.
-> **Last audited**: 2026-06-29.
+> **Last audited**: 2026-07-18.
 > **Primary sources**: `go.mod`, `Makefile`, `build/api.mk`, `web/package.json`,
 > `api/openapi.yaml`.
 
@@ -12,10 +12,10 @@ versions.
 
 | Item | Version | Source |
 |------|---------|--------|
-| Go toolchain | `1.25.11` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION`, `Dockerfile`, `deploy/prod/deploy-prod.sh` |
+| Go toolchain | `1.25.12` | `go.mod`, `Makefile` `GO_TOOLCHAIN_VERSION`, `Dockerfile`, `deploy/prod/deploy-prod.sh` |
 
 ADR-0028 requires Go support for `omitzero`; CI currently standardizes on Go
-`1.25.11`.
+`1.25.12`.
 
 ## Core Dependencies
 
@@ -225,7 +225,7 @@ runtime-sensitive dependency families that must stay aligned:
 ```go
 module kv-shepherd.io/shepherd
 
-go 1.25.11
+go 1.25.12
 
 require (
     entgo.io/ent v0.14.6

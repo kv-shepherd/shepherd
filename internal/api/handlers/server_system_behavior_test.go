@@ -761,6 +761,253 @@ func TestSystemHandler_DeleteSystem_Success(t *testing.T) {
 	if _, err := client.System.Get(t.Context(), sys.ID); !ent.IsNotFound(err) {
 		t.Fatalf("system still exists after delete, err=%v", err)
 	}
+	bindingCount, err := client.ResourceRoleBinding.Query().
+		Where(
+			rrb.ResourceTypeEQ("system"),
+			rrb.ResourceIDEQ(sys.ID),
+		).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count system bindings after delete: %v", err)
+	}
+	if bindingCount != 0 {
+		t.Fatalf("system bindings after delete = %d, want 0", bindingCount)
+	}
+}
+
+func TestSystemHandler_DeleteSystemWinsBeforeMemberAddWithoutOrphan(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	systemRow := mustCreateSystem(t, client, "sys-delete-member-race", "delrace", "owner-1")
+	mustCreateSystemBinding(t, client, "owner-1", systemRow.ID, "owner")
+	if _, err := client.User.Create().
+		SetID("member-delete-race").
+		SetUsername("member.delete.race").
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create member target: %v", err)
+	}
+
+	deleteContext, deleteResponse := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/systems/"+systemRow.ID+"?confirm_name="+systemRow.Name,
+		"",
+		"owner-1",
+		[]string{"system:delete"},
+	)
+	addContext, addResponse := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/systems/"+systemRow.ID+"/members",
+		`{"user_id":"member-delete-race","role":"viewer"}`,
+		"owner-1",
+		[]string{"rbac:manage", "platform:admin"},
+	)
+
+	releaseGuard, blockerPID := holdSystemMembershipGuard(t, srv.pool, systemRow.ID)
+	deleteDone := runHandlerAsync(func() {
+		srv.DeleteSystem(deleteContext, systemRow.ID, generated.DeleteSystemParams{ConfirmName: systemRow.Name})
+	})
+	waitForBlockedAdvisoryCalls(t, srv.pool, blockerPID, 1)
+	addDone := runHandlerAsync(func() {
+		srv.AddSystemMember(addContext, systemRow.ID)
+	})
+	waitForBlockedAdvisoryCalls(t, srv.pool, blockerPID, 2)
+	releaseGuard()
+	waitForHandlerCompletion(t, deleteDone, "delete system before member add")
+	waitForHandlerCompletion(t, addDone, "member add after system delete")
+
+	if deleteContext.Writer.Status() != http.StatusNoContent {
+		t.Fatalf("delete status = %d, want %d body=%s", deleteContext.Writer.Status(), http.StatusNoContent, deleteResponse.Body.String())
+	}
+	if addResponse.Code != http.StatusNotFound {
+		t.Fatalf("member add status = %d, want %d body=%s", addResponse.Code, http.StatusNotFound, addResponse.Body.String())
+	}
+	assertErrorCode(t, addResponse.Body.Bytes(), "SYSTEM_NOT_FOUND")
+	if _, err := client.System.Get(t.Context(), systemRow.ID); !ent.IsNotFound(err) {
+		t.Fatalf("system lookup error = %v, want not found", err)
+	}
+	bindingCount, err := client.ResourceRoleBinding.Query().
+		Where(
+			rrb.ResourceTypeEQ("system"),
+			rrb.ResourceIDEQ(systemRow.ID),
+		).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count bindings after delete/add race: %v", err)
+	}
+	if bindingCount != 0 {
+		t.Fatalf("bindings after delete/add race = %d, want 0", bindingCount)
+	}
+}
+
+func TestSystemHandler_DeleteSystemRechecksActorRoleAfterConcurrentRemoval(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	systemRow := mustCreateSystem(t, client, "sys-delete-auth-race", "authrace", "owner-1")
+	mustCreateSystemBinding(t, client, "owner-1", systemRow.ID, "owner")
+	mustCreateSystemBinding(t, client, "owner-2", systemRow.ID, "owner")
+
+	removeContext, removeResponse := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/systems/"+systemRow.ID+"/members/owner-1",
+		"",
+		"platform-admin",
+		[]string{"rbac:manage", "platform:admin"},
+	)
+	deleteContext, deleteResponse := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/systems/"+systemRow.ID+"?confirm_name="+systemRow.Name,
+		"",
+		"owner-1",
+		[]string{"system:delete"},
+	)
+
+	releaseGuard, blockerPID := holdSystemMembershipGuard(t, srv.pool, systemRow.ID)
+	removeDone := runHandlerAsync(func() {
+		srv.DeleteSystemMember(removeContext, systemRow.ID, "owner-1")
+	})
+	waitForBlockedAdvisoryCalls(t, srv.pool, blockerPID, 1)
+	deleteDone := runHandlerAsync(func() {
+		srv.DeleteSystem(deleteContext, systemRow.ID, generated.DeleteSystemParams{ConfirmName: systemRow.Name})
+	})
+	waitForBlockedAdvisoryCalls(t, srv.pool, blockerPID, 2)
+	releaseGuard()
+	waitForHandlerCompletion(t, removeDone, "remove deleting actor membership")
+	waitForHandlerCompletion(t, deleteDone, "delete system after actor removal")
+
+	if removeContext.Writer.Status() != http.StatusNoContent {
+		t.Fatalf("member removal status = %d, want %d body=%s", removeContext.Writer.Status(), http.StatusNoContent, removeResponse.Body.String())
+	}
+	if deleteResponse.Code != http.StatusForbidden {
+		t.Fatalf("system delete status = %d, want %d body=%s", deleteResponse.Code, http.StatusForbidden, deleteResponse.Body.String())
+	}
+	assertErrorCode(t, deleteResponse.Body.Bytes(), "FORBIDDEN")
+	if _, err := client.System.Get(t.Context(), systemRow.ID); err != nil {
+		t.Fatalf("system should remain after actor permission loss: %v", err)
+	}
+	actorBindingExists, err := client.ResourceRoleBinding.Query().
+		Where(
+			rrb.ResourceTypeEQ("system"),
+			rrb.ResourceIDEQ(systemRow.ID),
+			rrb.UserIDEQ("owner-1"),
+		).
+		Exist(t.Context())
+	if err != nil {
+		t.Fatalf("check removed actor binding: %v", err)
+	}
+	if actorBindingExists {
+		t.Fatal("removed actor binding still exists")
+	}
+}
+
+func TestSystemHandler_DeleteSystemBeforeOwnerUserDeleteAllowsBothDeletes(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	if _, err := client.User.Create().
+		SetID("owner-delete-race").
+		SetUsername("owner.delete.race").
+		SetEnabled(true).
+		Save(t.Context()); err != nil {
+		t.Fatalf("create owner user: %v", err)
+	}
+	systemRow := mustCreateSystem(t, client, "sys-delete-owner-race", "ownerrace", "owner-delete-race")
+	mustCreateSystemBinding(t, client, "owner-delete-race", systemRow.ID, "owner")
+	mustCreateSystemBinding(t, client, "owner-remaining", systemRow.ID, "owner")
+
+	deleteSystemContext, deleteSystemResponse := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/systems/"+systemRow.ID+"?confirm_name="+systemRow.Name,
+		"",
+		"owner-delete-race",
+		[]string{"system:delete"},
+	)
+	deleteUserContext, deleteUserResponse := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/users/owner-delete-race",
+		"",
+		"platform-admin",
+		[]string{"user:manage", "platform:admin"},
+	)
+
+	releaseGuard, blockerPID := holdSystemMembershipGuard(t, srv.pool, systemRow.ID)
+	deleteSystemDone := runHandlerAsync(func() {
+		srv.DeleteSystem(deleteSystemContext, systemRow.ID, generated.DeleteSystemParams{ConfirmName: systemRow.Name})
+	})
+	waitForBlockedAdvisoryCalls(t, srv.pool, blockerPID, 1)
+	deleteUserDone := runHandlerAsync(func() {
+		srv.DeleteUser(deleteUserContext, "owner-delete-race")
+	})
+	waitForBlockedAdvisoryCalls(t, srv.pool, blockerPID, 2)
+	releaseGuard()
+	waitForHandlerCompletion(t, deleteSystemDone, "delete system before owner user")
+	waitForHandlerCompletion(t, deleteUserDone, "delete owner user after system")
+
+	if deleteSystemContext.Writer.Status() != http.StatusNoContent {
+		t.Fatalf("system delete status = %d, want %d body=%s", deleteSystemContext.Writer.Status(), http.StatusNoContent, deleteSystemResponse.Body.String())
+	}
+	if deleteUserContext.Writer.Status() != http.StatusNoContent {
+		t.Fatalf("user delete status = %d, want %d body=%s", deleteUserContext.Writer.Status(), http.StatusNoContent, deleteUserResponse.Body.String())
+	}
+	if _, err := client.System.Get(t.Context(), systemRow.ID); !ent.IsNotFound(err) {
+		t.Fatalf("system lookup error = %v, want not found", err)
+	}
+	if _, err := client.User.Get(t.Context(), "owner-delete-race"); !ent.IsNotFound(err) {
+		t.Fatalf("owner user lookup error = %v, want not found", err)
+	}
+}
+
+func TestSystemHandler_DeleteSystemRollsBackBindingCleanupOnDeleteFailure(t *testing.T) {
+	srv, client := newSystemBehaviorTestServer(t)
+	systemRow := mustCreateSystem(t, client, "sys-delete-rollback", "rollback", "owner-1")
+	mustCreateSystemBinding(t, client, "owner-1", systemRow.ID, "owner")
+
+	if _, err := srv.pool.Exec(t.Context(), `
+CREATE OR REPLACE FUNCTION fail_system_delete_for_test()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'forced system delete failure';
+END;
+$$;
+CREATE TRIGGER fail_system_delete_for_test
+BEFORE DELETE ON systems
+FOR EACH ROW
+EXECUTE FUNCTION fail_system_delete_for_test();
+`); err != nil {
+		t.Fatalf("install system delete failure trigger: %v", err)
+	}
+
+	deleteContext, deleteResponse := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/systems/"+systemRow.ID+"?confirm_name="+systemRow.Name,
+		"",
+		"owner-1",
+		[]string{"system:delete"},
+	)
+	srv.DeleteSystem(deleteContext, systemRow.ID, generated.DeleteSystemParams{ConfirmName: systemRow.Name})
+	if deleteResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("delete status = %d, want %d body=%s", deleteResponse.Code, http.StatusInternalServerError, deleteResponse.Body.String())
+	}
+	if _, err := client.System.Get(t.Context(), systemRow.ID); err != nil {
+		t.Fatalf("system should remain after rollback: %v", err)
+	}
+	bindingCount, err := client.ResourceRoleBinding.Query().
+		Where(
+			rrb.ResourceTypeEQ("system"),
+			rrb.ResourceIDEQ(systemRow.ID),
+		).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count bindings after rollback: %v", err)
+	}
+	if bindingCount != 1 {
+		t.Fatalf("bindings after rollback = %d, want 1", bindingCount)
+	}
 }
 
 func TestSystemHandler_DeleteService_RequiresConfirmTrue(t *testing.T) {
@@ -895,8 +1142,8 @@ func newSystemBehaviorTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 
 	gin.SetMode(gin.TestMode)
-	client := testutil.OpenEntPostgres(t, "system_handler_behavior")
-	return NewServer(ServerDeps{EntClient: client}), client
+	client, pool := testutil.OpenEntPostgresWithPool(t, "system_handler_behavior")
+	return NewServer(ServerDeps{EntClient: client, Pool: pool}), client
 }
 
 func newAuthedGinContext(

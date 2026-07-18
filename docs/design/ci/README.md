@@ -142,11 +142,11 @@ The following directories are exempt from the `nakedgoroutine` analyzer in `shep
 >
 > **River Bypass Detection (ADR-0006 Enforcement)**:
 >
-> The `shepherd-arch/riverbypass` analyzer scans `internal/usecase/` for direct database write operations to protected entities (VM, ApprovalTicket, Service, System, Cluster). These operations MUST be submitted as River Jobs, with actual writes performed by Workers after transaction commit.
+> The `shepherd-arch/riverbypass` analyzer scans `internal/usecase/` for direct database write operations to protected entities (VM, Ticket, Service, System, Cluster). These operations MUST be submitted as River Jobs, with actual writes performed by Workers after transaction commit.
 >
 > | Entity Type | River Required? | Rationale |
 > |-------------|-----------------|----------|
-> | VM, ApprovalTicket, Service, System, Cluster | ✅ Yes | External system coordination (K8s) |
+> | VM, Ticket, Service, System, Cluster | ✅ Yes | External system coordination (K8s) |
 > | Notification, DomainEvent, AuditLog | ❌ Exempt | Pure DB writes, transactional atomicity needed |
 >
 > Use `//nolint:river-bypass` comment to skip checks for legitimate exemptions.

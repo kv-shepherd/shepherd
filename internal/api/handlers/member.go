@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -24,6 +25,13 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+)
+
+var (
+	errLastSystemOwner                   = errors.New("system must have at least one owner")
+	errDisabledSystemMemberAdd           = errors.New("disabled users cannot be added as system members")
+	errSystemMembershipSystemUnavailable = errors.New("system is unavailable for membership mutation")
+	errSystemMembershipPermissionChanged = errors.New("system membership permission changed")
 )
 
 // ListUsers handles GET /admin/users.
@@ -224,6 +232,7 @@ func (s *Server) AddSystemMember(c *gin.Context, systemID generated.SystemID) {
 	if !ok {
 		return
 	}
+	actorIsPlatformAdmin := hasPlatformAdmin(c)
 
 	var req generated.SystemMemberCreateRequest
 	if !bindAndValidateJSON(c, &req) {
@@ -236,39 +245,80 @@ func (s *Server) AddSystemMember(c *gin.Context, systemID generated.SystemID) {
 		return
 	}
 
-	userEnt, err := s.client.User.Get(ctx, req.UserId)
+	id, _ := uuid.NewV7()
+	var (
+		userEnt *ent.User
+		member  *ent.ResourceRoleBinding
+	)
+	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if err := lockUserMutation(ctx, tx, req.UserId); err != nil {
+			return err
+		}
+		if err := lockUserRow(ctx, tx, req.UserId); err != nil {
+			return err
+		}
+		if err := lockSystemMembership(ctx, tx, systemID); err != nil {
+			return err
+		}
+
+		txClient := tx.Client()
+		var err error
+		if _, err = txClient.System.Get(ctx, systemID); err != nil {
+			if ent.IsNotFound(err) {
+				return errSystemMembershipSystemUnavailable
+			}
+			return err
+		}
+		if permissionErr := recheckSystemRoleForMutation(
+			ctx,
+			txClient,
+			actor,
+			systemID,
+			"manage_members",
+			actorIsPlatformAdmin,
+		); permissionErr != nil {
+			return permissionErr
+		}
+		userEnt, err = txClient.User.Get(ctx, req.UserId)
+		if err != nil {
+			return err
+		}
+		if !userEnt.Enabled {
+			return errDisabledSystemMemberAdd
+		}
+
+		member, err = txClient.ResourceRoleBinding.Create().
+			SetID(id.String()).
+			SetUserID(req.UserId).
+			SetResourceType("system").
+			SetResourceID(systemID).
+			SetRole(resourcerolebinding.Role(roleName)).
+			SetCreatedBy(actor).
+			Save(ctx)
+		return err
+	})
 	if err != nil {
-		if ent.IsNotFound(err) {
+		switch {
+		case errors.Is(err, errSystemMembershipPermissionChanged):
+			c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
+			return
+		case errors.Is(err, errSystemMembershipSystemUnavailable):
+			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
+			return
+		case ent.IsNotFound(err):
 			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
 			return
-		}
-		logger.Error("failed to get user for member add", zap.Error(err), zap.String("user_id", req.UserId))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if !userEnt.Enabled {
-		c.JSON(http.StatusConflict, generated.Error{
-			Code:    "USER_DISABLED",
-			Message: "disabled users cannot be added as system members",
-		})
-		return
-	}
-
-	id, _ := uuid.NewV7()
-	member, err := s.client.ResourceRoleBinding.Create().
-		SetID(id.String()).
-		SetUserID(req.UserId).
-		SetResourceType("system").
-		SetResourceID(systemID).
-		SetRole(resourcerolebinding.Role(roleName)).
-		SetCreatedBy(actor).
-		Save(ctx)
-	if err != nil {
-		if ent.IsConstraintError(err) {
+		case errors.Is(err, errDisabledSystemMemberAdd):
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "USER_DISABLED",
+				Message: errDisabledSystemMemberAdd.Error(),
+			})
+			return
+		case ent.IsConstraintError(err):
 			c.JSON(http.StatusConflict, generated.Error{Code: "MEMBER_ALREADY_EXISTS"})
 			return
 		}
-		logger.Error("failed to add system member",
+		logger.Error("failed to add system member transactionally",
 			zap.Error(err),
 			zap.String("system_id", systemID),
 			zap.String("user_id", req.UserId),
@@ -297,6 +347,7 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemID generated.Syste
 	if !ok {
 		return
 	}
+	actorIsPlatformAdmin := hasPlatformAdmin(c)
 
 	var req generated.SystemMemberRoleUpdateRequest
 	if !bindAndValidateJSON(c, &req) {
@@ -309,32 +360,34 @@ func (s *Server) UpdateSystemMemberRole(c *gin.Context, systemID generated.Syste
 		return
 	}
 
-	existing, err := s.client.ResourceRoleBinding.Query().
-		Where(
-			resourcerolebinding.UserIDEQ(userID),
-			resourcerolebinding.ResourceTypeEQ("system"),
-			resourcerolebinding.ResourceIDEQ(systemID),
-		).
-		Only(ctx)
+	existing, updated, err := updateSystemMemberRole(
+		ctx,
+		s.client,
+		systemID,
+		userID,
+		resourcerolebinding.Role(roleName),
+		actor,
+		actorIsPlatformAdmin,
+	)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		switch {
+		case errors.Is(err, errSystemMembershipPermissionChanged):
+			c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
+			return
+		case errors.Is(err, errSystemMembershipSystemUnavailable):
+			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
+			return
+		case ent.IsNotFound(err):
 			c.JSON(http.StatusNotFound, generated.Error{Code: "MEMBER_NOT_FOUND"})
 			return
+		case errors.Is(err, errDisabledSystemMemberAdd):
+			c.JSON(http.StatusConflict, generated.Error{Code: "USER_DISABLED", Message: errDisabledSystemMemberAdd.Error()})
+			return
+		case errors.Is(err, errLastSystemOwner):
+			writeLastSystemOwnerConflict(c)
+			return
 		}
-		logger.Error("failed to query member for role update",
-			zap.Error(err),
-			zap.String("system_id", systemID),
-			zap.String("user_id", userID),
-		)
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	updated, err := s.client.ResourceRoleBinding.UpdateOneID(existing.ID).
-		SetRole(resourcerolebinding.Role(roleName)).
-		Save(ctx)
-	if err != nil {
-		logger.Error("failed to update member role",
+		logger.Error("failed to update system member role transaction",
 			zap.Error(err),
 			zap.String("system_id", systemID),
 			zap.String("user_id", userID),
@@ -371,52 +424,25 @@ func (s *Server) DeleteSystemMember(c *gin.Context, systemID generated.SystemID,
 	if !ok {
 		return
 	}
+	actorIsPlatformAdmin := hasPlatformAdmin(c)
 
-	member, err := s.client.ResourceRoleBinding.Query().
-		Where(
-			resourcerolebinding.UserIDEQ(userID),
-			resourcerolebinding.ResourceTypeEQ("system"),
-			resourcerolebinding.ResourceIDEQ(systemID),
-		).
-		Only(ctx)
+	member, err := deleteSystemMember(ctx, s.client, systemID, userID, actor, actorIsPlatformAdmin)
 	if err != nil {
-		if ent.IsNotFound(err) {
+		switch {
+		case errors.Is(err, errSystemMembershipPermissionChanged):
+			c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
+			return
+		case errors.Is(err, errSystemMembershipSystemUnavailable):
+			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
+			return
+		case ent.IsNotFound(err):
 			c.JSON(http.StatusNotFound, generated.Error{Code: "MEMBER_NOT_FOUND"})
 			return
-		}
-		logger.Error("failed to query member for delete",
-			zap.Error(err),
-			zap.String("system_id", systemID),
-			zap.String("user_id", userID),
-		)
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	if member.Role == resourcerolebinding.RoleOwner {
-		ownerCount, err := s.client.ResourceRoleBinding.Query().
-			Where(
-				resourcerolebinding.ResourceTypeEQ("system"),
-				resourcerolebinding.ResourceIDEQ(systemID),
-				resourcerolebinding.RoleEQ(resourcerolebinding.RoleOwner),
-			).
-			Count(ctx)
-		if err != nil {
-			logger.Error("failed to count system owners", zap.Error(err), zap.String("system_id", systemID))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		case errors.Is(err, errLastSystemOwner):
+			writeLastSystemOwnerConflict(c)
 			return
 		}
-		if ownerCount <= 1 {
-			c.JSON(http.StatusConflict, generated.Error{
-				Code:    "LAST_OWNER_CANNOT_BE_REMOVED",
-				Message: "system must have at least one owner",
-			})
-			return
-		}
-	}
-
-	if err := s.client.ResourceRoleBinding.DeleteOneID(member.ID).Exec(ctx); err != nil {
-		logger.Error("failed to delete member",
+		logger.Error("failed to delete system member transaction",
 			zap.Error(err),
 			zap.String("system_id", systemID),
 			zap.String("user_id", userID),
@@ -433,6 +459,195 @@ func (s *Server) DeleteSystemMember(c *gin.Context, systemID generated.SystemID,
 	}
 
 	c.Status(http.StatusNoContent)
+}
+
+func updateSystemMemberRole(
+	ctx context.Context,
+	client *ent.Client,
+	systemID string,
+	userID string,
+	role resourcerolebinding.Role,
+	actor string,
+	actorIsPlatformAdmin bool,
+) (existingResult, updatedResult *ent.ResourceRoleBinding, resultErr error) {
+	resultErr = WithTx(ctx, client, func(tx *ent.Tx) error {
+		existingResult = nil
+		updatedResult = nil
+		if lockErr := lockUserMutation(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockUserRow(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockSystemMembership(ctx, tx, systemID); lockErr != nil {
+			return lockErr
+		}
+		if _, loadErr := tx.System.Get(ctx, systemID); loadErr != nil {
+			if ent.IsNotFound(loadErr) {
+				return errSystemMembershipSystemUnavailable
+			}
+			return loadErr
+		}
+		if permissionErr := recheckSystemRoleForMutation(
+			ctx,
+			tx.Client(),
+			actor,
+			systemID,
+			"manage_members",
+			actorIsPlatformAdmin,
+		); permissionErr != nil {
+			return permissionErr
+		}
+
+		member, err := tx.ResourceRoleBinding.Query().
+			Where(
+				resourcerolebinding.UserIDEQ(userID),
+				resourcerolebinding.ResourceTypeEQ("system"),
+				resourcerolebinding.ResourceIDEQ(systemID),
+			).
+			Only(ctx)
+		if err != nil {
+			return err
+		}
+		existingResult = member
+		if role == resourcerolebinding.RoleOwner {
+			userRow, userErr := tx.User.Get(ctx, userID)
+			if userErr != nil {
+				return userErr
+			}
+			if !userRow.Enabled {
+				return errDisabledSystemMemberAdd
+			}
+		}
+
+		if member.Role == resourcerolebinding.RoleOwner && role != resourcerolebinding.RoleOwner {
+			if ownerErr := ensureSystemOwnerRemains(ctx, tx.Client(), systemID, userID); ownerErr != nil {
+				return ownerErr
+			}
+		}
+
+		updatedResult, err = tx.ResourceRoleBinding.UpdateOneID(member.ID).
+			SetRole(role).
+			Save(ctx)
+		return err
+	})
+	if resultErr != nil {
+		return nil, nil, resultErr
+	}
+	return existingResult.Unwrap(), updatedResult.Unwrap(), nil
+}
+
+func deleteSystemMember(
+	ctx context.Context,
+	client *ent.Client,
+	systemID string,
+	userID string,
+	actor string,
+	actorIsPlatformAdmin bool,
+) (*ent.ResourceRoleBinding, error) {
+	var member *ent.ResourceRoleBinding
+	err := WithTx(ctx, client, func(tx *ent.Tx) error {
+		member = nil
+		if lockErr := lockUserMutation(ctx, tx, userID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := lockSystemMembership(ctx, tx, systemID); lockErr != nil {
+			return lockErr
+		}
+		if _, loadErr := tx.System.Get(ctx, systemID); loadErr != nil {
+			if ent.IsNotFound(loadErr) {
+				return errSystemMembershipSystemUnavailable
+			}
+			return loadErr
+		}
+		if permissionErr := recheckSystemRoleForMutation(
+			ctx,
+			tx.Client(),
+			actor,
+			systemID,
+			"manage_members",
+			actorIsPlatformAdmin,
+		); permissionErr != nil {
+			return permissionErr
+		}
+
+		binding, err := tx.ResourceRoleBinding.Query().
+			Where(
+				resourcerolebinding.UserIDEQ(userID),
+				resourcerolebinding.ResourceTypeEQ("system"),
+				resourcerolebinding.ResourceIDEQ(systemID),
+			).
+			Only(ctx)
+		if err != nil {
+			return err
+		}
+		member = binding
+
+		if binding.Role == resourcerolebinding.RoleOwner {
+			if ownerErr := ensureSystemOwnerRemains(ctx, tx.Client(), systemID, userID); ownerErr != nil {
+				return ownerErr
+			}
+		}
+
+		return tx.ResourceRoleBinding.DeleteOneID(binding.ID).Exec(ctx)
+	})
+	if err != nil {
+		return nil, err
+	}
+	return member.Unwrap(), nil
+}
+
+func writeLastSystemOwnerConflict(c *gin.Context) {
+	c.JSON(http.StatusConflict, generated.Error{
+		Code:    "LAST_OWNER_CANNOT_BE_REMOVED",
+		Message: errLastSystemOwner.Error(),
+	})
+}
+
+func ensureSystemOwnerRemains(
+	ctx context.Context,
+	client *ent.Client,
+	systemID string,
+	excludedUserID string,
+) error {
+	ownerCount, err := client.ResourceRoleBinding.Query().
+		Where(
+			resourcerolebinding.ResourceTypeEQ("system"),
+			resourcerolebinding.ResourceIDEQ(strings.TrimSpace(systemID)),
+			resourcerolebinding.RoleEQ(resourcerolebinding.RoleOwner),
+			resourcerolebinding.UserIDNEQ(strings.TrimSpace(excludedUserID)),
+		).
+		Count(ctx)
+	if err != nil {
+		return fmt.Errorf("query remaining owners for system %s: %w", systemID, err)
+	}
+	if ownerCount == 0 {
+		return errLastSystemOwner
+	}
+	return nil
+}
+
+func ownedSystemIDsForUser(ctx context.Context, client *ent.Client, userID string) ([]string, error) {
+	bindings, err := client.ResourceRoleBinding.Query().
+		Where(
+			resourcerolebinding.UserIDEQ(strings.TrimSpace(userID)),
+			resourcerolebinding.ResourceTypeEQ("system"),
+			resourcerolebinding.RoleEQ(resourcerolebinding.RoleOwner),
+		).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query owned systems: %w", err)
+	}
+	systemSet := make(map[string]struct{}, len(bindings))
+	for _, binding := range bindings {
+		systemSet[binding.ResourceID] = struct{}{}
+	}
+	systemIDs := make([]string, 0, len(systemSet))
+	for systemID := range systemSet {
+		systemIDs = append(systemIDs, systemID)
+	}
+	sort.Strings(systemIDs)
+	return systemIDs, nil
 }
 
 func (s *Server) requireSystemRole(c *gin.Context, systemID, action string) (string, bool) {
@@ -482,6 +697,31 @@ func (s *Server) requireSystemRole(c *gin.Context, systemID, action string) (str
 	}
 
 	return actor, true
+}
+
+func recheckSystemRoleForMutation(
+	ctx context.Context,
+	client *ent.Client,
+	actor string,
+	systemID string,
+	action string,
+	actorIsPlatformAdmin bool,
+) error {
+	if actorIsPlatformAdmin {
+		return nil
+	}
+	if client == nil {
+		return fmt.Errorf("server client is required")
+	}
+	checker := middleware.NewResourceRoleChecker(client)
+	bindingRole, found, err := checker.CheckResourceRole(ctx, actor, "system", systemID)
+	if err != nil {
+		return fmt.Errorf("recheck system role for mutation: %w", err)
+	}
+	if !found || !middleware.RoleCanPerform(bindingRole, action) {
+		return errSystemMembershipPermissionChanged
+	}
+	return nil
 }
 
 func hasPlatformAdmin(c *gin.Context) bool {

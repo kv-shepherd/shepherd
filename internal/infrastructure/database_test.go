@@ -22,6 +22,9 @@ func TestBuildRiverQueues_ConfiguredWorkers(t *testing.T) {
 	if got := queues["vm_operations"].MaxWorkers; got != 4 {
 		t.Fatalf("vm_operations max workers = %d, want 4", got)
 	}
+	if got := queues[jobs.BatchApprovalDispatchJobKind].MaxWorkers; got != 4 {
+		t.Fatalf("%s max workers = %d, want 4", jobs.BatchApprovalDispatchJobKind, got)
+	}
 	if got := queues[jobs.VMStatusSyncJobKind].MaxWorkers; got != 4 {
 		t.Fatalf("%s max workers = %d, want 4", jobs.VMStatusSyncJobKind, got)
 	}
@@ -37,6 +40,9 @@ func TestBuildRiverQueues_UsesConfiguredWorkersForAllQueues(t *testing.T) {
 	}
 	if got := queues["vm_operations"].MaxWorkers; got != 1 {
 		t.Fatalf("vm_operations max workers = %d, want 1", got)
+	}
+	if got := queues[jobs.BatchApprovalDispatchJobKind].MaxWorkers; got != 1 {
+		t.Fatalf("%s max workers = %d, want 1", jobs.BatchApprovalDispatchJobKind, got)
 	}
 	if got := queues[jobs.VMStatusSyncJobKind].MaxWorkers; got != 1 {
 		t.Fatalf("%s max workers = %d, want 1", jobs.VMStatusSyncJobKind, got)

@@ -1123,7 +1123,7 @@ func (s *Server) loadApprovalBatchProjections(
 			continue
 		}
 		event := eventByID[ticket.EventID]
-		if event == nil || strings.TrimSpace(event.AggregateType) != "batch" {
+		if event == nil || strings.TrimSpace(event.AggregateType) != batchResourceType {
 			continue
 		}
 		parentIDs = append(parentIDs, ticket.ID)

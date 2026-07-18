@@ -76,6 +76,15 @@ func NewApprovalModule(infra *Infrastructure, vmSvc *service.VMService) (*Approv
 
 func (m *ApprovalModule) Name() string { return "approval" }
 
+// TicketService exposes the initialized dispatcher target to the composition
+// root before River workers start consuming jobs.
+func (m *ApprovalModule) TicketService() *ticketing.Service {
+	if m == nil {
+		return nil
+	}
+	return m.ticketService
+}
+
 func (m *ApprovalModule) ContributeServerDeps(deps *handlers.ServerDeps) {
 	if deps == nil {
 		return

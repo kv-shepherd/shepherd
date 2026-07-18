@@ -114,6 +114,16 @@ func ParentTicketID(v string) predicate.Ticket {
 	return predicate.Ticket(sql.FieldEQ(FieldParentTicketID, v))
 }
 
+// AttemptCount applies equality check predicate on the "attempt_count" field. It's identical to AttemptCountEQ.
+func AttemptCount(v int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldEQ(FieldAttemptCount, v))
+}
+
+// LastAttemptAt applies equality check predicate on the "last_attempt_at" field. It's identical to LastAttemptAtEQ.
+func LastAttemptAt(v time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldEQ(FieldLastAttemptAt, v))
+}
+
 // CreatedAtEQ applies the EQ predicate on the "created_at" field.
 func CreatedAtEQ(v time.Time) predicate.Ticket {
 	return predicate.Ticket(sql.FieldEQ(FieldCreatedAt, v))
@@ -852,6 +862,96 @@ func ParentTicketIDEqualFold(v string) predicate.Ticket {
 // ParentTicketIDContainsFold applies the ContainsFold predicate on the "parent_ticket_id" field.
 func ParentTicketIDContainsFold(v string) predicate.Ticket {
 	return predicate.Ticket(sql.FieldContainsFold(FieldParentTicketID, v))
+}
+
+// AttemptCountEQ applies the EQ predicate on the "attempt_count" field.
+func AttemptCountEQ(v int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldEQ(FieldAttemptCount, v))
+}
+
+// AttemptCountNEQ applies the NEQ predicate on the "attempt_count" field.
+func AttemptCountNEQ(v int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldNEQ(FieldAttemptCount, v))
+}
+
+// AttemptCountIn applies the In predicate on the "attempt_count" field.
+func AttemptCountIn(vs ...int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldIn(FieldAttemptCount, vs...))
+}
+
+// AttemptCountNotIn applies the NotIn predicate on the "attempt_count" field.
+func AttemptCountNotIn(vs ...int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldNotIn(FieldAttemptCount, vs...))
+}
+
+// AttemptCountGT applies the GT predicate on the "attempt_count" field.
+func AttemptCountGT(v int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldGT(FieldAttemptCount, v))
+}
+
+// AttemptCountGTE applies the GTE predicate on the "attempt_count" field.
+func AttemptCountGTE(v int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldGTE(FieldAttemptCount, v))
+}
+
+// AttemptCountLT applies the LT predicate on the "attempt_count" field.
+func AttemptCountLT(v int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldLT(FieldAttemptCount, v))
+}
+
+// AttemptCountLTE applies the LTE predicate on the "attempt_count" field.
+func AttemptCountLTE(v int32) predicate.Ticket {
+	return predicate.Ticket(sql.FieldLTE(FieldAttemptCount, v))
+}
+
+// LastAttemptAtEQ applies the EQ predicate on the "last_attempt_at" field.
+func LastAttemptAtEQ(v time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldEQ(FieldLastAttemptAt, v))
+}
+
+// LastAttemptAtNEQ applies the NEQ predicate on the "last_attempt_at" field.
+func LastAttemptAtNEQ(v time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldNEQ(FieldLastAttemptAt, v))
+}
+
+// LastAttemptAtIn applies the In predicate on the "last_attempt_at" field.
+func LastAttemptAtIn(vs ...time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldIn(FieldLastAttemptAt, vs...))
+}
+
+// LastAttemptAtNotIn applies the NotIn predicate on the "last_attempt_at" field.
+func LastAttemptAtNotIn(vs ...time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldNotIn(FieldLastAttemptAt, vs...))
+}
+
+// LastAttemptAtGT applies the GT predicate on the "last_attempt_at" field.
+func LastAttemptAtGT(v time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldGT(FieldLastAttemptAt, v))
+}
+
+// LastAttemptAtGTE applies the GTE predicate on the "last_attempt_at" field.
+func LastAttemptAtGTE(v time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldGTE(FieldLastAttemptAt, v))
+}
+
+// LastAttemptAtLT applies the LT predicate on the "last_attempt_at" field.
+func LastAttemptAtLT(v time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldLT(FieldLastAttemptAt, v))
+}
+
+// LastAttemptAtLTE applies the LTE predicate on the "last_attempt_at" field.
+func LastAttemptAtLTE(v time.Time) predicate.Ticket {
+	return predicate.Ticket(sql.FieldLTE(FieldLastAttemptAt, v))
+}
+
+// LastAttemptAtIsNil applies the IsNil predicate on the "last_attempt_at" field.
+func LastAttemptAtIsNil() predicate.Ticket {
+	return predicate.Ticket(sql.FieldIsNull(FieldLastAttemptAt))
+}
+
+// LastAttemptAtNotNil applies the NotNil predicate on the "last_attempt_at" field.
+func LastAttemptAtNotNil() predicate.Ticket {
+	return predicate.Ticket(sql.FieldNotNull(FieldLastAttemptAt))
 }
 
 // And groups predicates with the AND operator between them.

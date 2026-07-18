@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const pushMock = vi.fn();
@@ -116,6 +116,12 @@ vi.mock("react-i18next", () => ({
           "Use SSH for routine Linux server access when the guest network is reachable.",
         "remote_access.rdp_help":
           "Use the native Windows Remote Desktop client when the guest network is reachable.",
+        "restart_reconciliation.title": "Operator action required",
+        "restart_reconciliation.readonly_description":
+          "Follow the operations runbook; the UI cannot release this fence.",
+        "restart_reconciliation.event_id": "Event ID",
+        "restart_reconciliation.path": "Reconciliation path",
+        "restart_reconciliation.dismiss": "Dismiss",
       };
       if (key === "provisioning.current_description") {
         return `Phase ${options?.phase ?? ""}, progress ${options?.progress ?? ""}.`;
@@ -178,6 +184,7 @@ describe("VMDetailPage", () => {
     refetchMock.mockReset();
     refetchConsoleStatusMock.mockReset();
     useApiGetMock.mockReset();
+    useApiMutationMock.mockReset();
     authState.user.permissions = ["platform:admin"];
   });
 
@@ -503,5 +510,67 @@ describe("VMDetailPage", () => {
     render(<VMDetailPage />);
 
     expect(screen.queryByTestId("vm-action-manifest-vm-1")).not.toBeInTheDocument();
+  });
+
+  it("surfaces ambiguous restart metadata as read-only runbook guidance", () => {
+    let powerOptions: {
+      onError?: (error: {
+        code: string;
+        status: number;
+        params: Record<string, unknown>;
+      }) => void;
+    } | undefined;
+    useApiGetMock.mockImplementation((queryKey: unknown[]) => {
+      if (queryKey[0] === "vm-console-status" || queryKey[0] === "vm-manifest") {
+        return { data: undefined, isLoading: false, refetch: vi.fn() };
+      }
+      return {
+        data: {
+          id: "vm-1",
+          name: "vm-alpha",
+          status: "RUNNING",
+          namespace: "team-prod",
+        },
+        isLoading: false,
+        refetch: refetchMock,
+      };
+    });
+    useApiMutationMock.mockImplementation((mutationFn, options) => {
+      const source = String(mutationFn);
+      if (source.includes('"/vms/{vm_id}/power"')) {
+        powerOptions = options;
+      }
+      return {
+        isPending: false,
+        mutate: vi.fn(),
+      };
+    });
+
+    render(<VMDetailPage />);
+    act(() => {
+      powerOptions?.onError?.({
+        code: "POWER_OPERATION_IN_PROGRESS",
+        status: 409,
+        params: {
+          operator_action_required: true,
+          existing_event_id: "event-restart-1",
+          reconciliation_path: "operator-runbook:ambiguous-vm-restart",
+        },
+      });
+    });
+
+    expect(screen.getByTestId("restart-reconciliation-alert")).toHaveTextContent(
+      "operator-runbook:ambiguous-vm-restart",
+    );
+    expect(screen.getByTestId("restart-reconciliation-alert")).toHaveTextContent(
+      "the UI cannot release this fence",
+    );
+    expect(screen.queryByTestId("restart-reconciliation-submit")).not.toBeInTheDocument();
+    expect(
+      useApiMutationMock.mock.calls.some((call) =>
+        String(call[0]).includes("/admin/vm-power-events/"),
+      ),
+    ).toBe(false);
+    expect(refetchMock).toHaveBeenCalled();
   });
 });

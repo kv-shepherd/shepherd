@@ -3,6 +3,7 @@
 package migrate
 
 import (
+	"entgo.io/ent/dialect/entsql"
 	"entgo.io/ent/dialect/sql/schema"
 	"entgo.io/ent/schema/field"
 )
@@ -954,6 +955,8 @@ var (
 		{Name: "placement_evaluation", Type: field.TypeJSON, Nullable: true},
 		{Name: "modified_spec", Type: field.TypeJSON, Nullable: true},
 		{Name: "parent_ticket_id", Type: field.TypeString, Nullable: true},
+		{Name: "attempt_count", Type: field.TypeInt32, Default: 0},
+		{Name: "last_attempt_at", Type: field.TypeTime, Nullable: true},
 	}
 	// TicketsTable holds the schema information for the "tickets" table.
 	TicketsTable = &schema.Table{
@@ -1221,6 +1224,10 @@ func init() {
 	RoleBindingsTable.ForeignKeys[0].RefTable = RolesTable
 	RoleBindingsTable.ForeignKeys[1].RefTable = UsersTable
 	ServicesTable.ForeignKeys[0].RefTable = SystemsTable
+	TicketsTable.Annotation = &entsql.Annotation{}
+	TicketsTable.Annotation.Checks = map[string]string{
+		"tickets_attempt_count_nonnegative": "attempt_count >= 0",
+	}
 	UserDirectoryProfilesTable.ForeignKeys[0].RefTable = UsersTable
 	UserPreferencesTable.ForeignKeys[0].RefTable = UsersTable
 	VmsTable.ForeignKeys[0].RefTable = ServicesTable
