@@ -3,6 +3,7 @@ package handlers
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -191,6 +192,158 @@ func TestAdminInstanceSizeCRUD(t *testing.T) {
 
 	if _, err := client.InstanceSize.Get(t.Context(), created.Id); !ent.IsNotFound(err) {
 		t.Fatalf("expected instance size deleted, err=%v", err)
+	}
+}
+
+func TestCreateAdminInstanceSize_RejectsMissingOrZeroResourceRequests(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminCatalogTestServer(t)
+	cases := []struct {
+		name  string
+		body  string
+		field string
+	}{
+		{
+			name:  "missing cpu_request",
+			body:  `{"name":"m4-shared-missing-cpu","catalog_scope":"test","cpu_cores":4,"memory_gi":8,"memory_request_gi":6,"enabled":true}`,
+			field: "cpu_request",
+		},
+		{
+			name:  "missing memory_request_gi",
+			body:  `{"name":"m4-shared-missing-memory","catalog_scope":"test","cpu_cores":4,"memory_gi":8,"cpu_request":2,"enabled":true}`,
+			field: "memory_request_gi",
+		},
+		{
+			name:  "zero cpu_request",
+			body:  `{"name":"m4-shared-zero-cpu","catalog_scope":"test","cpu_cores":4,"memory_gi":8,"cpu_request":0,"memory_request_gi":6,"enabled":true}`,
+			field: "cpu_request",
+		},
+		{
+			name:  "zero memory_request_gi",
+			body:  `{"name":"m4-shared-zero-memory","catalog_scope":"test","cpu_cores":4,"memory_gi":8,"cpu_request":2,"memory_request_gi":0,"enabled":true}`,
+			field: "memory_request_gi",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			createCtx, createW := newAuthedGinContext(
+				t,
+				http.MethodPost,
+				"/admin/instance-sizes",
+				tc.body,
+				"admin-1",
+				[]string{"platform:admin"},
+			)
+
+			srv.CreateAdminInstanceSize(createCtx)
+			if createW.Code != http.StatusBadRequest {
+				t.Fatalf(
+					"create status = %d, want %d, body=%s",
+					createW.Code,
+					http.StatusBadRequest,
+					createW.Body.String(),
+				)
+			}
+
+			var resp generated.Error
+			mustDecodeJSON(t, createW.Body.Bytes(), &resp)
+			if resp.Code != "INVALID_REQUEST" {
+				t.Fatalf("create error code = %q, want INVALID_REQUEST", resp.Code)
+			}
+			if !strings.Contains(resp.Message, tc.field) {
+				t.Fatalf("create error message = %q, want field %q", resp.Message, tc.field)
+			}
+
+			count, err := client.InstanceSize.Query().Count(t.Context())
+			if err != nil {
+				t.Fatalf("count instance sizes: %v", err)
+			}
+			if count != 0 {
+				t.Fatalf("instance size count = %d, want 0", count)
+			}
+		})
+	}
+}
+
+func TestUpdateAdminInstanceSize_RejectsZeroResourceRequests(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminCatalogTestServer(t)
+	createCtx, createW := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/instance-sizes",
+		`{"name":"m4-shared-update","catalog_scope":"test","cpu_cores":4,"memory_gi":8,"cpu_request":2,"memory_request_gi":6,"enabled":true}`,
+		"admin-1",
+		[]string{"platform:admin"},
+	)
+	srv.CreateAdminInstanceSize(createCtx)
+	if createW.Code != http.StatusCreated {
+		t.Fatalf(
+			"create status = %d, want %d, body=%s",
+			createW.Code,
+			http.StatusCreated,
+			createW.Body.String(),
+		)
+	}
+
+	var created generated.InstanceSize
+	mustDecodeJSON(t, createW.Body.Bytes(), &created)
+	cases := []struct {
+		name  string
+		body  string
+		field string
+	}{
+		{name: "zero cpu_request", body: `{"cpu_request":0}`, field: "cpu_request"},
+		{
+			name:  "zero memory_request_gi",
+			body:  `{"memory_request_gi":0}`,
+			field: "memory_request_gi",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			updateCtx, updateW := newAuthedGinContext(
+				t,
+				http.MethodPatch,
+				"/admin/instance-sizes/"+created.Id,
+				tc.body,
+				"admin-1",
+				[]string{"platform:admin"},
+			)
+
+			srv.UpdateAdminInstanceSize(updateCtx, created.Id)
+			if updateW.Code != http.StatusBadRequest {
+				t.Fatalf(
+					"update status = %d, want %d, body=%s",
+					updateW.Code,
+					http.StatusBadRequest,
+					updateW.Body.String(),
+				)
+			}
+
+			var resp generated.Error
+			mustDecodeJSON(t, updateW.Body.Bytes(), &resp)
+			if resp.Code != "INVALID_REQUEST" {
+				t.Fatalf("update error code = %q, want INVALID_REQUEST", resp.Code)
+			}
+			if !strings.Contains(resp.Message, tc.field) {
+				t.Fatalf("update error message = %q, want field %q", resp.Message, tc.field)
+			}
+
+			stored, err := client.InstanceSize.Get(t.Context(), created.Id)
+			if err != nil {
+				t.Fatalf("get instance size: %v", err)
+			}
+			if stored.CPURequest != 2 || stored.MemoryRequestGi != 6 {
+				t.Fatalf(
+					"stored requests = (%v, %v), want (2, 6)",
+					stored.CPURequest,
+					stored.MemoryRequestGi,
+				)
+			}
+		})
 	}
 }
 
