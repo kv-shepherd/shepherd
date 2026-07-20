@@ -1,9 +1,9 @@
 module kv-shepherd.io/shepherd
 
-go 1.25.12
+go 1.26.4
 
 require (
-	ariga.io/atlas v1.2.0
+	ariga.io/atlas v1.2.3
 	entgo.io/ent v0.14.6
 	github.com/Masterminds/semver/v3 v3.4.0
 	github.com/coreos/go-oidc/v3 v3.18.0
