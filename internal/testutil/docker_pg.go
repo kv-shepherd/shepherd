@@ -174,20 +174,6 @@ func waitHealthy(name string) error {
 		dockerPGHealthWait, name, logs)
 }
 
-// SkipIfNoPG skips the test if no PostgreSQL DSN is configured and Docker is
-// unavailable.  Useful for individual tests that optionally need PG, as an
-// alternative to TestMain-level auto-provisioning.
-func SkipIfNoPG(t *testing.T) {
-	t.Helper()
-	if os.Getenv("TEST_DATABASE_URL") != "" || os.Getenv("DATABASE_URL") != "" {
-		return
-	}
-	if runDockerCommand("info") == nil {
-		return // Docker available; container will be started by TestMain
-	}
-	t.Skip("skipping: no TEST_DATABASE_URL and Docker unavailable")
-}
-
 func runDockerCommand(args ...string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), dockerCmdTimeout)
 	defer cancel()

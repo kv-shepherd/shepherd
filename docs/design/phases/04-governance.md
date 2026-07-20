@@ -66,7 +66,7 @@ The following features are **explicitly out of scope** for V1:
 
 > ⚠️ **Approval Engine V1 Constraint (ADR-0005)**:
 >
-> V1 approval **decision outcomes** are limited to: `PENDING_APPROVAL → APPROVED` or `PENDING_APPROVAL → REJECTED`.
+> V1 approval **decision outcomes** are limited to: `PENDING → APPROVED` or `PENDING → REJECTED`.
 > Ticket lifecycle may still include out-of-band `CANCELLED` (user action) and execution tracking states.
 > DO NOT design for:
 > - Multi-level approval chains (L1 → L2 → L3)
@@ -195,7 +195,7 @@ func (w *EventJobWorker) Work(ctx context.Context, job *river.Job[EventJobArgs])
 | Constraint | Implementation |
 |------------|----------------|
 | Payload immutable | Append-only, never update |
-| Modifications in ticket | `ApprovalTicket.modified_spec` (full replacement) |
+| Modifications in ticket | `Ticket.modified_spec` (full replacement) |
 | Get final spec | `GetEffectiveSpec(originalPayload, modifiedSpec)` |
 | No merge | **Forbidden** to merge specs |
 
@@ -274,12 +274,12 @@ internal/governance/
 > - `CANCELLED` is NOT part of the approval workflow logic; it bypasses the approval engine
 > - Multi-level approvals, countersign, and timeout auto-processing are **out of V1 scope**
 
-> **Ticket Status** (ApprovalTicket table):
+> **Ticket Status** (`tickets` table):
 >
 > ```
 >                 ┌─────────► REJECTED (terminal)
 >                 │
-> PENDING_APPROVAL─┼─────────► CANCELLED (terminal, user cancels)
+> PENDING──────────┼─────────► CANCELLED (terminal, user cancels)
 >                 │
 >                 └─────────► APPROVED ──► EXECUTING ──► SUCCESS (terminal)
 >                                                    └─► FAILED (terminal)
@@ -300,7 +300,7 @@ internal/governance/
 >
 > | Context | Initial Status | Description |
 > |---------|---------------|-------------|
-> | ApprovalTicket | `PENDING_APPROVAL` | Awaiting admin review |
+> | Ticket (`tickets`) | `PENDING` | Awaiting admin review |
 > | DomainEvent (requires approval) | `PENDING` | Event created, ticket pending |
 > | DomainEvent (auto-approved) | `PROCESSING` | Skipped PENDING, directly queued |
 
@@ -334,7 +334,7 @@ internal/governance/
 
 ```typescript
 // Approval list sorting: oldest first within each priority tier
-const sortApprovals = (tickets: ApprovalTicket[]) => {
+const sortApprovals = (tickets: Ticket[]) => {
   return tickets.sort((a, b) => {
     const tierA = getPriorityTier(a.created_at);
     const tierB = getPriorityTier(b.created_at);
@@ -358,7 +358,7 @@ const getPriorityTier = (createdAt: Date): number => {
   "tickets": [
     {
       "id": "ticket-001",
-      "status": "PENDING_APPROVAL",
+      "status": "PENDING",
       "created_at": "2026-01-25T10:00:00Z",
       "days_pending": 9,
       "priority_tier": "urgent"
@@ -372,22 +372,30 @@ const getPriorityTier = (createdAt: Date): number => {
 ### Admin Modification
 
 > **Security Constraints (ADR-0017)**:
-> - Admin **CAN** modify: `template_version`, `cluster_id`, `storage_class`, resource parameters (CPU, Memory, etc.)
+> - Admin **CAN** select: `cluster_id`, `storage_class`, and supported resource overrides (CPU, Memory, etc.)
 > - Admin **CANNOT** modify: `namespace`, `service_id` (immutable after submission - prevents permission escalation)
+> - The effective template is resolved during approval and persisted as `template_snapshot`; there is no separate template-version column.
+>
+> **Known accepted-ADR contract debt:** ADR-0017 and ADR-0015 require the
+> administrator's final template-version decision to be persisted at approval,
+> while the current Ticket/approval contract stores only the effective snapshot
+> and exposes no independent selected-version input. A dedicated issue and a
+> superseding accepted ADR/amendment must reconcile the contract before this
+> snapshot-only behavior is described as ADR-aligned; this document does not
+> amend either accepted ADR.
 
 ```go
-// ApprovalTicket fields
-field.JSON("modified_spec", &ModifiedSpec{}),
-field.String("modification_reason"),
+// Ticket field (full replacement, not a merge patch)
+field.JSON("modified_spec", map[string]interface{}{}).Optional(),
 
-// GetEffectiveSpec returns final config
-func GetEffectiveSpec(ticket *ApprovalTicket) (*VMSpec, error) {
-    if ticket.ModifiedSpec != nil {
+// originalPayload comes from DomainEvent.payload; modifiedSpec comes from Ticket.modified_spec.
+func GetEffectiveSpec(originalPayload []byte, modifiedSpec []byte) (*VMSpec, error) {
+    if modifiedSpec != nil {
         // Full replacement, not merge
         // NOTE: Namespace is NOT included in ModifiedSpec (immutable)
-        return applyModifications(ticket.Payload, ticket.ModifiedSpec)
+        return applyModifications(originalPayload, modifiedSpec)
     }
-    return parsePayload(ticket.Payload)
+    return parsePayload(originalPayload)
 }
 ```
 
@@ -614,7 +622,7 @@ operation supports root-volume provisioning. Otherwise the runtime falls back to
 the cluster default when one is present:
 
 ```go
-// ApprovalTicket additional field for storage class selection
+// Ticket field for storage class selection
 field.String("selected_storage_class").Optional().
     Comment("Admin-selected StorageClass during approval, empty uses cluster default"),
 ```
@@ -661,7 +669,7 @@ Batch operations MUST follow ADR-0015 §19 as the normative model:
 - two-layer rate limiting (global + user-level)
 - Frontend-visible aggregate and per-child status
 
-### Runtime Progress Snapshot (2026-02-14)
+### Current Runtime Baseline
 
 - Implemented baseline:
   - `POST /api/v1/vms/batch`
@@ -671,46 +679,109 @@ Batch operations MUST follow ADR-0015 §19 as the normative model:
   - `POST /api/v1/vms/batch/{id}/cancel`
 - Implemented runtime guards:
   - parent+child atomic submission transaction
-  - idempotency key replay to existing `batch_id`
+  - transaction-scoped global, actor, request, and per-VM advisory locks in a
+    canonical order
+  - post-lock exact idempotency replay to the existing `batch_id`
   - global/user pending-parent throttling baseline
   - global request-rate ceiling (per-minute)
   - user pending-child ceiling + submit cooldown
-  - dedicated parent projection row (`batch_approval_tickets`) persisted at submit time
+  - dedicated parent projection row (`batch_tickets`) persisted at submit time
   - parent aggregate counters/status persisted and continuously updated from child execution outcomes
-  - parent approval dispatches child create/delete tickets into independent River execution
-  - retry endpoint requeues failed children through approval path; cancel endpoint terminates pending children
+  - parent approval atomically claims the parent/event, stores the execution
+    snapshot, refreshes the projection, and inserts a durable dispatcher
+  - the dispatcher uses a dedicated queue and schedules pending children into
+    independent River execution without replaying completed children
+  - persisted logical child attempt count with three total dispatch attempts,
+    including the initial dispatch
+  - retry endpoint conditionally requeues only execution-failed children;
+    approval-rejected children require a new batch and approval decision rather
+    than reopening the rejected request, while cancel conditionally terminates
+    pending children
+  - power retry resets ticket/event state and inserts replacement River work in
+    one transaction, failing the whole request on stale state or active work
+  - VM restart dispatch uses a durable `PENDING -> PROCESSING` at-most-once
+    fence; an ambiguous provider outcome remains `PROCESSING/EXECUTING`, blocks
+    the ordinary explicit-retry path, and is never automatically repeated
   - admin rate-limit override APIs landed:
     - `POST /api/v1/admin/rate-limits/exemptions`
     - `DELETE /api/v1/admin/rate-limits/exemptions/{user_id}`
     - `PUT /api/v1/admin/rate-limits/users/{user_id}`
     - `GET /api/v1/admin/rate-limits/status`
-- Still pending:
-  - frontend batch queue UX contract
+- Explicitly deferred: new field-level three-state semantics for rate-limit
+  overrides. Omitted/`null`/numeric differentiation requires a separate ADR
+  amendment before contract or UI implementation.
 
 ### Supported Operations and API Surface
 
 | Operation | Canonical Endpoint | Notes |
 |-----------|--------------------|-------|
-| Batch VM create/delete | `POST /api/v1/vms/batch` | Creates parent + child tickets atomically |
+| Batch VM create/modify/delete | `POST /api/v1/vms/batch` | Creates parent + child tickets atomically |
 | Batch status query | `GET /api/v1/vms/batch/{id}` | Parent summary + child states |
 | Batch retry failed | `POST /api/v1/vms/batch/{id}/retry` | Requeue failed child items only |
 | Batch terminate pending | `POST /api/v1/vms/batch/{id}/cancel` | Cancel not-yet-started children |
 | Batch power compatibility | `POST /api/v1/vms/batch/power` | Supported; normalized into canonical parent-child pipeline |
+| Ambiguous restart fence | No release endpoint | Surfaces read-only operator guidance; safe release is deferred until provider receipt/idempotency or provable cancellation excludes a late restart |
 
 ### Parent-Child Data Model
 
 | Entity | Key Fields |
 |--------|------------|
-| `batch_approval_tickets` (parent) | `ticket_id`, `batch_type`, `child_count`, `success_count`, `failed_count`, `pending_count`, `status`, `created_by` |
-| `approval_tickets` (child) | `ticket_id`, `parent_ticket_id`, `sequence_no`, `status`, `attempt_count`, `error_message`, `last_attempt_at` |
+| `batch_tickets` (API projection) | `id`, `batch_type`, `child_count`, `success_count`, `failed_count`, `pending_count`, `status`, `request_id`, `created_by`, `reason` |
+| `tickets` (workflow parent + children) | `id`, `event_id`, `parent_ticket_id`, `operation_type`, `status`, `requester`, `approver`, `reject_reason`, `attempt_count`, `last_attempt_at` |
+| `domain_events` (workflow event state) | `id`, `aggregate_type`, `aggregate_id`, `event_type`, `status`, durable operation payload |
 
 ### Atomicity and Execution Boundary
 
 | Phase | Guarantee | Implementation |
 |------|-----------|----------------|
-| Submission (parent + all children) | ✅ Atomic | Single DB transaction, rollback on any insert failure |
+| Submission policy + replay + parent/children | ✅ Atomic for new-version writers | Advisory locks, post-lock reads, and persistence share one DB transaction; rollback on any failure |
+| Initial batch approval | ✅ Atomic | Parent/event claim, normalized execution snapshot, projection refresh, and dedicated dispatcher `InsertTx` commit together |
+| Generic child explicit retry | ✅ Atomic | Active-dispatch guard, execution-`FAILED` ticket plus accepted-state event reset, approved parent/event reopen, projection refresh, and dispatcher `InsertTx` commit together |
+| Power child explicit retry | ✅ Atomic | Conditional ticket/event reset and River `InsertTx` commit together |
+| Pending-child cancellation | ✅ Atomic | Child Ticket/Event cancellation and parent Ticket/Event/projection aggregation commit or roll back together |
 | Execution (child jobs) | ❌ Non-atomic by design | Each child runs independently in River |
-| Parent status | ✅ Deterministic aggregation | Computed from aggregate counters (`success/failed/pending`) |
+| Parent status | ✅ Deterministic aggregation | Computed from child state under a parent-row lock; terminal outcome mismatches fail closed |
+
+### Concurrency, Attempts, and Dispatch Fences
+
+- `attempt_count` records logical dispatches. River redelivery/backoff within one
+  dispatch does not consume another logical attempt; an explicit retry does.
+- The initial dispatch is attempt 1. A child with `attempt_count >= 3` cannot be
+  reset or re-enqueued and returns `BATCH_RETRY_ATTEMPTS_EXHAUSTED`.
+- Retry and cancel use expected-state writes for the exact child ticket/event.
+  A request that loses a concurrency race returns a conflict and must not
+  overwrite the winner's newer state.
+- Cancel verifies the durable parent/event identity and allowed state before
+  entering the mutation. Its parent-keyed transaction then conditionally
+  cancels exact `PENDING` child Ticket/Event pairs and synchronizes the locked
+  parent and projection, so a stale parent CAS or persistence failure rolls the
+  whole child mutation back.
+- Only `FAILED` is retryable. `REJECTED` records an approval decision and cannot
+  be reopened through the execution-retry endpoint.
+- Parent ticket/event retry eligibility is restricted to
+  `EXECUTING|FAILED` / `PROCESSING|FAILED`; generic retry additionally requires
+  a durable prior approver. CAS losers return an actionable `409`.
+- After a successful retry/cancel commit, the handler attempts a best-effort
+  `vm.batch.retry` or `vm.batch.cancel` supplemental audit entry for the acting
+  user. Audit-write failure does not roll back the already committed mutation,
+  so this call is not durable actor attribution. The parent ticket's approver
+  remains authoritative; only an authorized replacement review changes it.
+- Power retries acquire per-VM locks in deterministic order, reject a different
+  active event for the same VM, and reject an equivalent runnable River job.
+- Restart is not safely repeatable because the provider has no idempotency key
+  or definitely-not-applied error classification. The worker must claim the
+  event from `PENDING` to `PROCESSING` before the provider call. A rescued or
+  duplicate worker that sees `PROCESSING` fails closed for operator
+  verification. Power-operation conflicts expose
+  `operator_action_required=true` plus the read-only
+  `operator-runbook:ambiguous-vm-restart` reconciliation path.
+- River terminal state cannot exclude a provider request still in flight.
+  Therefore no public or administrative API releases the ambiguous fence, and
+  operators must not edit workflow rows or redispatch. Safe recovery requires
+  a future provider receipt/idempotency or provable-cancellation protocol.
+- Final-attempt failure persistence updates event, child ticket, and parent
+  projection together with a bounded uncancelled context so exhausted River
+  delivery does not strand recoverable state.
 
 ### Two-Layer Rate Limiting (ADR-0015 §19)
 
@@ -728,6 +799,11 @@ Admin override APIs (ADR-0015):
 - `DELETE /api/v1/admin/rate-limits/exemptions/{user_id}`
 - `PUT /api/v1/admin/rate-limits/users/{user_id}`
 - `GET /api/v1/admin/rate-limits/status`
+
+The accepted baseline does not define a new three-state update contract for
+override fields. In particular, this phase does not assign new meaning to an
+omitted field versus explicit `null`; such a change remains outside this
+implementation until a separate ADR amendment is accepted.
 
 ### Response Contract (Submission)
 
@@ -758,9 +834,26 @@ Required frontend behavior:
 
 ### Constraints
 
-- Max batch size per operation type follows ADR-0015 defaults
+- **Known contract debt:** accepted ADR-0015 specifies limits of `10` for batch
+  create/delete and `50` for power, while the current public API/runtime accepts
+  up to `100` items (including modify). This is not ADR compliance. A dedicated
+  tracking issue and a new accepted ADR/amendment must choose and align one
+  contract before any document claims compliance; this change does not amend
+  the accepted ADR.
 - Item-level validation is required before child insertion
 - Duplicate submit with same idempotency key returns existing parent ticket
+- `request_id` remains the existing PostgreSQL `text` value without a new
+  contract-level length cap; no migration or API validation may narrow it to
+  `varchar` or discard a non-empty historical key based on length
+- The Atlas change is attempt-only: it does not alter the `request_id` schema or
+  normalize, clear, deduplicate, or otherwise rewrite historical values
+- The advisory-lock replay guarantee requires every batch writer to run the new
+  path. Follow the old-writer drain sequence in
+  [database/migrations.md](../database/migrations.md#batch-retry-and-idempotency-rollout)
+  during rolling deployment
+- The same rollout runbook audits operation-bearing historical replay payloads
+  and reconciles cancelled/discarded dispatchers before mutation traffic is
+  enabled; a queue row alone is not proof that child and parent state converged
 - Partial success is a first-class outcome (`PARTIAL_SUCCESS`)
 
 ---
@@ -820,8 +913,10 @@ User with prod permission → sees test+prod namespaces → VMs scheduled to mat
 ```go
 func (s *ApprovalService) Approve(ctx context.Context, ticketID string) error {
     ticket := s.getTicket(ticketID)
-    namespace := ticket.Namespace  // From VM creation request
-    cluster := s.getSelectedCluster(ticket)
+    event := s.getDomainEvent(ticket.EventID)
+    originalPayload := decodeVMCreationPayload(event.Payload)
+    namespace := originalPayload.Namespace // Immutable VM creation request field
+    cluster := s.getCluster(ticket.SelectedClusterID)
     
     // Environment is determined by namespace/cluster, not by System
     if GetNamespaceEnvironment(namespace) != cluster.Environment {
@@ -840,7 +935,7 @@ func (s *ApprovalService) Approve(ctx context.Context, ticketID string) error {
 
 > **Primary resources use hard delete** (System/Service/VM) after cascade checks pass.
 > `audit_logs` and `domain_events` are retained for traceability for all delete flows.
-> `approval_tickets` are retained only for operations that require approval (for example, VM create/delete and production VNC requests), and archived per retention policy.
+> `tickets` rows are retained for workflow operations (including VM create/delete and production VNC requests) and archived per retention policy.
 
 ### Cascade Constraints (Hard Delete)
 
@@ -888,7 +983,7 @@ DELETE /api/v1/systems/{sys_id}?confirm_name=my-system
 | OpenAPI: DeleteVM params | ✅ Done | Added `confirm` and `confirm_name` query params |
 | OpenAPI: DeleteService | ✅ Done | Endpoint defined with `confirm` query param |
 | OpenAPI: DeleteSystem params | ✅ Done | Added `confirm_name` query param |
-| ApprovalTicket.operation_type | ✅ Done | Enum field (`CREATE`/`DELETE`) with `CREATE` default |
+| Ticket.operation_type | ✅ Done | Enum field (`CREATE`, `MODIFY`, `DELETE`, `POWER`, `VNC_ACCESS`) with `CREATE` default |
 | VM delete approval ticket flow | ✅ Done | DeleteVM use case creates `operation_type=DELETE` ticket and routes through approval gateway |
 | VM tombstone cleanup policy | ✅ Done | K8s delete success hard-deletes the VM row; stale `DELETING` tombstones are retried by daily River cleanup |
 
@@ -1528,7 +1623,7 @@ cluster resources.
 | §1 System Entity Decoupling | ✅ Done | [01-contracts.md §3.1](01-contracts.md#31-system-schema) | No namespace/environment/cluster bindings |
 | §2 Service Entity & Permission Inheritance | ✅ Done | [01-contracts.md §3.2](01-contracts.md#32-service-schema) | Runtime inheritance from System |
 | §3 VM Entity Association | ✅ Done | [01-contracts.md §3](01-contracts.md#3-core-ent-schemas) | VM → Service only (no direct system_id) |
-| §4 VM Field Control | ✅ Done | [01-contracts.md §3.4](01-contracts.md#34-approvalticket-admin-fields-adr-0017) | User-forbidden fields; amended by ADR-0017 |
+| §4 VM Field Control | ✅ Done | [01-contracts.md §3.4](01-contracts.md#34-ticket-approval-fields-adr-0017) | User-forbidden fields; amended by ADR-0017 |
 | §5 Template Layered Design | ✅ Done | [master-flow.md Stage 1](../interaction-flows/master-flow.md#stage-1) | Amended by ADR-0018 (capability → InstanceSize) |
 | §6 Audit Trail | ✅ Done | Section 7 (this doc) | DomainEvent pattern; redaction per ADR-0019 |
 | §7 Approval Policies | ✅ Done | Section 4 (this doc) | Environment-aware policy matrix |
@@ -1542,7 +1637,7 @@ cluster resources.
 | §14 Platform RBAC | ✅ Done | Section 3 (this doc) | Dual-layer RBAC; ADR-0019 amendments |
 | §15 Cluster Visibility | ✅ Done | Section 6 (this doc) | Namespace/cluster env matching enforced in approval+worker; `allowed_environments` visibility filtering enforced in namespace/VM query-read path |
 | §16 Global Naming | ✅ Done | [01-contracts.md §1.1](01-contracts.md#11-naming-constraints-adr-0019) | RFC 1035 + ADR-0019 extension |
-| §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | ApprovalTicket stores immutable snapshot |
+| §17 Template Snapshot | ✅ Done | [master-flow.md Stage 5.B](../interaction-flows/master-flow.md#stage-5-b) | Ticket stores immutable snapshot |
 | §18 VNC Permissions | ⚠️ V1 Baseline | Section 6.2 (this doc) | Request/status/open + approval + audit + AES-256-GCM encrypted single-use credential implemented; proxy internals + VNC active revocation remain V2+ |
 | §19 Batch Operations | ✅ V1 Baseline | Section 5.6 (this doc) | Runtime API + child execution dispatch + two-layer throttling + parent projection persistence + admin override APIs + `/vms/batch/power` + frontend queue UX and JSON result export implemented |
 | §20 Notification System | ✅ V1 Inbox | Section 6.3 (this doc) | Sync writes; external adapters V2+ |

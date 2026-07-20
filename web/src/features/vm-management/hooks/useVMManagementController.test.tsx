@@ -22,6 +22,8 @@ const {
   useWatchMock,
   watchValues,
   vmItems,
+  batchStatusState,
+  authUserState,
   messageSuccessMock,
   messageErrorMock,
   messageWarningMock,
@@ -37,6 +39,14 @@ const {
     batch_count: 1,
   };
   const vmItems: Array<{ id: string; name: string; status: string }> = [];
+  const batchStatusState = { status: "PARTIAL_SUCCESS" };
+  const authUserState = {
+    user: {
+      id: "u-alice",
+      username: "alice",
+      permissions: ["vm:create", "vm:delete", "vm:operate", "platform:admin"],
+    },
+  };
 
   return {
     useApiGetMock: vi.fn(),
@@ -69,6 +79,8 @@ const {
     ),
     watchValues,
     vmItems,
+    batchStatusState,
+    authUserState,
     messageSuccessMock: vi.fn(),
     messageErrorMock: vi.fn(),
     messageWarningMock: vi.fn(),
@@ -111,8 +123,10 @@ vi.mock("@/lib/api/client", () => ({
 
 vi.mock("@/stores/auth", () => ({
   useAuthStore: (
-    selector: (state: { user: { id: string; username: string } }) => unknown,
-  ) => selector({ user: { id: "u-alice", username: "alice" } }),
+    selector: (state: {
+      user: { id: string; username: string; permissions: string[] };
+    }) => unknown,
+  ) => selector(authUserState),
 }));
 
 import { useVMManagementController } from "./useVMManagementController";
@@ -121,12 +135,35 @@ import { buildVMRequestDraftStorageKey } from "../draftStorage";
 describe("useVMManagementController", () => {
   const t = ((key: string) => key) as unknown as TFunction;
 
-  const getMutationOptions = (slot: number) =>
-    useApiMutationMock.mock.calls[slot]?.[1] as
+  const getMutationOptions = (path: string, occurrence = 0) =>
+    useApiMutationMock.mock.calls.filter((call) =>
+      String(call[0]).includes(`"${path}"`),
+    )[occurrence]?.[1] as
       | {
-          onSuccess?: (data: Record<string, unknown>) => void;
+          onSuccess?: (
+            data: Record<string, unknown>,
+            variables?: Record<string, unknown>,
+          ) => void;
+          onError?: (
+            error: {
+              code?: string;
+              status?: number;
+              retry_after_seconds?: number;
+              params?: Record<string, unknown>;
+            },
+            variables?: Record<string, unknown>,
+          ) => void;
+        }
+      | undefined;
+
+  const getActionOptions = (path: string) =>
+    useApiActionMock.mock.calls.find((call) =>
+      String(call[0]).includes(`"${path}"`),
+    )?.[1] as
+      | {
           onError?: (error: {
-            code?: string;
+            code: string;
+            status?: number;
             params?: Record<string, unknown>;
           }) => void;
         }
@@ -144,6 +181,15 @@ describe("useVMManagementController", () => {
     watchValues.service_id = "svc-1";
     watchValues.batch_count = 1;
     vmItems.length = 0;
+    batchStatusState.status = "PARTIAL_SUCCESS";
+    authUserState.user.id = "u-alice";
+    authUserState.user.username = "alice";
+    authUserState.user.permissions = [
+      "vm:create",
+      "vm:delete",
+      "vm:operate",
+      "platform:admin",
+    ];
     formState.getFieldsValue.mockReturnValue({
       service_id: "svc-1",
       template_id: "tpl-1",
@@ -158,11 +204,7 @@ describe("useVMManagementController", () => {
         return { data: undefined, isLoading: false };
       }
 
-      if (
-        queryKey[0] === "vms" &&
-        queryKey[1] === 1 &&
-        queryKey[2] === 20
-      ) {
+      if (queryKey[0] === "vms" && queryKey[1] === 1 && queryKey[2] === 20) {
         return { data: { items: vmItems }, isLoading: false, refetch: vi.fn() };
       }
 
@@ -213,10 +255,7 @@ describe("useVMManagementController", () => {
         };
       }
 
-      if (
-        queryKey[0] === "templates" &&
-        queryKey[1] === "vm-wizard-fallback"
-      ) {
+      if (queryKey[0] === "templates" && queryKey[1] === "vm-wizard-fallback") {
         return { data: { items: [] }, isLoading: false };
       }
 
@@ -232,7 +271,7 @@ describe("useVMManagementController", () => {
           data: {
             batch_id: "batch-live-1",
             operation: "CREATE",
-            status: "PARTIAL_SUCCESS",
+            status: batchStatusState.status,
             child_count: 3,
             success_count: 1,
             failed_count: 1,
@@ -246,7 +285,6 @@ describe("useVMManagementController", () => {
                 event_id: "ev-1",
                 status: "FAILED",
                 resource_name: "vm-a",
-                attempt_count: 2,
               },
               {
                 ticket_id: "ticket-pending-1",
@@ -289,19 +327,39 @@ describe("useVMManagementController", () => {
       return { data: undefined, isLoading: false };
     });
 
-    let mutationCall = 0;
-    useApiMutationMock.mockImplementation(() => {
-      mutationCall += 1;
-      const slot = ((mutationCall - 1) % 8) + 1;
-      if (slot === 1) return { mutate: createMutate, isPending: false };
-      if (slot === 2) return { mutate: createModifyMutate, isPending: false };
-      if (slot === 3) return { mutate: createBatchMutate, isPending: false };
-      if (slot === 4) return { mutate: vmBatchMutate, isPending: false };
-      if (slot === 5) return { mutate: vmBatchPowerMutate, isPending: false };
-      if (slot === 6) return { mutate: retryBatchMutate, isPending: false };
-      if (slot === 7) return { mutate: cancelBatchMutate, isPending: false };
-      return { mutate: deleteMutate, isPending: false };
-    });
+    useApiMutationMock.mockImplementation(
+      (mutationFn: unknown, options: unknown) => {
+        const source = String(mutationFn);
+        if (source.includes('"/vms/request"')) {
+          return { mutate: createMutate, isPending: false };
+        }
+        if (source.includes('"/vms/{vm_id}/modify-request"')) {
+          return { mutate: createModifyMutate, isPending: false };
+        }
+        if (source.includes('"/vms/batch/power"')) {
+          return { mutate: vmBatchPowerMutate, isPending: false };
+        }
+        if (source.includes('"/vms/batch/{batch_id}/retry"')) {
+          return { mutate: retryBatchMutate, isPending: false };
+        }
+        if (source.includes('"/vms/batch/{batch_id}/cancel"')) {
+          return { mutate: cancelBatchMutate, isPending: false };
+        }
+        if (source.includes('api.DELETE("/vms/{vm_id}"')) {
+          return { mutate: deleteMutate, isPending: false };
+        }
+        if (source.includes('"/vms/batch"')) {
+          const isWizardBatch = String(
+            (options as { onSuccess?: unknown } | undefined)?.onSuccess,
+          ).includes("clearSavedDraft");
+          return {
+            mutate: isWizardBatch ? createBatchMutate : vmBatchMutate,
+            isPending: false,
+          };
+        }
+        throw new Error(`unexpected mutation in controller test: ${source}`);
+      },
+    );
 
     let actionCall = 0;
     useApiActionMock.mockImplementation(() => {
@@ -313,47 +371,45 @@ describe("useVMManagementController", () => {
       return { mutate: postRestartMutate, isPending: false };
     });
 
-    apiGetMock.mockImplementation(
-      (path: string) => {
-        if (path === "/vms/{vm_id}/modify-context") {
-          return Promise.resolve({
-            data: {
-              vm_id: "vm-1",
-              vm_name: "vm-one",
-              namespace: "prod",
-              current_cpu_cores: 2,
-              current_memory_gi: 4,
-              current_disk_gb: 20,
-              cpu_supported: true,
-              memory_supported: true,
-              disk_supported: true,
-            },
-            error: undefined,
-            response: new Response(),
-          });
-        }
-        if (path === "/vms/{vm_id}/request-prefill") {
-          return Promise.resolve({
-            data: {
-              system_id: "sys-1",
-              service_id: "svc-prefill",
-              template_id: "tpl-prefill",
-              instance_size_id: "size-prefill",
-              namespace: "prefill-ns",
-              reason: "reuse vm request",
-              batch_count: 2,
-            },
-            error: undefined,
-            response: new Response(),
-          });
-        }
+    apiGetMock.mockImplementation((path: string) => {
+      if (path === "/vms/{vm_id}/modify-context") {
         return Promise.resolve({
-          data: undefined,
+          data: {
+            vm_id: "vm-1",
+            vm_name: "vm-one",
+            namespace: "prod",
+            current_cpu_cores: 2,
+            current_memory_gi: 4,
+            current_disk_gb: 20,
+            cpu_supported: true,
+            memory_supported: true,
+            disk_supported: true,
+          },
           error: undefined,
           response: new Response(),
         });
-      },
-    );
+      }
+      if (path === "/vms/{vm_id}/request-prefill") {
+        return Promise.resolve({
+          data: {
+            system_id: "sys-1",
+            service_id: "svc-prefill",
+            template_id: "tpl-prefill",
+            instance_size_id: "size-prefill",
+            namespace: "prefill-ns",
+            reason: "reuse vm request",
+            batch_count: 2,
+          },
+          error: undefined,
+          response: new Response(),
+        });
+      }
+      return Promise.resolve({
+        data: undefined,
+        error: undefined,
+        response: new Response(),
+      });
+    });
   });
 
   it("advances wizard steps after validating required fields and submits request payload", async () => {
@@ -745,32 +801,100 @@ describe("useVMManagementController", () => {
     });
 
     expect(createBatchMutate).toHaveBeenCalledWith({
-      operation: "CREATE",
-      reason: "scale up",
-      items: [
-        {
-          service_id: "svc-1",
-          template_id: "tpl-1",
-          instance_size_id: "size-1",
-          namespace: "prod",
-          reason: "scale up",
-        },
-        {
-          service_id: "svc-1",
-          template_id: "tpl-1",
-          instance_size_id: "size-1",
-          namespace: "prod",
-          reason: "scale up",
-        },
-        {
-          service_id: "svc-1",
-          template_id: "tpl-1",
-          instance_size_id: "size-1",
-          namespace: "prod",
-          reason: "scale up",
-        },
-      ],
+      body: {
+        operation: "CREATE",
+        request_id: expect.any(String),
+        reason: "scale up",
+        items: [
+          {
+            service_id: "svc-1",
+            template_id: "tpl-1",
+            instance_size_id: "size-1",
+            namespace: "prod",
+            reason: "scale up",
+          },
+          {
+            service_id: "svc-1",
+            template_id: "tpl-1",
+            instance_size_id: "size-1",
+            namespace: "prod",
+            reason: "scale up",
+          },
+          {
+            service_id: "svc-1",
+            template_id: "tpl-1",
+            instance_size_id: "size-1",
+            namespace: "prod",
+            reason: "scale up",
+          },
+        ],
+      },
+      intent: expect.objectContaining({
+        actorKey: "u-alice",
+        operationKey: "CREATE",
+        requestId: expect.any(String),
+        fingerprint: expect.any(String),
+      }),
+      submissionSequence: expect.any(Number),
     });
+    watchValues.batch_count = 1;
+  });
+
+  it("normalizes batch create text before fingerprinting whitespace-equivalent retries", async () => {
+    watchValues.batch_count = 2;
+    formState.getFieldsValue
+      .mockReturnValueOnce({
+        service_id: " svc-1 ",
+        template_id: " tpl-1 ",
+        instance_size_id: " size-1 ",
+        namespace: " prod ",
+        reason: " scale up ",
+        batch_count: 2,
+      })
+      .mockReturnValueOnce({
+        service_id: "svc-1",
+        template_id: "tpl-1",
+        instance_size_id: "size-1",
+        namespace: "prod",
+        reason: "scale up",
+        batch_count: 2,
+      });
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    await act(async () => result.current.submitWizard());
+    await act(async () => result.current.submitWizard());
+    const [first, retry] = createBatchMutate.mock.calls.map(
+      (call) =>
+        call[0] as {
+          body: {
+            request_id: string;
+            reason: string;
+            items: Array<{
+              service_id: string;
+              template_id: string;
+              instance_size_id: string;
+              namespace: string;
+              reason: string;
+            }>;
+          };
+        },
+    );
+
+    expect(first?.body).toEqual(
+      expect.objectContaining({
+        reason: "scale up",
+        items: expect.arrayContaining([
+          expect.objectContaining({
+            service_id: "svc-1",
+            template_id: "tpl-1",
+            instance_size_id: "size-1",
+            namespace: "prod",
+            reason: "scale up",
+          }),
+        ]),
+      }),
+    );
+    expect(retry?.body.request_id).toBe(first?.body.request_id);
     watchValues.batch_count = 1;
   });
 
@@ -795,30 +919,40 @@ describe("useVMManagementController", () => {
     });
 
     expect(createBatchMutate).toHaveBeenCalledWith({
-      operation: "CREATE",
-      reason: "scale up",
-      items: [
-        {
-          service_id: "svc-1",
-          template_id: "tpl-1",
-          instance_size_id: "size-1",
-          namespace: "prod",
-          reason: "scale up",
-          target_cpu_cores: 3,
-          target_memory_gi: 6,
-          target_disk_gb: 80,
-        },
-        {
-          service_id: "svc-1",
-          template_id: "tpl-1",
-          instance_size_id: "size-1",
-          namespace: "prod",
-          reason: "scale up",
-          target_cpu_cores: 3,
-          target_memory_gi: 6,
-          target_disk_gb: 80,
-        },
-      ],
+      body: {
+        operation: "CREATE",
+        request_id: expect.any(String),
+        reason: "scale up",
+        items: [
+          {
+            service_id: "svc-1",
+            template_id: "tpl-1",
+            instance_size_id: "size-1",
+            namespace: "prod",
+            reason: "scale up",
+            target_cpu_cores: 3,
+            target_memory_gi: 6,
+            target_disk_gb: 80,
+          },
+          {
+            service_id: "svc-1",
+            template_id: "tpl-1",
+            instance_size_id: "size-1",
+            namespace: "prod",
+            reason: "scale up",
+            target_cpu_cores: 3,
+            target_memory_gi: 6,
+            target_disk_gb: 80,
+          },
+        ],
+      },
+      intent: expect.objectContaining({
+        actorKey: "u-alice",
+        operationKey: "CREATE",
+        requestId: expect.any(String),
+        fingerprint: expect.any(String),
+      }),
+      submissionSequence: expect.any(Number),
     });
     watchValues.batch_count = 1;
   });
@@ -868,42 +1002,479 @@ describe("useVMManagementController", () => {
     });
 
     expect(vmBatchPowerMutate).toHaveBeenCalledWith({
-      operation: "START",
-      reason: "batch.power_reason",
-      items: [
-        { vm_id: "vm-1", reason: "batch.power_reason" },
-        { vm_id: "vm-2", reason: "batch.power_reason" },
-      ],
+      body: {
+        operation: "START",
+        request_id: expect.any(String),
+        reason: "batch.power_reason",
+        items: [
+          { vm_id: "vm-1", reason: "batch.power_reason" },
+          { vm_id: "vm-2", reason: "batch.power_reason" },
+        ],
+      },
+      intent: expect.objectContaining({
+        operationKey: "POWER:START",
+        requestId: expect.any(String),
+      }),
+      submissionSequence: expect.any(Number),
     });
     expect(vmBatchMutate).toHaveBeenCalledWith({
-      operation: "DELETE",
-      reason: "batch.delete_reason",
-      items: [
-        { vm_id: "vm-1", reason: "batch.delete_reason" },
-        { vm_id: "vm-2", reason: "batch.delete_reason" },
-      ],
+      body: {
+        operation: "DELETE",
+        request_id: expect.any(String),
+        reason: "batch.delete_reason",
+        items: [
+          { vm_id: "vm-1", reason: "batch.delete_reason" },
+          { vm_id: "vm-2", reason: "batch.delete_reason" },
+        ],
+      },
+      intent: expect.objectContaining({
+        operationKey: "DELETE",
+        requestId: expect.any(String),
+      }),
+      submissionSequence: expect.any(Number),
     });
   });
 
-  it("uses status_url for active batch tracking when batch submit succeeds", () => {
+  it("reuses request_id after a lost response and rotates it only after success or a new intent", () => {
     const { result } = renderHook(() => useVMManagementController({ t }));
+    const powerBatchOptions = getMutationOptions("/vms/batch/power");
 
-    const createBatchOptions = getMutationOptions(2) as {
-      onSuccess?: (data: {
-        batch_id: string;
-        status: string;
-        status_url: string;
-        retry_after_seconds: number;
-      }) => void;
+    act(() => result.current.setSelectedVMIDs(["vm-2", "vm-1"]));
+    act(() => result.current.submitBatchPowerSelected("RESTART"));
+    const firstSubmission = vmBatchPowerMutate.mock.calls[0]?.[0] as {
+      body: { request_id: string };
+      intent: Record<string, unknown>;
     };
 
     act(() => {
-      createBatchOptions.onSuccess?.({
-        batch_id: "fallback-id",
-        status: "PENDING_APPROVAL",
-        status_url: "/api/v1/vms/batch/batch-from-status-url",
-        retry_after_seconds: 3,
+      powerBatchOptions?.onError?.({
+        code: "HTTP_ERROR",
+        status: 503,
       });
+      result.current.setSelectedVMIDs(["vm-1", "vm-2"]);
+    });
+    act(() => result.current.submitBatchPowerSelected("RESTART"));
+    const retrySubmission = vmBatchPowerMutate.mock.calls[1]?.[0] as {
+      body: { request_id: string };
+      intent: Record<string, unknown>;
+    };
+    expect(retrySubmission.body.request_id).toBe(
+      firstSubmission.body.request_id,
+    );
+
+    act(() => {
+      powerBatchOptions?.onSuccess?.(
+        {
+          batch_id: "batch-restart",
+          status: "IN_PROGRESS",
+          status_url: "/api/v1/vms/batch/batch-restart",
+          retry_after_seconds: 2,
+        },
+        retrySubmission,
+      );
+    });
+    act(() => result.current.submitBatchPowerSelected("RESTART"));
+    const afterSuccessSubmission = vmBatchPowerMutate.mock.calls[2]?.[0] as {
+      body: { request_id: string };
+    };
+    expect(afterSuccessSubmission.body.request_id).not.toBe(
+      firstSubmission.body.request_id,
+    );
+
+    act(() => result.current.setSelectedVMIDs(["vm-3"]));
+    act(() => result.current.submitBatchPowerSelected("RESTART"));
+    const changedIntentSubmission = vmBatchPowerMutate.mock.calls[3]?.[0] as {
+      body: { request_id: string };
+    };
+    expect(changedIntentSubmission.body.request_id).not.toBe(
+      afterSuccessSubmission.body.request_id,
+    );
+  });
+
+  it("keeps a failed batch modify form open and resets it only after accepted success", async () => {
+    formState.getFieldsValue.mockReturnValue({
+      reason: "resize batch",
+      target_memory_gi: 8,
+    });
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    const submitBatchOptions = getMutationOptions("/vms/batch", 1);
+
+    act(() => result.current.setSelectedVMIDs(["vm-1", "vm-2"]));
+    act(() => result.current.openBatchModifyModal());
+    const resetsBeforeSubmit = formState.resetFields.mock.calls.length;
+    await act(async () => result.current.submitModify());
+
+    expect(result.current.modifyOpen).toBe(true);
+    expect(formState.resetFields).toHaveBeenCalledTimes(resetsBeforeSubmit);
+    const firstSubmission = vmBatchMutate.mock.calls[0]?.[0] as {
+      body: { request_id: string; operation: string };
+      intent: Record<string, unknown>;
+    };
+    expect(firstSubmission.body).toEqual(
+      expect.objectContaining({
+        operation: "MODIFY",
+        request_id: expect.any(String),
+      }),
+    );
+
+    act(() =>
+      submitBatchOptions?.onError?.({ code: "HTTP_ERROR", status: 503 }),
+    );
+    expect(result.current.modifyOpen).toBe(true);
+    expect(formState.resetFields).toHaveBeenCalledTimes(resetsBeforeSubmit);
+
+    await act(async () => result.current.submitModify());
+    const retrySubmission = vmBatchMutate.mock.calls[1]?.[0] as {
+      body: { request_id: string };
+      intent: Record<string, unknown>;
+    };
+    expect(retrySubmission.body.request_id).toBe(
+      firstSubmission.body.request_id,
+    );
+
+    act(() => {
+      submitBatchOptions?.onSuccess?.(
+        {
+          batch_id: "batch-modify",
+          status: "PENDING_APPROVAL",
+          status_url: "/api/v1/vms/batch/batch-modify",
+          retry_after_seconds: 2,
+        },
+        retrySubmission,
+      );
+    });
+    expect(result.current.modifyOpen).toBe(false);
+    expect(formState.resetFields).toHaveBeenCalledTimes(resetsBeforeSubmit + 1);
+  });
+
+  it("keeps a pending modify request_id across close and reopen", async () => {
+    formState.getFieldsValue.mockReturnValue({
+      reason: "resize pending",
+      target_memory_gi: 8,
+    });
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => result.current.setSelectedVMIDs(["vm-1", "vm-2"]));
+    act(() => result.current.openBatchModifyModal());
+    await act(async () => result.current.submitModify());
+    const firstSubmission = vmBatchMutate.mock.calls[0]?.[0] as {
+      body: { request_id: string };
+    };
+
+    act(() => result.current.closeModifyModal());
+    const persistedAfterClose = window.sessionStorage.getItem(
+      "shepherd-vm-batch-request-intents",
+    );
+    expect(persistedAfterClose).toContain(firstSubmission.body.request_id);
+
+    act(() => result.current.openBatchModifyModal());
+    await act(async () => result.current.submitModify());
+    const reopenedSubmission = vmBatchMutate.mock.calls[1]?.[0] as {
+      body: { request_id: string };
+    };
+    expect(reopenedSubmission.body.request_id).toBe(
+      firstSubmission.body.request_id,
+    );
+  });
+
+  it("normalizes batch modify text before fingerprinting whitespace-equivalent retries", async () => {
+    formState.getFieldsValue
+      .mockReturnValueOnce({
+        reason: " resize batch ",
+        target_memory_gi: 8,
+      })
+      .mockReturnValueOnce({
+        reason: "resize batch",
+        target_memory_gi: 8,
+      });
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    act(() => result.current.setSelectedVMIDs([" vm-2 ", " vm-1 "]));
+    act(() => result.current.openBatchModifyModal());
+    await act(async () => result.current.submitModify());
+    act(() => result.current.setSelectedVMIDs(["vm-1", "vm-2"]));
+    await act(async () => result.current.submitModify());
+    const [first, retry] = vmBatchMutate.mock.calls.map(
+      (call) =>
+        call[0] as {
+          body: {
+            request_id: string;
+            reason: string;
+            items: Array<{ vm_id: string; reason: string }>;
+          };
+        },
+    );
+
+    expect(first?.body).toEqual(
+      expect.objectContaining({
+        reason: "resize batch",
+        items: expect.arrayContaining([
+          expect.objectContaining({ vm_id: "vm-1", reason: "resize batch" }),
+          expect.objectContaining({ vm_id: "vm-2", reason: "resize batch" }),
+        ]),
+      }),
+    );
+    expect(retry?.body.request_id).toBe(first?.body.request_id);
+  });
+
+  it("reuses an unresolved power request_id after unmount and remount", () => {
+    const firstView = renderHook(() => useVMManagementController({ t }));
+    act(() => firstView.result.current.setSelectedVMIDs(["vm-2", "vm-1"]));
+    act(() => firstView.result.current.submitBatchPowerSelected("RESTART"));
+    const firstSubmission = vmBatchPowerMutate.mock.calls[0]?.[0] as {
+      body: { request_id: string };
+    };
+    firstView.unmount();
+
+    const secondView = renderHook(() => useVMManagementController({ t }));
+    act(() => secondView.result.current.setSelectedVMIDs(["vm-1", "vm-2"]));
+    act(() => secondView.result.current.submitBatchPowerSelected("RESTART"));
+    const remountedSubmission = vmBatchPowerMutate.mock.calls[1]?.[0] as {
+      body: { request_id: string };
+    };
+
+    expect(remountedSubmission.body.request_id).toBe(
+      firstSubmission.body.request_id,
+    );
+  });
+
+  it("retains independent A and B power intents for their own retries", () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    for (const vmID of ["vm-a", "vm-b", "vm-a", "vm-b"]) {
+      act(() => result.current.setSelectedVMIDs([vmID]));
+      act(() => result.current.submitBatchPowerSelected("START"));
+    }
+    const requestIDs = vmBatchPowerMutate.mock.calls.map(
+      (call) => (call[0] as { body: { request_id: string } }).body.request_id,
+    );
+
+    expect(requestIDs[0]).toBe(requestIDs[2]);
+    expect(requestIDs[1]).toBe(requestIDs[3]);
+    expect(requestIDs[0]).not.toBe(requestIDs[1]);
+  });
+
+  it("reuses delete and power intents when only localized automatic reasons change", () => {
+    let locale: "default" | "alternate" = "default";
+    const localizedT = ((key: string) => {
+      if (key === "batch.delete_reason") {
+        return locale === "default" ? "Batch delete" : "Localized batch delete";
+      }
+      if (key === "batch.power_reason") {
+        return locale === "default" ? "Batch power" : "Localized batch power";
+      }
+      return key;
+    }) as unknown as TFunction;
+    const { result } = renderHook(() =>
+      useVMManagementController({ t: localizedT }),
+    );
+
+    act(() => result.current.setSelectedVMIDs([" vm-2 ", " vm-1 "]));
+    act(() => {
+      result.current.submitBatchPowerSelected("START");
+      result.current.submitBatchDeleteSelected();
+    });
+    locale = "alternate";
+    act(() => result.current.setSelectedVMIDs(["vm-1", "vm-2"]));
+    act(() => {
+      result.current.submitBatchPowerSelected("START");
+      result.current.submitBatchDeleteSelected();
+    });
+
+    const [powerFirst, powerRetry] = vmBatchPowerMutate.mock.calls.map(
+      (call) => call[0] as { body: { request_id: string; reason: string } },
+    );
+    const [deleteFirst, deleteRetry] = vmBatchMutate.mock.calls.map(
+      (call) => call[0] as { body: { request_id: string; reason: string } },
+    );
+    expect(powerFirst?.body.reason).not.toBe(powerRetry?.body.reason);
+    expect(powerRetry?.body.request_id).toBe(powerFirst?.body.request_id);
+    expect(deleteFirst?.body.reason).not.toBe(deleteRetry?.body.reason);
+    expect(deleteRetry?.body.request_id).toBe(deleteFirst?.body.request_id);
+  });
+
+  it("tracks out-of-order successes without letting an older success overwrite a newer one", async () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    const submitBatchOptions = getMutationOptions("/vms/batch", 1);
+    act(() => result.current.setSelectedVMIDs(["vm-1"]));
+    act(() => result.current.openBatchModifyModal());
+
+    formState.getFieldsValue.mockReturnValue({
+      reason: "intent-a",
+      target_memory_gi: 8,
+    });
+    await act(async () => result.current.submitModify());
+    const submissionA = vmBatchMutate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    > & {
+      body: { request_id: string };
+    };
+
+    formState.getFieldsValue.mockReturnValue({
+      reason: "intent-b",
+      target_memory_gi: 16,
+    });
+    await act(async () => result.current.submitModify());
+    const submissionB = vmBatchMutate.mock.calls[1]?.[0] as Record<
+      string,
+      unknown
+    > & {
+      body: { request_id: string };
+    };
+    const resetsBeforeSuccess = formState.resetFields.mock.calls.length;
+
+    act(() =>
+      submitBatchOptions?.onSuccess?.(
+        {
+          batch_id: "batch-a",
+          status: "PENDING_APPROVAL",
+          status_url: "/api/v1/vms/batch/batch-a",
+          retry_after_seconds: 2,
+        },
+        submissionA,
+      ),
+    );
+    expect(result.current.modifyOpen).toBe(true);
+    expect(result.current.activeBatchID).toBe("batch-a");
+    expect(formState.resetFields).toHaveBeenCalledTimes(resetsBeforeSuccess);
+    expect(
+      window.sessionStorage.getItem("shepherd-vm-batch-request-intents"),
+    ).not.toContain(submissionA.body.request_id);
+    expect(
+      window.sessionStorage.getItem("shepherd-vm-batch-request-intents"),
+    ).toContain(submissionB.body.request_id);
+
+    act(() =>
+      submitBatchOptions?.onSuccess?.(
+        {
+          batch_id: "batch-b",
+          status: "PENDING_APPROVAL",
+          status_url: "/api/v1/vms/batch/batch-b",
+          retry_after_seconds: 2,
+        },
+        submissionB,
+      ),
+    );
+    expect(result.current.modifyOpen).toBe(false);
+    expect(result.current.activeBatchID).toBe("batch-b");
+
+    act(() => result.current.openBatchModifyModal());
+    formState.getFieldsValue.mockReturnValue({
+      reason: "intent-c",
+      target_memory_gi: 32,
+    });
+    await act(async () => result.current.submitModify());
+    const submissionC = vmBatchMutate.mock.calls[2]?.[0] as Record<
+      string,
+      unknown
+    > & {
+      body: { request_id: string };
+    };
+    const resetsBeforeStaleSuccess = formState.resetFields.mock.calls.length;
+
+    act(() =>
+      submitBatchOptions?.onSuccess?.(
+        {
+          batch_id: "batch-a-late",
+          status: "PENDING_APPROVAL",
+          status_url: "/api/v1/vms/batch/batch-a-late",
+          retry_after_seconds: 2,
+        },
+        submissionA,
+      ),
+    );
+    expect(result.current.modifyOpen).toBe(true);
+    expect(result.current.activeBatchID).toBe("batch-b");
+    expect(formState.resetFields).toHaveBeenCalledTimes(
+      resetsBeforeStaleSuccess,
+    );
+    expect(
+      window.sessionStorage.getItem("shepherd-vm-batch-request-intents"),
+    ).toContain(submissionC.body.request_id);
+  });
+
+  it("keeps an earlier accepted batch tracked when a newer submission fails", () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    const powerBatchOptions = getMutationOptions("/vms/batch/power");
+
+    act(() => result.current.setSelectedVMIDs(["vm-a"]));
+    act(() => result.current.submitBatchPowerSelected("START"));
+    const submissionA = vmBatchPowerMutate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+
+    act(() => result.current.setSelectedVMIDs(["vm-b"]));
+    act(() => result.current.submitBatchPowerSelected("START"));
+    const submissionB = vmBatchPowerMutate.mock.calls[1]?.[0] as Record<
+      string,
+      unknown
+    >;
+
+    act(() =>
+      powerBatchOptions?.onSuccess?.(
+        {
+          batch_id: "batch-a",
+          status: "IN_PROGRESS",
+          status_url: "/api/v1/vms/batch/batch-a",
+          retry_after_seconds: 2,
+        },
+        submissionA,
+      ),
+    );
+    expect(result.current.activeBatchID).toBe("batch-a");
+
+    act(() =>
+      powerBatchOptions?.onError?.(
+        {
+          code: "HTTP_ERROR",
+          status: 503,
+        },
+        submissionB,
+      ),
+    );
+    expect(result.current.activeBatchID).toBe("batch-a");
+  });
+
+  it("uses status_url for active batch tracking when batch submit succeeds", async () => {
+    formState.getFieldsValue.mockReturnValue({
+      service_id: "svc-1",
+      template_id: "tpl-1",
+      instance_size_id: "size-1",
+      namespace: "prod",
+      reason: "scale up",
+      batch_count: 2,
+    });
+    const { result } = renderHook(() => useVMManagementController({ t }));
+
+    const createBatchOptions = getMutationOptions("/vms/batch") as {
+      onSuccess?: (
+        data: {
+          batch_id: string;
+          status: string;
+          status_url: string;
+          retry_after_seconds: number;
+        },
+        variables: Record<string, unknown>,
+      ) => void;
+    };
+
+    await act(async () => result.current.submitWizard());
+    const submission = createBatchMutate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+
+    act(() => {
+      createBatchOptions.onSuccess?.(
+        {
+          batch_id: "fallback-id",
+          status: "PENDING_APPROVAL",
+          status_url: "/api/v1/vms/batch/batch-from-status-url",
+          retry_after_seconds: 3,
+        },
+        submission,
+      );
     });
 
     expect(result.current.activeBatchID).toBe("batch-from-status-url");
@@ -917,32 +1488,275 @@ describe("useVMManagementController", () => {
   it("marks power batches as job tracking and keeps batch workspace routing semantics", () => {
     const { result } = renderHook(() => useVMManagementController({ t }));
 
-    const powerBatchOptions = getMutationOptions(4) as {
-      onSuccess?: (data: {
-        batch_id: string;
-        status: string;
-        status_url: string;
-        retry_after_seconds: number;
-      }) => void;
+    const powerBatchOptions = getMutationOptions("/vms/batch/power") as {
+      onSuccess?: (
+        data: {
+          batch_id: string;
+          status: string;
+          status_url: string;
+          retry_after_seconds: number;
+        },
+        variables: Record<string, unknown>,
+      ) => void;
     };
 
+    act(() => result.current.setSelectedVMIDs(["vm-1"]));
+    act(() => result.current.submitBatchPowerSelected("START"));
+    const submission = vmBatchPowerMutate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+
     act(() => {
-      powerBatchOptions.onSuccess?.({
-        batch_id: "power-batch-1",
-        status: "IN_PROGRESS",
-        status_url: "/api/v1/vms/batch/power-batch-1",
-        retry_after_seconds: 0,
-      });
+      powerBatchOptions.onSuccess?.(
+        {
+          batch_id: "power-batch-1",
+          status: "IN_PROGRESS",
+          status_url: "/api/v1/vms/batch/power-batch-1",
+          retry_after_seconds: 0,
+        },
+        submission,
+      );
     });
 
     expect(result.current.activeBatchKind).toBe("job");
     expect(messageSuccessMock).toHaveBeenCalledWith("batch.job_submitted");
   });
 
+  it("uses only eligible FAILED children and records authoritative retry/cancel results", () => {
+    batchStatusState.status = "IN_PROGRESS";
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    const powerBatchOptions = getMutationOptions("/vms/batch/power") as {
+      onSuccess?: (
+        data: {
+          batch_id: string;
+          status: string;
+          status_url: string;
+          retry_after_seconds: number;
+        },
+        variables: Record<string, unknown>,
+      ) => void;
+    };
+    const retryOptions = getMutationOptions("/vms/batch/{batch_id}/retry") as {
+      onSuccess?: (
+        data: {
+          batch_id: string;
+          status: string;
+          affected_count: number;
+          affected_ticket_ids?: string[];
+        },
+        variables?: Record<string, unknown>,
+      ) => void;
+    };
+    const cancelOptions = getMutationOptions(
+      "/vms/batch/{batch_id}/cancel",
+    ) as {
+      onSuccess?: (
+        data: {
+          batch_id: string;
+          status: string;
+          affected_count: number;
+          affected_ticket_ids?: string[];
+        },
+        variables?: Record<string, unknown>,
+      ) => void;
+    };
+
+    act(() => result.current.setSelectedVMIDs(["vm-1"]));
+    act(() => result.current.submitBatchPowerSelected("START"));
+    const submission = vmBatchPowerMutate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    act(() => {
+      powerBatchOptions.onSuccess?.(
+        {
+          batch_id: "batch-live-1",
+          status: "IN_PROGRESS",
+          status_url: "/api/v1/vms/batch/batch-live-1",
+          retry_after_seconds: 0,
+        },
+        submission,
+      );
+    });
+    act(() => result.current.retryBatch());
+    expect(retryBatchMutate).toHaveBeenCalledWith({
+      actorKey: "u-alice",
+      batchID: "batch-live-1",
+      targetTicketIDs: ["ticket-failed-1"],
+    });
+    const retrySubmission = retryBatchMutate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+
+    act(() => {
+      retryOptions.onSuccess?.(
+        {
+          batch_id: "batch-live-1",
+          status: "IN_PROGRESS",
+          affected_count: 1,
+          affected_ticket_ids: ["ticket-failed-1"],
+        },
+        retrySubmission,
+      );
+    });
+    expect(result.current.lastBatchActionFeedback).toEqual({
+      action: "retry",
+      affectedCount: 1,
+      affectedTicketIDs: ["ticket-failed-1"],
+    });
+
+    act(() => result.current.cancelBatch());
+    expect(cancelBatchMutate).toHaveBeenCalledWith({
+      actorKey: "u-alice",
+      batchID: "batch-live-1",
+      targetTicketIDs: ["ticket-pending-1"],
+    });
+    const cancelSubmission = cancelBatchMutate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    act(() => {
+      cancelOptions.onSuccess?.(
+        {
+          batch_id: "batch-live-1",
+          status: "CANCELLED",
+          affected_count: 1,
+          affected_ticket_ids: ["ticket-pending-1"],
+        },
+        cancelSubmission,
+      );
+    });
+    expect(result.current.lastBatchActionFeedback).toEqual({
+      action: "cancel",
+      affectedCount: 1,
+      affectedTicketIDs: ["ticket-pending-1"],
+    });
+  });
+
+  it("applies Retry-After cooldown to retry and prevents repeated mutation", () => {
+    batchStatusState.status = "IN_PROGRESS";
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    const powerBatchOptions = getMutationOptions("/vms/batch/power") as {
+      onSuccess?: (
+        data: {
+          batch_id: string;
+          status: string;
+          status_url: string;
+          retry_after_seconds: number;
+        },
+        variables: Record<string, unknown>,
+      ) => void;
+    };
+    const retryOptions = getMutationOptions("/vms/batch/{batch_id}/retry") as {
+      onError?: (error: { code: string; retry_after_seconds?: number }) => void;
+    };
+
+    act(() => result.current.setSelectedVMIDs(["vm-1"]));
+    act(() => result.current.submitBatchPowerSelected("START"));
+    const submission = vmBatchPowerMutate.mock.calls[0]?.[0] as Record<
+      string,
+      unknown
+    >;
+    act(() => {
+      powerBatchOptions.onSuccess?.(
+        {
+          batch_id: "batch-live-1",
+          status: "IN_PROGRESS",
+          status_url: "/api/v1/vms/batch/batch-live-1",
+          retry_after_seconds: 0,
+        },
+        submission,
+      );
+    });
+    act(() => {
+      retryOptions.onError?.({
+        code: "BATCH_RATE_LIMITED",
+        retry_after_seconds: 7,
+      });
+    });
+    expect(result.current.batchRetryAfterSeconds).toBeGreaterThan(0);
+
+    act(() => result.current.retryBatch());
+    expect(retryBatchMutate).not.toHaveBeenCalled();
+    expect(messageWarningMock).toHaveBeenCalledWith("batch.rate_limited_wait");
+  });
+
+  it("surfaces ambiguous restart recovery metadata without a fence-clearing mutation", () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    const restartOptions = getActionOptions("/vms/{vm_id}/restart");
+    expect(useApiMutationMock).toHaveBeenCalledTimes(8);
+
+    act(() => {
+      restartOptions?.onError?.({
+        code: "POWER_OPERATION_IN_PROGRESS",
+        status: 409,
+        params: {
+          operator_action_required: true,
+          existing_event_id: "event-restart-1",
+          reconciliation_path: "operator-runbook:ambiguous-vm-restart",
+        },
+      });
+    });
+    expect(result.current.restartReconciliationNotice).toEqual({
+      eventId: "event-restart-1",
+      reconciliationPath: "operator-runbook:ambiguous-vm-restart",
+    });
+    expect(
+      useApiMutationMock.mock.calls.some((call) =>
+        String(call[0]).includes("/admin/vm-power-events/"),
+      ),
+    ).toBe(false);
+  });
+
+  it("surfaces ambiguous restart recovery metadata from batch submit and retry errors", () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    const powerBatchOptions = getMutationOptions("/vms/batch/power");
+    const retryOptions = getMutationOptions("/vms/batch/{batch_id}/retry");
+
+    act(() => {
+      powerBatchOptions?.onError?.({
+        code: "POWER_OPERATION_IN_PROGRESS",
+        status: 409,
+        params: {
+          operator_action_required: true,
+          existing_event_id: "event-power-submit",
+          reconciliation_path: "operator-runbook:ambiguous-vm-restart",
+        },
+      });
+    });
+    expect(result.current.restartReconciliationNotice?.eventId).toBe(
+      "event-power-submit",
+    );
+
+    act(() => {
+      retryOptions?.onError?.({
+        code: "DUPLICATE_PENDING_REQUEST",
+        status: 409,
+        params: {
+          operator_action_required: true,
+          existing_event_id: "event-power-retry",
+          reconciliation_path: "operator-runbook:ambiguous-vm-restart",
+        },
+      });
+    });
+    expect(result.current.restartReconciliationNotice).toEqual({
+      eventId: "event-power-retry",
+      reconciliationPath: "operator-runbook:ambiguous-vm-restart",
+    });
+    expect(
+      useApiMutationMock.mock.calls.some((call) =>
+        String(call[0]).includes("/admin/vm-power-events/"),
+      ),
+    ).toBe(false);
+  });
+
   it("restores active batch tracking from session storage", () => {
     window.sessionStorage.setItem(
       "shepherd-active-batch",
       JSON.stringify({
+        actor_id: "u-alice",
         batch_id: "batch-restored-1",
         status_url: "/api/v1/vms/batch/batch-restored-1",
         kind: "request",
@@ -958,6 +1772,51 @@ describe("useVMManagementController", () => {
     expect(result.current.activeBatchKind).toBe("request");
   });
 
+  it("waits for the authenticated actor before restoring owned batch state", () => {
+    window.sessionStorage.setItem(
+      "shepherd-active-batch",
+      JSON.stringify({
+        actor_id: "u-alice",
+        batch_id: "batch-restored-after-auth",
+        status_url: "/api/v1/vms/batch/batch-restored-after-auth",
+        kind: "request",
+      }),
+    );
+    authUserState.user.id = "";
+    const view = renderHook(() => useVMManagementController({ t }));
+
+    expect(view.result.current.activeBatchID).toBe("");
+    expect(window.sessionStorage.getItem("shepherd-active-batch")).toContain(
+      "batch-restored-after-auth",
+    );
+
+    authUserState.user.id = "u-alice";
+    view.rerender();
+
+    expect(view.result.current.activeBatchID).toBe("batch-restored-after-auth");
+  });
+
+  it("rejects active batch tracking owned by a previous actor", () => {
+    window.sessionStorage.setItem(
+      "shepherd-active-batch",
+      JSON.stringify({
+        actor_id: "u-alice",
+        batch_id: "batch-alice",
+        status_url: "/api/v1/vms/batch/batch-alice",
+        kind: "job",
+      }),
+    );
+    const view = renderHook(() => useVMManagementController({ t }));
+    expect(view.result.current.activeBatchID).toBe("batch-alice");
+
+    authUserState.user.id = "u-bob";
+    authUserState.user.username = "bob";
+    view.rerender();
+
+    expect(view.result.current.activeBatchID).toBe("");
+    expect(window.sessionStorage.getItem("shepherd-active-batch")).toBeNull();
+  });
+
   it("enters cooldown on BATCH_RATE_LIMITED and blocks batch actions while countdown active", () => {
     watchValues.batch_count = 3;
     formState.getFieldsValue.mockReturnValue({
@@ -971,7 +1830,7 @@ describe("useVMManagementController", () => {
 
     const { result } = renderHook(() => useVMManagementController({ t }));
 
-    const createBatchOptions = getMutationOptions(2) as {
+    const createBatchOptions = getMutationOptions("/vms/batch") as {
       onError?: (error: {
         code: string;
         params?: Record<string, unknown>;
@@ -987,6 +1846,7 @@ describe("useVMManagementController", () => {
     });
 
     expect(result.current.batchRateLimited).toBe(true);
+    expect(result.current.batchRateLimitContactAdmin).toBe(false);
     expect(result.current.batchRetryAfterSeconds).toBeGreaterThan(0);
 
     act(() => {
@@ -1001,6 +1861,36 @@ describe("useVMManagementController", () => {
     expect(messageWarningMock).toHaveBeenCalledWith("batch.rate_limited_wait");
 
     watchValues.batch_count = 1;
+  });
+
+  it("shows administrator guidance when the server marks a batch limit as non-user-configurable", () => {
+    const { result } = renderHook(() => useVMManagementController({ t }));
+    const createBatchOptions = getMutationOptions("/vms/batch") as {
+      onError?: (error: {
+        code: string;
+        params?: Record<string, unknown>;
+      }) => void;
+    };
+
+    act(() => {
+      createBatchOptions.onError?.({
+        code: "BATCH_RATE_LIMITED",
+        params: { retry_after_seconds: 5, contact_admin: true },
+      });
+    });
+
+    expect(result.current.batchRateLimited).toBe(true);
+    expect(result.current.batchRateLimitContactAdmin).toBe(true);
+    expect(messageWarningMock).toHaveBeenCalledWith(
+      "batch.rate_limited_contact_admin",
+    );
+
+    messageWarningMock.mockClear();
+    act(() => result.current.submitBatchPowerSelected("START"));
+    expect(messageWarningMock).toHaveBeenCalledWith(
+      "batch.rate_limited_contact_admin",
+    );
+    expect(vmBatchPowerMutate).not.toHaveBeenCalled();
   });
 
   it("blocks batch delete early when selected VMs are still running", () => {
@@ -1022,79 +1912,9 @@ describe("useVMManagementController", () => {
     });
 
     expect(vmBatchMutate).not.toHaveBeenCalled();
-    expect(messageWarningMock).toHaveBeenCalledWith("batch.delete_requires_stopped");
-  });
-
-  it("records affected child ticket ids for retry/cancel feedback", () => {
-    const { result } = renderHook(() => useVMManagementController({ t }));
-
-    const createBatchOptions = getMutationOptions(2) as {
-      onSuccess?: (data: {
-        batch_id: string;
-        status: string;
-        status_url: string;
-        retry_after_seconds: number;
-      }) => void;
-    };
-    const retryOptions = getMutationOptions(5) as {
-      onSuccess?: (data: {
-        batch_id: string;
-        status: string;
-        affected_count: number;
-        affected_ticket_ids?: string[];
-      }) => void;
-    };
-    const cancelOptions = getMutationOptions(6) as {
-      onSuccess?: (data: {
-        batch_id: string;
-        status: string;
-        affected_count: number;
-        affected_ticket_ids?: string[];
-      }) => void;
-    };
-
-    act(() => {
-      createBatchOptions.onSuccess?.({
-        batch_id: "fallback-id",
-        status: "PENDING_APPROVAL",
-        status_url: "/api/v1/vms/batch/batch-live-1",
-        retry_after_seconds: 2,
-      });
-    });
-
-    act(() => {
-      result.current.retryBatch();
-      retryOptions.onSuccess?.({
-        batch_id: "batch-live-1",
-        status: "IN_PROGRESS",
-        affected_count: 1,
-        affected_ticket_ids: ["ticket-failed-1"],
-      });
-    });
-
-    expect(retryBatchMutate).toHaveBeenCalledWith("batch-live-1");
-    expect(result.current.lastBatchActionFeedback).toEqual({
-      action: "retry",
-      affectedCount: 1,
-      affectedTicketIDs: ["ticket-failed-1"],
-    });
-
-    act(() => {
-      result.current.cancelBatch();
-      cancelOptions.onSuccess?.({
-        batch_id: "batch-live-1",
-        status: "CANCELLED",
-        affected_count: 1,
-        affected_ticket_ids: ["ticket-pending-1"],
-      });
-    });
-
-    expect(cancelBatchMutate).toHaveBeenCalledWith("batch-live-1");
-    expect(result.current.lastBatchActionFeedback).toEqual({
-      action: "cancel",
-      affectedCount: 1,
-      affectedTicketIDs: ["ticket-pending-1"],
-    });
+    expect(messageWarningMock).toHaveBeenCalledWith(
+      "batch.delete_requires_stopped",
+    );
   });
 
   it("rejects modify submit when no target resource is provided", async () => {

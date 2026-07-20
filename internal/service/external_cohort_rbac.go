@@ -41,6 +41,11 @@ func (s *ExternalAuthService) reconcileExternalCohortRBAC(
 	if s == nil || s.client == nil {
 		return false, fmt.Errorf("external auth service is not initialized")
 	}
+	if s.roleAssignmentExecutor != nil {
+		if lockErr := LockRoleBindingUser(ctx, s.roleAssignmentExecutor, userID); lockErr != nil {
+			return false, fmt.Errorf("lock external cohort role binding user: %w", lockErr)
+		}
+	}
 
 	desiredBindings, err := s.buildDesiredExternalCohortBindings(ctx, providerID, cohorts)
 	if err != nil {
@@ -137,6 +142,15 @@ func (s *ExternalAuthService) buildDesiredExternalCohortBindings(
 	if len(mappings) == 0 {
 		return nil, nil
 	}
+	if s.roleAssignmentExecutor != nil {
+		if lockErr := LockRoleAssignments(
+			ctx,
+			s.roleAssignmentExecutor,
+			externalCohortMappingRoleIDs(mappings),
+		); lockErr != nil {
+			return nil, fmt.Errorf("lock external cohort mapping roles: %w", lockErr)
+		}
+	}
 
 	enabledRoleIDs, err := s.enabledExternalCohortMappingRoleIDSet(ctx, mappings)
 	if err != nil {
@@ -195,22 +209,7 @@ func (s *ExternalAuthService) enabledExternalCohortMappingRoleIDSet(
 	ctx context.Context,
 	mappings []*ent.ExternalCohortMapping,
 ) (map[string]struct{}, error) {
-	roleIDs := make([]string, 0, len(mappings))
-	seenRoleIDs := make(map[string]struct{}, len(mappings))
-	for _, mapping := range mappings {
-		if mapping == nil {
-			continue
-		}
-		roleID := strings.TrimSpace(mapping.RoleID)
-		if roleID == "" {
-			continue
-		}
-		if _, ok := seenRoleIDs[roleID]; ok {
-			continue
-		}
-		seenRoleIDs[roleID] = struct{}{}
-		roleIDs = append(roleIDs, roleID)
-	}
+	roleIDs := externalCohortMappingRoleIDs(mappings)
 	if len(roleIDs) == 0 {
 		return nil, nil
 	}
@@ -230,6 +229,26 @@ func (s *ExternalAuthService) enabledExternalCohortMappingRoleIDSet(
 		out[roleID] = struct{}{}
 	}
 	return out, nil
+}
+
+func externalCohortMappingRoleIDs(mappings []*ent.ExternalCohortMapping) []string {
+	roleIDs := make([]string, 0, len(mappings))
+	seenRoleIDs := make(map[string]struct{}, len(mappings))
+	for _, mapping := range mappings {
+		if mapping == nil {
+			continue
+		}
+		roleID := strings.TrimSpace(mapping.RoleID)
+		if roleID == "" {
+			continue
+		}
+		if _, ok := seenRoleIDs[roleID]; ok {
+			continue
+		}
+		seenRoleIDs[roleID] = struct{}{}
+		roleIDs = append(roleIDs, roleID)
+	}
+	return roleIDs
 }
 
 func (s *ExternalAuthService) ensureManagedRoleBinding(

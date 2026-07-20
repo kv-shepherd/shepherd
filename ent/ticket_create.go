@@ -196,6 +196,34 @@ func (_c *TicketCreate) SetNillableParentTicketID(v *string) *TicketCreate {
 	return _c
 }
 
+// SetAttemptCount sets the "attempt_count" field.
+func (_c *TicketCreate) SetAttemptCount(v int32) *TicketCreate {
+	_c.mutation.SetAttemptCount(v)
+	return _c
+}
+
+// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
+func (_c *TicketCreate) SetNillableAttemptCount(v *int32) *TicketCreate {
+	if v != nil {
+		_c.SetAttemptCount(*v)
+	}
+	return _c
+}
+
+// SetLastAttemptAt sets the "last_attempt_at" field.
+func (_c *TicketCreate) SetLastAttemptAt(v time.Time) *TicketCreate {
+	_c.mutation.SetLastAttemptAt(v)
+	return _c
+}
+
+// SetNillableLastAttemptAt sets the "last_attempt_at" field if the given value is not nil.
+func (_c *TicketCreate) SetNillableLastAttemptAt(v *time.Time) *TicketCreate {
+	if v != nil {
+		_c.SetLastAttemptAt(*v)
+	}
+	return _c
+}
+
 // SetID sets the "id" field.
 func (_c *TicketCreate) SetID(v string) *TicketCreate {
 	_c.mutation.SetID(v)
@@ -253,6 +281,10 @@ func (_c *TicketCreate) defaults() {
 		v := ticket.DefaultStatus
 		_c.mutation.SetStatus(v)
 	}
+	if _, ok := _c.mutation.AttemptCount(); !ok {
+		v := ticket.DefaultAttemptCount
+		_c.mutation.SetAttemptCount(v)
+	}
 }
 
 // check runs all checks and user-defined validators on the builder.
@@ -293,6 +325,14 @@ func (_c *TicketCreate) check() error {
 	if v, ok := _c.mutation.Requester(); ok {
 		if err := ticket.RequesterValidator(v); err != nil {
 			return &ValidationError{Name: "requester", err: fmt.Errorf(`ent: validator failed for field "Ticket.requester": %w`, err)}
+		}
+	}
+	if _, ok := _c.mutation.AttemptCount(); !ok {
+		return &ValidationError{Name: "attempt_count", err: errors.New(`ent: missing required field "Ticket.attempt_count"`)}
+	}
+	if v, ok := _c.mutation.AttemptCount(); ok {
+		if err := ticket.AttemptCountValidator(v); err != nil {
+			return &ValidationError{Name: "attempt_count", err: fmt.Errorf(`ent: validator failed for field "Ticket.attempt_count": %w`, err)}
 		}
 	}
 	return nil
@@ -393,6 +433,14 @@ func (_c *TicketCreate) createSpec() (*Ticket, *sqlgraph.CreateSpec) {
 	if value, ok := _c.mutation.ParentTicketID(); ok {
 		_spec.SetField(ticket.FieldParentTicketID, field.TypeString, value)
 		_node.ParentTicketID = value
+	}
+	if value, ok := _c.mutation.AttemptCount(); ok {
+		_spec.SetField(ticket.FieldAttemptCount, field.TypeInt32, value)
+		_node.AttemptCount = value
+	}
+	if value, ok := _c.mutation.LastAttemptAt(); ok {
+		_spec.SetField(ticket.FieldLastAttemptAt, field.TypeTime, value)
+		_node.LastAttemptAt = &value
 	}
 	return _node, _spec
 }

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -1380,31 +1381,14 @@ func (s *Server) handleVMPower(c *gin.Context, vm *ent.VM, operation string, eve
 		return
 	}
 
-	existingTicket, err := s.findLatestActiveVMTicket(
-		ctx,
-		vm.ID,
-		entticket.OperationTypePOWER,
-		domain.EventVMStartRequested,
-		domain.EventVMStopRequested,
-		domain.EventVMRestartRequested,
-	)
-	if err != nil {
-		logger.Error("failed to check duplicate power approval request",
-			zap.Error(err),
-			zap.String("vm_id", vm.ID),
-			zap.String("operation", operation),
-		)
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if existingTicket != nil {
-		writeDuplicatePendingVMOperation(c, existingTicket)
-		return
-	}
-
 	actor := middleware.GetUserID(ctx)
 	ticketID, eventID, err := s.createVMPowerApprovalRequest(ctx, vm, actor, operation, eventType)
 	if err != nil {
+		var active *usecase.ActivePowerEventError
+		if errors.As(err, &active) {
+			writeActivePowerOperationConflict(c, active)
+			return
+		}
 		logger.Error("failed to create power approval request",
 			zap.Error(err),
 			zap.String("vm_id", vm.ID),
@@ -1465,11 +1449,6 @@ func (s *Server) createVMPowerApprovalRequest(
 ) (ticketID, eventID string, err error) {
 	snapshotLoader := newBatchSnapshotLoader(s)
 	snapshot := snapshotLoader.buildVMContextSnapshot(ctx, vm)
-	tx, err := s.client.Tx(ctx)
-	if err != nil {
-		return "", "", err
-	}
-	defer func() { _ = tx.Rollback() }()
 
 	eventUUID, err := uuid.NewV7()
 	if err != nil {
@@ -1504,38 +1483,57 @@ func (s *Server) createVMPowerApprovalRequest(
 		CurrentDiskGB:      snapshot.CurrentDiskGB,
 		Operation:          operation,
 		Actor:              actor,
+		DispatchMode:       domain.VMPowerDispatchTicket,
 	})
 	if err != nil {
 		return "", "", err
 	}
 
-	if _, err := tx.DomainEvent.Create().
-		SetID(eventUUID.String()).
-		SetEventType(string(eventType)).
-		SetAggregateType("vm").
-		SetAggregateID(vm.ID).
-		SetPayload(payloadBytes).
-		SetStatus(domainevent.StatusPENDING).
-		SetCreatedBy(actor).
-		Save(ctx); err != nil {
-		return "", "", err
-	}
-
-	if _, err := tx.Ticket.Create().
-		SetID(ticketUUID.String()).
-		SetEventID(eventUUID.String()).
-		SetOperationType(entticket.OperationTypePOWER).
-		SetStatus(entticket.StatusPENDING).
-		SetRequester(actor).
-		SetReason("vm " + operation + " request").
-		Save(ctx); err != nil {
-		return "", "", err
-	}
-
-	if err := tx.Commit(); err != nil {
+	atomicWriter := usecase.NewApprovalAtomicWriter(s.pool, s.riverClient)
+	if err := atomicWriter.CreatePowerApprovalRequest(ctx, usecase.PowerApprovalRequestInput{
+		EventID:     eventUUID.String(),
+		TicketID:    ticketUUID.String(),
+		EventType:   string(eventType),
+		AggregateID: vm.ID,
+		Payload:     payloadBytes,
+		CreatedBy:   actor,
+		Reason:      "vm " + operation + " request",
+	}); err != nil {
 		return "", "", err
 	}
 	return ticketUUID.String(), eventUUID.String(), nil
+}
+
+func writeActivePowerOperationConflict(c *gin.Context, active *usecase.ActivePowerEventError) {
+	code := "POWER_OPERATION_IN_PROGRESS"
+	message := "another power operation is already in progress for this VM"
+	params := map[string]interface{}{
+		"vm_id":                 active.AggregateID,
+		"existing_event_id":     active.ExistingEventID,
+		"existing_event_type":   active.ExistingEventType,
+		"existing_event_status": active.ExistingEventStatus,
+	}
+	if active.ExistingEventType == string(domain.EventVMRestartRequested) &&
+		active.ExistingEventStatus == string(domainevent.StatusPROCESSING) {
+		params["operator_action_required"] = true
+		params["reconciliation_path"] = "operator-runbook:ambiguous-vm-restart"
+	}
+	if active.ExistingTicketID != "" {
+		params["existing_ticket_id"] = active.ExistingTicketID
+		params["existing_ticket_status"] = active.ExistingTicketStatus
+		if active.ExistingParentTicketID != "" {
+			params["existing_parent_ticket_id"] = active.ExistingParentTicketID
+		}
+	}
+	if active.ExistingTicketID != "" && active.ExistingTicketStatus == string(entticket.StatusPENDING) {
+		code = "DUPLICATE_PENDING_REQUEST"
+		message = "an active approval request already exists for this VM"
+	}
+	c.JSON(http.StatusConflict, generated.Error{
+		Code:    code,
+		Message: message,
+		Params:  params,
+	})
 }
 
 func powerOperationToPolicyOperation(operation string) approvalpolicy.Operation {
@@ -1583,6 +1581,7 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 		CurrentDiskGB:      snapshot.CurrentDiskGB,
 		Operation:          operation,
 		Actor:              actor,
+		DispatchMode:       domain.VMPowerDispatchDirect,
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
@@ -1601,6 +1600,19 @@ func (s *Server) enqueueVMPowerOp(c *gin.Context, vm *ent.VM, operation string, 
 		Payload:       payloadBytes,
 		CreatedBy:     actor,
 	}); err != nil {
+		var duplicate *usecase.DuplicatePowerEventError
+		if errors.As(err, &duplicate) {
+			c.JSON(http.StatusAccepted, generated.VMPowerAcceptedResponse{
+				EventId: duplicate.ExistingEventID,
+				Status:  generated.VMPowerAcceptedResponseStatus("ACCEPTED"),
+			})
+			return
+		}
+		var active *usecase.ActivePowerEventError
+		if errors.As(err, &active) {
+			writeActivePowerOperationConflict(c, active)
+			return
+		}
 		logger.Error("failed to create and enqueue power domain event", zap.Error(err), zap.String("vm_id", vm.ID), zap.String("event_id", eventID.String()))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return

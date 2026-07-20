@@ -1,274 +1,253 @@
 //go:build ignore
 
-// Package usecase provides batch operation examples.
-//
-// Reference: ADR-0015 §19, 04-governance.md §5.6
-// Model: parent-child tickets + two-layer rate limiting + atomic submission.
-
+// Package usecase documents the Stage 5.E batch-operation transaction
+// boundaries. It is intentionally non-runnable: production types live in the
+// handler, ticketing, jobs, and atomic-writer packages referenced by ADR-0015.
 package usecase
 
 import (
 	"context"
 	"errors"
-	"fmt"
+	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"kv-shepherd.io/shepherd/internal/repository/batchreplay"
 )
 
-// BatchSubmitRequest is the canonical parent-ticket submission payload.
+const maxLogicalDispatchAttempts = 3
+
+// BatchSubmitRequest keeps request_id optional and opaque. Idempotency is
+// scoped by the authenticated actor and the exact requested operation, so
+// POWER_START, POWER_STOP, and POWER_RESTART never share a replay scope.
 type BatchSubmitRequest struct {
-	BatchType       string            `json:"batch_type"` // BATCH_CREATE, BATCH_DELETE, BATCH_APPROVE, BATCH_POWER
-	Operation       string            `json:"operation"`  // create, delete, approve, start, stop, restart
-	Items           []BatchTargetItem `json:"items"`
-	RequestID       string            `json:"request_id"` // idempotency key (required)
-	Reason          string            `json:"reason"`
-	TargetClusterID string            `json:"target_cluster_id,omitempty"`
+	Operation string
+	Items     []BatchTargetItem
+	RequestID string
+	Reason    string
 }
 
-// BatchTargetItem is one child ticket target.
 type BatchTargetItem struct {
-	ResourceType string `json:"resource_type"` // vm, approval_ticket
-	ResourceID   string `json:"resource_id"`
-	Payload      any    `json:"payload,omitempty"`
+	ResourceID string
+	Payload    any
 }
 
-// BatchSubmitResult is returned immediately with tracking metadata.
 type BatchSubmitResult struct {
-	BatchID           string `json:"batch_id"`
-	Status            string `json:"status"` // PENDING_APPROVAL
-	StatusURL         string `json:"status_url"`
-	RetryAfterSeconds int    `json:"retry_after_seconds"`
+	BatchID           string
+	Status            string
+	StatusURL         string
+	RetryAfterSeconds int
 }
 
-// BatchActionResult reports how many child tickets were affected by a mutation.
 type BatchActionResult struct {
-	BatchID       string `json:"batch_id"`
-	AffectedCount int    `json:"affected_count"`
+	BatchID           string
+	AffectedCount     int
+	AffectedTicketIDs []string
 }
 
-// BatchApprovalUseCase demonstrates ADR-0015-compliant submission flow.
+// BatchApprovalUseCase demonstrates the current durable boundaries. The
+// submission repository owns one READ COMMITTED transaction for locks, replay,
+// mutable quota reads, and persistence. The atomic decision writer owns River
+// InsertTx for initial approval and explicit retry.
 type BatchApprovalUseCase struct {
-	rateLimitSvc RateLimitService
-	batchRepo    BatchRepository
-	txManager    TxManager
+	submissions SubmissionRepository
+	decisions   AtomicBatchDecisionWriter
 }
 
 func NewBatchApprovalUseCase(
-	rateLimitSvc RateLimitService,
-	batchRepo BatchRepository,
-	txManager TxManager,
+	submissions SubmissionRepository,
+	decisions AtomicBatchDecisionWriter,
 ) *BatchApprovalUseCase {
-	return &BatchApprovalUseCase{
-		rateLimitSvc: rateLimitSvc,
-		batchRepo:    batchRepo,
-		txManager:    txManager,
-	}
+	return &BatchApprovalUseCase{submissions: submissions, decisions: decisions}
 }
 
-// Execute enforces two-layer rate limiting and creates parent/child tickets atomically.
-func (u *BatchApprovalUseCase) Execute(ctx context.Context, req *BatchSubmitRequest, userID string) (*BatchSubmitResult, error) {
-	if err := validateBatchRequest(req, userID); err != nil {
+// Execute creates one parent and its children atomically. The callback order is
+// part of the contract: global -> actor -> request -> replay -> current limits
+// -> rows. A replay is resolved before mutable throttling and returns the
+// earliest matching historical parent without rewriting legacy request IDs.
+func (u *BatchApprovalUseCase) Execute(
+	ctx context.Context,
+	req BatchSubmitRequest,
+	actor string,
+) (*BatchSubmitResult, error) {
+	if err := validateBatchRequest(req, actor); err != nil {
 		return nil, err
 	}
 
-	// Idempotency fast-path: duplicate submission returns existing batch immediately.
-	if existing, ok, err := u.batchRepo.FindByRequestID(ctx, userID, req.BatchType, req.RequestID); err != nil {
-		return nil, err
-	} else if ok {
-		return buildSubmitResult(existing.BatchID), nil
-	}
-
-	// Layer 1: global protection.
-	if err := u.rateLimitSvc.CheckGlobalBatchLimit(ctx); err != nil {
-		return nil, err
-	}
-
-	// Layer 2: per-user fairness.
-	if err := u.rateLimitSvc.CheckUserBatchLimit(ctx, userID, len(req.Items)); err != nil {
-		return nil, err
-	}
-
-	batchID, err := u.txManager.WithTx(ctx, func(txCtx context.Context) (string, error) {
-		// Idempotency: return existing batch if same request already submitted.
-		if existing, ok, err := u.batchRepo.FindByRequestID(txCtx, userID, req.BatchType, req.RequestID); err != nil {
-			return "", err
-		} else if ok {
-			return existing.BatchID, nil
+	return u.submissions.WithSubmissionTx(ctx, func(tx SubmissionTx) (*BatchSubmitResult, error) {
+		if err := tx.LockGlobal(ctx); err != nil {
+			return nil, err
+		}
+		if err := tx.LockActor(ctx, actor); err != nil {
+			return nil, err
 		}
 
-		parent := &BatchTicket{
-			BatchID:       newBatchID(),
-			BatchType:     req.BatchType,
-			Status:        "PENDING_APPROVAL",
-			CreatedBy:     userID,
-			ChildCount:    len(req.Items),
-			PendingCount:  len(req.Items),
-			RequestID:     req.RequestID,
-			RetryAfterSec: 2,
-		}
-		if err := u.batchRepo.CreateParent(txCtx, parent); err != nil {
-			return "", err
-		}
-
-		for i, item := range req.Items {
-			child := &ChildTicket{
-				ParentBatchID: parent.BatchID,
-				SequenceNo:    i + 1,
-				ResourceType:  item.ResourceType,
-				ResourceID:    item.ResourceID,
-				Status:        "PENDING",
+		requestID := batchreplay.Normalize(req.RequestID)
+		if requestID != "" {
+			if err := tx.LockRequest(ctx, actor, req.Operation, requestID); err != nil {
+				return nil, err
 			}
-			if err := u.batchRepo.CreateChild(txCtx, child); err != nil {
-				return "", err // rollback entire submission
+			existing, found, err := tx.FindReplay(ctx, actor, req.Operation, requestID)
+			if err != nil {
+				// Malformed matching history fails closed; it is never skipped to
+				// create a second parent with the same logical request.
+				return nil, err
+			}
+			if found {
+				return buildSubmitResult(existing.BatchID, existing.Status), nil
 			}
 		}
 
-		return parent.BatchID, nil
+		if err := tx.CheckCurrentLimits(ctx, actor, len(req.Items), time.Now().UTC()); err != nil {
+			return nil, err
+		}
+		batchID, err := tx.CreateParentAndChildren(ctx, actor, req)
+		if err != nil {
+			return nil, err
+		}
+		return buildSubmitResult(batchID, "PENDING_APPROVAL"), nil
 	})
+}
+
+// ApproveAndSchedule atomically claims the pending parent/event, stores the
+// normalized execution snapshot, refreshes the projection, and inserts one
+// parent-keyed dispatcher on its dedicated River queue. Children are dispatched
+// only after that transaction commits.
+func (u *BatchApprovalUseCase) ApproveAndSchedule(
+	ctx context.Context,
+	input BatchApprovalClaimInput,
+) error {
+	return u.decisions.ClaimBatchApprovalAndEnqueue(ctx, input)
+}
+
+// RequeueFailed resets only execution-FAILED children below the logical attempt
+// cap. REJECTED is an approval decision and requires a new batch. The failed
+// child and its paired event's accepted-state reset, existing-approver
+// parent/event reopen, projection refresh, and a new dispatcher InsertTx either
+// all commit or all roll back.
+func (u *BatchApprovalUseCase) RequeueFailed(
+	ctx context.Context,
+	input BatchApprovalRetryInput,
+) (*BatchActionResult, error) {
+	for _, child := range input.Children {
+		if child.Status != "FAILED" || child.AttemptCount >= maxLogicalDispatchAttempts {
+			return nil, ErrChildNotRetryable
+		}
+	}
+	if strings.TrimSpace(input.OriginalApprover) == "" {
+		return nil, ErrMissingApprovalProvenance
+	}
+	if err := u.decisions.RetryBatchApprovalAndEnqueue(ctx, input); err != nil {
+		return nil, err
+	}
+	ids := childTicketIDs(input.Children)
+	return &BatchActionResult{BatchID: input.ParentTicketID, AffectedCount: len(ids), AffectedTicketIDs: ids}, nil
+}
+
+// CancelPending follows a handler-side parent identity/state check with one
+// parent-keyed mutation transaction. Exact PENDING child Ticket/Event changes
+// and parent Ticket/Event/projection aggregation commit together; the parent
+// row lock and expected-state writes make a concurrent parent change fail
+// closed, so a sync failure cannot leave a half-cancelled batch.
+func (u *BatchApprovalUseCase) CancelPending(
+	ctx context.Context,
+	input BatchCancelInput,
+) (*BatchActionResult, error) {
+	ids, err := u.decisions.CancelPendingAndSync(ctx, input)
 	if err != nil {
 		return nil, err
 	}
-
-	return buildSubmitResult(batchID), nil
+	return &BatchActionResult{BatchID: input.ParentTicketID, AffectedCount: len(ids), AffectedTicketIDs: ids}, nil
 }
 
-// RequeueFailed requeues FAILED children only; successful children are untouched.
-func (u *BatchApprovalUseCase) RequeueFailed(ctx context.Context, batchID string, userID string) (*BatchActionResult, error) {
-	affected, err := u.batchRepo.RequeueFailedChildren(ctx, batchID, userID, time.Now())
-	if err != nil {
-		return nil, err
-	}
-	return &BatchActionResult{BatchID: batchID, AffectedCount: affected}, nil
+type SubmissionRepository interface {
+	WithSubmissionTx(context.Context, func(SubmissionTx) (*BatchSubmitResult, error)) (*BatchSubmitResult, error)
 }
 
-// CancelPending marks not-yet-executed children as CANCELLED.
-func (u *BatchApprovalUseCase) CancelPending(ctx context.Context, batchID string, userID string) (*BatchActionResult, error) {
-	affected, err := u.batchRepo.CancelPendingChildren(ctx, batchID, userID)
-	if err != nil {
-		return nil, err
-	}
-	return &BatchActionResult{BatchID: batchID, AffectedCount: affected}, nil
+type SubmissionTx interface {
+	LockGlobal(context.Context) error
+	LockActor(context.Context, string) error
+	LockRequest(context.Context, string, string, string) error
+	FindReplay(context.Context, string, string, string) (ExistingBatch, bool, error)
+	CheckCurrentLimits(context.Context, string, int, time.Time) error
+	CreateParentAndChildren(context.Context, string, BatchSubmitRequest) (string, error)
 }
 
-// --- Example-only placeholders ---
-
-type RateLimitService interface {
-	CheckGlobalBatchLimit(ctx context.Context) error
-	CheckUserBatchLimit(ctx context.Context, userID string, newChildCount int) error
+type AtomicBatchDecisionWriter interface {
+	ClaimBatchApprovalAndEnqueue(context.Context, BatchApprovalClaimInput) error
+	RetryBatchApprovalAndEnqueue(context.Context, BatchApprovalRetryInput) error
+	CancelPendingAndSync(context.Context, BatchCancelInput) ([]string, error)
 }
 
-type TxManager interface {
-	WithTx(ctx context.Context, fn func(txCtx context.Context) (string, error)) (string, error)
+type ExistingBatch struct {
+	BatchID string
+	Status  string
 }
 
-type BatchRepository interface {
-	FindByRequestID(ctx context.Context, userID, batchType, requestID string) (*BatchTicket, bool, error)
-	CreateParent(ctx context.Context, parent *BatchTicket) error
-	CreateChild(ctx context.Context, child *ChildTicket) error
-	RequeueFailedChildren(ctx context.Context, batchID, actorID string, ts time.Time) (int, error)
-	CancelPendingChildren(ctx context.Context, batchID, actorID string) (int, error)
+type BatchApprovalClaimInput struct {
+	ParentTicketID string
+	ParentEventID  string
+	Approver       string
+	Execution      any
 }
 
-type BatchTicket struct {
-	BatchID       string
-	BatchType     string
-	Status        string
-	CreatedBy     string
-	ChildCount    int
-	SuccessCount  int
-	FailedCount   int
-	PendingCount  int
-	RequestID     string
-	RetryAfterSec int
+type BatchApprovalRetryInput struct {
+	ParentTicketID   string
+	ParentEventID    string
+	OriginalApprover string
+	Children         []BatchRetryChild
+	Execution        any
 }
 
-var ErrInvalidBatchRequest = errors.New("invalid batch request")
-var ErrBatchTooLarge = errors.New("batch size exceeds operation limit")
-
-func newBatchID() string {
-	return "BAT-" + uuid.NewString()
+type BatchRetryChild struct {
+	TicketID     string
+	EventID      string
+	Status       string
+	AttemptCount int
 }
 
-type ChildTicket struct {
-	ChildTicketID string
-	ParentBatchID string
-	SequenceNo    int
-	ResourceType  string
-	ResourceID    string
-	Status        string
-	AttemptCount  int
+type BatchCancelInput struct {
+	ParentTicketID string
+	ParentEventID  string
+	Actor          string
+	Children       []string
 }
 
-func buildSubmitResult(batchID string) *BatchSubmitResult {
-	return &BatchSubmitResult{
-		BatchID:           batchID,
-		Status:            "PENDING_APPROVAL",
-		StatusURL:         "/api/v1/vms/batch/" + batchID,
-		RetryAfterSeconds: 2,
-	}
-}
+var (
+	ErrInvalidBatchRequest       = errors.New("invalid batch request")
+	ErrChildNotRetryable         = errors.New("batch child is not retryable")
+	ErrMissingApprovalProvenance = errors.New("batch has no durable approval provenance")
+)
 
-func validateBatchRequest(req *BatchSubmitRequest, userID string) error {
-	if req == nil || userID == "" {
+func validateBatchRequest(req BatchSubmitRequest, actor string) error {
+	if strings.TrimSpace(actor) == "" || strings.TrimSpace(req.Operation) == "" || len(req.Items) == 0 {
 		return ErrInvalidBatchRequest
 	}
-	if req.RequestID == "" || req.BatchType == "" || req.Operation == "" {
+	switch strings.ToUpper(strings.TrimSpace(req.Operation)) {
+	case "CREATE", "MODIFY", "DELETE", "POWER_START", "POWER_STOP", "POWER_RESTART":
+	default:
 		return ErrInvalidBatchRequest
 	}
-	if !isSupportedBatchType(req.BatchType) || !isSupportedOperation(req.Operation) {
-		return ErrInvalidBatchRequest
-	}
-	if len(req.Items) == 0 {
-		return ErrInvalidBatchRequest
-	}
-
-	maxBatchSize := maxBatchSizeFor(req.BatchType, req.Operation)
-	if len(req.Items) > maxBatchSize {
-		return ErrBatchTooLarge
-	}
-
-	for i, item := range req.Items {
-		if item.ResourceType == "" || item.ResourceID == "" {
-			return fmt.Errorf("%w: item %d missing resource_type/resource_id", ErrInvalidBatchRequest, i)
+	for _, item := range req.Items {
+		if strings.TrimSpace(item.ResourceID) == "" {
+			return ErrInvalidBatchRequest
 		}
 	}
 	return nil
 }
 
-func maxBatchSizeFor(batchType, operation string) int {
-	switch {
-	case batchType == "BATCH_CREATE" || batchType == "BATCH_DELETE":
-		return 10
-	case batchType == "BATCH_APPROVE":
-		return 20
-	case batchType == "BATCH_POWER":
-		return 50
-	case operation == "create" || operation == "delete":
-		return 10
-	case operation == "approve":
-		return 20
-	case operation == "start" || operation == "stop" || operation == "restart":
-		return 50
-	default:
-		return 50
+func buildSubmitResult(batchID, status string) *BatchSubmitResult {
+	return &BatchSubmitResult{
+		BatchID:           batchID,
+		Status:            status,
+		StatusURL:         "/api/v1/vms/batch/" + batchID,
+		RetryAfterSeconds: 2,
 	}
 }
 
-func isSupportedBatchType(batchType string) bool {
-	switch batchType {
-	case "BATCH_CREATE", "BATCH_DELETE", "BATCH_APPROVE", "BATCH_POWER":
-		return true
-	default:
-		return false
+func childTicketIDs(children []BatchRetryChild) []string {
+	ids := make([]string, 0, len(children))
+	for _, child := range children {
+		ids = append(ids, child.TicketID)
 	}
-}
-
-func isSupportedOperation(operation string) bool {
-	switch operation {
-	case "create", "delete", "approve", "start", "stop", "restart":
-		return true
-	default:
-		return false
-	}
+	return ids
 }

@@ -33,7 +33,7 @@
 2. **P2 — ApprovalValidator partial**: ✅ **RESOLVED** — `dedicated_cpu` + overcommit blocking, `spec_overrides`, GPU/Hugepages/SR-IOV capability matching are implemented.
 3. **P1 — Delete governance**: ✅ **RESOLVED** — DeleteVM approval ticket flow, state guard, confirm params, OpenAPI endpoints, DeleteService/GetService handlers are all implemented.
 4. **P2 — InstanceSize schema partial**: ✅ **RESOLVED** — `requires_gpu`, `requires_sriov`, `requires_hugepages`, `hugepages_size`, `spec_overrides` fields added.
-5. **P1 — ApprovalTicket.operation_type**: ✅ **RESOLVED** — enum (`CREATE`, `DELETE`) with `CREATE` default for backward compatibility.
+5. **P1 — Ticket.operation_type**: ✅ **RESOLVED** — enum (`CREATE`, `MODIFY`, `DELETE`, `POWER`, `VNC_ACCESS`) with `CREATE` default for backward compatibility.
 6. **P1 — ADR-0012 atomic approval transaction**: ✅ **RESOLVED** — `ApprovalAtomicWriter` uses `sqlc + pgx.Tx + river.InsertTx` to eliminate post-commit enqueue gap.
 
 ### Previously Fixed (this session chain)
@@ -55,7 +55,7 @@
 | ✅ DeleteSystem confirm params | `server_system.go` | confirm_name via generated params struct, not raw c.Query() |
 | ✅ GetService handler | `server_system.go` | GET /systems/{system_id}/services/{service_id} |
 | ✅ DeleteService handler | `server_system.go` | Cascade check (zero VMs), confirm=true gate, hard delete, audit |
-| ✅ ApprovalTicket.operation_type | `ent/schema/approval_ticket.go` | Enum field (CREATE/DELETE) with CREATE default |
+| ✅ Ticket.operation_type | `ent/schema/ticket.go` | Enum field (`CREATE`, `MODIFY`, `DELETE`, `POWER`, `VNC_ACCESS`) with `CREATE` default |
 | ✅ ADR-0012 atomic approval | `usecase/approval_atomic.go` + `repository/sqlc/` | Approval writes + River enqueue in single transaction |
 | ✅ VM create idempotency guard | `jobs/vm_create.go` | Event label + pre-create lookup + safe retry on DB write failure |
 | ✅ ListApprovals DELETE target VM | `server_approval.go` | Batch-fetch DomainEvent payload for DELETE tickets, populate target_vm_id/name |
@@ -87,12 +87,12 @@
 | VM Instance Allocation | `internal/repository/sqlc/queries/ticket.sql`, `internal/usecase/approval_atomic.go` | full | ✅ Transaction-local `UPDATE ... RETURNING`; legacy naming helper removed |
 | VMCreateWorker | `internal/jobs/vm_create.go` | full | ✅ Retry-safe idempotency guard added |
 | VMDeleteWorker | `internal/jobs/vm_delete.go` | full | ✅ Aligned |
-| VMPowerWorker | `internal/jobs/vm_power.go` | full | ✅ Aligned |
+| VMPowerWorker | `internal/jobs/vm_power.go` | full | ✅ START/STOP retry-safe; RESTART uses a durable at-most-once dispatch fence |
 | DeleteVM Handler | `internal/api/handlers/server_vm.go` | 133-232 | ✅ Fixed — tiered confirm gate |
 | DeleteSystem Handler | `internal/api/handlers/server_system.go` | 165-223 | ✅ Fixed — confirm_name via generated params |
 | GetService Handler | `internal/api/handlers/server_system.go` | 336-365 | ✅ New |
 | DeleteService Handler | `internal/api/handlers/server_system.go` | 367-446 | ✅ New — cascade + confirm + audit |
-| ApprovalTicket Schema | `ent/schema/approval_ticket.go` | full | ✅ Fixed — operation_type enum added |
+| Ticket Schema | `ent/schema/ticket.go` | full | ✅ Fixed — complete operation_type enum added |
 | AuditLogger | `internal/governance/audit/logger.go` | full | ✅ Aligned |
 | ListApprovals DELETE enrichment | `internal/api/handlers/server_approval.go` | 17-100 | ✅ Batch-fetch DomainEvent for DELETE ticket target VM |
 | Approvals Frontend + Priority | `web/src/app/(protected)/admin/approvals/page.tsx` | full | ✅ target_vm column + ADR-0015 §11 priority highlighting |
@@ -104,13 +104,23 @@
 | Templates Admin Page | `web/src/app/(protected)/admin/templates/page.tsx` | full | ✅ Column filters + deferred search |
 | InstanceSizes Admin Page | `web/src/app/(protected)/admin/instance-sizes/page.tsx` | full | ✅ Capability filters + sort |
 
+RESTART is intentionally fail-closed because the provider contract has no
+idempotency key or durable dispatch receipt. Only the worker that atomically
+claims `PENDING` → `PROCESSING` may call the provider. A redelivery that sees a
+`PROCESSING` restart preserves the Event/Ticket state and cancels without a
+second provider call; direct, approval, batch, and retry submissions treat that
+state as a hard per-VM fence even if the River job or Ticket is absent or
+terminal. An orphaned fence therefore requires explicit operator verification
+and reconciliation. START and STOP retain automatic retry behavior because
+their already-running/already-stopped outcomes are idempotently repairable.
+
 ---
 
 ## Database Migration
 
 - [x] Database migration tool configured (Atlas) — *Phase 5: `migrations/atlas/atlas.hcl`*
 - [x] `atlas.hcl` configuration complete — *Phase 5: ent://ent/schema → PostgreSQL 18*
-- [x] Ent schema coverage exists for `vms`, `vm_revisions`, `audit_logs`, `approval_tickets`, and `approval_policies`
+- [x] Ent schema coverage exists for `vms`, `vm_revisions`, `audit_logs`, `tickets`, and `approval_policies`
 - [ ] Live migration apply/rollback verification (environment verification)
 
 ---
@@ -289,7 +299,7 @@
 ### Delete Flow Gaps (master-flow Stage 5.D)
 
 - [x] **VM Delete Approval**: VM deletion creates approval ticket (`operation_type=DELETE`) per entity rule matrix
-- [x] **ApprovalTicket.operation_type**: ✅ Enum field added (`CREATE`/`DELETE`) with `CREATE` default
+- [x] **Ticket.operation_type**: ✅ Enum field added (`CREATE`, `MODIFY`, `DELETE`, `POWER`, `VNC_ACCESS`) with `CREATE` default
 - [x] **DELETING Transient State**: ✅ VM status `DELETING` added; worker correctly sets it before K8s cleanup
 
 ---
@@ -315,13 +325,13 @@
 > **Design**: [04-governance.md §5.6](../phases/04-governance.md#56-batch-operations-adr-0015-19)
 
 - [x] **Parent-Child Ticket Schema**
-  - [x] `batch_approval_tickets` parent table implemented
-  - [x] `approval_tickets.parent_ticket_id` child linkage implemented
+  - [x] `batch_tickets` parent API-projection table implemented
+  - [x] `tickets.parent_ticket_id` child linkage implemented
   - [x] Parent aggregate counters (`success/failed/pending`) are persisted
 - [x] **Atomic Submission + Independent Execution**
   - [x] Parent + child ticket creation is atomic in one DB transaction
-  - [x] Child jobs execute independently via River (parent approval dispatches child create/delete jobs)
-  - [x] Parent status aggregation supports `PARTIAL_SUCCESS` (runtime-computed response model)
+  - [x] Child jobs execute independently via River (parent approval dispatches child create/modify/delete jobs)
+  - [x] Parent status aggregation supports persisted `PARTIAL_SUCCESS` projection state
 - [x] **Two-Layer Rate Limiting**
   - [x] Global pending parent limit
   - [x] Global API request rate
@@ -335,6 +345,11 @@
   - [x] `POST /api/v1/vms/batch/{id}/retry` retry failed children
   - [x] `POST /api/v1/vms/batch/{id}/cancel` terminate pending children
   - [x] Batch submit/query/retry/cancel and `/vms/batch/power` are normalized into the same parent-child + execution pipeline
+- [x] **Ambiguous Restart Fence**
+  - [x] Power conflicts expose `operator_action_required` and a read-only operator runbook identifier
+  - [x] No API may clear or redispatch an ambiguous restart fence
+  - [x] River terminal state is not treated as proof that the provider request cannot complete late
+  - [ ] Safe release requires provider receipt/idempotency or provable cancellation
 - [x] **Frontend Batch Queue UX**
   - [x] Parent row + child detail panel implemented
   - [x] Status polling uses backend `status_url` until terminal state

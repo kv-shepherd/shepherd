@@ -366,6 +366,79 @@ func TestOpenAPIValidatorRejectsInvalidVMCreateRequest(t *testing.T) {
 	assertErrorCode(t, resp.Body.Bytes(), "OPENAPI_REQUEST_INVALID")
 }
 
+func TestOpenAPIValidatorAcceptsOpaqueBatchRequestIDs(t *testing.T) {
+	tests := []struct {
+		name string
+		path string
+		body func(string) string
+	}{
+		{
+			name: "approval batch",
+			path: "/api/v1/vms/batch",
+			body: func(requestID string) string {
+				payload, err := json.Marshal(generated.VMBatchSubmitRequest{
+					Operation: generated.VMBatchSubmitOperation("DELETE"),
+					RequestId: requestID,
+					Items:     []generated.VMBatchChildItem{{VmId: "vm-1"}},
+				})
+				if err != nil {
+					t.Fatalf("marshal approval batch request: %v", err)
+				}
+				return string(payload)
+			},
+		},
+		{
+			name: "power batch",
+			path: "/api/v1/vms/batch/power",
+			body: func(requestID string) string {
+				payload, err := json.Marshal(generated.VMBatchPowerRequest{
+					Operation: generated.VMBatchPowerAction("START"),
+					RequestId: requestID,
+					Items:     []generated.VMBatchPowerItem{{VmId: "vm-1"}},
+				})
+				if err != nil {
+					t.Fatalf("marshal power batch request: %v", err)
+				}
+				return string(payload)
+			},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			router := newOpenAPIValidatorTestRouter(t)
+			router.POST(tc.path, func(c *gin.Context) {
+				c.JSON(http.StatusAccepted, generated.VMBatchSubmitResponse{
+					BatchId:           "batch-1",
+					Status:            generated.VMBatchParentStatusPENDINGAPPROVAL,
+					StatusUrl:         "/api/v1/vms/batch/batch-1",
+					RetryAfterSeconds: 5,
+				})
+			})
+
+			for _, probe := range []struct {
+				name      string
+				requestID string
+			}{
+				{name: "opaque non UUID", requestID: "client-sequence-2026-07-18"},
+				{name: "513 ASCII characters", requestID: strings.Repeat("x", 513)},
+				{name: "long four-byte Unicode", requestID: strings.Repeat("😀", 4096)},
+			} {
+				t.Run(probe.name, func(t *testing.T) {
+					req := httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body(probe.requestID)))
+					req.Header.Set("Content-Type", "application/json")
+					req.Header.Set("Authorization", "Bearer test-token")
+					resp := httptest.NewRecorder()
+					router.ServeHTTP(resp, req)
+					if resp.Code != http.StatusAccepted {
+						t.Fatalf("status = %d, want %d body=%s", resp.Code, http.StatusAccepted, resp.Body.String())
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestOpenAPIValidatorRejectsUndeclaredQueryParamInStrictMode(t *testing.T) {
 	router := newOpenAPIValidatorTestRouter(t)
 	router.GET("/api/v1/health/live", func(c *gin.Context) {

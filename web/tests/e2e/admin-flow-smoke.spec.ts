@@ -256,26 +256,26 @@ test.describe('admin-flow mock smoke interactions', () => {
     });
 
     test('Stage 2.A – custom role delete modal opens and submits', async ({ page }) => {
+        let capturedDeletePath = '';
         await page.route('**/api/v1/admin/roles/**', async (route) => {
             if (route.request().method() !== 'DELETE') return route.fallback();
-            await route.fulfill({ status: 204, body: '' });
+            capturedDeletePath = new URL(route.request().url()).pathname;
+            await route.fulfill({ status: 204 });
         });
 
         await page.goto('/admin/rbac');
-        await page.getByTestId('rbac-role-action-delete-role-custom-1').click();
+        const deleteButton = page.getByTestId('rbac-role-action-delete-role-custom-1');
+        await expect(deleteButton).toBeEnabled();
+        await deleteButton.click();
 
-        // RBAC delete uses a Modal (not Popconfirm), title is "Delete"
-        const modal = visibleModal(page);
+        // RBAC delete uses a Modal (not Popconfirm).
+        const modal = page.getByRole('dialog', { name: 'Delete Role', exact: true });
         await expect(modal).toBeVisible();
-        const deleteRespPromise = page.waitForResponse((response) => {
-            const request = response.request();
-            const path = new URL(response.url()).pathname;
-            return request.method() === 'DELETE' && path.endsWith('/api/v1/admin/roles/role-custom-1');
-        });
-        await modal.getByRole('button', { name: 'OK' }).click();
+        await modal.getByRole('button', { name: 'OK', exact: true }).click();
 
-        const deleteResp = await deleteRespPromise;
-        expect(deleteResp.status()).toBe(204);
+        await expect.poll(() => capturedDeletePath, { timeout: 5_000 })
+            .toBe('/api/v1/admin/roles/role-custom-1');
+        await expect(modal).toBeHidden();
     });
 
     // ── Stage 2.A+: User management ──────────────────────────────────────────

@@ -8,7 +8,7 @@
 // in the UseCase layer MUST be inserted as River Jobs, not direct DB writes.
 //
 // Applies to: internal/usecase/ packages (non-test files).
-// Exempted: Notification, DomainEvent, AuditLog, Session, ApprovalTicket writes.
+// Exempted: Notification, DomainEvent, AuditLog, Session, and Ticket writes.
 package riverbypass
 
 import (
@@ -35,6 +35,7 @@ var protectedEntities = map[string]bool{
 	"Service":        true,
 	"System":         true,
 	"Cluster":        true,
+	"Ticket":         true,
 }
 
 // writeMethods are method names that indicate direct DB write operations.
@@ -52,12 +53,11 @@ var writeMethods = map[string]bool{
 
 // exemptedEntities are allowed to bypass the River Queue (per ADR-0006 §exception table).
 var exemptedEntities = map[string]bool{
-	"Notification":   true, // synchronous, per 04-governance.md §6.3
-	"DomainEvent":    true, // part of the claim-check transaction (ADR-0009)
-	"AuditLog":       true, // synchronous audit trail
-	"Session":        true, // auth session management, no K8s interaction
-	"ApprovalTicket": true, // ADR-0006 lines 133-134: River Job inserted after approval
-	"Ticket":         true,
+	"Notification": true, // synchronous, per 04-governance.md §6.3
+	"DomainEvent":  true, // part of the claim-check transaction (ADR-0009)
+	"AuditLog":     true, // synchronous audit trail
+	"Session":      true, // auth session management, no K8s interaction
+	"Ticket":       true, // claim-check state updated atomically before River insertion
 }
 
 func run(pass *analysis.Pass) (interface{}, error) {

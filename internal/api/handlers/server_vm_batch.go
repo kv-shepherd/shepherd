@@ -2,17 +2,21 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 	"go.uber.org/zap"
 
@@ -27,9 +31,11 @@ import (
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/api/middleware"
 	"kv-shepherd.io/shepherd/internal/domain"
+	"kv-shepherd.io/shepherd/internal/governance/ticketing"
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
+	"kv-shepherd.io/shepherd/internal/repository/batchreplay"
 	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/usecase"
 )
@@ -44,9 +50,28 @@ const (
 	batchRetryAfterSeconds          = 2
 	batchActionRetry                = "retry"
 	batchActionCancel               = "cancel"
+	batchNothingToRetryErrorCode    = "BATCH_NOTHING_TO_RETRY"
+	batchRateLimitedMessage         = "batch submission rate limited"
+	batchResourceType               = "batch"
+	batchPowerOperationStart        = "POWER_START"
+	batchPowerOperationStop         = "POWER_STOP"
+	batchPowerOperationRestart      = "POWER_RESTART"
 )
 
-var errBatchNotFound = errors.New("batch not found")
+var (
+	errBatchNotFound                    = errors.New("batch not found")
+	errBatchSubmissionActorNotFound     = errors.New("batch submission actor no longer exists")
+	errBatchSubmissionActorNotAvailable = errors.New("batch submission actor is disabled")
+)
+
+type batchChildStateConflictError struct {
+	TicketID string
+	EventID  string
+}
+
+func (e *batchChildStateConflictError) Error() string {
+	return fmt.Sprintf("batch child ticket %s event %s is no longer eligible for the requested transition", e.TicketID, e.EventID)
+}
 
 type preparedBatchChild struct {
 	eventType        domain.EventType
@@ -381,6 +406,51 @@ func (s *Server) writeExistingBatchSubmitResponse(c *gin.Context, batchID, batch
 	})
 }
 
+// writeEarlyBatchReplayResponse resolves a durable idempotency replay before
+// namespace, VM, catalog, approval-policy, or live-state preparation. Those
+// mutable dependencies may legitimately change after the original commit and
+// must not prevent a client from recovering a lost accepted response. The
+// transaction-scoped replay check remains the authority for concurrent first
+// submissions.
+func (s *Server) writeEarlyBatchReplayResponse(
+	c *gin.Context,
+	actor string,
+	operation string,
+	requestID string,
+	batchKind string,
+) bool {
+	if normalizeBatchRequestID(requestID) == "" {
+		return false
+	}
+	existingID, found, err := findBatchByRequestIDWithClient(
+		c.Request.Context(),
+		s.client,
+		actor,
+		operation,
+		requestID,
+	)
+	if err != nil {
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while resolving early batch replay",
+				zap.Error(err),
+				zap.String("batch_kind", batchKind),
+			)
+			return true
+		}
+		logger.Error("failed to resolve early batch replay",
+			zap.Error(err),
+			zap.String("batch_kind", batchKind),
+		)
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return true
+	}
+	if !found {
+		return false
+	}
+	s.writeExistingBatchSubmitResponse(c, existingID, batchKind)
+	return true
+}
+
 func (s *Server) submitBatch(c *gin.Context) {
 	ctx := c.Request.Context()
 	actor := middleware.GetUserID(ctx)
@@ -421,74 +491,8 @@ func (s *Server) submitBatch(c *gin.Context) {
 			return
 		}
 	}
-
-	if strings.TrimSpace(req.RequestId) != "" {
-		if existingID, ok, findErr := s.findBatchByRequestID(ctx, actor, op, req.RequestId); findErr != nil {
-			logger.Error("failed to query batch idempotency", zap.Error(findErr))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		} else if ok {
-			s.writeExistingBatchSubmitResponse(c, existingID, "batch")
-			return
-		}
-	}
-
-	globalPending, userPending, err := s.pendingBatchParentCounters(ctx, actor)
-	if err != nil {
-		logger.Error("failed to evaluate batch submission limits", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	limitPolicy, err := s.resolveBatchUserLimitPolicy(ctx, actor)
-	if err != nil {
-		logger.Error("failed to resolve batch user limit policy", zap.Error(err), zap.String("actor", actor))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	userPendingParentExceeded := !limitPolicy.Exempt && userPending >= limitPolicy.MaxPendingParents
-	if globalPending >= maxPendingBatchParents || userPendingParentExceeded {
-		c.Header("Retry-After", strconv.Itoa(batchRetryAfterSeconds))
-		contactAdmin := !limitPolicy.Exempt && limitPolicy.UsesDefault
-		c.JSON(http.StatusTooManyRequests, generated.Error{
-			Code:    "BATCH_RATE_LIMITED",
-			Message: "batch submission throttled by pending parent limits",
-			Params: map[string]interface{}{
-				"retry_after_seconds": batchRetryAfterSeconds,
-				"global_pending":      globalPending,
-				"user_pending":        userPending,
-				"user_exempted":       limitPolicy.Exempt,
-				"max_user_pending":    limitPolicy.MaxPendingParents,
-				"contact_admin":       contactAdmin,
-			},
-		})
-		return
-	}
-	if extraLimit, limitErr := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy, parentEventType); limitErr != nil {
-		logger.Error("failed to evaluate additional batch submission limits", zap.Error(limitErr))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	} else if extraLimit != nil {
-		retryAfter := extraLimit.RetryAfterSeconds
-		if retryAfter <= 0 {
-			retryAfter = batchRetryAfterSeconds
-		}
-		c.Header("Retry-After", strconv.Itoa(retryAfter))
-		c.JSON(http.StatusTooManyRequests, generated.Error{
-			Code:    "BATCH_RATE_LIMITED",
-			Message: "batch submission throttled by additional rate limits",
-			Params: map[string]interface{}{
-				"reason":                    extraLimit.Reason,
-				"retry_after_seconds":       retryAfter,
-				"global_recent_submits":     extraLimit.GlobalRecentSubmits,
-				"user_pending_children":     extraLimit.UserPendingChildren,
-				"user_cooldown_seconds":     extraLimit.UserCooldownSeconds,
-				"requested_child_count":     len(req.Items),
-				"max_global_per_minute":     maxGlobalBatchRequestsPerMinute,
-				"max_user_pending_children": limitPolicy.MaxPendingChildren,
-				"user_exempted":             limitPolicy.Exempt,
-				"contact_admin":             !limitPolicy.Exempt && limitPolicy.UsesDefault,
-			},
-		})
+	requestID := normalizeBatchRequestID(req.RequestId)
+	if s.writeEarlyBatchReplayResponse(c, actor, op, requestID, batchResourceType) {
 		return
 	}
 
@@ -514,7 +518,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 	parentID := generateIDV7()
 	parentPayload := domain.BatchVMRequestPayload{
 		Operation:   op,
-		RequestID:   strings.TrimSpace(req.RequestId),
+		RequestID:   requestID,
 		Reason:      strings.TrimSpace(req.Reason),
 		SubmittedBy: actor,
 		SubmittedAt: time.Now().UTC(),
@@ -527,7 +531,18 @@ func (s *Server) submitBatch(c *gin.Context) {
 		return
 	}
 
-	tx, err := s.client.Tx(ctx)
+	releaseBatchGuard, err := s.acquireBatchSubmissionGuard(ctx)
+	if err != nil {
+		logger.Error("failed to lock batch submission guard", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	defer releaseBatchGuard()
+
+	// READ COMMITTED takes a fresh snapshot after a waiter acquires the global
+	// advisory lock. An operator-level REPEATABLE READ default could otherwise
+	// retain a pre-wait snapshot and miss the preceding submission's commit.
+	tx, err := s.client.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		logger.Error("failed to begin batch submission tx", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -539,12 +554,78 @@ func (s *Server) submitBatch(c *gin.Context) {
 			panic(v)
 		}
 	}()
+	if lockErr := lockBatchSubmissionTransaction(ctx, tx); lockErr != nil {
+		_ = tx.Rollback()
+		logger.Error("failed to lock batch submissions in business transaction", zap.Error(lockErr))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	// Serialize policy reads with exemption/override and actor mutations. The
+	// global -> actor order is one-way: policy writers never take the global lock.
+	if lockErr := lockUserMutation(ctx, tx, actor); lockErr != nil {
+		_ = tx.Rollback()
+		logger.Error("failed to lock batch submission actor", zap.Error(lockErr), zap.String("actor", actor))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if requestID != "" {
+		if lockErr := tx.ExecContext(
+			ctx,
+			`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+			usecase.BatchIdempotencyLockKey(actor, op, requestID),
+		); lockErr != nil {
+			_ = tx.Rollback()
+			logger.Error("failed to lock batch idempotency key", zap.Error(lockErr))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
+		existingID, found, findErr := findBatchByRequestIDWithClient(
+			ctx,
+			tx.Client(),
+			actor,
+			op,
+			requestID,
+		)
+		switch {
+		case findErr != nil:
+			_ = tx.Rollback()
+			logger.Error("failed to recheck batch idempotency in transaction", zap.Error(findErr))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		case found:
+			_ = tx.Rollback()
+			s.writeExistingBatchSubmitResponse(c, existingID, batchResourceType)
+			return
+		}
+	}
+
+	rateLimit, limitErr := evaluateBatchSubmissionRateLimits(
+		ctx,
+		entBatchSubmissionLimitReader{client: tx.Client()},
+		actor,
+		len(req.Items),
+		time.Now().UTC(),
+	)
+	if limitErr != nil {
+		_ = tx.Rollback()
+		if writeBatchSubmissionActorStateError(c, limitErr) {
+			return
+		}
+		logger.Error("failed to evaluate batch submission limits", zap.Error(limitErr))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if rateLimit != nil {
+		_ = tx.Rollback()
+		writeBatchSubmissionRateLimitResponse(c, rateLimit, false)
+		return
+	}
 
 	parentEventID := generateIDV7()
 	_, err = tx.DomainEvent.Create().
 		SetID(parentEventID).
 		SetEventType(string(parentEventType)).
-		SetAggregateType("batch").
+		SetAggregateType(batchResourceType).
 		SetAggregateID(parentID).
 		SetPayload(parentPayloadBytes).
 		SetStatus(domainevent.StatusPENDING).
@@ -589,7 +670,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 		SetStatus(entbatchticket.StatusPENDING_APPROVAL).
 		SetCreatedBy(actor).
 		SetReason(parentReason).
-		SetNillableRequestID(nillableTrimmed(req.RequestId)).
+		SetNillableRequestID(nillableTrimmed(requestID)).
 		Save(ctx); err != nil {
 		_ = tx.Rollback()
 		logger.Error("failed to create batch projection row", zap.Error(err), zap.String("batch_id", parentID))
@@ -637,6 +718,7 @@ func (s *Server) submitBatch(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
+	releaseBatchGuard()
 
 	if s.audit != nil {
 		_ = s.audit.LogAction(ctx, "vm.batch.submit", "ticket", parentID, actor, map[string]interface{}{
@@ -685,71 +767,8 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 		})
 		return
 	}
-
-	if strings.TrimSpace(req.RequestId) != "" {
-		if existingID, ok, findErr := s.findBatchByRequestID(ctx, actor, opKey, req.RequestId); findErr != nil {
-			logger.Error("failed to query power-batch idempotency", zap.Error(findErr))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		} else if ok {
-			s.writeExistingBatchSubmitResponse(c, existingID, "power-batch")
-			return
-		}
-	}
-
-	globalPending, userPending, err := s.pendingBatchParentCounters(ctx, actor)
-	if err != nil {
-		logger.Error("failed to evaluate power-batch submission limits", zap.Error(err))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	limitPolicy, err := s.resolveBatchUserLimitPolicy(ctx, actor)
-	if err != nil {
-		logger.Error("failed to resolve power-batch user limit policy", zap.Error(err), zap.String("actor", actor))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	userPendingParentExceeded := !limitPolicy.Exempt && userPending >= limitPolicy.MaxPendingParents
-	if globalPending >= maxPendingBatchParents || userPendingParentExceeded {
-		c.Header("Retry-After", strconv.Itoa(batchRetryAfterSeconds))
-		c.JSON(http.StatusTooManyRequests, generated.Error{
-			Code:    "BATCH_RATE_LIMITED",
-			Message: "batch power submission throttled by pending parent limits",
-			Params: map[string]interface{}{
-				"retry_after_seconds": batchRetryAfterSeconds,
-				"global_pending":      globalPending,
-				"user_pending":        userPending,
-				"user_exempted":       limitPolicy.Exempt,
-				"max_user_pending":    limitPolicy.MaxPendingParents,
-			},
-		})
-		return
-	}
-	if extraLimit, limitErr := s.evaluateAdditionalBatchSubmissionLimits(ctx, actor, len(req.Items), limitPolicy, domain.EventBatchPowerRequested); limitErr != nil {
-		logger.Error("failed to evaluate power-batch additional limits", zap.Error(limitErr))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	} else if extraLimit != nil {
-		retryAfter := extraLimit.RetryAfterSeconds
-		if retryAfter <= 0 {
-			retryAfter = batchRetryAfterSeconds
-		}
-		c.Header("Retry-After", strconv.Itoa(retryAfter))
-		c.JSON(http.StatusTooManyRequests, generated.Error{
-			Code:    "BATCH_RATE_LIMITED",
-			Message: "batch power submission throttled by additional rate limits",
-			Params: map[string]interface{}{
-				"reason":                    extraLimit.Reason,
-				"retry_after_seconds":       retryAfter,
-				"global_recent_submits":     extraLimit.GlobalRecentSubmits,
-				"user_pending_children":     extraLimit.UserPendingChildren,
-				"user_cooldown_seconds":     extraLimit.UserCooldownSeconds,
-				"requested_child_count":     len(req.Items),
-				"max_global_per_minute":     maxGlobalBatchRequestsPerMinute,
-				"max_user_pending_children": limitPolicy.MaxPendingChildren,
-				"user_exempted":             limitPolicy.Exempt,
-			},
-		})
+	requestID := normalizeBatchRequestID(req.RequestId)
+	if s.writeEarlyBatchReplayResponse(c, actor, opKey, requestID, "power-batch") {
 		return
 	}
 
@@ -781,7 +800,7 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	parentID := generateIDV7()
 	parentPayload := domain.BatchVMRequestPayload{
 		Operation:   opKey,
-		RequestID:   strings.TrimSpace(req.RequestId),
+		RequestID:   requestID,
 		Reason:      strings.TrimSpace(req.Reason),
 		SubmittedBy: actor,
 		SubmittedAt: time.Now().UTC(),
@@ -798,17 +817,66 @@ func (s *Server) submitBatchPower(c *gin.Context) {
 	if parentReason == "" {
 		parentReason = fmt.Sprintf("batch power %s request (%d items)", strings.ToLower(jobOperation), len(children))
 	}
+	releaseBatchGuard, err := s.acquireBatchSubmissionGuard(ctx)
+	if err != nil {
+		logger.Error("failed to lock power-batch submission guard", zap.Error(err))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	defer releaseBatchGuard()
+
 	atomicWriter := usecase.NewApprovalAtomicWriter(s.pool, s.riverClient)
-	if err := atomicWriter.CreateBatchPowerAndMaybeEnqueue(ctx, usecase.BatchPowerSubmissionInput{
+	writeErr := atomicWriter.CreateBatchPowerAndMaybeEnqueue(ctx, usecase.BatchPowerSubmissionInput{
 		ParentID:         parentID,
 		Actor:            actor,
-		RequestID:        strings.TrimSpace(req.RequestId),
+		Operation:        opKey,
+		RequestID:        requestID,
 		Reason:           parentReason,
 		ParentPayload:    parentPayloadBytes,
 		RequiresApproval: batchRequiresApproval,
 		Children:         batchPowerChildInputs(children),
-	}); err != nil {
-		logger.Error("failed to create power-batch rows and jobs atomically", zap.Error(err), zap.String("batch_id", parentID))
+	}, &usecase.BatchPowerSubmissionTxPolicy{
+		LockActor: func(validationCtx context.Context, tx pgx.Tx) error {
+			return lockBatchSubmissionActor(validationCtx, tx, actor)
+		},
+		Validate: func(validationCtx context.Context, tx pgx.Tx) error {
+			rateLimit, validationErr := evaluateBatchSubmissionRateLimits(
+				validationCtx,
+				pgxBatchSubmissionLimitReader{tx: tx},
+				actor,
+				len(req.Items),
+				time.Now().UTC(),
+			)
+			if validationErr != nil {
+				return fmt.Errorf("evaluate power-batch submission limits: %w", validationErr)
+			}
+			if rateLimit != nil {
+				return rateLimit
+			}
+			return nil
+		},
+	})
+	releaseBatchGuard()
+	if writeErr != nil {
+		var replay *usecase.BatchSubmissionReplayError
+		if errors.As(writeErr, &replay) {
+			s.writeExistingBatchSubmitResponse(c, replay.BatchID, "power-batch")
+			return
+		}
+		var active *usecase.ActivePowerEventError
+		if errors.As(writeErr, &active) {
+			writeActivePowerOperationConflict(c, active)
+			return
+		}
+		var rateLimit *batchSubmissionRateLimitError
+		if errors.As(writeErr, &rateLimit) {
+			writeBatchSubmissionRateLimitResponse(c, rateLimit, true)
+			return
+		}
+		if writeBatchSubmissionActorStateError(c, writeErr) {
+			return
+		}
+		logger.Error("failed to create power-batch rows and jobs atomically", zap.Error(writeErr), zap.String("batch_id", parentID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -871,6 +939,24 @@ func (s *Server) GetVMBatch(c *gin.Context, batchID generated.BatchID) {
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
 		return
 	}
+	owner, err := s.loadBatchOwner(ctx, batchID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
+			return
+		}
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading batch owner", zap.Error(err), zap.String("batch_id", batchID))
+			return
+		}
+		logger.Error("failed to load batch owner", zap.Error(err), zap.String("batch_id", batchID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !hasPlatformAdmin(c) && owner != actor {
+		c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
+		return
+	}
 
 	resp, _, err := s.loadBatchView(ctx, batchID)
 	if err != nil {
@@ -884,11 +970,6 @@ func (s *Server) GetVMBatch(c *gin.Context, batchID generated.BatchID) {
 		}
 		logger.Error("failed to load batch view", zap.Error(err), zap.String("batch_id", batchID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	if !hasPlatformAdmin(c) && resp.CreatedBy != actor {
-		c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
 		return
 	}
 
@@ -927,6 +1008,24 @@ func (s *Server) mutateBatchChildren(
 		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
 		return
 	}
+	owner, err := s.loadBatchOwner(ctx, batchID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
+			return
+		}
+		if isRequestContextCanceled(err) {
+			logger.Debug("request canceled while loading batch owner for action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+			return
+		}
+		logger.Error("failed to load batch owner for action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !hasPlatformAdmin(c) && owner != actor {
+		c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
+		return
+	}
 
 	resp, children, err := s.loadBatchView(ctx, batchID)
 	if err != nil {
@@ -940,10 +1039,6 @@ func (s *Server) mutateBatchChildren(
 		}
 		logger.Error("failed to load batch for action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if !hasPlatformAdmin(c) && resp.CreatedBy != actor {
-		c.JSON(http.StatusNotFound, generated.Error{Code: "BATCH_NOT_FOUND"})
 		return
 	}
 	parentTicket, err := s.client.Ticket.Get(ctx, batchID)
@@ -976,6 +1071,62 @@ func (s *Server) mutateBatchChildren(
 	}
 	isPowerBatch := domain.EventType(parentEvent.EventType) == domain.EventBatchPowerRequested
 	isCreateBatch := parentTicket.OperationType == entticket.OperationTypeCREATE
+	if !requireBatchMutationPermission(c, parentTicket.OperationType) {
+		return
+	}
+	powerOperation := parentTicket.OperationType == entticket.OperationTypePOWER
+	identityMatches := strings.TrimSpace(parentEvent.AggregateType) == batchResourceType &&
+		strings.TrimSpace(parentEvent.AggregateID) == strings.TrimSpace(batchID) &&
+		batchParentEventMatchesOperation(parentTicket.OperationType, domain.EventType(parentEvent.EventType)) &&
+		isPowerBatch == powerOperation
+	switch action {
+	case batchActionRetry:
+		parentStateEligible := parentTicket.Status == entticket.StatusEXECUTING ||
+			parentTicket.Status == entticket.StatusFAILED
+		eventStateEligible := parentEvent.Status == domainevent.StatusPROCESSING ||
+			parentEvent.Status == domainevent.StatusFAILED
+		if !parentStateEligible || !eventStateEligible || !identityMatches {
+			writeBatchParentStateConflict(c, batchID, action, parentTicket, parentEvent)
+			return
+		}
+		if !isPowerBatch && strings.TrimSpace(parentTicket.Approver) == "" {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "BATCH_ACTION_NOT_APPLICABLE",
+				Message: "this legacy batch has no durable approval provenance; create a new approval batch instead of retrying it",
+				Params: map[string]interface{}{
+					"batch_id":         batchID,
+					"batch_status":     resp.Status,
+					"operation_type":   string(parentTicket.OperationType),
+					"requested_action": action,
+					"reason":           "missing_approval_provenance",
+				},
+			})
+			return
+		}
+	case batchActionCancel:
+		parentStateEligible := parentTicket.Status == entticket.StatusPENDING ||
+			parentTicket.Status == entticket.StatusEXECUTING ||
+			parentTicket.Status == entticket.StatusFAILED
+		eventStateEligible := parentEvent.Status == domainevent.StatusPENDING ||
+			parentEvent.Status == domainevent.StatusPROCESSING ||
+			parentEvent.Status == domainevent.StatusFAILED
+		if !parentStateEligible || !eventStateEligible || !identityMatches {
+			writeBatchParentStateConflict(c, batchID, action, parentTicket, parentEvent)
+			return
+		}
+	}
+	if action == batchActionRetry && retryReview != nil && !isCreateBatch {
+		c.JSON(http.StatusBadRequest, generated.Error{
+			Code:    "BATCH_RETRY_REVIEW_NOT_APPLICABLE",
+			Message: "review inputs are supported only when retrying a failed CREATE batch; omit the request body for execution-only retries",
+			Params: map[string]interface{}{
+				"batch_id":         batchID,
+				"operation_type":   string(parentTicket.OperationType),
+				"requested_action": action,
+			},
+		})
+		return
+	}
 
 	useRetryReviewExecution := action == batchActionRetry && retryReview != nil
 	retryExecution := approvalcontract.ApprovalExecutionOptions{}
@@ -1002,10 +1153,15 @@ func (s *Server) mutateBatchChildren(
 	targetIDs := make([]string, 0)
 	targetRefs := make([]batchChildTicketEventRef, 0)
 	targetChildren := make([]*ent.Ticket, 0)
+	exhaustedTicketIDs := make([]string, 0)
 	for _, child := range children {
 		switch action {
 		case batchActionRetry:
-			if child.Status == entticket.StatusFAILED || child.Status == entticket.StatusREJECTED {
+			if child.Status == entticket.StatusFAILED {
+				if child.AttemptCount >= domain.BatchChildMaxAttempts {
+					exhaustedTicketIDs = append(exhaustedTicketIDs, child.ID)
+					continue
+				}
 				targetIDs = append(targetIDs, child.ID)
 				targetRefs = append(targetRefs, batchChildTicketEventRef{TicketID: child.ID, EventID: child.EventID})
 				targetChildren = append(targetChildren, child)
@@ -1023,8 +1179,13 @@ func (s *Server) mutateBatchChildren(
 		var errMessage string
 		switch action {
 		case batchActionRetry:
-			errCode = "BATCH_NOTHING_TO_RETRY"
-			errMessage = "no failed items are currently available for retry"
+			if len(exhaustedTicketIDs) > 0 {
+				errCode = "BATCH_RETRY_ATTEMPTS_EXHAUSTED"
+				errMessage = "all failed items have exhausted their retry attempts"
+			} else {
+				errCode = batchNothingToRetryErrorCode
+				errMessage = "no failed items are currently available for retry"
+			}
 		case batchActionCancel:
 			errCode = "BATCH_NOTHING_TO_CANCEL"
 			errMessage = "no pending items are currently available for cancel"
@@ -1036,13 +1197,15 @@ func (s *Server) mutateBatchChildren(
 			Code:    errCode,
 			Message: errMessage,
 			Params: map[string]interface{}{
-				"batch_id":         batchID,
-				"batch_status":     resp.Status,
-				"child_count":      resp.ChildCount,
-				"success_count":    resp.SuccessCount,
-				"failed_count":     resp.FailedCount,
-				"pending_count":    resp.PendingCount,
-				"requested_action": action,
+				"batch_id":             batchID,
+				"batch_status":         resp.Status,
+				"child_count":          resp.ChildCount,
+				"success_count":        resp.SuccessCount,
+				"failed_count":         resp.FailedCount,
+				"pending_count":        resp.PendingCount,
+				"requested_action":     action,
+				"exhausted_ticket_ids": exhaustedTicketIDs,
+				"max_attempts":         domain.BatchChildMaxAttempts,
 			},
 		})
 		return
@@ -1050,6 +1213,7 @@ func (s *Server) mutateBatchChildren(
 
 	affectedCount := 0
 	affectedTicketIDs := make([]string, 0)
+	var updatedStatus generated.VMBatchParentStatus
 	if action == batchActionRetry {
 		if isCreateBatch &&
 			resp.Status == generated.VMBatchParentStatusFAILED &&
@@ -1075,69 +1239,6 @@ func (s *Server) mutateBatchChildren(
 		if isPowerBatch {
 			retryChildren := make([]usecase.BatchPowerRetryChildInput, 0, len(targetChildren))
 			for _, child := range targetChildren {
-				ev, eventErr := s.client.DomainEvent.Get(ctx, child.EventID)
-				if eventErr != nil {
-					if markErr := s.markBatchPowerRetryChildrenFailed(ctx, []usecase.BatchPowerRetryChildInput{{
-						TicketID: child.ID,
-						EventID:  child.EventID,
-					}}, "failed to load child event during power retry"); markErr != nil {
-						if isRequestContextCanceled(markErr) {
-							logger.Debug("request canceled while marking power retry child failed", zap.Error(markErr), zap.String("ticket_id", child.ID), zap.String("batch_id", batchID))
-							return
-						}
-						logger.Error("failed to mark power retry child failed", zap.Error(markErr), zap.String("ticket_id", child.ID), zap.String("batch_id", batchID))
-						c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-						return
-					}
-					logger.Warn("failed to load child event during power-batch retry",
-						zap.String("ticket_id", child.ID),
-						zap.String("batch_id", batchID),
-						zap.Error(eventErr),
-					)
-					continue
-				}
-				var powerPayload domain.VMPowerPayload
-				if decodeErr := json.Unmarshal(ev.Payload, &powerPayload); decodeErr != nil {
-					if markErr := s.markBatchPowerRetryChildrenFailed(ctx, []usecase.BatchPowerRetryChildInput{{
-						TicketID: child.ID,
-						EventID:  child.EventID,
-					}}, "invalid power payload for retry"); markErr != nil {
-						if isRequestContextCanceled(markErr) {
-							logger.Debug("request canceled while marking power retry child failed", zap.Error(markErr), zap.String("ticket_id", child.ID), zap.String("batch_id", batchID))
-							return
-						}
-						logger.Error("failed to mark power retry child failed", zap.Error(markErr), zap.String("ticket_id", child.ID), zap.String("batch_id", batchID))
-						c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-						return
-					}
-					logger.Warn("failed to parse child power payload during retry",
-						zap.String("ticket_id", child.ID),
-						zap.String("batch_id", batchID),
-						zap.Error(decodeErr),
-					)
-					continue
-				}
-				op := strings.ToLower(strings.TrimSpace(powerPayload.Operation))
-				if op != "start" && op != "stop" && op != "restart" {
-					if markErr := s.markBatchPowerRetryChildrenFailed(ctx, []usecase.BatchPowerRetryChildInput{{
-						TicketID: child.ID,
-						EventID:  child.EventID,
-					}}, "unknown power operation for retry"); markErr != nil {
-						if isRequestContextCanceled(markErr) {
-							logger.Debug("request canceled while marking power retry child failed", zap.Error(markErr), zap.String("ticket_id", child.ID), zap.String("batch_id", batchID))
-							return
-						}
-						logger.Error("failed to mark power retry child failed", zap.Error(markErr), zap.String("ticket_id", child.ID), zap.String("batch_id", batchID))
-						c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-						return
-					}
-					logger.Warn("unknown power operation in child payload during retry",
-						zap.String("ticket_id", child.ID),
-						zap.String("batch_id", batchID),
-						zap.String("operation", powerPayload.Operation),
-					)
-					continue
-				}
 				retryChildren = append(retryChildren, usecase.BatchPowerRetryChildInput{
 					TicketID: child.ID,
 					EventID:  child.EventID,
@@ -1149,19 +1250,58 @@ func (s *Server) mutateBatchChildren(
 					ParentID: batchID,
 					Children: retryChildren,
 				}); retryErr != nil {
-					if markErr := s.markBatchPowerRetryChildrenFailed(ctx, retryChildren, "failed to enqueue vm_power job"); markErr != nil {
-						if isRequestContextCanceled(markErr) {
-							logger.Debug("request canceled while marking power retry children failed", zap.Error(markErr), zap.String("batch_id", batchID))
-							return
-						}
-						logger.Error("failed to mark power retry children failed", zap.Error(markErr), zap.String("batch_id", batchID))
-						c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+					var active *usecase.ActivePowerEventError
+					if errors.As(retryErr, &active) {
+						writeActivePowerOperationConflict(c, active)
 						return
 					}
-					logger.Warn("failed to reset and enqueue power children during batch retry",
+					var jobConflict *usecase.PowerRetryJobConflictError
+					if errors.As(retryErr, &jobConflict) {
+						c.JSON(http.StatusConflict, generated.Error{
+							Code:    "BATCH_RETRY_IN_PROGRESS",
+							Message: "an equivalent power job is still active; retry after it finishes",
+							Params: map[string]interface{}{
+								"batch_id":           batchID,
+								"event_id":           jobConflict.EventID,
+								"existing_job_id":    jobConflict.ExistingJobID,
+								"existing_job_state": jobConflict.ExistingJobState,
+							},
+						})
+						return
+					}
+					var notEligible *usecase.PowerRetryNotEligibleError
+					if errors.As(retryErr, &notEligible) {
+						c.JSON(http.StatusConflict, generated.Error{
+							Code:    batchNothingToRetryErrorCode,
+							Message: "no failed items are currently available for retry",
+							Params: map[string]interface{}{
+								"batch_id":  batchID,
+								"ticket_id": notEligible.TicketID,
+								"event_id":  notEligible.EventID,
+							},
+						})
+						return
+					}
+					var parentNotEligible *usecase.BatchRetryParentNotEligibleError
+					if errors.As(retryErr, &parentNotEligible) {
+						writeBatchParentStateConflict(c, batchID, batchActionRetry, nil, nil)
+						return
+					}
+					var exhausted *usecase.BatchChildAttemptsExhaustedError
+					if errors.As(retryErr, &exhausted) {
+						writeBatchRetryAttemptsExhausted(c, batchID, exhausted)
+						return
+					}
+					if isRequestContextCanceled(retryErr) {
+						logger.Debug("request canceled while resetting power children for retry", zap.Error(retryErr), zap.String("batch_id", batchID))
+						return
+					}
+					logger.Error("failed to reset and enqueue power children during batch retry",
 						zap.String("batch_id", batchID),
 						zap.Error(retryErr),
 					)
+					c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+					return
 				} else {
 					for _, child := range retryChildren {
 						affectedCount++
@@ -1169,81 +1309,117 @@ func (s *Server) mutateBatchChildren(
 					}
 				}
 			}
+			updatedStatus = generated.VMBatchParentStatusINPROGRESS
 		} else {
-			var retryReviewExecution *approvalcontract.ApprovalExecutionOptions
-			if isCreateBatch && useRetryReviewExecution {
-				retryReviewExecution = &retryExecution
-			}
-			if updateTicketErr := s.resetBatchChildrenForRetry(
-				ctx,
-				parentTicket.ID,
-				targetRefs,
-				retryReviewExecution,
-			); updateTicketErr != nil {
-				if isRequestContextCanceled(updateTicketErr) {
-					logger.Debug("request canceled while resetting child tickets for retry", zap.Error(updateTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
-					return
-				}
-				logger.Error("failed to reset child tickets for retry", zap.Error(updateTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
+			execution, executionErr := ticketing.BatchApprovalExecutionFromTicket(parentTicket)
+			if executionErr != nil {
+				logger.Error("failed to load durable batch retry execution plan", zap.Error(executionErr), zap.String("batch_id", batchID))
 				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 				return
 			}
-			if retryReviewExecution != nil {
-				parentTicket.SelectedClusterID = retryExecution.ClusterID
-				parentTicket.SelectedStorageClass = retryExecution.StorageClass
+			if isCreateBatch && useRetryReviewExecution {
+				execution = domain.BatchApprovalExecutionOptions{
+					ClusterID:       retryExecution.ClusterID,
+					StorageClass:    retryExecution.StorageClass,
+					DVAccessModes:   append([]string(nil), retryExecution.DVAccessModes...),
+					DVVolumeMode:    retryExecution.DVVolumeMode,
+					EnableOverride:  retryExecution.EnableOverride,
+					CPURequest:      retryExecution.CPURequest,
+					CPULimit:        retryExecution.CPULimit,
+					MemoryRequestGi: retryExecution.MemoryRequestGi,
+					MemoryLimitGi:   retryExecution.MemoryLimitGi,
+					DiskGB:          retryExecution.DiskGB,
+				}
 			}
-
+			retryApprover := strings.TrimSpace(parentTicket.Approver)
+			if useRetryReviewExecution {
+				// A reviewer who deliberately supplies a replacement execution
+				// plan owns that new approval decision. An ordinary execution
+				// retry preserves the original approver instead of misattributing
+				// approval to the requesting VM operator.
+				retryApprover = actor
+			}
+			retryChildren := make([]domain.BatchApprovalRetryChild, 0, len(targetChildren))
 			for _, child := range targetChildren {
-				execution := approvalcontract.ApprovalExecutionOptions{
-					ClusterID:    strings.TrimSpace(parentTicket.SelectedClusterID),
-					StorageClass: strings.TrimSpace(parentTicket.SelectedStorageClass),
+				retryChildren = append(retryChildren, domain.BatchApprovalRetryChild{
+					TicketID: child.ID,
+					EventID:  child.EventID,
+				})
+			}
+			atomicWriter := usecase.NewApprovalAtomicWriter(s.pool, s.riverClient)
+			retryErr := atomicWriter.RetryBatchApprovalAndEnqueue(ctx, domain.BatchApprovalRetryInput{
+				ParentTicketID: parentTicket.ID,
+				ParentEventID:  parentTicket.EventID,
+				Approver:       retryApprover,
+				Children:       retryChildren,
+				Execution:      execution,
+			})
+			if retryErr != nil {
+				var exhausted *usecase.BatchChildAttemptsExhaustedError
+				if errors.As(retryErr, &exhausted) {
+					writeBatchRetryAttemptsExhausted(c, batchID, exhausted)
+					return
 				}
-				if isCreateBatch && useRetryReviewExecution {
-					execution = retryExecution
-				}
-				approveErr := fmt.Errorf("approval provider is not configured")
-				if s.approvalRouter != nil {
-					approveErr = s.approvalRouter.ProcessApproval(ctx, child.ID, approvalcontract.ApprovalDecision{
-						Approved:  true,
-						Approver:  actor,
-						Execution: execution,
+				var inProgress *usecase.BatchApprovalDispatchConflictError
+				if errors.As(retryErr, &inProgress) {
+					c.JSON(http.StatusConflict, generated.Error{
+						Code:    "BATCH_RETRY_IN_PROGRESS",
+						Message: "batch retry dispatch is already in progress",
+						Params: map[string]interface{}{
+							"batch_id":           batchID,
+							"existing_job_id":    inProgress.ExistingJobID,
+							"existing_job_state": inProgress.ExistingJobState,
+						},
 					})
+					return
 				}
-				if approveErr != nil {
-					message := approveErr.Error()
-					if len(message) > 512 {
-						message = message[:512]
-					}
-					if markErr := s.markBatchChildFailed(ctx, child.ID, child.EventID, message); markErr != nil {
-						if isRequestContextCanceled(markErr) {
-							logger.Debug("request canceled while marking retry child failed", zap.Error(markErr), zap.String("ticket_id", child.ID), zap.String("batch_id", batchID))
-							return
-						}
-						logger.Error("failed to mark retry child failed", zap.Error(markErr), zap.String("ticket_id", child.ID), zap.String("batch_id", batchID))
-						c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-						return
-					}
-					logger.Warn("failed to re-approve child ticket during batch retry",
-						zap.String("ticket_id", child.ID),
-						zap.String("batch_id", batchID),
-						zap.Error(approveErr),
-					)
-					continue
+				var notEligible *usecase.BatchApprovalRetryNotEligibleError
+				if errors.As(retryErr, &notEligible) {
+					writeBatchChildStateConflict(c, batchID, batchActionRetry, &batchChildStateConflictError{
+						TicketID: notEligible.TicketID,
+						EventID:  notEligible.EventID,
+					})
+					return
 				}
+				var parentNotEligible *usecase.BatchRetryParentNotEligibleError
+				if errors.As(retryErr, &parentNotEligible) {
+					writeBatchParentStateConflict(c, batchID, batchActionRetry, nil, nil)
+					return
+				}
+				if isRequestContextCanceled(retryErr) {
+					logger.Debug("request canceled while scheduling durable batch retry", zap.Error(retryErr), zap.String("batch_id", batchID))
+					return
+				}
+				logger.Error("failed to schedule durable batch retry", zap.Error(retryErr), zap.String("batch_id", batchID))
+				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+				return
+			}
+			for _, child := range targetChildren {
 				affectedCount++
 				affectedTicketIDs = append(affectedTicketIDs, child.ID)
 			}
+			updatedStatus = generated.VMBatchParentStatusINPROGRESS
 		}
 	} else {
-		if cancelTicketErr := s.updateBatchChildTicketAndEventStatus(
+		sort.Slice(targetRefs, func(i, j int) bool {
+			return targetRefs[i].TicketID < targetRefs[j].TicketID
+		})
+		cancelledStatus, cancelTicketErr := s.updateBatchChildTicketAndEventStatus(
 			ctx,
+			batchID,
 			targetRefs,
 			entticket.StatusCANCELLED,
 			domainevent.StatusCANCELLED,
 			false,
 			[]entticket.Status{entticket.StatusPENDING},
 			[]domainevent.Status{domainevent.StatusPENDING},
-		); cancelTicketErr != nil {
+		)
+		if cancelTicketErr != nil {
+			var stateConflict *batchChildStateConflictError
+			if errors.As(cancelTicketErr, &stateConflict) {
+				writeBatchChildStateConflict(c, batchID, batchActionCancel, stateConflict)
+				return
+			}
 			if isRequestContextCanceled(cancelTicketErr) {
 				logger.Debug("request canceled while mutating child tickets", zap.Error(cancelTicketErr), zap.String("batch_id", batchID), zap.String("action", action))
 				return
@@ -1252,40 +1428,157 @@ func (s *Server) mutateBatchChildren(
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 			return
 		}
+		updatedStatus = cancelledStatus
 		affectedCount = len(targetIDs)
 		affectedTicketIDs = append(affectedTicketIDs, targetIDs...)
 	}
-	var syncErr error
-	if action == batchActionRetry {
-		syncErr = jobs.SyncParentBatchStatusAllowReopen(ctx, s.client, batchID)
-	} else {
-		syncErr = jobs.SyncParentBatchStatus(ctx, s.client, batchID)
-	}
-	if syncErr != nil {
-		if isRequestContextCanceled(syncErr) {
-			logger.Debug("request canceled while syncing parent batch status", zap.Error(syncErr), zap.String("batch_id", batchID), zap.String("action", action))
-			return
+	if s.audit != nil {
+		details := map[string]interface{}{
+			"affected_count":      affectedCount,
+			"affected_ticket_ids": append([]string(nil), affectedTicketIDs...),
+			"batch_status":        updatedStatus,
+			"operation_type":      parentTicket.OperationType,
 		}
-		logger.Error("failed to sync parent batch status", zap.Error(syncErr), zap.String("batch_id", batchID), zap.String("action", action))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	updated, _, err := s.loadBatchView(ctx, batchID)
-	if err != nil {
-		if isRequestContextCanceled(err) {
-			logger.Debug("request canceled while reloading batch after action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
-			return
+		if action == batchActionRetry {
+			effectiveApprover := strings.TrimSpace(parentTicket.Approver)
+			if useRetryReviewExecution {
+				effectiveApprover = actor
+			}
+			details["review_replaced"] = useRetryReviewExecution
+			details["original_approver"] = strings.TrimSpace(parentTicket.Approver)
+			details["effective_approver"] = effectiveApprover
 		}
-		logger.Error("failed to reload batch after action", zap.Error(err), zap.String("batch_id", batchID), zap.String("action", action))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
+		_ = s.audit.LogAction(ctx, "vm.batch."+action, "ticket", batchID, actor, details)
 	}
 	c.JSON(http.StatusOK, generated.VMBatchActionResponse{
 		BatchId:           batchID,
-		Status:            updated.Status,
+		Status:            updatedStatus,
 		AffectedCount:     affectedCount,
 		AffectedTicketIds: affectedTicketIDs,
+	})
+}
+
+// requireBatchMutationPermission derives authorization from the durable
+// parent operation instead of accepting any VM mutation permission presented
+// by the caller. This prevents a requester from using retry/cancel to cross an
+// operation boundary (for example vm:create to retry a failed DELETE).
+func requireBatchMutationPermission(c *gin.Context, operation entticket.OperationType) bool {
+	// The OpenAPI contract deliberately allows approval reviewers as a separate
+	// principal class. Preserve that path while preventing ordinary VM actors
+	// from crossing operation-specific permission boundaries.
+	if hasGlobalPermission(c, "builtin_approval:approve") {
+		return true
+	}
+	switch operation {
+	case entticket.OperationTypeCREATE:
+		return requireGlobalPermission(c, "vm:create")
+	case entticket.OperationTypeDELETE:
+		return requireGlobalPermission(c, "vm:delete")
+	case entticket.OperationTypeMODIFY, entticket.OperationTypePOWER:
+		return requireGlobalPermission(c, "vm:operate")
+	default:
+		c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
+		return false
+	}
+}
+
+func batchParentEventMatchesOperation(operation entticket.OperationType, eventType domain.EventType) bool {
+	switch operation {
+	case entticket.OperationTypeCREATE:
+		return eventType == domain.EventBatchCreateRequested
+	case entticket.OperationTypeMODIFY:
+		return eventType == domain.EventBatchModifyRequested
+	case entticket.OperationTypeDELETE:
+		return eventType == domain.EventBatchDeleteRequested
+	case entticket.OperationTypePOWER:
+		return eventType == domain.EventBatchPowerRequested
+	default:
+		return false
+	}
+}
+
+func writeBatchParentStateConflict(
+	c *gin.Context,
+	batchID string,
+	action string,
+	parent *ent.Ticket,
+	event *ent.DomainEvent,
+) {
+	params := map[string]interface{}{
+		"batch_id":         batchID,
+		"requested_action": action,
+	}
+	if parent != nil {
+		params["parent_status"] = parent.Status
+		params["operation_type"] = parent.OperationType
+	}
+	if event != nil {
+		params["event_status"] = event.Status
+		params["event_type"] = event.EventType
+	}
+	message := "the batch parent is not eligible for the requested action"
+	switch action {
+	case batchActionRetry:
+		message = "the batch parent is not in an approved retryable execution state"
+	case batchActionCancel:
+		message = "the batch parent is not in a cancellable state"
+	}
+	c.JSON(http.StatusConflict, generated.Error{
+		Code:    "BATCH_ACTION_NOT_APPLICABLE",
+		Message: message,
+		Params:  params,
+	})
+}
+
+func writeBatchRetryAttemptsExhausted(
+	c *gin.Context,
+	batchID string,
+	exhausted *usecase.BatchChildAttemptsExhaustedError,
+) {
+	params := map[string]interface{}{
+		"batch_id":     batchID,
+		"max_attempts": domain.BatchChildMaxAttempts,
+	}
+	if exhausted != nil {
+		params["ticket_id"] = exhausted.TicketID
+		params["attempt_count"] = exhausted.AttemptCount
+		params["max_attempts"] = exhausted.MaxAttempts
+	}
+	c.JSON(http.StatusConflict, generated.Error{
+		Code:    "BATCH_RETRY_ATTEMPTS_EXHAUSTED",
+		Message: "the batch child has exhausted its retry attempts",
+		Params:  params,
+	})
+}
+
+func writeBatchChildStateConflict(
+	c *gin.Context,
+	batchID string,
+	action string,
+	conflict *batchChildStateConflictError,
+) {
+	code := "BATCH_ACTION_NOT_APPLICABLE"
+	message := "the batch child is no longer available for the requested action"
+	switch action {
+	case batchActionRetry:
+		code = batchNothingToRetryErrorCode
+		message = "no failed items are currently available for retry"
+	case batchActionCancel:
+		code = "BATCH_NOTHING_TO_CANCEL"
+		message = "no pending items are currently available for cancel"
+	}
+	params := map[string]interface{}{
+		"batch_id":         batchID,
+		"requested_action": action,
+	}
+	if conflict != nil {
+		params["ticket_id"] = conflict.TicketID
+		params["event_id"] = conflict.EventID
+	}
+	c.JSON(http.StatusConflict, generated.Error{
+		Code:    code,
+		Message: message,
+		Params:  params,
 	})
 }
 
@@ -1294,155 +1587,35 @@ type batchChildTicketEventRef struct {
 	EventID  string
 }
 
-func (s *Server) markBatchChildFailed(ctx context.Context, ticketID, eventID, reason string) error {
-	return s.markBatchChildrenFailed(ctx, []batchChildTicketEventRef{{
-		TicketID: ticketID,
-		EventID:  eventID,
-	}}, reason)
-}
-
-func (s *Server) markBatchPowerRetryChildrenFailed(ctx context.Context, children []usecase.BatchPowerRetryChildInput, reason string) error {
-	refs := make([]batchChildTicketEventRef, 0, len(children))
-	for _, child := range children {
-		refs = append(refs, batchChildTicketEventRef{
-			TicketID: child.TicketID,
-			EventID:  child.EventID,
-		})
-	}
-	return s.markBatchChildrenFailed(ctx, refs, reason)
-}
-
-func (s *Server) markBatchChildrenFailed(ctx context.Context, children []batchChildTicketEventRef, reason string) error {
-	if s == nil || s.client == nil {
-		return fmt.Errorf("server dependencies are not initialized")
-	}
-	if len(children) == 0 {
-		return nil
-	}
-	reason = strings.TrimSpace(reason)
-	if reason == "" {
-		reason = "batch child failed"
-	}
-
-	return WithTx(ctx, s.client, func(tx *ent.Tx) error {
-		for _, child := range children {
-			ticketID := strings.TrimSpace(child.TicketID)
-			eventID := strings.TrimSpace(child.EventID)
-			if ticketID == "" || eventID == "" {
-				return fmt.Errorf("batch child failure marker is missing ticket/event id")
-			}
-			affected, err := tx.Ticket.Update().
-				Where(entticket.ID(ticketID), entticket.EventID(eventID)).
-				Where(entticket.StatusIn(entticket.StatusPENDING, entticket.StatusFAILED, entticket.StatusREJECTED)).
-				SetStatus(entticket.StatusFAILED).
-				SetRejectReason(reason).
-				Save(ctx)
-			if err != nil {
-				return fmt.Errorf("mark batch child ticket %s failed: %w", ticketID, err)
-			}
-			if affected != 1 {
-				return fmt.Errorf("mark batch child ticket %s failed: expected 1 row, got %d", ticketID, affected)
-			}
-			affected, err = tx.DomainEvent.Update().
-				Where(domainevent.ID(eventID)).
-				Where(domainevent.StatusIn(domainevent.StatusPENDING, domainevent.StatusFAILED, domainevent.StatusCANCELLED)).
-				SetStatus(domainevent.StatusFAILED).
-				Save(ctx)
-			if err != nil {
-				return fmt.Errorf("mark batch child event %s failed: %w", eventID, err)
-			}
-			if affected != 1 {
-				return fmt.Errorf("mark batch child event %s failed: expected 1 row, got %d", eventID, affected)
-			}
-		}
-		return nil
-	})
-}
-
 func (s *Server) updateBatchChildTicketAndEventStatus(
 	ctx context.Context,
+	parentTicketID string,
 	children []batchChildTicketEventRef,
 	ticketStatus entticket.Status,
 	eventStatus domainevent.Status,
 	clearRejectReason bool,
 	allowedTicketStatuses []entticket.Status,
 	allowedEventStatuses []domainevent.Status,
-) error {
-	return s.updateBatchChildTicketAndEventStatusWithParentRetryReview(
-		ctx,
-		"",
-		nil,
-		children,
-		ticketStatus,
-		eventStatus,
-		clearRejectReason,
-		allowedTicketStatuses,
-		allowedEventStatuses,
-	)
-}
-
-func (s *Server) resetBatchChildrenForRetry(
-	ctx context.Context,
-	parentTicketID string,
-	children []batchChildTicketEventRef,
-	retryExecution *approvalcontract.ApprovalExecutionOptions,
-) error {
-	return s.updateBatchChildTicketAndEventStatusWithParentRetryReview(
-		ctx,
-		parentTicketID,
-		retryExecution,
-		children,
-		entticket.StatusPENDING,
-		domainevent.StatusPENDING,
-		true,
-		[]entticket.Status{entticket.StatusFAILED, entticket.StatusREJECTED},
-		[]domainevent.Status{domainevent.StatusPENDING, domainevent.StatusFAILED, domainevent.StatusCANCELLED},
-	)
-}
-
-func (s *Server) updateBatchChildTicketAndEventStatusWithParentRetryReview(
-	ctx context.Context,
-	parentTicketID string,
-	retryExecution *approvalcontract.ApprovalExecutionOptions,
-	children []batchChildTicketEventRef,
-	ticketStatus entticket.Status,
-	eventStatus domainevent.Status,
-	clearRejectReason bool,
-	allowedTicketStatuses []entticket.Status,
-	allowedEventStatuses []domainevent.Status,
-) error {
+) (generated.VMBatchParentStatus, error) {
 	if s == nil || s.client == nil {
-		return fmt.Errorf("server dependencies are not initialized")
+		return "", fmt.Errorf("server dependencies are not initialized")
 	}
 	if len(children) == 0 {
-		return nil
+		return "", nil
 	}
 
-	return WithTx(ctx, s.client, func(tx *ent.Tx) error {
-		if retryExecution != nil {
-			parentTicketID = strings.TrimSpace(parentTicketID)
-			if parentTicketID == "" {
-				return fmt.Errorf("batch retry review update is missing parent ticket id")
-			}
-			parentSelectionUpdater := tx.Ticket.UpdateOneID(parentTicketID).
-				Where(entticket.OperationTypeEQ(entticket.OperationTypeCREATE))
-			if strings.TrimSpace(retryExecution.ClusterID) != "" {
-				parentSelectionUpdater = parentSelectionUpdater.SetSelectedClusterID(
-					retryExecution.ClusterID,
-				)
-			} else {
-				parentSelectionUpdater = parentSelectionUpdater.ClearSelectedClusterID()
-			}
-			if strings.TrimSpace(retryExecution.StorageClass) != "" {
-				parentSelectionUpdater = parentSelectionUpdater.SetSelectedStorageClass(
-					retryExecution.StorageClass,
-				)
-			} else {
-				parentSelectionUpdater = parentSelectionUpdater.ClearSelectedStorageClass()
-			}
-			if _, err := parentSelectionUpdater.Save(ctx); err != nil {
-				return fmt.Errorf("update parent retry review inputs %s: %w", parentTicketID, err)
-			}
+	var updatedStatus generated.VMBatchParentStatus
+	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		parentTicketID = strings.TrimSpace(parentTicketID)
+		if parentTicketID == "" {
+			return fmt.Errorf("batch child status update is missing parent ticket id")
+		}
+		if err := tx.ExecContext(
+			ctx,
+			`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+			usecase.BatchMutationLockKey(parentTicketID),
+		); err != nil {
+			return fmt.Errorf("lock batch child mutation parent %s: %w", parentTicketID, err)
 		}
 		for _, child := range children {
 			ticketID := strings.TrimSpace(child.TicketID)
@@ -1451,7 +1624,11 @@ func (s *Server) updateBatchChildTicketAndEventStatusWithParentRetryReview(
 				return fmt.Errorf("batch child status update is missing ticket/event id")
 			}
 			ticketUpdate := tx.Ticket.Update().
-				Where(entticket.ID(ticketID), entticket.EventID(eventID)).
+				Where(
+					entticket.ID(ticketID),
+					entticket.EventID(eventID),
+					entticket.ParentTicketIDEQ(parentTicketID),
+				).
 				SetStatus(ticketStatus)
 			if len(allowedTicketStatuses) > 0 {
 				ticketUpdate = ticketUpdate.Where(entticket.StatusIn(allowedTicketStatuses...))
@@ -1464,11 +1641,26 @@ func (s *Server) updateBatchChildTicketAndEventStatusWithParentRetryReview(
 				return fmt.Errorf("update batch child ticket %s: %w", ticketID, err)
 			}
 			if affected != 1 {
+				stored, loadErr := tx.Ticket.Get(ctx, ticketID)
+				if ent.IsNotFound(loadErr) {
+					return &batchChildStateConflictError{TicketID: ticketID, EventID: eventID}
+				}
+				if loadErr != nil {
+					return fmt.Errorf("reload batch child ticket %s after transition conflict: %w", ticketID, loadErr)
+				}
+				if strings.TrimSpace(stored.EventID) != eventID ||
+					strings.TrimSpace(stored.ParentTicketID) != parentTicketID ||
+					!ticketStatusAllowed(stored.Status, allowedTicketStatuses) {
+					return &batchChildStateConflictError{TicketID: ticketID, EventID: eventID}
+				}
 				return fmt.Errorf("update batch child ticket %s: expected 1 row, got %d", ticketID, affected)
 			}
 
 			eventUpdate := tx.DomainEvent.Update().
-				Where(domainevent.ID(eventID)).
+				Where(
+					domainevent.ID(eventID),
+					domainEventBoundToBatchChild(ticketID, parentTicketID),
+				).
 				SetStatus(eventStatus)
 			if len(allowedEventStatuses) > 0 {
 				eventUpdate = eventUpdate.Where(domainevent.StatusIn(allowedEventStatuses...))
@@ -1478,11 +1670,79 @@ func (s *Server) updateBatchChildTicketAndEventStatusWithParentRetryReview(
 				return fmt.Errorf("update batch child event %s: %w", eventID, err)
 			}
 			if affected != 1 {
+				stored, loadErr := tx.DomainEvent.Get(ctx, eventID)
+				if ent.IsNotFound(loadErr) {
+					return &batchChildStateConflictError{TicketID: ticketID, EventID: eventID}
+				}
+				if loadErr != nil {
+					return fmt.Errorf("reload batch child event %s after transition conflict: %w", eventID, loadErr)
+				}
+				if !domainEventStatusAllowed(stored.Status, allowedEventStatuses) {
+					return &batchChildStateConflictError{TicketID: ticketID, EventID: eventID}
+				}
 				return fmt.Errorf("update batch child event %s: expected 1 row, got %d", eventID, affected)
 			}
 		}
+		if err := jobs.SyncParentBatchStatusInTx(ctx, tx, parentTicketID); err != nil {
+			return fmt.Errorf("sync parent batch %s after child status update: %w", parentTicketID, err)
+		}
+		projection, err := tx.BatchTicket.Get(ctx, parentTicketID)
+		if err != nil {
+			return fmt.Errorf("load authoritative batch projection %s after child status update: %w", parentTicketID, err)
+		}
+		updatedStatus, err = batchParentStatusFromProjection(projection.Status)
+		if err != nil {
+			return err
+		}
 		return nil
 	})
+	if err != nil {
+		return "", err
+	}
+	return updatedStatus, nil
+}
+
+func batchParentStatusFromProjection(status entbatchticket.Status) (generated.VMBatchParentStatus, error) {
+	switch status {
+	case entbatchticket.StatusPENDING_APPROVAL:
+		return generated.VMBatchParentStatusPENDINGAPPROVAL, nil
+	case entbatchticket.StatusIN_PROGRESS:
+		return generated.VMBatchParentStatusINPROGRESS, nil
+	case entbatchticket.StatusCOMPLETED:
+		return generated.VMBatchParentStatusCOMPLETED, nil
+	case entbatchticket.StatusFAILED:
+		return generated.VMBatchParentStatusFAILED, nil
+	case entbatchticket.StatusPARTIAL_SUCCESS:
+		return generated.VMBatchParentStatusPARTIALSUCCESS, nil
+	case entbatchticket.StatusCANCELLED:
+		return generated.VMBatchParentStatusCANCELLED, nil
+	default:
+		return "", fmt.Errorf("unsupported batch projection status %q", status)
+	}
+}
+
+func ticketStatusAllowed(status entticket.Status, allowed []entticket.Status) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	for _, candidate := range allowed {
+		if status == candidate {
+			return true
+		}
+	}
+	return false
+}
+
+func domainEventStatusAllowed(status domainevent.Status, allowed []domainevent.Status) bool {
+	if len(allowed) == 0 {
+		return true
+	}
+	for _, candidate := range allowed {
+		if status == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) prepareBatchChildren(
@@ -1817,27 +2077,31 @@ func (s *Server) validateBatchCreateCatalogLabels(ctx context.Context, templateI
 	}
 }
 
-func normalizeBatchOperation(op generated.VMBatchOperation) (string, domain.EventType, error) {
+func normalizeBatchOperation(op generated.VMBatchSubmitOperation) (string, domain.EventType, error) {
 	switch op {
-	case generated.VMBatchOperation("CREATE"):
+	case generated.VMBatchSubmitOperation("CREATE"):
 		return string(op), domain.EventBatchCreateRequested, nil
-	case generated.VMBatchOperation("MODIFY"):
+	case generated.VMBatchSubmitOperation("MODIFY"):
 		return string(op), domain.EventBatchModifyRequested, nil
-	case generated.VMBatchOperation("DELETE"):
+	case generated.VMBatchSubmitOperation("DELETE"):
 		return string(op), domain.EventBatchDeleteRequested, nil
 	default:
 		return "", "", fmt.Errorf("unsupported operation %q", op)
 	}
 }
 
+func normalizeBatchRequestID(value string) string {
+	return batchreplay.Normalize(value)
+}
+
 func normalizeBatchPowerOperation(op generated.VMBatchPowerAction) (opKey, jobOperation string, childEventType domain.EventType, err error) {
 	switch strings.TrimSpace(strings.ToUpper(string(op))) {
 	case "START":
-		return "POWER_START", "START", domain.EventVMStartRequested, nil
+		return batchPowerOperationStart, "START", domain.EventVMStartRequested, nil
 	case "STOP":
-		return "POWER_STOP", "STOP", domain.EventVMStopRequested, nil
+		return batchPowerOperationStop, "STOP", domain.EventVMStopRequested, nil
 	case "RESTART":
-		return "POWER_RESTART", "RESTART", domain.EventVMRestartRequested, nil
+		return batchPowerOperationRestart, "RESTART", domain.EventVMRestartRequested, nil
 	default:
 		return "", "", "", fmt.Errorf("unsupported power operation %q", op)
 	}
@@ -1854,6 +2118,7 @@ func (s *Server) prepareBatchPowerChildren(
 ) ([]preparedBatchChild, error) {
 	snapshotLoader := newBatchSnapshotLoader(s)
 	children := make([]preparedBatchChild, 0, len(req.Items))
+	seenVMs := make(map[string]int, len(req.Items))
 	for idx, item := range req.Items {
 		vmID := strings.TrimSpace(item.VmId)
 		if vmID == "" {
@@ -1865,6 +2130,21 @@ func (s *Server) prepareBatchPowerChildren(
 				},
 			}
 		}
+		if firstIndex, exists := seenVMs[vmID]; exists {
+			return nil, &batchValidationError{
+				status: http.StatusBadRequest,
+				body: generated.Error{
+					Code:    "INVALID_BATCH_ITEM",
+					Message: fmt.Sprintf("power item #%d repeats vm_id %q from item #%d", idx+1, vmID, firstIndex+1),
+					Params: map[string]interface{}{
+						"vm_id":           vmID,
+						"first_index":     firstIndex + 1,
+						"duplicate_index": idx + 1,
+					},
+				},
+			}
+		}
+		seenVMs[vmID] = idx
 		vmObj, err := s.client.VM.Query().
 			Where(entvm.IDEQ(vmID)).
 			WithService(func(query *ent.ServiceQuery) {
@@ -1944,6 +2224,7 @@ func (s *Server) prepareBatchPowerChildren(
 			CurrentDiskGB:      snapshot.CurrentDiskGB,
 			Operation:          strings.ToLower(jobOperation),
 			Actor:              actor,
+			DispatchMode:       domain.VMPowerDispatchTicket,
 		}
 		payloadBytes, err := payload.ToJSON()
 		if err != nil {
@@ -1984,10 +2265,74 @@ func batchParentEventTypes() []string {
 	}
 }
 
-func (s *Server) pendingBatchParentCounters(ctx context.Context, actor string) (global, user int, err error) {
-	events, err := s.client.DomainEvent.Query().
+type batchSubmissionLimitViolation struct {
+	Reason              string
+	RetryAfterSeconds   int
+	GlobalRecentSubmits int
+	UserPendingChildren int
+	UserCooldownSeconds int
+	ContactAdmin        bool
+}
+
+type batchUserLimitPolicy struct {
+	Exempt              bool
+	UsesDefaultParents  bool
+	UsesDefaultChildren bool
+	UsesDefaultCooldown bool
+	MaxPendingParents   int
+	MaxPendingChildren  int
+	Cooldown            time.Duration
+	ExemptionExpiresAt  *time.Time
+}
+
+type batchUserLimitConfig struct {
+	ExemptionFound     bool
+	ExemptionExpiresAt *time.Time
+	MaxPendingParents  *int
+	MaxPendingChildren *int
+	CooldownSeconds    *int
+}
+
+type batchSubmissionLimitReader interface {
+	activeUser(context.Context, string) (found, enabled bool, err error)
+	pendingParentCounters(context.Context, string) (global, user int, err error)
+	userLimitConfig(context.Context, string) (batchUserLimitConfig, error)
+	recentSubmissionCount(context.Context, time.Time) (int, error)
+	pendingChildCount(context.Context, string) (int, error)
+	latestSubmissionAt(context.Context, string) (time.Time, bool, error)
+}
+
+type entBatchSubmissionLimitReader struct {
+	client *ent.Client
+}
+
+func (r entBatchSubmissionLimitReader) activeUser(
+	ctx context.Context,
+	actor string,
+) (found, enabled bool, err error) {
+	if r.client == nil {
+		return false, false, fmt.Errorf("batch submission Ent client is required")
+	}
+	userRow, err := r.client.User.Get(ctx, actor)
+	if ent.IsNotFound(err) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return true, userRow.Enabled, nil
+}
+
+func (r entBatchSubmissionLimitReader) pendingParentCounters(
+	ctx context.Context,
+	actor string,
+) (global, user int, err error) {
+	if r.client == nil {
+		return 0, 0, fmt.Errorf("batch submission Ent client is required")
+	}
+	events, err := r.client.DomainEvent.Query().
 		Where(
-			domainevent.AggregateTypeEQ("batch"),
+			domainevent.AggregateTypeEQ(batchResourceType),
 			domainevent.EventTypeIn(batchParentEventTypes()...),
 			domainevent.StatusIn(domainevent.StatusPENDING, domainevent.StatusPROCESSING),
 		).
@@ -1995,124 +2340,81 @@ func (s *Server) pendingBatchParentCounters(ctx context.Context, actor string) (
 	if err != nil {
 		return 0, 0, err
 	}
-
 	global = len(events)
-	user = 0
-	for _, ev := range events {
-		if ev.CreatedBy == actor {
+	for _, event := range events {
+		if event.CreatedBy == actor {
 			user++
 		}
 	}
 	return global, user, nil
 }
 
-type batchSubmissionLimitViolation struct {
-	Reason              string
-	RetryAfterSeconds   int
-	GlobalRecentSubmits int
-	UserPendingChildren int
-	UserCooldownSeconds int
-}
-
-type batchUserLimitPolicy struct {
-	Exempt             bool
-	UsesDefault        bool
-	MaxPendingParents  int
-	MaxPendingChildren int
-	Cooldown           time.Duration
-	ExemptionExpiresAt *time.Time
-}
-
-func defaultBatchUserLimitPolicy() batchUserLimitPolicy {
-	return batchUserLimitPolicy{
-		Exempt:             false,
-		UsesDefault:        true,
-		MaxPendingParents:  maxPendingBatchParentsUser,
-		MaxPendingChildren: maxPendingBatchChildrenUser,
-		Cooldown:           batchSubmitCooldown,
+func (r entBatchSubmissionLimitReader) userLimitConfig(
+	ctx context.Context,
+	actor string,
+) (batchUserLimitConfig, error) {
+	var result batchUserLimitConfig
+	if r.client == nil {
+		return result, fmt.Errorf("batch submission Ent client is required")
 	}
-}
-
-func (s *Server) resolveBatchUserLimitPolicy(ctx context.Context, actor string) (batchUserLimitPolicy, error) {
-	policy := defaultBatchUserLimitPolicy()
-
-	exemption, err := s.client.RateLimitExemption.Query().
+	exemption, err := r.client.RateLimitExemption.Query().
 		Where(ratelimitexemption.IDEQ(actor)).
 		Only(ctx)
 	if err != nil && !ent.IsNotFound(err) {
-		return policy, err
+		return result, err
 	}
 	if err == nil {
-		if exemption.ExpiresAt != nil && exemption.ExpiresAt.Before(time.Now().UTC()) {
-			if delErr := s.client.RateLimitExemption.DeleteOneID(actor).Exec(ctx); delErr != nil {
-				logger.Warn("failed to purge expired rate-limit exemption",
-					zap.String("user_id", actor),
-					zap.Error(delErr),
-				)
-			}
-		} else {
-			policy.Exempt = true
-			policy.UsesDefault = false
-			if exemption.ExpiresAt != nil {
-				exp := *exemption.ExpiresAt
-				policy.ExemptionExpiresAt = &exp
-			}
+		result.ExemptionFound = true
+		if exemption.ExpiresAt != nil {
+			expiresAt := *exemption.ExpiresAt
+			result.ExemptionExpiresAt = &expiresAt
 		}
 	}
 
-	override, err := s.client.RateLimitUserOverride.Query().
+	override, err := r.client.RateLimitUserOverride.Query().
 		Where(ratelimituseroverride.IDEQ(actor)).
 		Only(ctx)
 	if err != nil && !ent.IsNotFound(err) {
-		return policy, err
+		return result, err
 	}
 	if err == nil {
-		policy.UsesDefault = false
-		if override.MaxPendingParents != nil && *override.MaxPendingParents > 0 {
-			policy.MaxPendingParents = *override.MaxPendingParents
+		if override.MaxPendingParents != nil {
+			value := *override.MaxPendingParents
+			result.MaxPendingParents = &value
 		}
-		if override.MaxPendingChildren != nil && *override.MaxPendingChildren > 0 {
-			policy.MaxPendingChildren = *override.MaxPendingChildren
+		if override.MaxPendingChildren != nil {
+			value := *override.MaxPendingChildren
+			result.MaxPendingChildren = &value
 		}
-		if override.CooldownSeconds != nil && *override.CooldownSeconds >= 0 {
-			policy.Cooldown = time.Duration(*override.CooldownSeconds) * time.Second
+		if override.CooldownSeconds != nil {
+			value := *override.CooldownSeconds
+			result.CooldownSeconds = &value
 		}
 	}
-
-	return policy, nil
+	return result, nil
 }
 
-func (s *Server) evaluateAdditionalBatchSubmissionLimits(
+func (r entBatchSubmissionLimitReader) recentSubmissionCount(
 	ctx context.Context,
-	actor string,
-	requestedChildCount int,
-	policy batchUserLimitPolicy,
-	cooldownEventType domain.EventType,
-) (*batchSubmissionLimitViolation, error) {
-	recentSince := time.Now().UTC().Add(-time.Minute)
-	globalRecentSubmits, err := s.client.DomainEvent.Query().
+	since time.Time,
+) (int, error) {
+	if r.client == nil {
+		return 0, fmt.Errorf("batch submission Ent client is required")
+	}
+	return r.client.DomainEvent.Query().
 		Where(
-			domainevent.AggregateTypeEQ("batch"),
+			domainevent.AggregateTypeEQ(batchResourceType),
 			domainevent.EventTypeIn(batchParentEventTypes()...),
-			domainevent.CreatedAtGTE(recentSince),
+			domainevent.CreatedAtGTE(since),
 		).
 		Count(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if globalRecentSubmits >= maxGlobalBatchRequestsPerMinute {
-		return &batchSubmissionLimitViolation{
-			Reason:              "global_request_rate_limit",
-			RetryAfterSeconds:   60,
-			GlobalRecentSubmits: globalRecentSubmits,
-		}, nil
-	}
+}
 
-	if policy.Exempt {
-		return nil, nil
+func (r entBatchSubmissionLimitReader) pendingChildCount(ctx context.Context, actor string) (int, error) {
+	if r.client == nil {
+		return 0, fmt.Errorf("batch submission Ent client is required")
 	}
-
-	userPendingChildren, err := s.client.Ticket.Query().
+	return r.client.Ticket.Query().
 		Where(
 			entticket.RequesterEQ(actor),
 			entticket.ParentTicketIDNotNil(),
@@ -2123,6 +2425,295 @@ func (s *Server) evaluateAdditionalBatchSubmissionLimits(
 			),
 		).
 		Count(ctx)
+}
+
+func (r entBatchSubmissionLimitReader) latestSubmissionAt(
+	ctx context.Context,
+	actor string,
+) (time.Time, bool, error) {
+	if r.client == nil {
+		return time.Time{}, false, fmt.Errorf("batch submission Ent client is required")
+	}
+	lastEvent, err := r.client.DomainEvent.Query().
+		Where(
+			domainevent.AggregateTypeEQ(batchResourceType),
+			domainevent.EventTypeIn(batchParentEventTypes()...),
+			domainevent.CreatedByEQ(actor),
+		).
+		Order(ent.Desc(domainevent.FieldCreatedAt)).
+		First(ctx)
+	if ent.IsNotFound(err) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return lastEvent.CreatedAt, true, nil
+}
+
+type pgxBatchSubmissionLimitReader struct {
+	tx pgx.Tx
+}
+
+func (r pgxBatchSubmissionLimitReader) activeUser(
+	ctx context.Context,
+	actor string,
+) (found, enabled bool, err error) {
+	if r.tx == nil {
+		return false, false, fmt.Errorf("batch submission pgx transaction is required")
+	}
+	err = r.tx.QueryRow(ctx, `SELECT enabled FROM users WHERE id = $1`, actor).Scan(&enabled)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return false, false, nil
+	}
+	if err != nil {
+		return false, false, err
+	}
+	return true, enabled, nil
+}
+
+func (r pgxBatchSubmissionLimitReader) pendingParentCounters(
+	ctx context.Context,
+	actor string,
+) (global, user int, err error) {
+	if r.tx == nil {
+		return 0, 0, fmt.Errorf("batch submission pgx transaction is required")
+	}
+	err = r.tx.QueryRow(ctx, `
+SELECT count(*), count(*) FILTER (WHERE created_by = $1)
+FROM domain_events
+WHERE aggregate_type = 'batch'
+  AND event_type = ANY($2::text[])
+  AND status = ANY($3::text[])
+`, actor, batchParentEventTypes(), []string{
+		string(domainevent.StatusPENDING),
+		string(domainevent.StatusPROCESSING),
+	}).Scan(&global, &user)
+	return global, user, err
+}
+
+func (r pgxBatchSubmissionLimitReader) userLimitConfig(
+	ctx context.Context,
+	actor string,
+) (batchUserLimitConfig, error) {
+	var result batchUserLimitConfig
+	if r.tx == nil {
+		return result, fmt.Errorf("batch submission pgx transaction is required")
+	}
+	var expiresAt pgtype.Timestamptz
+	err := r.tx.QueryRow(ctx, `
+SELECT expires_at
+FROM rate_limit_exemptions
+WHERE id = $1
+`, actor).Scan(&expiresAt)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+	case err != nil:
+		return result, err
+	default:
+		result.ExemptionFound = true
+		if expiresAt.Valid {
+			value := expiresAt.Time
+			result.ExemptionExpiresAt = &value
+		}
+	}
+
+	var maxParents, maxChildren, cooldownSeconds pgtype.Int8
+	err = r.tx.QueryRow(ctx, `
+SELECT max_pending_parents, max_pending_children, cooldown_seconds
+FROM rate_limit_user_overrides
+WHERE id = $1
+`, actor).Scan(&maxParents, &maxChildren, &cooldownSeconds)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return result, nil
+	}
+	if err != nil {
+		return result, err
+	}
+	var convertErr error
+	if result.MaxPendingParents, convertErr = nullablePGXInt(maxParents); convertErr != nil {
+		return result, fmt.Errorf("decode max pending parents: %w", convertErr)
+	}
+	if result.MaxPendingChildren, convertErr = nullablePGXInt(maxChildren); convertErr != nil {
+		return result, fmt.Errorf("decode max pending children: %w", convertErr)
+	}
+	if result.CooldownSeconds, convertErr = nullablePGXInt(cooldownSeconds); convertErr != nil {
+		return result, fmt.Errorf("decode cooldown seconds: %w", convertErr)
+	}
+	return result, nil
+}
+
+func nullablePGXInt(value pgtype.Int8) (*int, error) {
+	if !value.Valid {
+		return nil, nil
+	}
+	converted, err := strconv.Atoi(strconv.FormatInt(value.Int64, 10))
+	if err != nil {
+		return nil, err
+	}
+	return &converted, nil
+}
+
+func (r pgxBatchSubmissionLimitReader) recentSubmissionCount(
+	ctx context.Context,
+	since time.Time,
+) (int, error) {
+	if r.tx == nil {
+		return 0, fmt.Errorf("batch submission pgx transaction is required")
+	}
+	var count int
+	err := r.tx.QueryRow(ctx, `
+SELECT count(*)
+FROM domain_events
+WHERE aggregate_type = 'batch'
+  AND event_type = ANY($1::text[])
+  AND created_at >= $2
+`, batchParentEventTypes(), since).Scan(&count)
+	return count, err
+}
+
+func (r pgxBatchSubmissionLimitReader) pendingChildCount(
+	ctx context.Context,
+	actor string,
+) (int, error) {
+	if r.tx == nil {
+		return 0, fmt.Errorf("batch submission pgx transaction is required")
+	}
+	var count int
+	err := r.tx.QueryRow(ctx, `
+SELECT count(*)
+FROM tickets
+WHERE requester = $1
+  AND parent_ticket_id IS NOT NULL
+  AND status = ANY($2::text[])
+`, actor, []string{
+		string(entticket.StatusPENDING),
+		string(entticket.StatusAPPROVED),
+		string(entticket.StatusEXECUTING),
+	}).Scan(&count)
+	return count, err
+}
+
+func (r pgxBatchSubmissionLimitReader) latestSubmissionAt(
+	ctx context.Context,
+	actor string,
+) (time.Time, bool, error) {
+	if r.tx == nil {
+		return time.Time{}, false, fmt.Errorf("batch submission pgx transaction is required")
+	}
+	var createdAt time.Time
+	err := r.tx.QueryRow(ctx, `
+SELECT created_at
+FROM domain_events
+WHERE aggregate_type = 'batch'
+  AND event_type = ANY($1::text[])
+  AND created_by = $2
+ORDER BY created_at DESC
+LIMIT 1
+`, batchParentEventTypes(), actor).Scan(&createdAt)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return time.Time{}, false, nil
+	}
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	return createdAt, true, nil
+}
+
+func defaultBatchUserLimitPolicy() batchUserLimitPolicy {
+	return batchUserLimitPolicy{
+		Exempt:              false,
+		UsesDefaultParents:  true,
+		UsesDefaultChildren: true,
+		UsesDefaultCooldown: true,
+		MaxPendingParents:   maxPendingBatchParentsUser,
+		MaxPendingChildren:  maxPendingBatchChildrenUser,
+		Cooldown:            batchSubmitCooldown,
+	}
+}
+
+func (s *Server) resolveBatchUserLimitPolicy(ctx context.Context, actor string) (batchUserLimitPolicy, error) {
+	return resolveBatchUserLimitPolicyWithClient(ctx, s.client, actor)
+}
+
+func resolveBatchUserLimitPolicyWithClient(
+	ctx context.Context,
+	client *ent.Client,
+	actor string,
+) (batchUserLimitPolicy, error) {
+	return resolveBatchUserLimitPolicyWithReader(
+		ctx,
+		entBatchSubmissionLimitReader{client: client},
+		actor,
+		time.Now().UTC(),
+	)
+}
+
+func resolveBatchUserLimitPolicyWithReader(
+	ctx context.Context,
+	reader batchSubmissionLimitReader,
+	actor string,
+	now time.Time,
+) (batchUserLimitPolicy, error) {
+	policy := defaultBatchUserLimitPolicy()
+	config, err := reader.userLimitConfig(ctx, actor)
+	if err != nil {
+		return policy, err
+	}
+	if config.ExemptionFound {
+		// Policy resolution is intentionally read-only. Deleting an expired row
+		// here can race with an administrator extending the same exemption and
+		// erase the newly committed state. Expired rows are simply ignored.
+		if config.ExemptionExpiresAt == nil || !config.ExemptionExpiresAt.Before(now) {
+			policy.Exempt = true
+			if config.ExemptionExpiresAt != nil {
+				exp := *config.ExemptionExpiresAt
+				policy.ExemptionExpiresAt = &exp
+			}
+		}
+	}
+	if config.MaxPendingParents != nil && *config.MaxPendingParents > 0 {
+		policy.MaxPendingParents = *config.MaxPendingParents
+		policy.UsesDefaultParents = false
+	}
+	if config.MaxPendingChildren != nil && *config.MaxPendingChildren > 0 {
+		policy.MaxPendingChildren = *config.MaxPendingChildren
+		policy.UsesDefaultChildren = false
+	}
+	if config.CooldownSeconds != nil && *config.CooldownSeconds >= 0 {
+		policy.Cooldown = time.Duration(*config.CooldownSeconds) * time.Second
+		policy.UsesDefaultCooldown = false
+	}
+	return policy, nil
+}
+
+func evaluateAdditionalBatchSubmissionLimitsWithReader(
+	ctx context.Context,
+	reader batchSubmissionLimitReader,
+	actor string,
+	requestedChildCount int,
+	policy batchUserLimitPolicy,
+	now time.Time,
+) (*batchSubmissionLimitViolation, error) {
+	recentSince := now.Add(-time.Minute)
+	globalRecentSubmits, err := reader.recentSubmissionCount(ctx, recentSince)
+	if err != nil {
+		return nil, err
+	}
+	if globalRecentSubmits >= maxGlobalBatchRequestsPerMinute {
+		return &batchSubmissionLimitViolation{
+			Reason:              "global_request_rate_limit",
+			RetryAfterSeconds:   60,
+			GlobalRecentSubmits: globalRecentSubmits,
+			ContactAdmin:        true,
+		}, nil
+	}
+
+	if policy.Exempt {
+		return nil, nil
+	}
+
+	userPendingChildren, err := reader.pendingChildCount(ctx, actor)
 	if err != nil {
 		return nil, err
 	}
@@ -2132,22 +2723,16 @@ func (s *Server) evaluateAdditionalBatchSubmissionLimits(
 			RetryAfterSeconds:   batchRetryAfterSeconds,
 			GlobalRecentSubmits: globalRecentSubmits,
 			UserPendingChildren: userPendingChildren,
+			ContactAdmin:        policy.UsesDefaultChildren,
 		}, nil
 	}
 
-	lastEvent, err := s.client.DomainEvent.Query().
-		Where(
-			domainevent.AggregateTypeEQ("batch"),
-			domainevent.EventTypeEQ(string(cooldownEventType)),
-			domainevent.CreatedByEQ(actor),
-		).
-		Order(ent.Desc(domainevent.FieldCreatedAt)).
-		First(ctx)
-	if err != nil && !ent.IsNotFound(err) {
+	lastSubmittedAt, found, err := reader.latestSubmissionAt(ctx, actor)
+	if err != nil {
 		return nil, err
 	}
-	if err == nil {
-		cooldownRemaining := time.Until(lastEvent.CreatedAt.Add(policy.Cooldown))
+	if found {
+		cooldownRemaining := lastSubmittedAt.Add(policy.Cooldown).Sub(now)
 		if cooldownRemaining > 0 {
 			cooldownSeconds := int(math.Ceil(cooldownRemaining.Seconds()))
 			return &batchSubmissionLimitViolation{
@@ -2156,6 +2741,7 @@ func (s *Server) evaluateAdditionalBatchSubmissionLimits(
 				GlobalRecentSubmits: globalRecentSubmits,
 				UserPendingChildren: userPendingChildren,
 				UserCooldownSeconds: cooldownSeconds,
+				ContactAdmin:        policy.UsesDefaultCooldown,
 			}, nil
 		}
 	}
@@ -2163,43 +2749,301 @@ func (s *Server) evaluateAdditionalBatchSubmissionLimits(
 	return nil, nil
 }
 
-func (s *Server) findBatchByRequestID(ctx context.Context, actor, op, requestID string) (batchID string, found bool, err error) {
-	events, err := s.client.DomainEvent.Query().
+type batchSubmissionRateLimitError struct {
+	PendingParentLimit bool
+	GlobalPending      int
+	UserPending        int
+	Policy             batchUserLimitPolicy
+	Additional         *batchSubmissionLimitViolation
+	RequestedChildren  int
+}
+
+func (e *batchSubmissionRateLimitError) Error() string {
+	if e == nil {
+		return batchRateLimitedMessage
+	}
+	if e.PendingParentLimit {
+		return "batch submission throttled by pending parent limits"
+	}
+	if e.Additional != nil {
+		return "batch submission throttled by " + e.Additional.Reason
+	}
+	return batchRateLimitedMessage
+}
+
+func evaluateBatchSubmissionRateLimits(
+	ctx context.Context,
+	reader batchSubmissionLimitReader,
+	actor string,
+	requestedChildCount int,
+	now time.Time,
+) (*batchSubmissionRateLimitError, error) {
+	found, enabled, err := reader.activeUser(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, errBatchSubmissionActorNotFound
+	}
+	if !enabled {
+		return nil, errBatchSubmissionActorNotAvailable
+	}
+	globalPending, userPending, err := reader.pendingParentCounters(ctx, actor)
+	if err != nil {
+		return nil, err
+	}
+	policy, err := resolveBatchUserLimitPolicyWithReader(ctx, reader, actor, now)
+	if err != nil {
+		return nil, err
+	}
+	userPendingParentExceeded := !policy.Exempt && userPending >= policy.MaxPendingParents
+	if globalPending >= maxPendingBatchParents || userPendingParentExceeded {
+		return &batchSubmissionRateLimitError{
+			PendingParentLimit: true,
+			GlobalPending:      globalPending,
+			UserPending:        userPending,
+			Policy:             policy,
+			RequestedChildren:  requestedChildCount,
+		}, nil
+	}
+	additional, err := evaluateAdditionalBatchSubmissionLimitsWithReader(
+		ctx,
+		reader,
+		actor,
+		requestedChildCount,
+		policy,
+		now,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if additional == nil {
+		return nil, nil
+	}
+	return &batchSubmissionRateLimitError{
+		GlobalPending:     globalPending,
+		UserPending:       userPending,
+		Policy:            policy,
+		Additional:        additional,
+		RequestedChildren: requestedChildCount,
+	}, nil
+}
+
+func writeBatchSubmissionActorStateError(c *gin.Context, err error) bool {
+	switch {
+	case errors.Is(err, errBatchSubmissionActorNotFound):
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+		return true
+	case errors.Is(err, errBatchSubmissionActorNotAvailable):
+		c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
+		return true
+	default:
+		return false
+	}
+}
+
+func writeBatchSubmissionRateLimitResponse(
+	c *gin.Context,
+	rateLimit *batchSubmissionRateLimitError,
+	powerBatch bool,
+) {
+	if rateLimit == nil {
+		return
+	}
+	if rateLimit.PendingParentLimit {
+		message := "batch submission throttled by pending parent limits"
+		if powerBatch {
+			message = "batch power submission throttled by pending parent limits"
+		}
+		userPendingParentExceeded := !rateLimit.Policy.Exempt &&
+			rateLimit.UserPending >= rateLimit.Policy.MaxPendingParents
+		contactAdmin := rateLimit.GlobalPending >= maxPendingBatchParents ||
+			(userPendingParentExceeded && rateLimit.Policy.UsesDefaultParents)
+		c.Header("Retry-After", strconv.Itoa(batchRetryAfterSeconds))
+		c.JSON(http.StatusTooManyRequests, generated.Error{
+			Code:    "BATCH_RATE_LIMITED",
+			Message: message,
+			Params: map[string]interface{}{
+				"retry_after_seconds": batchRetryAfterSeconds,
+				"global_pending":      rateLimit.GlobalPending,
+				"user_pending":        rateLimit.UserPending,
+				"user_exempted":       rateLimit.Policy.Exempt,
+				"max_user_pending":    rateLimit.Policy.MaxPendingParents,
+				"contact_admin":       contactAdmin,
+			},
+		})
+		return
+	}
+
+	additional := rateLimit.Additional
+	if additional == nil {
+		return
+	}
+	retryAfter := additional.RetryAfterSeconds
+	if retryAfter <= 0 {
+		retryAfter = batchRetryAfterSeconds
+	}
+	message := "batch submission throttled by additional rate limits"
+	if powerBatch {
+		message = "batch power submission throttled by additional rate limits"
+	}
+	c.Header("Retry-After", strconv.Itoa(retryAfter))
+	c.JSON(http.StatusTooManyRequests, generated.Error{
+		Code:    "BATCH_RATE_LIMITED",
+		Message: message,
+		Params: map[string]interface{}{
+			"reason":                    additional.Reason,
+			"retry_after_seconds":       retryAfter,
+			"global_recent_submits":     additional.GlobalRecentSubmits,
+			"user_pending_children":     additional.UserPendingChildren,
+			"user_cooldown_seconds":     additional.UserCooldownSeconds,
+			"requested_child_count":     rateLimit.RequestedChildren,
+			"max_global_per_minute":     maxGlobalBatchRequestsPerMinute,
+			"max_user_pending_children": rateLimit.Policy.MaxPendingChildren,
+			"user_exempted":             rateLimit.Policy.Exempt,
+			"contact_admin":             additional.ContactAdmin,
+		},
+	})
+}
+
+func findBatchByRequestIDWithClient(
+	ctx context.Context,
+	client *ent.Client,
+	actor string,
+	op string,
+	requestID string,
+) (batchID string, found bool, err error) {
+	requestID = batchreplay.Normalize(requestID)
+	if requestID == "" {
+		return "", false, nil
+	}
+	wantedOperation := strings.ToUpper(strings.TrimSpace(op))
+	projectionType, parentOperation, identityOK := batchReplayIdentityForOperation(wantedOperation)
+	if !identityOK {
+		return "", false, fmt.Errorf("unsupported batch replay operation %q", op)
+	}
+
+	batches, err := client.BatchTicket.Query().
 		Where(
-			domainevent.AggregateTypeEQ("batch"),
-			domainevent.EventTypeIn(batchParentEventTypes()...),
-			domainevent.CreatedByEQ(actor),
+			entbatchticket.CreatedByEQ(actor),
+			entbatchticket.BatchTypeEQ(projectionType),
+			entbatchticket.RequestIDNotNil(),
+			batchTicketNormalizedRequestIDEquals(requestID),
 		).
-		Order(ent.Desc(domainevent.FieldCreatedAt)).
+		Order(
+			ent.Asc(entbatchticket.FieldCreatedAt),
+			ent.Asc(entbatchticket.FieldID),
+		).
+		Limit(batchreplay.CandidateLimit + 1).
 		All(ctx)
 	if err != nil {
 		return "", false, err
 	}
-
-	for _, ev := range events {
-		var payload domain.BatchVMRequestPayload
-		if err := json.Unmarshal(ev.Payload, &payload); err != nil {
-			continue
-		}
-		if strings.TrimSpace(payload.RequestID) != requestID || strings.TrimSpace(payload.Operation) != op {
-			continue
-		}
-		parentExists, err := s.client.Ticket.Query().
-			Where(
-				entticket.IDEQ(ev.AggregateID),
-				entticket.EventIDEQ(ev.ID),
-				entticket.ParentTicketIDIsNil(),
-			).
-			Exist(ctx)
-		if err != nil {
-			return "", false, err
-		}
-		if parentExists {
-			return ev.AggregateID, true, nil
-		}
+	if len(batches) > batchreplay.CandidateLimit {
+		return "", false, fmt.Errorf("batch replay integrity violation: more than %d matching projections", batchreplay.CandidateLimit)
 	}
 
+	matchedBatchID := ""
+	for _, batch := range batches {
+		parent, parentErr := client.Ticket.Query().
+			Where(
+				entticket.IDEQ(batch.ID),
+				entticket.ParentTicketIDIsNil(),
+			).
+			Only(ctx)
+		if ent.IsNotFound(parentErr) {
+			return "", false, fmt.Errorf("batch replay integrity violation for projection %s: root ticket is missing", batch.ID)
+		}
+		if parentErr != nil {
+			return "", false, parentErr
+		}
+		if parent.OperationType != parentOperation ||
+			strings.TrimSpace(parent.Requester) != strings.TrimSpace(actor) ||
+			strings.TrimSpace(parent.EventID) == "" {
+			return "", false, fmt.Errorf("batch replay integrity violation for projection %s: root ticket identity is inconsistent", batch.ID)
+		}
+		event, eventErr := client.DomainEvent.Get(ctx, parent.EventID)
+		if ent.IsNotFound(eventErr) {
+			return "", false, fmt.Errorf("batch replay integrity violation for projection %s: parent event is missing", batch.ID)
+		}
+		if eventErr != nil {
+			return "", false, eventErr
+		}
+		if !batchParentEventMatchesOperation(parent.OperationType, domain.EventType(event.EventType)) ||
+			strings.TrimSpace(event.AggregateType) != batchResourceType ||
+			strings.TrimSpace(event.AggregateID) != batch.ID ||
+			strings.TrimSpace(event.CreatedBy) != strings.TrimSpace(actor) {
+			return "", false, fmt.Errorf("batch replay integrity violation for projection %s: parent event identity is inconsistent", batch.ID)
+		}
+		var payload domain.BatchVMRequestPayload
+		if decodeErr := json.Unmarshal(event.Payload, &payload); decodeErr != nil {
+			return "", false, fmt.Errorf("batch replay integrity violation for projection %s: parent event payload is malformed: %w", batch.ID, decodeErr)
+		}
+		payloadOperation := strings.ToUpper(strings.TrimSpace(payload.Operation))
+		if normalizeBatchRequestID(payload.RequestID) != requestID {
+			return "", false, fmt.Errorf("batch replay integrity violation for projection %s: payload request ID does not match its projection", batch.ID)
+		}
+		if submittedBy := strings.TrimSpace(payload.SubmittedBy); submittedBy != strings.TrimSpace(actor) {
+			return "", false, fmt.Errorf("batch replay integrity violation for projection %s: payload submitter does not match its durable owner", batch.ID)
+		}
+		if payloadOperation != wantedOperation {
+			// All power actions intentionally share one projection type while
+			// retaining separate idempotency scopes. A valid sibling action is
+			// not corruption and must be skipped deterministically.
+			if parentOperation == entticket.OperationTypePOWER && isBatchPowerReplayOperation(payloadOperation) {
+				continue
+			}
+			return "", false, fmt.Errorf("batch replay integrity violation for projection %s: payload operation does not match its durable type", batch.ID)
+		}
+		if matchedBatchID == "" {
+			matchedBatchID = batch.ID
+		}
+	}
+	if matchedBatchID != "" {
+		return matchedBatchID, true, nil
+	}
 	return "", false, nil
+}
+
+func batchReplayIdentityForOperation(operation string) (entbatchticket.BatchType, entticket.OperationType, bool) {
+	switch strings.ToUpper(strings.TrimSpace(operation)) {
+	case "CREATE":
+		return entbatchticket.BatchTypeBATCH_CREATE, entticket.OperationTypeCREATE, true
+	case "MODIFY":
+		return entbatchticket.BatchTypeBATCH_MODIFY, entticket.OperationTypeMODIFY, true
+	case "DELETE":
+		return entbatchticket.BatchTypeBATCH_DELETE, entticket.OperationTypeDELETE, true
+	case batchPowerOperationStart, batchPowerOperationStop, batchPowerOperationRestart:
+		return entbatchticket.BatchTypeBATCH_POWER, entticket.OperationTypePOWER, true
+	default:
+		return "", "", false
+	}
+}
+
+func isBatchPowerReplayOperation(operation string) bool {
+	switch strings.ToUpper(strings.TrimSpace(operation)) {
+	case batchPowerOperationStart, batchPowerOperationStop, batchPowerOperationRestart:
+		return true
+	default:
+		return false
+	}
+}
+
+// loadBatchOwner performs the authorization preflight without touching the
+// projection. Callers must complete this check before loadBatchView, whose
+// legacy missing-projection path can perform a controlled backfill.
+func (s *Server) loadBatchOwner(ctx context.Context, batchID string) (string, error) {
+	parent, err := s.client.Ticket.Query().
+		Where(
+			entticket.IDEQ(strings.TrimSpace(batchID)),
+			entticket.ParentTicketIDIsNil(),
+		).
+		Select(entticket.FieldRequester).
+		Only(ctx)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(parent.Requester), nil
 }
 
 func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.VMBatchStatusResponse, []*ent.Ticket, error) {
@@ -2220,6 +3064,14 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 	projection, err := s.client.BatchTicket.Get(ctx, parent.ID)
 	if err != nil && !ent.IsNotFound(err) {
 		return generated.VMBatchStatusResponse{}, nil, err
+	}
+	if projection == nil {
+		if backfillErr := s.backfillMissingBatchProjection(ctx, parent.ID); backfillErr != nil {
+			return generated.VMBatchStatusResponse{}, nil, backfillErr
+		}
+		// The backfill rereads and locks the complete graph. Reload once so the
+		// returned view is based on state at or after that authoritative snapshot.
+		return s.loadBatchView(ctx, parent.ID)
 	}
 
 	var operation generated.VMBatchOperation
@@ -2337,11 +3189,6 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 			}
 		}
 
-		attemptCount := 0
-		if child.Status != entticket.StatusPENDING {
-			attemptCount = 1
-		}
-
 		childStatuses = append(childStatuses, generated.VMBatchChildStatus{
 			TicketId:     child.ID,
 			EventId:      child.EventID,
@@ -2349,17 +3196,21 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 			ResourceId:   resourceID,
 			ResourceName: resourceName,
 			LastError:    lastError,
-			AttemptCount: attemptCount,
+			AttemptCount: int(child.AttemptCount),
 			Provisioning: s.loadVMProvisioning(ctx, createVMByTicketID[child.ID]),
 		})
 	}
 
-	status := aggregateBatchParentStatus(len(children), successCount, failedCount, pendingCount, pendingOnly, executing, cancelled)
-	projectionStatus := mapProjectionStatus(status)
-	if err := s.syncBatchProjectionForView(ctx, parent, operation, projection, len(children), successCount, failedCount, pendingCount, projectionStatus); err != nil {
-		return generated.VMBatchStatusResponse{}, nil, err
-	}
-
+	status := aggregateBatchParentStatus(
+		len(children),
+		successCount,
+		failedCount,
+		pendingCount,
+		pendingOnly,
+		executing,
+		cancelled,
+		parent.Status == entticket.StatusPENDING,
+	)
 	response := generated.VMBatchStatusResponse{
 		BatchId:      parent.ID,
 		Operation:    operation,
@@ -2376,51 +3227,161 @@ func (s *Server) loadBatchView(ctx context.Context, batchID string) (generated.V
 	return response, children, nil
 }
 
-func (s *Server) syncBatchProjectionForView(
-	ctx context.Context,
-	parent *ent.Ticket,
-	operation generated.VMBatchOperation,
-	projection *ent.BatchTicket,
-	childCount int,
-	successCount int,
-	failedCount int,
-	pendingCount int,
-	status entbatchticket.Status,
-) error {
-	if projection == nil {
-		if _, err := s.client.BatchTicket.Create().
-			SetID(parent.ID).
-			SetBatchType(toBatchProjectionType(string(operation))).
-			SetChildCount(childCount).
-			SetSuccessCount(successCount).
-			SetFailedCount(failedCount).
-			SetPendingCount(pendingCount).
-			SetStatus(status).
-			SetCreatedBy(parent.Requester).
-			SetReason(parent.Reason).
-			Save(ctx); err != nil {
-			if !ent.IsConstraintError(err) {
-				logger.Warn("failed to backfill batch projection row", zap.String("batch_id", parent.ID), zap.Error(err))
-				return fmt.Errorf("backfill batch projection %s: %w", parent.ID, err)
-			}
-			// Another request created the projection after the read; update it to
-			// the freshly computed counters below.
-		} else {
-			return nil
-		}
+func (s *Server) backfillMissingBatchProjection(ctx context.Context, parentID string) error {
+	if s == nil || s.pool == nil {
+		return fmt.Errorf("batch projection backfill dependencies are not initialized")
+	}
+	parentID = strings.TrimSpace(parentID)
+	if parentID == "" {
+		return fmt.Errorf("batch projection backfill parent id is required")
+	}
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{IsoLevel: pgx.ReadCommitted})
+	if err != nil {
+		return fmt.Errorf("begin batch projection backfill %s: %w", parentID, err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if _, lockErr := tx.Exec(
+		ctx,
+		`SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`,
+		usecase.BatchMutationLockKey(parentID),
+	); lockErr != nil {
+		return fmt.Errorf("lock batch projection backfill %s: %w", parentID, lockErr)
 	}
 
-	if _, err := s.client.BatchTicket.UpdateOneID(parent.ID).
-		SetChildCount(childCount).
-		SetSuccessCount(successCount).
-		SetFailedCount(failedCount).
-		SetPendingCount(pendingCount).
-		SetStatus(status).
-		Save(ctx); err != nil {
-		logger.Warn("failed to sync batch projection counters", zap.String("batch_id", parent.ID), zap.Error(err))
-		return fmt.Errorf("sync batch projection %s: %w", parent.ID, err)
+	var (
+		parentStatus string
+		requester    string
+		reason       string
+		eventType    string
+	)
+	if reloadErr := tx.QueryRow(ctx, `
+SELECT parent.status, parent.requester, COALESCE(parent.reason, ''), event.event_type
+FROM tickets AS parent
+JOIN domain_events AS event ON event.id = parent.event_id
+WHERE parent.id = $1
+  AND parent.parent_ticket_id IS NULL
+`, parentID).Scan(&parentStatus, &requester, &reason, &eventType); reloadErr != nil {
+		return fmt.Errorf("reload batch projection parent %s: %w", parentID, reloadErr)
+	}
+	var projectionExists bool
+	if existsErr := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM batch_tickets WHERE id = $1)`, parentID).Scan(&projectionExists); existsErr != nil {
+		return fmt.Errorf("recheck batch projection %s: %w", parentID, existsErr)
+	}
+	if projectionExists {
+		if commitErr := tx.Commit(ctx); commitErr != nil {
+			return fmt.Errorf("commit batch projection recheck %s: %w", parentID, commitErr)
+		}
+		return nil
+	}
+
+	_, ok := batchViewOperationForEvent(eventType)
+	if !ok {
+		return errBatchNotFound
+	}
+	rows, err := tx.Query(ctx, `
+SELECT status
+FROM tickets
+WHERE parent_ticket_id = $1
+ORDER BY id
+FOR UPDATE
+`, parentID)
+	if err != nil {
+		return fmt.Errorf("lock batch projection children %s: %w", parentID, err)
+	}
+	var childCount, successCount, failedCount, pendingCount, cancelledCount, pendingOnly, executingCount int
+	for rows.Next() {
+		var status string
+		if err := rows.Scan(&status); err != nil {
+			rows.Close()
+			return fmt.Errorf("scan batch projection child %s: %w", parentID, err)
+		}
+		childCount++
+		switch status {
+		case string(entticket.StatusSUCCESS):
+			successCount++
+		case string(entticket.StatusFAILED), string(entticket.StatusREJECTED):
+			failedCount++
+		case string(entticket.StatusCANCELLED):
+			cancelledCount++
+		case string(entticket.StatusPENDING):
+			pendingCount++
+			pendingOnly++
+		default:
+			pendingCount++
+			executingCount++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		rows.Close()
+		return fmt.Errorf("iterate batch projection children %s: %w", parentID, err)
+	}
+	rows.Close()
+	// Follow the batch mutation lock order: all child tickets first, then the
+	// parent/event identity. This second read is authoritative for the backfill
+	// and prevents a parent transition from racing the insert.
+	if lockParentErr := tx.QueryRow(ctx, `
+SELECT parent.status, parent.requester, COALESCE(parent.reason, ''), event.event_type
+FROM tickets AS parent
+JOIN domain_events AS event ON event.id = parent.event_id
+WHERE parent.id = $1
+  AND parent.parent_ticket_id IS NULL
+FOR UPDATE OF parent, event
+`, parentID).Scan(&parentStatus, &requester, &reason, &eventType); lockParentErr != nil {
+		return fmt.Errorf("lock batch projection parent %s: %w", parentID, lockParentErr)
+	}
+	operation, ok := batchViewOperationForEvent(eventType)
+	if !ok {
+		return errBatchNotFound
+	}
+	status := mapProjectionStatus(aggregateBatchParentStatus(
+		childCount,
+		successCount,
+		failedCount,
+		pendingCount,
+		pendingOnly,
+		executingCount,
+		cancelledCount,
+		parentStatus == string(entticket.StatusPENDING),
+	))
+	if _, err := tx.Exec(ctx, `
+INSERT INTO batch_tickets (
+  id, created_at, updated_at, batch_type, child_count, success_count,
+  failed_count, pending_count, status, created_by, reason
+)
+VALUES ($1, NOW(), NOW(), $2, $3, $4, $5, $6, $7, $8, NULLIF($9, ''))
+ON CONFLICT (id) DO NOTHING
+`,
+		parentID,
+		string(toBatchProjectionType(string(operation))),
+		childCount,
+		successCount,
+		failedCount,
+		pendingCount,
+		string(status),
+		strings.TrimSpace(requester),
+		strings.TrimSpace(reason),
+	); err != nil {
+		return fmt.Errorf("backfill batch projection %s: %w", parentID, err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit batch projection backfill %s: %w", parentID, err)
 	}
 	return nil
+}
+
+func batchViewOperationForEvent(eventType string) (generated.VMBatchOperation, bool) {
+	switch domain.EventType(strings.TrimSpace(eventType)) {
+	case domain.EventBatchDeleteRequested:
+		return generated.VMBatchOperation("DELETE"), true
+	case domain.EventBatchCreateRequested:
+		return generated.VMBatchOperation("CREATE"), true
+	case domain.EventBatchModifyRequested:
+		return generated.VMBatchOperation("MODIFY"), true
+	case domain.EventBatchPowerRequested:
+		return generated.VMBatchOperation("POWER"), true
+	default:
+		return "", false
+	}
 }
 
 func aggregateBatchParentStatus(
@@ -2431,6 +3392,7 @@ func aggregateBatchParentStatus(
 	pendingOnly int,
 	executingCount int,
 	cancelledCount int,
+	parentPending bool,
 ) generated.VMBatchParentStatus {
 	if total == 0 {
 		return generated.VMBatchParentStatusFAILED
@@ -2444,7 +3406,7 @@ func aggregateBatchParentStatus(
 	if failedCount+cancelledCount == total {
 		return generated.VMBatchParentStatusFAILED
 	}
-	if pendingOnly == total {
+	if pendingOnly == total && parentPending {
 		return generated.VMBatchParentStatusPENDINGAPPROVAL
 	}
 	if pendingCount > 0 || executingCount > 0 {
@@ -2479,7 +3441,7 @@ func toBatchProjectionType(op string) entbatchticket.BatchType {
 		return entbatchticket.BatchTypeBATCH_DELETE
 	case string(generated.VMBatchOperation("MODIFY")):
 		return entbatchticket.BatchTypeBATCH_MODIFY
-	case string(generated.VMBatchOperation("POWER")), "POWER_START", "POWER_STOP", "POWER_RESTART":
+	case string(generated.VMBatchOperation("POWER")), batchPowerOperationStart, batchPowerOperationStop, batchPowerOperationRestart:
 		return entbatchticket.BatchTypeBATCH_POWER
 	default:
 		return entbatchticket.BatchTypeBATCH_CREATE
@@ -2687,7 +3649,12 @@ func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesPar
 	desc := params.SortOrder != generated.ListVMBatchesParamsSortOrderAsc
 
 	// Count total (without pagination).
-	query := s.client.BatchTicket.Query()
+	query := s.client.BatchTicket.Query().Where(entbatchticket.BatchTypeIn(
+		entbatchticket.BatchTypeBATCH_CREATE,
+		entbatchticket.BatchTypeBATCH_MODIFY,
+		entbatchticket.BatchTypeBATCH_DELETE,
+		entbatchticket.BatchTypeBATCH_POWER,
+	))
 	// Non-admin users see only their own batches.
 	if !hasPlatformAdmin(c) {
 		query = query.Where(entbatchticket.CreatedByEQ(actor))
@@ -2736,9 +3703,15 @@ func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesPar
 
 	items := make([]generated.VMBatchJobSummary, 0, len(rows))
 	for _, row := range rows {
+		operation, ok := publicBatchOperation(row.BatchType)
+		if !ok {
+			logger.Error("unsupported persisted batch type reached public list", zap.String("batch_id", row.ID), zap.String("batch_type", string(row.BatchType)))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
 		items = append(items, generated.VMBatchJobSummary{
 			Id:           row.ID,
-			Operation:    string(row.BatchType),
+			Operation:    operation,
 			Status:       generated.VMBatchJobSummaryStatus(row.Status),
 			ChildCount:   row.ChildCount,
 			SuccessCount: row.SuccessCount,
@@ -2758,4 +3731,19 @@ func (s *Server) ListVMBatches(c *gin.Context, params generated.ListVMBatchesPar
 			TotalPages: totalPages,
 		},
 	})
+}
+
+func publicBatchOperation(batchType entbatchticket.BatchType) (generated.VMBatchOperation, bool) {
+	switch batchType {
+	case entbatchticket.BatchTypeBATCH_CREATE:
+		return generated.VMBatchOperationCREATE, true
+	case entbatchticket.BatchTypeBATCH_MODIFY:
+		return generated.VMBatchOperationMODIFY, true
+	case entbatchticket.BatchTypeBATCH_DELETE:
+		return generated.VMBatchOperationDELETE, true
+	case entbatchticket.BatchTypeBATCH_POWER:
+		return generated.VMBatchOperationPOWER, true
+	default:
+		return "", false
+	}
 }

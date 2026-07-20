@@ -719,6 +719,24 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: >-
+            USER_DISABLED means the target user cannot receive a membership role; LAST_OWNER_CANNOT_BE_REMOVED means changing the role would leave the system without an owner.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                userDisabled:
+                  summary: Disabled users cannot receive a system membership role
+                  value:
+                    code: USER_DISABLED
+                    message: disabled users cannot be added as system members
+                lastOwner:
+                  summary: The sole system owner cannot be demoted
+                  value:
+                    code: LAST_OWNER_CANNOT_BE_REMOVED
+                    message: system must have at least one owner
     delete:
       tags: [systems]
       summary: Remove system member
@@ -746,6 +764,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/LastSystemOwnerConflict'
   # ── Services ────────────────────────────────────────
   /services:
     get:
@@ -1467,8 +1487,8 @@ paths:
                       operation: CREATE
                       status: PENDING_APPROVAL
                       child_count: 1
-                      success_count: 1
-                      failed_count: 1
+                      success_count: 0
+                      failed_count: 0
                       pending_count: 1
                       created_at: '2026-01-01T00:00:00Z'
                   pagination:
@@ -1481,8 +1501,8 @@ paths:
                     operation: CREATE
                     status: PENDING_APPROVAL
                     child_count: 1
-                    success_count: 1
-                    failed_count: 1
+                    success_count: 0
+                    failed_count: 0
                     pending_count: 1
                     created_at: '2026-01-01T00:00:00Z'
                 pagination:
@@ -1539,7 +1559,7 @@ paths:
             scopeFilters:
               - type: role_binding_allowed_environments
       requestBody:
-        description: Parent batch request containing child VM create operations.
+        description: Parent batch request containing child VM CREATE, MODIFY, or DELETE operations.
         required: true
         content:
           application/json:
@@ -1548,16 +1568,18 @@ paths:
               example:
                 operation: CREATE
                 items:
-                  - vm_id: vm-001
-                    service_id: service-001
-                    template_id: template-001
+                  - service_id: 11111111-1111-4111-8111-111111111111
+                    template_id: 22222222-2222-4222-8222-222222222222
+                    instance_size_id: 33333333-3333-4333-8333-333333333333
+                    namespace: example-namespace
                 request_id: request-001
             example:
               operation: CREATE
               items:
-                - vm_id: vm-001
-                  service_id: service-001
-                  template_id: template-001
+                - service_id: 11111111-1111-4111-8111-111111111111
+                  template_id: 22222222-2222-4222-8222-222222222222
+                  instance_size_id: 33333333-3333-4333-8333-333333333333
+                  namespace: example-namespace
               request_id: request-001
       responses:
         '202':
@@ -1569,19 +1591,21 @@ paths:
                 example:
                   batch_id: batch-001
                   status: PENDING_APPROVAL
-                  status_url: https://example.com/callback
-                  retry_after_seconds: 1
+                  status_url: /api/v1/vms/batch/batch-001
+                  retry_after_seconds: 2
               example:
                 batch_id: batch-001
                 status: PENDING_APPROVAL
-                status_url: https://example.com/callback
-                retry_after_seconds: 1
+                status_url: /api/v1/vms/batch/batch-001
+                retry_after_seconds: 2
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
         '409':
           description: Batch request conflicts with current resource state
           content:
@@ -1597,19 +1621,22 @@ paths:
                 message: Example message
                 params: {}
         '429':
-          description: Batch power request rate limit exceeded
+          description: Batch submission rate limit exceeded (BATCH_RATE_LIMITED)
+          headers:
+            Retry-After:
+              description: Seconds until the caller should retry.
+              schema:
+                type: integer
+                minimum: 1
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-                example:
-                  code: example_code
-                  message: Example message
-                  params: {}
               example:
-                code: example_code
-                message: Example message
-                params: {}
+                code: BATCH_RATE_LIMITED
+                message: batch submission rate limit exceeded
+                params:
+                  retry_after_seconds: 2
   /vms/batch/power:
     post:
       tags: [vms]
@@ -1660,33 +1687,65 @@ paths:
                 example:
                   batch_id: batch-001
                   status: PENDING_APPROVAL
-                  status_url: https://example.com/callback
-                  retry_after_seconds: 1
+                  status_url: /api/v1/vms/batch/batch-001
+                  retry_after_seconds: 2
               example:
                 batch_id: batch-001
                 status: PENDING_APPROVAL
-                status_url: https://example.com/callback
-                retry_after_seconds: 1
+                status_url: /api/v1/vms/batch/batch-001
+                retry_after_seconds: 2
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
-        '429':
-          description: Rate limit exceeded
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          description: One of the target VMs already has a pending approval or active power operation
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-                example:
-                  code: example_code
-                  message: Example message
-                  params: {}
+              examples:
+                pendingApproval:
+                  summary: A pending approval request already owns the VM
+                  value:
+                    code: DUPLICATE_PENDING_REQUEST
+                    message: an active approval request already exists for this VM
+                    params:
+                      vm_id: vm-001
+                      existing_event_id: event-001
+                      existing_event_type: VM_START_REQUESTED
+                      existing_ticket_id: ticket-001
+                      existing_ticket_status: PENDING
+                activePowerOperation:
+                  summary: A direct or executing batch power operation already owns the VM
+                  value:
+                    code: POWER_OPERATION_IN_PROGRESS
+                    message: another power operation is already in progress for this VM
+                    params:
+                      vm_id: vm-001
+                      existing_event_id: event-001
+                      existing_event_type: VM_START_REQUESTED
+        '429':
+          description: Batch submission rate limit exceeded (BATCH_RATE_LIMITED)
+          headers:
+            Retry-After:
+              description: Seconds until the caller should retry.
+              schema:
+                type: integer
+                minimum: 1
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
               example:
-                code: example_code
-                message: Example message
-                params: {}
+                code: BATCH_RATE_LIMITED
+                message: batch submission rate limit exceeded
+                params:
+                  retry_after_seconds: 2
   /vms/batch/{batch_id}:
     get:
       tags: [vms]
@@ -1718,8 +1777,8 @@ paths:
                   operation: CREATE
                   status: PENDING_APPROVAL
                   child_count: 1
-                  success_count: 1
-                  failed_count: 1
+                  success_count: 0
+                  failed_count: 0
                   pending_count: 1
                   children:
                     - ticket_id: ticket-001
@@ -1733,8 +1792,8 @@ paths:
                 operation: CREATE
                 status: PENDING_APPROVAL
                 child_count: 1
-                success_count: 1
-                failed_count: 1
+                success_count: 0
+                failed_count: 0
                 pending_count: 1
                 children:
                   - ticket_id: ticket-001
@@ -1768,7 +1827,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/BatchID'
       requestBody:
-        description: Optional reviewer inputs used when retrying failed batch children.
+        description: >-
+          Optional replacement review inputs for a failed CREATE batch. Omit the request body for execution-only retries and for MODIFY, DELETE, or POWER batches. Supplying any body requires `builtin_approval:approve`; non-CREATE batches reject a body as not applicable.
         required: false
         content:
           application/json:
@@ -1802,12 +1862,14 @@ paths:
                 $ref: '#/components/schemas/VMBatchActionResponse'
                 example:
                   batch_id: batch-001
-                  status: PENDING_APPROVAL
+                  status: IN_PROGRESS
                   affected_count: 1
+                  affected_ticket_ids: [ticket-001]
               example:
                 batch_id: batch-001
-                status: PENDING_APPROVAL
+                status: IN_PROGRESS
                 affected_count: 1
+                affected_ticket_ids: [ticket-001]
         '400':
           $ref: '#/components/responses/BadRequest'
         '401':
@@ -1815,19 +1877,79 @@ paths:
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
-          description: No failed children are available to retry
+          description: Retry cannot proceed because the parent is not in an approved execution state, durable approval provenance is missing, no failed children are available, a child exhausted its three logical dispatch attempts, review input is required, or equivalent work is already active
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-                example:
-                  code: example_code
-                  message: Example message
-                  params: {}
-              example:
-                code: example_code
-                message: Example message
-                params: {}
+              examples:
+                nothingToRetry:
+                  summary: No failed child remains eligible for retry
+                  value:
+                    code: BATCH_NOTHING_TO_RETRY
+                    message: no failed items are currently available for retry
+                    params:
+                      batch_id: batch-001
+                      requested_action: retry
+                parentNotEligible:
+                  summary: Parent no longer has an approved retryable execution state
+                  value:
+                    code: BATCH_ACTION_NOT_APPLICABLE
+                    message: the batch parent is not in an approved retryable execution state
+                    params:
+                      batch_id: batch-001
+                      parent_status: REJECTED
+                      event_status: CANCELLED
+                      requested_action: retry
+                approvalProvenanceMissing:
+                  summary: A legacy batch has no durable approval owner and must be recreated
+                  value:
+                    code: BATCH_ACTION_NOT_APPLICABLE
+                    message: this legacy batch has no durable approval provenance; create a new approval batch instead of retrying it
+                    params:
+                      batch_id: batch-001
+                      batch_status: FAILED
+                      operation_type: DELETE
+                      requested_action: retry
+                      reason: missing_approval_provenance
+                attemptsExhausted:
+                  summary: Failed children reached the per-child logical dispatch limit
+                  value:
+                    code: BATCH_RETRY_ATTEMPTS_EXHAUSTED
+                    message: all failed items have exhausted their retry attempts
+                    params:
+                      batch_id: batch-001
+                      exhausted_ticket_ids: [ticket-001]
+                      max_attempts: 3
+                reviewRequired:
+                  summary: A failed CREATE batch needs placement review before retry
+                  value:
+                    code: BATCH_RETRY_REVIEW_REQUIRED
+                    message: selected cluster is required before retrying a failed create batch; review the approval inputs first
+                    params:
+                      batch_id: batch-001
+                      batch_status: FAILED
+                      operation_type: CREATE
+                      requested_action: retry
+                powerOperationActive:
+                  summary: Another active power event currently owns the VM
+                  value:
+                    code: POWER_OPERATION_IN_PROGRESS
+                    message: another power operation is already in progress for this VM
+                    params:
+                      vm_id: vm-001
+                      existing_event_id: event-001
+                      existing_event_type: VM_START_REQUESTED
+                equivalentPowerJobActive:
+                  summary: River still has an equivalent power retry job
+                  value:
+                    code: BATCH_RETRY_IN_PROGRESS
+                    message: an equivalent power job is still active; retry after it finishes
+                    params:
+                      batch_id: batch-001
+                      event_id: event-001
+                      existing_job_id: 42
+                      existing_job_state: running
         '404':
           $ref: '#/components/responses/NotFound'
   /vms/batch/{batch_id}/cancel:
@@ -1857,30 +1979,43 @@ paths:
                 $ref: '#/components/schemas/VMBatchActionResponse'
                 example:
                   batch_id: batch-001
-                  status: PENDING_APPROVAL
+                  status: CANCELLED
                   affected_count: 1
+                  affected_ticket_ids: [ticket-001]
               example:
                 batch_id: batch-001
-                status: PENDING_APPROVAL
+                status: CANCELLED
                 affected_count: 1
+                affected_ticket_ids: [ticket-001]
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/Forbidden'
         '409':
-          description: No pending children are available to cancel
+          description: The parent is no longer cancellable, its durable identity is inconsistent, or no pending children are available to cancel
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Error'
-                example:
-                  code: example_code
-                  message: Example message
-                  params: {}
-              example:
-                code: example_code
-                message: Example message
-                params: {}
+              examples:
+                nothingToCancel:
+                  summary: No pending child remains eligible for cancellation
+                  value:
+                    code: BATCH_NOTHING_TO_CANCEL
+                    message: no pending items are currently available for cancel
+                    params:
+                      batch_id: batch-001
+                      requested_action: cancel
+                parentNotEligible:
+                  summary: Parent no longer has a cancellable state
+                  value:
+                    code: BATCH_ACTION_NOT_APPLICABLE
+                    message: the batch parent is not in a cancellable state
+                    params:
+                      batch_id: batch-001
+                      parent_status: SUCCESS
+                      event_status: COMPLETED
+                      requested_action: cancel
         '404':
           $ref: '#/components/responses/NotFound'
   /vms/{vm_id}:
@@ -3871,6 +4006,8 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/LastSystemOwnerConflict'
   /admin/users/{user_id}/role-bindings:
     get:
       tags: [rbac, admin]
@@ -5740,7 +5877,7 @@ paths:
       parameters:
         - $ref: '#/components/parameters/UserID'
       requestBody:
-        description: Per-user pending-login and cooldown override values.
+        description: Per-user pending batch parent/child and cooldown override values.
         required: true
         content:
           application/json:
@@ -5754,7 +5891,7 @@ paths:
               max_pending_parents: 3
               max_pending_children: 5
               cooldown_seconds: 60
-              reason: Temporary elevated login concurrency
+              reason: Temporary elevated batch concurrency
       responses:
         '200':
           description: Override saved
@@ -6140,11 +6277,15 @@ paths:
               example:
                 name: example-resource
                 cpu_cores: 1
+                cpu_request: 1
                 memory_gi: 1
+                memory_request_gi: 1
             example:
               name: example-resource
               cpu_cores: 1
+              cpu_request: 1
               memory_gi: 1
+              memory_request_gi: 1
       responses:
         '201':
           description: Instance size created
@@ -6406,6 +6547,30 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: USER_DISABLED means the authenticated external identity belongs to a disabled user
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: USER_DISABLED
+        '409':
+          description: |-
+            AUTH_PROVIDER_CHANGED means the provider configuration changed during login and authentication must restart;
+            EXTERNAL_IDENTITY_CONFLICT means the external identity already belongs to another user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              examples:
+                authProviderChanged:
+                  value:
+                    code: AUTH_PROVIDER_CHANGED
+                    message: authentication provider changed; authenticate again
+                externalIdentityConflict:
+                  value:
+                    code: EXTERNAL_IDENTITY_CONFLICT
         '429':
           description: Login rate limit exceeded
           content:
@@ -6421,7 +6586,13 @@ paths:
                 message: Example message
                 params: {}
         '404':
-          $ref: '#/components/responses/NotFound'
+          description: AUTH_PROVIDER_NOT_FOUND means the provider was removed or became unavailable during login
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+              example:
+                code: AUTH_PROVIDER_NOT_FOUND
   /auth/providers/{provider_id}/callback:
     get:
       tags: [auth, auth-providers]
@@ -6471,6 +6642,66 @@ paths:
             text/html:
               schema:
                 type: string
+        '403':
+          description: USER_DISABLED means the callback identity belongs to a disabled user; the response is an HTML bridge
+          content:
+            text/html:
+              schema:
+                type: string
+              example: |-
+                <!doctype html>
+                <html lang="en">
+                <body>
+                  <script nonce="example">
+                    const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"USER_DISABLED"};
+                  </script>
+                </body>
+                </html>
+        '404':
+          description: AUTH_PROVIDER_NOT_FOUND means the provider was removed or became unavailable; the response is an HTML bridge
+          content:
+            text/html:
+              schema:
+                type: string
+              example: |-
+                <!doctype html>
+                <html lang="en">
+                <body>
+                  <script nonce="example">
+                    const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"AUTH_PROVIDER_NOT_FOUND"};
+                  </script>
+                </body>
+                </html>
+        '409':
+          description: >-
+            Authentication provider generation changed or the external identity is already bound to another user. The HTML bridge returns AUTH_PROVIDER_CHANGED (authenticate again) or EXTERNAL_IDENTITY_CONFLICT (resolve the identity ownership conflict).
+          content:
+            text/html:
+              schema:
+                type: string
+              examples:
+                providerGenerationChanged:
+                  summary: Provider generation changed while the callback was in flight
+                  value: |-
+                    <!doctype html>
+                    <html lang="en">
+                    <body>
+                      <script nonce="example">
+                        const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"AUTH_PROVIDER_CHANGED"};
+                      </script>
+                    </body>
+                    </html>
+                externalIdentityConflict:
+                  summary: External identity is already bound to another user
+                  value: |-
+                    <!doctype html>
+                    <html lang="en">
+                    <body>
+                      <script nonce="example">
+                        const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"EXTERNAL_IDENTITY_CONFLICT"};
+                      </script>
+                    </body>
+                    </html>
     post:
       tags: [auth, auth-providers]
       summary: Complete form-post external auth-provider login callback
@@ -6528,6 +6759,66 @@ paths:
             text/html:
               schema:
                 type: string
+        '403':
+          description: USER_DISABLED means the callback identity belongs to a disabled user; the response is an HTML bridge
+          content:
+            text/html:
+              schema:
+                type: string
+              example: |-
+                <!doctype html>
+                <html lang="en">
+                <body>
+                  <script nonce="example">
+                    const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"USER_DISABLED"};
+                  </script>
+                </body>
+                </html>
+        '404':
+          description: AUTH_PROVIDER_NOT_FOUND means the provider was removed or became unavailable; the response is an HTML bridge
+          content:
+            text/html:
+              schema:
+                type: string
+              example: |-
+                <!doctype html>
+                <html lang="en">
+                <body>
+                  <script nonce="example">
+                    const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"AUTH_PROVIDER_NOT_FOUND"};
+                  </script>
+                </body>
+                </html>
+        '409':
+          description: >-
+            Authentication provider generation changed or the external identity is already bound to another user. The HTML bridge returns AUTH_PROVIDER_CHANGED (authenticate again) or EXTERNAL_IDENTITY_CONFLICT (resolve the identity ownership conflict).
+          content:
+            text/html:
+              schema:
+                type: string
+              examples:
+                providerGenerationChanged:
+                  summary: Provider generation changed while the callback was in flight
+                  value: |-
+                    <!doctype html>
+                    <html lang="en">
+                    <body>
+                      <script nonce="example">
+                        const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"AUTH_PROVIDER_CHANGED"};
+                      </script>
+                    </body>
+                    </html>
+                externalIdentityConflict:
+                  summary: External identity is already bound to another user
+                  value: |-
+                    <!doctype html>
+                    <html lang="en">
+                    <body>
+                      <script nonce="example">
+                        const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"EXTERNAL_IDENTITY_CONFLICT"};
+                      </script>
+                    </body>
+                    </html>
   /auth/login:
     post:
       tags: [auth]
@@ -7963,6 +8254,16 @@ components:
             code: example_code
             message: Example message
             params: {}
+    LastSystemOwnerConflict:
+      description: Removing or demoting this user would leave a system without an owner
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example:
+            code: LAST_OWNER_CANNOT_BE_REMOVED
+            message: system must have at least one owner
+            params: {}
     InternalServerError:
       description: Internal server error
       content:
@@ -9301,6 +9602,11 @@ components:
       type: string
       enum: [CREATE, MODIFY, DELETE, POWER]
       example: CREATE
+    VMBatchSubmitOperation:
+      description: Operation accepted by the generic VM batch submission endpoint.
+      type: string
+      enum: [CREATE, MODIFY, DELETE]
+      example: CREATE
     VMBatchPowerAction:
       description: Power action applied by a VM batch power request.
       type: string
@@ -9315,9 +9621,10 @@ components:
       description: One target item in a VM create, modify, or delete batch request.
       type: object
       example:
-        vm_id: vm-001
-        service_id: service-001
-        template_id: template-001
+        service_id: 11111111-1111-4111-8111-111111111111
+        template_id: 22222222-2222-4222-8222-222222222222
+        instance_size_id: 33333333-3333-4333-8333-333333333333
+        namespace: example-namespace
       properties:
         vm_id:
           type: string
@@ -9327,17 +9634,17 @@ components:
           type: string
           format: uuid
           description: Required for CREATE operation
-          example: service-001
+          example: 11111111-1111-4111-8111-111111111111
         template_id:
           type: string
           format: uuid
           description: Required source template identifier for CREATE operation
-          example: template-001
+          example: 22222222-2222-4222-8222-222222222222
         instance_size_id:
           type: string
           format: uuid
           description: Required sizing profile identifier for CREATE operation
-          example: instance-size-001
+          example: 33333333-3333-4333-8333-333333333333
         namespace:
           type: string
           description: Required target Kubernetes namespace for CREATE operation
@@ -9385,19 +9692,21 @@ components:
       example:
         operation: CREATE
         items:
-          - vm_id: vm-001
-            service_id: service-001
-            template_id: template-001
+          - service_id: 11111111-1111-4111-8111-111111111111
+            template_id: 22222222-2222-4222-8222-222222222222
+            instance_size_id: 33333333-3333-4333-8333-333333333333
+            namespace: example-namespace
         request_id: request-001
       properties:
         operation:
           x-oapi-codegen-extra-tags:
             validate: "required"
-          $ref: '#/components/schemas/VMBatchOperation'
+          $ref: '#/components/schemas/VMBatchSubmitOperation'
           example: CREATE
         request_id:
           type: string
-          description: Client idempotency key for the batch power request
+          description: >-
+            Optional opaque client idempotency key. Leading and trailing whitespace is ignored. The key is scoped to the authenticated user and requested batch operation; reusing it returns the originally accepted batch even when the submitted items differ.
           example: request-001
         reason:
           type: string
@@ -9409,15 +9718,17 @@ components:
           minItems: 1
           maxItems: 100
           example:
-            - vm_id: vm-001
-              service_id: service-001
-              template_id: template-001
+            - service_id: 11111111-1111-4111-8111-111111111111
+              template_id: 22222222-2222-4222-8222-222222222222
+              instance_size_id: 33333333-3333-4333-8333-333333333333
+              namespace: example-namespace
           items:
             $ref: '#/components/schemas/VMBatchChildItem'
             example:
-              vm_id: vm-001
-              service_id: service-001
-              template_id: template-001
+              service_id: 11111111-1111-4111-8111-111111111111
+              template_id: 22222222-2222-4222-8222-222222222222
+              instance_size_id: 33333333-3333-4333-8333-333333333333
+              namespace: example-namespace
     VMBatchPowerRequest:
       description: Request payload for submitting a VM power batch.
       type: object
@@ -9436,7 +9747,8 @@ components:
           example: START
         request_id:
           type: string
-          description: Client idempotency key
+          description: >-
+            Optional opaque client idempotency key. Leading and trailing whitespace is ignored. The key is scoped to the authenticated user and requested power action; reusing it for the same action returns the originally accepted batch even when the submitted items differ.
           example: request-001
         reason:
           type: string
@@ -9462,8 +9774,8 @@ components:
       example:
         batch_id: batch-001
         status: PENDING_APPROVAL
-        status_url: https://example.com/callback
-        retry_after_seconds: 1
+        status_url: /api/v1/vms/batch/batch-001
+        retry_after_seconds: 2
       properties:
         batch_id:
           type: string
@@ -9473,10 +9785,10 @@ components:
           example: PENDING_APPROVAL
         status_url:
           type: string
-          example: https://example.com/callback
+          example: /api/v1/vms/batch/batch-001
         retry_after_seconds:
           type: integer
-          example: 1
+          example: 2
     VMBatchChildStatus:
       description: Status of one child ticket within a VM batch job.
       type: object
@@ -9526,8 +9838,8 @@ components:
         operation: CREATE
         status: PENDING_APPROVAL
         child_count: 1
-        success_count: 1
-        failed_count: 1
+        success_count: 0
+        failed_count: 0
         pending_count: 1
         children:
           - ticket_id: ticket-001
@@ -9551,10 +9863,10 @@ components:
           example: 1
         success_count:
           type: integer
-          example: 1
+          example: 0
         failed_count:
           type: integer
-          example: 1
+          example: 0
         pending_count:
           type: integer
           example: 1
@@ -14957,8 +15269,8 @@ components:
         operation: CREATE
         status: PENDING_APPROVAL
         child_count: 1
-        success_count: 1
-        failed_count: 1
+        success_count: 0
+        failed_count: 0
         pending_count: 1
         created_at: '2026-01-01T00:00:00Z'
       properties:
@@ -14966,9 +15278,7 @@ components:
           type: string
           example: resource-001
         operation:
-          type: string
-          description: Batch operation type (e.g. CREATE, POWER, DELETE)
-          example: CREATE
+          $ref: '#/components/schemas/VMBatchOperation'
         status:
           type: string
           enum: [PENDING_APPROVAL, IN_PROGRESS, COMPLETED, PARTIAL_SUCCESS, FAILED, CANCELLED]
@@ -14978,10 +15288,10 @@ components:
           example: 1
         success_count:
           type: integer
-          example: 1
+          example: 0
         failed_count:
           type: integer
-          example: 1
+          example: 0
         pending_count:
           type: integer
           example: 1
@@ -14998,8 +15308,8 @@ components:
             operation: CREATE
             status: PENDING_APPROVAL
             child_count: 1
-            success_count: 1
-            failed_count: 1
+            success_count: 0
+            failed_count: 0
             pending_count: 1
             created_at: '2026-01-01T00:00:00Z'
         pagination:
@@ -15014,8 +15324,8 @@ components:
               operation: CREATE
               status: PENDING_APPROVAL
               child_count: 1
-              success_count: 1
-              failed_count: 1
+              success_count: 0
+              failed_count: 0
               pending_count: 1
               created_at: '2026-01-01T00:00:00Z'
           items:
@@ -15025,8 +15335,8 @@ components:
               operation: CREATE
               status: PENDING_APPROVAL
               child_count: 1
-              success_count: 1
-              failed_count: 1
+              success_count: 0
+              failed_count: 0
               pending_count: 1
               created_at: '2026-01-01T00:00:00Z'
         pagination:

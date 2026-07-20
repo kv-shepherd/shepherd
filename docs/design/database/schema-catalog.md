@@ -18,14 +18,14 @@
 | Domain | Core Tables | Notes |
 |------|------|------|
 | Primary resources | `systems`, `services`, `vms`, `templates`, `instance_sizes`, `clusters`, `namespace_registry` | Runtime-owned entities |
-| Governance and approvals | `approval_tickets`, `batch_approval_tickets`, `approval_policies`, `external_approval_systems` | Approval workflow, batch orchestration, and external approval adapter registry (`approval_tickets.parent_ticket_id` models child linkage) |
+| Governance and approvals | `tickets`, `batch_tickets`, `approval_policies`, `external_approval_systems` | Approval workflow, batch orchestration, and external approval adapter registry (`tickets.parent_ticket_id` models child linkage; `batch_tickets` is the API projection) |
 | Access Control | `users`, `roles`, `permissions`, `role_permissions`, `role_bindings`, `resource_role_bindings` | Global/platform RBAC plus resource membership inheritance |
 | Event and async | `domain_events`, River tables (`river_job`, `river_*`) | Claim-check and async execution |
 | Audit and notifications | `audit_logs`, `notifications` | Compliance and user feedback |
 | Auth provider integration | `auth_providers`, `external_cohorts`, `external_cohort_mappings`, `external_cohort_grants`, `user_directory_profiles`, `directory_sync_jobs` | External auth runtime, optional directory sync, and cohort-to-RBAC projection |
 | Security/bootstrap | `system_secrets`, session/auth tables | Secret bootstrap and auth runtime |
 | Recovery and compensation | `pending_adoptions` | Resource adoption compensation capability |
-| Rate limiting | `rate_limit_counter`, `rate_limit_exemption` | ADR-0015 two-layer limits support |
+| Rate limiting | `rate_limit_exemptions`, `rate_limit_user_overrides` | ADR-0015 exemption/override policy; current counts are derived from durable workflow rows inside the guarded submission transaction |
 
 ---
 
@@ -33,7 +33,7 @@
 
 - `systems` 1:N `services`
 - `services` 1:N `vms`
-- `approval_tickets` link request lifecycle to resources and events
+- `tickets` link request lifecycle to resources and events
 - `domain_events` are immutable execution intents consumed by River workers
 - `audit_logs` are append-only compliance records
 

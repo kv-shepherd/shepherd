@@ -56,24 +56,25 @@ type System struct {
 }
 
 type Ticket struct {
-	ID                      string             `db:"id" json:"id"`
-	CreatedAt               pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	UpdatedAt               pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
-	EventID                 string             `db:"event_id" json:"event_id"`
-	OperationType           string             `db:"operation_type" json:"operation_type"`
-	Status                  string             `db:"status" json:"status"`
-	Requester               string             `db:"requester" json:"requester"`
-	Approver                pgtype.Text        `db:"approver" json:"approver"`
-	Reason                  pgtype.Text        `db:"reason" json:"reason"`
-	RejectReason            pgtype.Text        `db:"reject_reason" json:"reject_reason"`
-	SelectedClusterID       pgtype.Text        `db:"selected_cluster_id" json:"selected_cluster_id"`
-	SelectedTemplateVersion pgtype.Int4        `db:"selected_template_version" json:"selected_template_version"`
-	SelectedStorageClass    pgtype.Text        `db:"selected_storage_class" json:"selected_storage_class"`
-	TemplateSnapshot        []byte             `db:"template_snapshot" json:"template_snapshot"`
-	InstanceSizeSnapshot    []byte             `db:"instance_size_snapshot" json:"instance_size_snapshot"`
-	PlacementEvaluation     []byte             `db:"placement_evaluation" json:"placement_evaluation"`
-	ModifiedSpec            []byte             `db:"modified_spec" json:"modified_spec"`
-	ParentTicketID          pgtype.Text        `db:"parent_ticket_id" json:"parent_ticket_id"`
+	ID                   string             `db:"id" json:"id"`
+	CreatedAt            pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt            pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	EventID              string             `db:"event_id" json:"event_id"`
+	OperationType        string             `db:"operation_type" json:"operation_type"`
+	Status               string             `db:"status" json:"status"`
+	Requester            string             `db:"requester" json:"requester"`
+	Approver             pgtype.Text        `db:"approver" json:"approver"`
+	Reason               pgtype.Text        `db:"reason" json:"reason"`
+	RejectReason         pgtype.Text        `db:"reject_reason" json:"reject_reason"`
+	SelectedClusterID    pgtype.Text        `db:"selected_cluster_id" json:"selected_cluster_id"`
+	SelectedStorageClass pgtype.Text        `db:"selected_storage_class" json:"selected_storage_class"`
+	TemplateSnapshot     []byte             `db:"template_snapshot" json:"template_snapshot"`
+	InstanceSizeSnapshot []byte             `db:"instance_size_snapshot" json:"instance_size_snapshot"`
+	PlacementEvaluation  []byte             `db:"placement_evaluation" json:"placement_evaluation"`
+	ModifiedSpec         []byte             `db:"modified_spec" json:"modified_spec"`
+	ParentTicketID       pgtype.Text        `db:"parent_ticket_id" json:"parent_ticket_id"`
+	AttemptCount         int32              `db:"attempt_count" json:"attempt_count"`
+	LastAttemptAt        pgtype.Timestamptz `db:"last_attempt_at" json:"last_attempt_at"`
 }
 
 type Vm struct {

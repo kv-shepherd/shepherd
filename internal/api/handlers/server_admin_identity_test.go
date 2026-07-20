@@ -12,6 +12,7 @@ import (
 	"entgo.io/ent/dialect"
 	entsql "entgo.io/ent/dialect/sql"
 	"github.com/gin-gonic/gin"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
 	"kv-shepherd.io/shepherd/ent"
@@ -19,6 +20,7 @@ import (
 	"kv-shepherd.io/shepherd/ent/externalcohortgrant"
 	"kv-shepherd.io/shepherd/ent/externalcohortmapping"
 	enthook "kv-shepherd.io/shepherd/ent/hook"
+	"kv-shepherd.io/shepherd/ent/notification"
 	"kv-shepherd.io/shepherd/ent/resourcerolebinding"
 	entrole "kv-shepherd.io/shepherd/ent/role"
 	"kv-shepherd.io/shepherd/ent/rolebinding"
@@ -1529,13 +1531,10 @@ func TestUpdateAuthProvider_DisablingRevokesLinkedUserSessions(t *testing.T) {
 func TestUpdateAuthProvider_RollsBackWhenLinkedSessionRevocationFails(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-	client := testutil.OpenEntPostgres(t, "admin_identity_disable_provider_revoke_fail")
-	srv := NewServer(ServerDeps{
-		EntClient:     client,
-		AuthSessions:  &service.AuthSessionManager{},
-		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
-	})
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(
+		t,
+		"admin_identity_disable_provider_revoke_fail",
+	)
 	ctx := t.Context()
 
 	providerEnt, err := client.AuthProvider.Create().
@@ -1553,15 +1552,17 @@ func TestUpdateAuthProvider_RollsBackWhenLinkedSessionRevocationFails(t *testing
 	if err != nil {
 		t.Fatalf("seed auth provider: %v", err)
 	}
-	if _, createErr := client.User.Create().
+	linkedUser, createErr := client.User.Create().
 		SetID("user-disable-provider-revoke-fail").
 		SetUsername("disable.provider.revoke.fail").
 		SetEnabled(true).
 		SetAuthProviderID(providerEnt.ID).
 		SetExternalID("external-disable-provider-revoke-fail").
-		Save(ctx); createErr != nil {
+		Save(ctx)
+	if createErr != nil {
 		t.Fatalf("seed linked user: %v", createErr)
 	}
+	beforeVersions := installAuthSessionVersionBumpFailure(t, srv, authSessions, linkedUser.ID)
 
 	updateCtx, updateW := newAuthedGinContext(
 		t,
@@ -1575,6 +1576,7 @@ func TestUpdateAuthProvider_RollsBackWhenLinkedSessionRevocationFails(t *testing
 	if updateW.Code != http.StatusInternalServerError {
 		t.Fatalf("disable provider status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
 	}
+	assertAuthSessionVersionBumpFailureTriggered(t, srv)
 	reloadedProvider, err := client.AuthProvider.Get(ctx, providerEnt.ID)
 	if err != nil {
 		t.Fatalf("reload provider: %v", err)
@@ -1582,6 +1584,7 @@ func TestUpdateAuthProvider_RollsBackWhenLinkedSessionRevocationFails(t *testing
 	if !reloadedProvider.Enabled {
 		t.Fatal("provider should remain enabled after session revocation failure")
 	}
+	assertAuthSessionVersionsUnchanged(t, authSessions, beforeVersions)
 }
 
 func TestAuthProviderStage2CFlow(t *testing.T) {
@@ -1938,12 +1941,7 @@ func TestListAuthProviderTypesAndRejectUnknownType(t *testing.T) {
 func TestUpdateUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-	client := testutil.OpenEntPostgres(t, "admin_identity_update_user_revoke_fail")
-	srv := NewServer(ServerDeps{
-		EntClient:    client,
-		AuthSessions: &service.AuthSessionManager{},
-	})
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(t, "admin_identity_update_user_revoke_fail")
 
 	userRow, err := client.User.Create().
 		SetID("user-update-revoke-fail").
@@ -1953,6 +1951,7 @@ func TestUpdateUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed user: %v", err)
 	}
+	beforeVersions := installAuthSessionVersionBumpFailure(t, srv, authSessions, userRow.ID)
 
 	updateCtx, updateW := newAuthedGinContext(
 		t,
@@ -1966,6 +1965,7 @@ func TestUpdateUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	if updateW.Code != http.StatusInternalServerError {
 		t.Fatalf("update status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
 	}
+	assertAuthSessionVersionBumpFailureTriggered(t, srv)
 
 	reloaded, err := client.User.Get(t.Context(), userRow.ID)
 	if err != nil {
@@ -1974,16 +1974,23 @@ func TestUpdateUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	if !reloaded.Enabled {
 		t.Fatal("expected user to remain enabled after failed session revocation")
 	}
+	assertAuthSessionVersionsUnchanged(t, authSessions, beforeVersions)
 }
 
 func TestDeleteUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	t.Parallel()
 
 	gin.SetMode(gin.TestMode)
-	client := testutil.OpenEntPostgres(t, "admin_identity_delete_user_revoke_fail")
+	pool := testutil.OpenPGXPool(t, "admin_identity_delete_user_revoke_fail")
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	t.Cleanup(func() { _ = client.Close() })
+	authSessions := service.NewAuthSessionManager(pool, client, 0)
 	srv := NewServer(ServerDeps{
 		EntClient:    client,
-		AuthSessions: &service.AuthSessionManager{},
+		Pool:         pool,
+		AuthSessions: authSessions,
 	})
 	ctx := t.Context()
 
@@ -2033,6 +2040,22 @@ func TestDeleteUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed preference: %v", err)
 	}
+	exemptionRow, err := client.RateLimitExemption.Create().
+		SetID(userRow.ID).
+		SetExemptedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed rate-limit exemption: %v", err)
+	}
+	overrideRow, err := client.RateLimitUserOverride.Create().
+		SetID(userRow.ID).
+		SetCooldownSeconds(15).
+		SetUpdatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed rate-limit override: %v", err)
+	}
+	beforeVersions := installAuthSessionVersionBumpFailure(t, srv, authSessions, userRow.ID)
 
 	deleteCtx, deleteW := newAuthedGinContext(
 		t,
@@ -2046,18 +2069,26 @@ func TestDeleteUser_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	if deleteW.Code != http.StatusInternalServerError {
 		t.Fatalf("delete user status = %d, want %d, body=%s", deleteW.Code, http.StatusInternalServerError, deleteW.Body.String())
 	}
-	if _, err := client.User.Get(ctx, userRow.ID); err != nil {
-		t.Fatalf("user should remain after failed session revocation: %v", err)
+	assertAuthSessionVersionBumpFailureTriggered(t, srv)
+	if _, getErr := client.User.Get(ctx, userRow.ID); getErr != nil {
+		t.Fatalf("user should remain after failed session revocation: %v", getErr)
 	}
-	if _, err := client.ExternalCohortGrant.Get(ctx, grantRow.ID); err != nil {
-		t.Fatalf("external cohort grant should remain after failed session revocation: %v", err)
+	if _, getErr := client.ExternalCohortGrant.Get(ctx, grantRow.ID); getErr != nil {
+		t.Fatalf("external cohort grant should remain after failed session revocation: %v", getErr)
 	}
-	if _, err := client.RoleBinding.Get(ctx, bindingRow.ID); err != nil {
-		t.Fatalf("role binding should remain after failed session revocation: %v", err)
+	if _, getErr := client.RoleBinding.Get(ctx, bindingRow.ID); getErr != nil {
+		t.Fatalf("role binding should remain after failed session revocation: %v", getErr)
 	}
-	if _, err := client.UserPreference.Get(ctx, preferenceRow.ID); err != nil {
-		t.Fatalf("user preference should remain after failed session revocation: %v", err)
+	if _, getErr := client.UserPreference.Get(ctx, preferenceRow.ID); getErr != nil {
+		t.Fatalf("user preference should remain after failed session revocation: %v", getErr)
 	}
+	if _, getErr := client.RateLimitExemption.Get(ctx, exemptionRow.ID); getErr != nil {
+		t.Fatalf("rate-limit exemption should remain after failed session revocation: %v", getErr)
+	}
+	if _, getErr := client.RateLimitUserOverride.Get(ctx, overrideRow.ID); getErr != nil {
+		t.Fatalf("rate-limit override should remain after failed session revocation: %v", getErr)
+	}
+	assertAuthSessionVersionsUnchanged(t, authSessions, beforeVersions)
 }
 
 func TestDeleteUser_RevokesSessionsOnSuccess(t *testing.T) {
@@ -2089,6 +2120,19 @@ func TestDeleteUser_RevokesSessionsOnSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed auth session subject: %v", err)
 	}
+	if _, createErr := client.RateLimitExemption.Create().
+		SetID(userRow.ID).
+		SetExemptedBy("admin-1").
+		Save(ctx); createErr != nil {
+		t.Fatalf("seed rate-limit exemption: %v", createErr)
+	}
+	if _, createErr := client.RateLimitUserOverride.Create().
+		SetID(userRow.ID).
+		SetMaxPendingChildren(3).
+		SetUpdatedBy("admin-1").
+		Save(ctx); createErr != nil {
+		t.Fatalf("seed rate-limit override: %v", createErr)
+	}
 
 	deleteCtx, deleteW := newAuthedGinContext(
 		t,
@@ -2105,12 +2149,234 @@ func TestDeleteUser_RevokesSessionsOnSuccess(t *testing.T) {
 	if _, getErr := client.User.Get(ctx, userRow.ID); !ent.IsNotFound(getErr) {
 		t.Fatalf("user should be deleted, err=%v", getErr)
 	}
+	if _, getErr := client.RateLimitExemption.Get(ctx, userRow.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("rate-limit exemption should be deleted, err=%v", getErr)
+	}
+	if _, getErr := client.RateLimitUserOverride.Get(ctx, userRow.ID); !ent.IsNotFound(getErr) {
+		t.Fatalf("rate-limit override should be deleted, err=%v", getErr)
+	}
 	afterVersion, err := authSessions.CurrentSessionVersion(ctx, userRow.ID)
 	if err != nil {
 		t.Fatalf("read auth session version after delete: %v", err)
 	}
 	if afterVersion != beforeVersion+1 {
 		t.Fatalf("session version after delete = %d, want %d", afterVersion, beforeVersion+1)
+	}
+}
+
+func TestCreateUserRoleBinding_RevokesSessionsWithSinglePooledConnection(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	bootstrapPool := testutil.OpenPGXPool(t, "role_binding_single_connection")
+	limitedConfig := bootstrapPool.Config().Copy()
+	limitedConfig.MinConns = 0
+	limitedConfig.MaxConns = 1
+	pool, err := pgxpool.NewWithConfig(t.Context(), limitedConfig)
+	if err != nil {
+		t.Fatalf("create single-connection pool: %v", err)
+	}
+	t.Cleanup(pool.Close)
+	db := stdlib.OpenDBFromPool(pool)
+	t.Cleanup(func() { _ = db.Close() })
+	client := enttest.NewClient(t, enttest.WithOptions(ent.Driver(entsql.OpenDB(dialect.Postgres, db))))
+	t.Cleanup(func() { _ = client.Close() })
+	authSessions := service.NewAuthSessionManager(pool, client, 0)
+	srv := NewServer(ServerDeps{EntClient: client, Pool: pool, AuthSessions: authSessions})
+
+	userRow, err := client.User.Create().
+		SetID("user-role-binding-single-connection").
+		SetUsername("role.binding.single.connection").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role-binding target user: %v", err)
+	}
+	roleRow, err := client.Role.Create().
+		SetID("role-binding-single-connection").
+		SetName("role_binding_single_connection").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("create role for single-connection binding: %v", err)
+	}
+	beforeVersion, err := authSessions.CurrentSessionVersion(t.Context(), userRow.ID)
+	if err != nil {
+		t.Fatalf("seed auth session version: %v", err)
+	}
+
+	requestContext, response := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/users/"+userRow.ID+"/role-bindings",
+		mustJSON(t, userRoleBindingCreateRequest{RoleID: roleRow.ID}),
+		"admin-1",
+		[]string{"rbac:manage"},
+	)
+	requestCtx, cancel := context.WithTimeout(requestContext.Request.Context(), 5*time.Second)
+	defer cancel()
+	requestContext.Request = requestContext.Request.WithContext(requestCtx)
+
+	srv.CreateUserRoleBinding(requestContext, userRow.ID)
+
+	if response.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d body=%s", response.Code, http.StatusCreated, response.Body.String())
+	}
+	afterVersion, err := authSessions.CurrentSessionVersion(t.Context(), userRow.ID)
+	if err != nil {
+		t.Fatalf("read auth session version after role binding create: %v", err)
+	}
+	if afterVersion != beforeVersion+1 {
+		t.Fatalf("session version = %d, want %d", afterVersion, beforeVersion+1)
+	}
+	bindingCount, err := client.RoleBinding.Query().
+		Where(rolebinding.HasUserWith(entuser.IDEQ(userRow.ID))).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count created role bindings: %v", err)
+	}
+	if bindingCount != 1 {
+		t.Fatalf("role binding count = %d, want 1", bindingCount)
+	}
+}
+
+func TestCreateUserRoleBinding_RollsBackWhenSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(
+		t,
+		"admin_identity_create_role_binding_revoke_fail",
+	)
+	ctx := t.Context()
+
+	userRow, err := client.User.Create().
+		SetID("user-role-binding-create-revoke-fail").
+		SetUsername("role.binding.create.revoke.fail").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role-binding target user: %v", err)
+	}
+	roleRow, err := client.Role.Create().
+		SetID("role-binding-create-revoke-fail").
+		SetName("role_binding_create_revoke_fail").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role for role binding: %v", err)
+	}
+	beforeVersions := installAuthSessionVersionBumpFailure(t, srv, authSessions, userRow.ID)
+
+	requestContext, response := newAuthedGinContext(
+		t,
+		http.MethodPost,
+		"/admin/users/"+userRow.ID+"/role-bindings",
+		mustJSON(t, userRoleBindingCreateRequest{RoleID: roleRow.ID}),
+		"admin-1",
+		[]string{"rbac:manage"},
+	)
+	srv.CreateUserRoleBinding(requestContext, userRow.ID)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf(
+			"create role binding status = %d, want %d body=%s",
+			response.Code,
+			http.StatusInternalServerError,
+			response.Body.String(),
+		)
+	}
+	assertAuthSessionVersionBumpFailureTriggered(t, srv)
+	assertAuthSessionVersionsUnchanged(t, authSessions, beforeVersions)
+
+	bindingCount, err := client.RoleBinding.Query().
+		Where(
+			rolebinding.HasUserWith(entuser.IDEQ(userRow.ID)),
+			rolebinding.HasRoleWith(entrole.IDEQ(roleRow.ID)),
+		).
+		Count(ctx)
+	if err != nil {
+		t.Fatalf("count role bindings after rollback: %v", err)
+	}
+	if bindingCount != 0 {
+		t.Fatalf("role binding count after rollback = %d, want 0", bindingCount)
+	}
+}
+
+func TestDeleteUserRoleBinding_RollsBackWhenSessionRevocationFails(t *testing.T) {
+	t.Parallel()
+
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(
+		t,
+		"admin_identity_delete_role_binding_revoke_fail",
+	)
+	ctx := t.Context()
+
+	userRow, err := client.User.Create().
+		SetID("user-role-binding-delete-revoke-fail").
+		SetUsername("role.binding.delete.revoke.fail").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role-binding target user: %v", err)
+	}
+	roleRow, err := client.Role.Create().
+		SetID("role-binding-delete-revoke-fail").
+		SetName("role_binding_delete_revoke_fail").
+		SetPermissions([]string{"vm:read"}).
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role for role binding: %v", err)
+	}
+	bindingRow, err := client.RoleBinding.Create().
+		SetID("binding-delete-revoke-fail").
+		SetUserID(userRow.ID).
+		SetRoleID(roleRow.ID).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy(externalCohortRoleBindingActor).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create role binding: %v", err)
+	}
+	grantRow, err := client.ExternalCohortGrant.Create().
+		SetID("grant-role-binding-delete-revoke-fail").
+		SetUserID(userRow.ID).
+		SetProviderID("provider-role-binding-delete-revoke-fail").
+		SetBindingKey("role-binding-delete-revoke-fail").
+		SetRoleBindingID(bindingRow.ID).
+		SetSourceMappingIds([]string{"mapping-role-binding-delete-revoke-fail"}).
+		SetLastAppliedAt(time.Now()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("create external cohort grant: %v", err)
+	}
+	beforeVersions := installAuthSessionVersionBumpFailure(t, srv, authSessions, userRow.ID)
+
+	requestContext, response := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/users/"+userRow.ID+"/role-bindings/"+bindingRow.ID,
+		"",
+		"admin-1",
+		[]string{"rbac:manage"},
+	)
+	srv.DeleteUserRoleBinding(requestContext, userRow.ID, bindingRow.ID)
+
+	if response.Code != http.StatusInternalServerError {
+		t.Fatalf(
+			"delete role binding status = %d, want %d body=%s",
+			response.Code,
+			http.StatusInternalServerError,
+			response.Body.String(),
+		)
+	}
+	assertAuthSessionVersionBumpFailureTriggered(t, srv)
+	assertAuthSessionVersionsUnchanged(t, authSessions, beforeVersions)
+	if _, err := client.RoleBinding.Get(ctx, bindingRow.ID); err != nil {
+		t.Fatalf("role binding should remain after rollback: %v", err)
+	}
+	if _, err := client.ExternalCohortGrant.Get(ctx, grantRow.ID); err != nil {
+		t.Fatalf("external cohort grant should remain after rollback: %v", err)
 	}
 }
 
@@ -2724,12 +2990,10 @@ func TestUpdateAuthProviderCohortMapping_RollsBackWhenGrantMigrationFails(t *tes
 func TestUpdateAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-	client := testutil.OpenEntPostgres(t, "admin_identity_update_mapping_revoke_fail")
-	srv := NewServer(ServerDeps{
-		EntClient:    client,
-		AuthSessions: &service.AuthSessionManager{},
-	})
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(
+		t,
+		"admin_identity_update_mapping_revoke_fail",
+	)
 	ctx := t.Context()
 
 	oldRoleEnt, err := client.Role.Create().
@@ -2796,6 +3060,7 @@ func TestUpdateAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *
 	if err != nil {
 		t.Fatalf("create old grant: %v", err)
 	}
+	beforeVersions := installAuthSessionVersionBumpFailure(t, srv, authSessions, userEnt.ID)
 
 	updateCtx, updateW := newAuthedGinContext(
 		t,
@@ -2809,6 +3074,7 @@ func TestUpdateAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *
 	if updateW.Code != http.StatusInternalServerError {
 		t.Fatalf("update mapping status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
 	}
+	assertAuthSessionVersionBumpFailureTriggered(t, srv)
 	reloadedMapping, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID)
 	if err != nil {
 		t.Fatalf("mapping should remain after rollback: %v", err)
@@ -2831,6 +3097,7 @@ func TestUpdateAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *
 	if _, err := client.RoleBinding.Get(ctx, oldBindingEnt.ID); err != nil {
 		t.Fatalf("old role binding should remain after rollback: %v", err)
 	}
+	assertAuthSessionVersionsUnchanged(t, authSessions, beforeVersions)
 }
 
 func TestDeleteAuthProviderCohortMapping_ReconcilesExistingGrants(t *testing.T) {
@@ -3157,12 +3424,10 @@ func TestDeleteAuthProviderCohortMapping_RollsBackWhenGrantCleanupFails(t *testi
 func TestDeleteAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-	client := testutil.OpenEntPostgres(t, "admin_identity_delete_mapping_revoke_fail")
-	srv := NewServer(ServerDeps{
-		EntClient:    client,
-		AuthSessions: &service.AuthSessionManager{},
-	})
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(
+		t,
+		"admin_identity_delete_mapping_revoke_fail",
+	)
 	ctx := t.Context()
 
 	roleEnt, err := client.Role.Create().
@@ -3216,6 +3481,7 @@ func TestDeleteAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *
 	if err != nil {
 		t.Fatalf("create grant: %v", err)
 	}
+	beforeVersions := installAuthSessionVersionBumpFailure(t, srv, authSessions, userEnt.ID)
 
 	deleteCtx, deleteW := newAuthedGinContext(
 		t,
@@ -3229,6 +3495,7 @@ func TestDeleteAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *
 	if deleteW.Code != http.StatusInternalServerError {
 		t.Fatalf("delete mapping status = %d, want %d, body=%s", deleteW.Code, http.StatusInternalServerError, deleteW.Body.String())
 	}
+	assertAuthSessionVersionBumpFailureTriggered(t, srv)
 	if _, err := client.ExternalCohortMapping.Get(ctx, mappingEnt.ID); err != nil {
 		t.Fatalf("mapping should remain after rollback: %v", err)
 	}
@@ -3238,6 +3505,7 @@ func TestDeleteAuthProviderCohortMapping_RollsBackWhenSessionRevocationFails(t *
 	if _, err := client.RoleBinding.Get(ctx, bindingEnt.ID); err != nil {
 		t.Fatalf("role binding should remain after rollback: %v", err)
 	}
+	assertAuthSessionVersionsUnchanged(t, authSessions, beforeVersions)
 }
 
 func TestDeleteUser_RollsBackAssociatedRowsWhenDeleteStepFails(t *testing.T) {
@@ -3294,6 +3562,25 @@ func TestDeleteUser_RollsBackAssociatedRowsWhenDeleteStepFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed resource role binding: %v", err)
 	}
+	notificationRow, err := client.Notification.Create().
+		SetID("notification-delete-rollback").
+		SetType(notification.TypeVM_STATUS_CHANGE).
+		SetTitle("VM changed").
+		SetMessage("The VM state changed").
+		SetUser(userRow).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed notification: %v", err)
+	}
+	profileRow, err := client.UserDirectoryProfile.Create().
+		SetID("directory-profile-delete-rollback").
+		SetUser(userRow).
+		SetAttributes(map[string]interface{}{"department": "platform"}).
+		SetLastSyncedAt(time.Now().UTC()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user directory profile: %v", err)
+	}
 	preferenceRow, err := client.UserPreference.Create().
 		SetID("preference-delete-rollback").
 		SetUserID(userRow.ID).
@@ -3303,9 +3590,25 @@ func TestDeleteUser_RollsBackAssociatedRowsWhenDeleteStepFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed preference: %v", err)
 	}
+	exemptionRow, err := client.RateLimitExemption.Create().
+		SetID(userRow.ID).
+		SetExemptedBy("admin-1").
+		SetReason("temporary support").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed rate-limit exemption: %v", err)
+	}
+	overrideRow, err := client.RateLimitUserOverride.Create().
+		SetID(userRow.ID).
+		SetMaxPendingParents(2).
+		SetUpdatedBy("admin-1").
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed rate-limit override: %v", err)
+	}
 
-	client.ResourceRoleBinding.Use(enthook.On(
-		enthook.FixedError(errors.New("resource role binding delete unavailable")),
+	client.UserPreference.Use(enthook.On(
+		enthook.FixedError(errors.New("user preference delete unavailable")),
 		ent.OpDelete,
 	))
 
@@ -3334,18 +3637,93 @@ func TestDeleteUser_RollsBackAssociatedRowsWhenDeleteStepFails(t *testing.T) {
 	if _, err := client.ResourceRoleBinding.Get(ctx, resourceBindingRow.ID); err != nil {
 		t.Fatalf("resource role binding should remain after rollback: %v", err)
 	}
+	if _, err := client.Notification.Get(ctx, notificationRow.ID); err != nil {
+		t.Fatalf("notification should remain after rollback: %v", err)
+	}
+	if _, err := client.UserDirectoryProfile.Get(ctx, profileRow.ID); err != nil {
+		t.Fatalf("user directory profile should remain after rollback: %v", err)
+	}
 	if _, err := client.UserPreference.Get(ctx, preferenceRow.ID); err != nil {
 		t.Fatalf("user preference should remain after rollback: %v", err)
+	}
+	if _, err := client.RateLimitExemption.Get(ctx, exemptionRow.ID); err != nil {
+		t.Fatalf("rate-limit exemption should remain after rollback: %v", err)
+	}
+	if _, err := client.RateLimitUserOverride.Get(ctx, overrideRow.ID); err != nil {
+		t.Fatalf("rate-limit override should remain after rollback: %v", err)
+	}
+}
+
+func TestDeleteUser_DeletesNotificationAndDirectoryProfileForeignKeyRows(t *testing.T) {
+	t.Parallel()
+
+	srv, client := newAdminIdentityTestServer(t)
+	ctx := t.Context()
+	userRow, err := client.User.Create().
+		SetID("user-delete-fk-rows").
+		SetUsername("delete.fk.rows").
+		SetEnabled(true).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user with associated FK rows: %v", err)
+	}
+	notificationRow, err := client.Notification.Create().
+		SetID("notification-delete-fk-rows").
+		SetType(notification.TypeVM_STATUS_CHANGE).
+		SetTitle("VM changed").
+		SetMessage("The VM state changed").
+		SetUser(userRow).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user notification: %v", err)
+	}
+	profileRow, err := client.UserDirectoryProfile.Create().
+		SetID("directory-profile-delete-fk-rows").
+		SetUser(userRow).
+		SetAttributes(map[string]interface{}{"department": "platform"}).
+		SetLastSyncedAt(time.Now().UTC()).
+		Save(ctx)
+	if err != nil {
+		t.Fatalf("seed user directory profile: %v", err)
+	}
+
+	deleteCtx, deleteResponse := newAuthedGinContext(
+		t,
+		http.MethodDelete,
+		"/admin/users/"+userRow.ID,
+		"",
+		"admin-1",
+		[]string{"user:manage"},
+	)
+	srv.DeleteUser(deleteCtx, userRow.ID)
+
+	if deleteCtx.Writer.Status() != http.StatusNoContent {
+		t.Fatalf(
+			"delete user status = %d, want %d body=%s",
+			deleteCtx.Writer.Status(),
+			http.StatusNoContent,
+			deleteResponse.Body.String(),
+		)
+	}
+	if _, err := client.User.Get(ctx, userRow.ID); !ent.IsNotFound(err) {
+		t.Fatalf("deleted user lookup error = %v, want not found", err)
+	}
+	if _, err := client.Notification.Get(ctx, notificationRow.ID); !ent.IsNotFound(err) {
+		t.Fatalf("deleted notification lookup error = %v, want not found", err)
+	}
+	if _, err := client.UserDirectoryProfile.Get(ctx, profileRow.ID); !ent.IsNotFound(err) {
+		t.Fatalf("deleted directory profile lookup error = %v, want not found", err)
 	}
 }
 
 func newAdminIdentityTestServer(t *testing.T) (*Server, *ent.Client) {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
-	client := testutil.OpenEntPostgres(t, "admin_identity")
+	client, pool := testutil.OpenEntPostgresWithPool(t, "admin_identity")
 	vmInfra := newGenericStorageProfileProvider()
 	return NewServer(ServerDeps{
 		EntClient:     client,
+		Pool:          pool,
 		EncryptionKey: []byte("0123456789abcdef0123456789abcdef"),
 		VMService:     service.NewVMService(vmInfra),
 		ClusterPolicy: service.NewClusterPolicyService(client),

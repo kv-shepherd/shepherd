@@ -15,6 +15,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/testutil"
 
 	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/sync/errgroup"
 )
 
 func TestMain(m *testing.M) {
@@ -430,6 +431,44 @@ func TestSeedDefaultAdminCreatesPlatformAdminBindingAndIsIdempotent(t *testing.T
 	}
 	if bindingCount != 1 {
 		t.Fatalf("admin platform role binding count = %d, want 1", bindingCount)
+	}
+}
+
+func TestSeedDefaultAdminConcurrentRunsCreateOneBinding(t *testing.T) {
+	client := testutil.OpenEntPostgres(t, "seed_default_admin_concurrent")
+	if err := seedBuiltInRoles(t.Context(), client); err != nil {
+		t.Fatalf("seedBuiltInRoles() error = %v", err)
+	}
+
+	var group errgroup.Group
+	for range 2 {
+		group.Go(func() error {
+			return seedDefaultAdmin(t.Context(), client)
+		})
+	}
+	if err := group.Wait(); err != nil {
+		t.Fatalf("concurrent seedDefaultAdmin() error = %v", err)
+	}
+
+	spec := defaultAdminSeedSpec()
+	admin, err := client.User.Query().
+		Where(entuser.UsernameEQ(spec.username)).
+		Only(t.Context())
+	if err != nil {
+		t.Fatalf("query concurrently seeded admin: %v", err)
+	}
+	bindingCount, err := client.RoleBinding.Query().
+		Where(
+			rolebinding.HasUserWith(entuser.IDEQ(admin.ID)),
+			rolebinding.HasRoleWith(role.IDEQ(spec.roleID)),
+			rolebinding.ScopeTypeEQ(spec.roleBindingScopeType),
+		).
+		Count(t.Context())
+	if err != nil {
+		t.Fatalf("count concurrently seeded admin role bindings: %v", err)
+	}
+	if bindingCount != 1 {
+		t.Fatalf("concurrent admin role binding count = %d, want 1", bindingCount)
 	}
 }
 

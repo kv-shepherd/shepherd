@@ -13,7 +13,6 @@ import (
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/api/generated"
 	"kv-shepherd.io/shepherd/internal/domain"
-	"kv-shepherd.io/shepherd/internal/service"
 	"kv-shepherd.io/shepherd/internal/testutil"
 )
 
@@ -577,12 +576,7 @@ func TestAdminTemplateUpdate_RejectsPromotingContainerDiskToAllCatalog(t *testin
 func TestUpdateRole_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	t.Parallel()
 
-	gin.SetMode(gin.TestMode)
-	client := testutil.OpenEntPostgres(t, "admin_catalog_update_role_revoke_fail")
-	srv := NewServer(ServerDeps{
-		EntClient:    client,
-		AuthSessions: &service.AuthSessionManager{},
-	})
+	srv, client, authSessions := newAdminIdentityTestServerWithAuthSessions(t, "admin_catalog_update_role_revoke_fail")
 
 	roleRow, err := client.Role.Create().
 		SetID("role-update-revoke-fail").
@@ -593,6 +587,25 @@ func TestUpdateRole_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("seed role: %v", err)
 	}
+	userRow, err := client.User.Create().
+		SetID("user-role-update-revoke-fail").
+		SetUsername("role.update.revoke.fail").
+		SetEnabled(true).
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed role-bound user: %v", err)
+	}
+	bindingRow, err := client.RoleBinding.Create().
+		SetID("binding-role-update-revoke-fail").
+		SetUser(userRow).
+		SetRole(roleRow).
+		SetScopeType(scopeTypeGlobal).
+		SetCreatedBy("seed").
+		Save(t.Context())
+	if err != nil {
+		t.Fatalf("seed role binding: %v", err)
+	}
+	beforeVersions := installAuthSessionVersionBumpFailure(t, srv, authSessions, userRow.ID)
 
 	updateCtx, updateW := newAuthedGinContext(
 		t,
@@ -606,6 +619,7 @@ func TestUpdateRole_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	if updateW.Code != http.StatusInternalServerError {
 		t.Fatalf("update status = %d, want %d, body=%s", updateW.Code, http.StatusInternalServerError, updateW.Body.String())
 	}
+	assertAuthSessionVersionBumpFailureTriggered(t, srv)
 
 	reloaded, err := client.Role.Get(t.Context(), roleRow.ID)
 	if err != nil {
@@ -614,6 +628,10 @@ func TestUpdateRole_RollsBackWhenSessionRevocationFails(t *testing.T) {
 	if !reloaded.Enabled {
 		t.Fatal("expected role to remain enabled after failed session revocation")
 	}
+	if _, err := client.RoleBinding.Get(t.Context(), bindingRow.ID); err != nil {
+		t.Fatalf("role binding should remain after failed session revocation: %v", err)
+	}
+	assertAuthSessionVersionsUnchanged(t, authSessions, beforeVersions)
 }
 
 func TestDeleteRoleRejectsExternalCohortMappingReference(t *testing.T) {

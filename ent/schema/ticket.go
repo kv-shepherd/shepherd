@@ -2,13 +2,15 @@ package schema
 
 import (
 	"entgo.io/ent"
+	"entgo.io/ent/dialect/entsql"
+	entschema "entgo.io/ent/schema"
 	"entgo.io/ent/schema/field"
 	"entgo.io/ent/schema/index"
 )
 
 // Ticket holds the schema definition for the Ticket entity.
 // ADR-0005: Simple approval flow — PENDING → APPROVED or PENDING → REJECTED.
-// ADR-0017: Admin-determined fields (cluster, template_version, storage_class).
+// ADR-0017: Admin-determined placement fields and immutable approval snapshots.
 type Ticket struct {
 	ent.Schema
 }
@@ -32,7 +34,7 @@ func (Ticket) Fields() []ent.Field {
 		field.Enum("operation_type").
 			Values("CREATE", "MODIFY", "DELETE", "POWER", "VNC_ACCESS").
 			Default("CREATE"). // Backward compatible; existing tickets are CREATE
-			Comment("Distinguishes CREATE vs MODIFY vs DELETE vs POWER ticket workflows (Phase 4 governance)"),
+			Comment("Distinguishes CREATE, MODIFY, DELETE, POWER, and VNC_ACCESS ticket workflows (Phase 4 governance)"),
 		field.Enum("status").
 			Values("PENDING", "APPROVED", "REJECTED", "CANCELLED", "EXECUTING", "SUCCESS", "FAILED").
 			Default("PENDING"),
@@ -61,6 +63,14 @@ func (Ticket) Fields() []ent.Field {
 		// Batch support
 		field.String("parent_ticket_id").
 			Optional(), // For batch approval child tickets
+		field.Int32("attempt_count").
+			Default(0).
+			NonNegative().
+			Comment("Number of logical dispatch attempts for a batch child ticket (ADR-0015 §19)"),
+		field.Time("last_attempt_at").
+			Optional().
+			Nillable().
+			Comment("Time the most recent logical batch-child dispatch attempt began (ADR-0015 §19)"),
 	}
 }
 
@@ -71,5 +81,15 @@ func (Ticket) Indexes() []ent.Index {
 		index.Fields("requester"),
 		index.Fields("event_id"),
 		index.Fields("parent_ticket_id"),
+	}
+}
+
+// Annotations enforces persistence invariants that field validators alone
+// cannot protect when rows are written through SQL or migrations.
+func (Ticket) Annotations() []entschema.Annotation {
+	return []entschema.Annotation{
+		entsql.Annotation{Checks: map[string]string{
+			"tickets_attempt_count_nonnegative": "attempt_count >= 0",
+		}},
 	}
 }

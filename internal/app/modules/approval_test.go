@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"kv-shepherd.io/shepherd/ent"
+	"kv-shepherd.io/shepherd/internal/governance/ticketing"
 	approvalcontract "kv-shepherd.io/shepherd/internal/provider/approvalcontract"
 )
 
@@ -77,6 +78,21 @@ func TestApprovalModule_WiringContract(t *testing.T) {
 		if !strings.Contains(text, fragment) {
 			t.Fatalf("approval module missing required wiring fragment %q", fragment)
 		}
+	}
+}
+
+func TestApprovalModule_TicketService(t *testing.T) {
+	t.Parallel()
+
+	var nilModule *ApprovalModule
+	if got := nilModule.TicketService(); got != nil {
+		t.Fatalf("nil module TicketService() = %p, want nil", got)
+	}
+
+	want := &ticketing.Service{}
+	module := &ApprovalModule{ticketService: want}
+	if got := module.TicketService(); got != want {
+		t.Fatalf("TicketService() = %p, want %p", got, want)
 	}
 }
 

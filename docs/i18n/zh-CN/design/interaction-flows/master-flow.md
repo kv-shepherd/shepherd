@@ -58,7 +58,7 @@
 | ADR | 约束 | 适用范围 |
 |-----|------|---------|
 | **ADR-0006** | 所有写操作使用**统一异步模型**（请求 → 202 → River 队列） | 所有状态变更操作 |
-| **ADR-0009** | River Job 仅携带 **EventID**（Claim Check）；DomainEvent payload **不可变** | 所有 River Job |
+| **ADR-0009** | DomainEvent 工作流仅携带 **EventID**；非 DomainEvent worker 可携带一个持久化归属行主键（Claim Check）；DomainEvent payload **不可变** | 所有 River Job |
 | **ADR-0012** | 原子事务：Ent 用于 ORM，**sqlc 仅用于核心事务** | 所有数据库操作 |
 
 > **CI 概览**: 上述约束由自动化检查保障。完整门禁定义和脚本清单见 [docs/design/ci/README.md §Scope Boundary](../../../../design/ci/README.md#scope-boundary)。
@@ -98,7 +98,7 @@
 |------|---------|
 | **命名治理** | 平台管理的逻辑名必须通过 ADR-0019 统一校验。 |
 | **写入模型** | 状态变更操作遵循统一异步模型（`request -> 202 -> River`），见 [ADR-0006 §Decision](../../../../adr/ADR-0006-unified-async-model.md#decision)。 |
-| **事件完整性** | River Job 采用 EventID-only claim-check；事件 payload 不可变，见 [ADR-0009 §Constraint 1](../../../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only)。 |
+| **事件完整性** | DomainEvent worker 采用 EventID-only claim-check；非 DomainEvent worker 可携带一个持久化归属行主键；事件 payload 不可变，见 [ADR-0009 §Constraint 1](../../../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only)。 |
 | **事务边界** | 跨聚合核心写入采用 Ent+sqlc 原子事务模型，见 [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode)。 |
 | **删除语义** | 主资源表硬删除（可短暂 `DELETING`）；审计/工单/事件独立保留并归档，见 [ADR-0015 §13](../../../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints)。 |
 | **批量基线** | V1 批量采用父子工单 + 两层限流，见 [ADR-0015 §19](../../../../adr/ADR-0015-governance-model-v2.md#19-batch-operations)。 |
@@ -849,7 +849,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │  V1 上线路径（必需）：                                                                          │
-│    1) 用户提交请求 -> approval_tickets=PENDING                                                │
+│    1) 用户提交请求 -> tickets=PENDING                                                         │
 │    2) 路由层选择内置 Provider（`builtin-default`，V1 唯一实现）                                │
 │    3) 内置审批人做 APPROVED / REJECTED 决策                                                    │
 │    4) Shepherd 执行后续路径并记录审计                                                          │
@@ -1006,7 +1006,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │  │  模板版本说明:                                                                            │ │
 │  │  - 用户提交请求时看到当前活跃版本                                                          │ │
 │  │  - 管理员审批时可选择不同版本                                                              │ │
-│  │  - 最终模板内容快照到 ApprovalTicket，VM 创建后不受模板更新影响                            │ │
+│  │  - 最终模板内容快照到审批工单 Ticket（`tickets`），VM 创建后不受模板更新影响               │ │
 │  │                                                                                          │ │
 │  │  👉 普通用户: 选择模板，但不能修改 cloud-init 内容                                         │ │
 │  │  👉 管理员: 可创建/编辑模板，包括镜像来源和 cloud-init 配置                                │ │
@@ -1710,9 +1710,11 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 │        │                                                                                     │
 │        ▼                                                                                     │
 │  单事务写入：                                                                                │
-│    1) approval_tickets: 创建 `PENDING`                                                       │
+│    1) tickets: 以 operation_type=`CREATE` 创建 `PENDING`                                    │
 │    2) domain_events: 创建 `PENDING`                                                          │
-│    3) audit_logs: 追加规范提交动作                                                           │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  提交后：best-effort 审计 + 审批路由 + 通知触发                                              │
 │        │                                                                                     │
 │        ▼                                                                                     │
 │  返回 `202 Accepted`，前端据此轮询工单状态                                                     │
@@ -1724,7 +1726,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 
 | 实体 | 之前 | 之后 |
 |------|------|------|
-| `approval_tickets` | 无 | `PENDING` |
+| `tickets` | 无 | `PENDING` |
 | `domain_events` | 无 | `PENDING` |
 | `vms` | 无 | 无 |
 | `river_job` | 无 | 无 |
@@ -1886,7 +1888,7 @@ Schema 缓存生命周期与降级行为，请以以下文档为准：
 
 #### Purpose
 
-定义父子工单模型下的批量提交流程、执行语义与前端可见行为。
+定义父子工单模型下的规范批量提交流程、执行语义与前端可见行为，包括两层限流、稳定幂等键、有限逻辑尝试，以及结果不明确的 VM 重启必须失败关闭。
 
 #### Actors & Trigger
 
@@ -1908,11 +1910,11 @@ UI 故事板（父子队列）：
 │                                  ▼                                                               │
 │  [队列列表页]                                                                                     │
 │     新父工单出现：`PENDING_APPROVAL`                                                             │
-│     展示：总数/成功/失败/待处理 + 申请人 + 更新时间                                               │
+│     列表展示：操作 + 总数/成功/失败/待处理 + 创建时间                                             │
 │                                  │                                                               │
 │                                  ▼                                                               │
 │  [展开父工单]                                                                                     │
-│     子任务表展示：单项状态 + attempt_count + last_error                                          │
+│     详情补充：申请人 + 更新时间；子任务展示：单项状态 + attempt_count + last_error                 │
 │                                  │                                                               │
 │                                  ▼                                                               │
 │  [进行中/终态处理]                                                                                │
@@ -1930,16 +1932,18 @@ UI 故事板（父子队列）：
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
 │  1. 用户/管理员在 UI 选择批量项                                                                   │
-│  2. 前端: POST /api/v1/vms/batch                                                                 │
-│  3. 后端前置检查:                                                                                 │
+│  2. 前端: POST /vms/batch                                                                         │
+│     └── 提交稳定的 request_id 与操作载荷                                                          │
+│  3. 后端在业务事务中按规范顺序获取全局、用户和请求幂等守卫：                                        │
+│     • 获取锁后先检查 request_id 重放，再读取当前配额与冷却快照                                     │
 │     • Layer 1（全局）: 父工单积压阈值 + API 速率                                                   │
 │     • Layer 2（用户）: 用户父/子工单阈值 + 提交冷却时间                                             │
-│  4. 原子事务:                                                                                     │
+│  4. 同一原子事务:                                                                                  │
 │     • 插入父工单                                                                                  │
 │     • 插入全部子工单                                                                              │
 │     • 任一子工单失败则整体回滚                                                                      │
 │  5. 返回 202: {batch_id, status, status_url, retry_after_seconds}                                │
-│  6. 前端轮询: GET /api/v1/vms/batch/{batch_id}                                                   │
+│  6. 前端轮询: GET /vms/batch/{batch_id}                                                          │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1949,16 +1953,16 @@ UI 故事板（父子队列）：
 │ 批量执行流程                                                                                      │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
-│  1. 父工单进入 APPROVED/IN_PROGRESS                                                              │
-│  2. Worker 独立消费子任务                                                                         │
+│  1. 审批事务将原始父 Ticket/Event 置为 EXECUTING/PROCESSING，公开投影置为 IN_PROGRESS              │
+│  2. Worker 独立消费子任务；首次分派记录为第 1 次逻辑尝试                                          │
 │  3. 聚合终态计算:                                                                                 │
 │     • COMPLETED: 全部成功                                                                         │
-│     • FAILED: 全部失败                                                                            │
+│     • FAILED: 无成功子项的其他终态组合                                                             │
 │     • PARTIAL_SUCCESS: 部分成功                                                                    │
-│     • CANCELLED: 未开始子任务被终止                                                                │
+│     • CANCELLED: 所有子任务均被终止                                                                │
 │  4. 前端可操作:                                                                                   │
-│     • POST /api/v1/vms/batch/{batch_id}/retry  （仅重试失败子项）                                │
-│     • POST /api/v1/vms/batch/{batch_id}/cancel （终止待执行子项）                                 │
+│     • POST /vms/batch/{batch_id}/retry  （仅重试未耗尽三次逻辑尝试的执行失败子项）                  │
+│     • POST /vms/batch/{batch_id}/cancel （终止待执行子项）                                        │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -1968,9 +1972,8 @@ UI 故事板（父子队列）：
 │ 兼容接口说明                                                                                       │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
-│  兼容保留：                                                                                        │
-│  • POST /api/v1/approvals/batch                                                                  │
-│  • POST /api/v1/vms/batch/power                                                                  │
+│  规范入口：POST /vms/batch                                                                         │
+│  兼容保留：POST /vms/batch/power                                                                  │
 │                                                                                                  │
 │  内部统一归一到同一套父子工单流水线。                                                               │
 │                                                                                                  │
@@ -1981,14 +1984,31 @@ UI 故事板（父子队列）：
 
 | 范围 | 状态变化模式 |
 |------|-------------|
-| 父工单 | `PENDING_APPROVAL -> IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED` |
-| 子工单 | `PENDING -> APPROVED/REJECTED/CANCELLED -> EXECUTING -> SUCCESS|FAILED` |
+| 原始工作流父 Ticket | `PENDING -> EXECUTING -> SUCCESS|FAILED|CANCELLED` |
+| 原始工作流父 Event | `PENDING -> PROCESSING -> COMPLETED|FAILED|CANCELLED` |
+| 批量 API/公开投影 | `PENDING_APPROVAL -> IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED`；公开父批次状态绝不包含 `APPROVED`。 |
+| 已批准子工单执行分支 | `PENDING -> APPROVED -> EXECUTING -> SUCCESS|FAILED` |
+| 子工单拒绝/终止分支 | `PENDING -> REJECTED|CANCELLED`，两者均为该子工单的终态 |
+| 显式子工单重试 | 仅当 `attempt_count < 3` 时允许 `FAILED -> PENDING/EXECUTING`；`REJECTED` 不得重新打开 |
+| 重启分派围栏 | Event 的 `PENDING -> PROCESSING` 是单向提供方分派声明；原 worker 持久化终态前不得清除或重新派发 |
+
+提交与重试不变量：
+
+- 同一用户意图在超时、网络错误、`5xx`、`429` 或 `409` 后重试时必须复用同一个不透明 `request_id`；只有请求成功或用户明确开始新的意图时才能轮换。
+- `request_id` 按申请人和请求操作划分作用域；电源 `START`、`STOP`、`RESTART` 使用互相独立的作用域，重放返回首次接受的父批次。
+- `VMPowerPayload.dispatch_mode` 是不可变来源字段，仅允许 `direct|ticket`。启动任何会自动注册 worker 的新版本实例前，维护窗必须冻结旧版本全部 direct、普通/外部审批和 batch 电源生产路径。旧 worker 独占排空 legacy job；admission 报告必须同时证明缺失/非法 mode 的未解决 `PENDING` Event（无论有无 Ticket）为零，并且引用此类 payload 的可运行 `vm_power` job 为零。剩余 `PENDING` 请求须通过审核的正常应用流程终止，且只能由新版本重新提交。无 Ticket 且无旧 worker 可运行 job 的 direct orphan `PENDING` Event 在当前版本没有安全转换路径，因此是升级硬阻断项，不能作为隔离项放行。无法证明收敛的 `PROCESSING` START/STOP 以及所有 `PROCESSING` RESTART 必须连同证据隔离；绝不回填不可变 payload，也绝不重放或重新派发操作。完整 admission 流程以[数据库迁移指南](../../../../design/database/migrations.md#batch-retry-and-idempotency-rollout)为准。
+- `attempt_count` 统计逻辑子任务分派而非 River 内部投递；首次分派计为 1，每个子项最多允许三次逻辑尝试。
+- 审批为 `REJECTED` 的子工单是终态，绝不能进入执行或重试。
+- 重启 worker 必须在调用提供方之前原子声明 `PENDING -> PROCESSING`。超时、响应丢失、worker 救援或分派后持久化失败都不能证明提供方未接受请求，因此必须保留 `PROCESSING/EXECUTING` 围栏并失败关闭。
+- 歧义冲突返回 `operator_action_required=true`、既有 Event ID 和 `operator-runbook:ambiguous-vm-restart`；前端仅展示该只读证据并指引运维人员独立核验 KubeVirt 状态。
+- 任何公开或管理 API 都不能清除或重新派发结果不明确的重启围栏。在提供方回执、幂等或可证明取消协议落地前，普通重试端点也不能重新打开该尝试。
 
 #### Failure & Edge Cases
 
-- 全局或用户级限流拒绝必须返回可执行重试窗口。
+- 全局或用户级限流拒绝必须通过 `Retry-After` 和 `retry_after_seconds` 返回可执行重试窗口。
 - 子任务失败不得回滚已成功子任务。
 - 重试/终止操作仅作用于符合条件子任务，并重算父工单聚合状态。
+- 并发重试/终止若丢失条件状态转换，必须返回可执行冲突且不得覆盖更新后的子任务状态。
 
 #### Authority Links
 
@@ -2131,7 +2151,7 @@ Part 4 属于参考视图，不是用户操作流程。
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                         审批工单 (ApprovalTicket) 状态流转                                     │
+│                            审批工单 Ticket 状态流转                                            │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │                        ┌───────────────────┐                                                 │
@@ -2222,17 +2242,17 @@ Part 4 属于参考视图，不是用户操作流程。
 │         │                                                  │                                 │
 │         ▼                                                  ▼                                 │
 │  ┌──────────────┐                               ┌──────────────────┐                        │
-│  │ role_bindings│                               │ approval_tickets │                        │
+│  │ role_bindings│                               │     tickets      │                        │
 │  │──────────────│                               │──────────────────│                        │
 │  │ user_id      │                               │ id               │                        │
 │  │ role         │                               │ type             │                        │
 │  │ resource_type│                               │ status           │                        │
-│  │ resource_id  │                               │ requester_id     │                        │
-│  └──────────────┘                               │ approver_id      │                        │
-│                                                 │ service_id       │                        │
-│                                                 │ instance_size_id │                        │
-│                                                 │ template_id      │                        │
-│                                                 │ final_*          │ ← 审批时确定的最终值    │
+│  │ resource_id  │                               │ event_id         │                        │
+│  └──────────────┘                               │ operation_type   │                        │
+│                                                 │ requester        │                        │
+│                                                 │ approver         │                        │
+│                                                 │ selected_cluster │                        │
+│                                                 │ snapshot fields  │ ← 审批时确定的最终值    │
 │                                                 └──────────────────┘                        │
 │                                                          │                                  │
 │  ┌──────────────┐         ┌──────────────┐              │                                  │
@@ -2586,8 +2606,8 @@ Part 4 属于参考视图，不是用户操作流程。
 │  │     d. 不存在待处理的 VNC 访问请求（重复检查）                                            │
 │  │                                                                                          │
 │  │  3. 创建审批工单:                                                                        │
-│  │     INSERT INTO approval_tickets (type, status, requester_id, resource_id, ...)         │
-│  │     VALUES ('VNC_ACCESS_REQUESTED', 'PENDING_APPROVAL', 'user-123', 'vm-456', ...)      │
+│  │     INSERT INTO tickets (event_id, operation_type, status, requester, ...)              │
+│  │     VALUES ('event-123', 'VNC_ACCESS', 'PENDING', 'user-123', ...)                      │
 │  │                                                                                          │
 │  │  4. 通知管理员审批                                                                       │
 │  │                                                                                          │
@@ -2610,7 +2630,7 @@ Part 4 属于参考视图，不是用户操作流程。
 | 环境 | 工单 | 访问结果 |
 |------|------|---------|
 | 测试环境 | 无审批工单 | RBAC 通过 -> 签发 token -> 建立会话 |
-| 生产环境 | `PENDING_APPROVAL -> APPROVED/REJECTED` | 批准后签发 token；拒绝则无控制台访问 |
+| 生产环境 | 原始 Ticket `PENDING -> APPROVED/REJECTED` | 批准后签发 token；拒绝则无控制台访问 |
 
 ### Failure & Edge Cases
 

@@ -2,7 +2,10 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -30,6 +33,11 @@ import (
 const (
 	serviceContextVMLimit      = 6
 	serviceContextRequestLimit = 8
+)
+
+var (
+	errDeleteSystemHasServices          = errors.New("system has services")
+	errDeleteSystemConfirmationRequired = errors.New("system delete confirmation is required")
 )
 
 // ListSystems handles GET /systems.
@@ -223,12 +231,36 @@ func (s *Server) CreateSystem(c *gin.Context) {
 	if !bindAndValidateJSON(c, &req) {
 		return
 	}
-
 	// Atomic: create System + ResourceRoleBinding.
-	tx, err := s.client.Tx(ctx)
+	// The creator lock may wait behind a concurrent user mutation. READ
+	// COMMITTED ensures the subsequent user recheck sees the mutation that
+	// released the lock even when the database default is REPEATABLE READ.
+	tx, err := s.client.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err != nil {
 		logger.Error("failed to start transaction", zap.Error(err))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if lockErr := lockUserMutation(ctx, tx, actor); lockErr != nil {
+		_ = tx.Rollback()
+		logger.Error("failed to lock system creator", zap.Error(lockErr), zap.String("actor", actor))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	creator, getErr := tx.User.Get(ctx, actor)
+	if getErr != nil {
+		_ = tx.Rollback()
+		if ent.IsNotFound(getErr) {
+			c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
+			return
+		}
+		logger.Error("failed to recheck system creator", zap.Error(getErr), zap.String("actor", actor))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	if !creator.Enabled {
+		_ = tx.Rollback()
+		c.JSON(http.StatusUnauthorized, generated.Error{Code: "UNAUTHORIZED"})
 		return
 	}
 
@@ -380,50 +412,87 @@ func (s *Server) DeleteSystem(c *gin.Context, systemID generated.SystemID, param
 	if !ok {
 		return
 	}
+	actorIsPlatformAdmin := hasPlatformAdmin(c)
 
-	// Check for child services via edge.
-	count, err := s.client.System.Query().
-		Where(entsystem.IDEQ(systemID)).
-		QueryServices().
-		Count(ctx)
-	if err != nil {
-		logger.Error("failed to count system services", zap.Error(err), zap.String("system_id", systemID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if count > 0 {
-		c.JSON(http.StatusConflict, generated.Error{
-			Code:    "SYSTEM_HAS_SERVICES",
-			Message: "cannot delete system with existing services; delete all services first",
-			Params: map[string]interface{}{
-				"service_count": count,
-			},
-		})
-		return
-	}
+	serviceCount := 0
+	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if lockErr := lockSystemMembership(ctx, tx, systemID); lockErr != nil {
+			return lockErr
+		}
+		// The row lock serializes child service foreign-key writers. Writers that
+		// committed first become visible to the subsequent READ COMMITTED count;
+		// writers that start later wait and then fail after system deletion.
+		if lockErr := tx.ExecContext(ctx, `SELECT id FROM systems WHERE id = $1 FOR UPDATE`, systemID); lockErr != nil {
+			return fmt.Errorf("lock system row for delete: %w", lockErr)
+		}
+		txClient := tx.Client()
+		systemRow, loadErr := txClient.System.Get(ctx, systemID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if permissionErr := recheckSystemRoleForMutation(
+			ctx,
+			txClient,
+			actor,
+			systemID,
+			"delete",
+			actorIsPlatformAdmin,
+		); permissionErr != nil {
+			return permissionErr
+		}
 
-	sys, err := s.client.System.Get(ctx, systemID)
+		serviceCount, loadErr = txClient.System.Query().
+			Where(entsystem.IDEQ(systemID)).
+			QueryServices().
+			Count(ctx)
+		if loadErr != nil {
+			return fmt.Errorf("count system services: %w", loadErr)
+		}
+		if serviceCount > 0 {
+			return errDeleteSystemHasServices
+		}
+		if params.ConfirmName == "" || params.ConfirmName != systemRow.Name {
+			return errDeleteSystemConfirmationRequired
+		}
+
+		if _, deleteErr := txClient.ResourceRoleBinding.Delete().
+			Where(
+				rrb.ResourceTypeEQ("system"),
+				rrb.ResourceIDEQ(systemID),
+			).
+			Exec(ctx); deleteErr != nil {
+			return fmt.Errorf("delete system resource role bindings: %w", deleteErr)
+		}
+		if deleteErr := txClient.System.DeleteOneID(systemID).Exec(ctx); deleteErr != nil {
+			return fmt.Errorf("delete system: %w", deleteErr)
+		}
+		return nil
+	})
 	if err != nil {
-		if ent.IsNotFound(err) {
+		switch {
+		case errors.Is(err, errSystemMembershipPermissionChanged):
+			c.JSON(http.StatusForbidden, generated.Error{Code: "FORBIDDEN"})
+			return
+		case ent.IsNotFound(err):
 			c.JSON(http.StatusNotFound, generated.Error{Code: "SYSTEM_NOT_FOUND"})
 			return
+		case errors.Is(err, errDeleteSystemHasServices):
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "SYSTEM_HAS_SERVICES",
+				Message: "cannot delete system with existing services; delete all services first",
+				Params: map[string]interface{}{
+					"service_count": serviceCount,
+				},
+			})
+			return
+		case errors.Is(err, errDeleteSystemConfirmationRequired):
+			c.JSON(http.StatusBadRequest, generated.Error{
+				Code:    "DELETE_CONFIRMATION_REQUIRED",
+				Message: "confirm_name query parameter must match system name exactly",
+			})
+			return
 		}
-		logger.Error("failed to get system for delete", zap.Error(err), zap.String("system_id", systemID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	// Confirmation gate (ADR-0015 §13 addendum): confirm_name must match system name.
-	if params.ConfirmName == "" || params.ConfirmName != sys.Name {
-		c.JSON(http.StatusBadRequest, generated.Error{
-			Code:    "DELETE_CONFIRMATION_REQUIRED",
-			Message: "confirm_name query parameter must match system name exactly",
-		})
-		return
-	}
-
-	if err := s.client.System.DeleteOneID(systemID).Exec(ctx); err != nil {
-		logger.Error("failed to delete system", zap.Error(err), zap.String("system_id", systemID))
+		logger.Error("failed to delete system transactionally", zap.Error(err), zap.String("system_id", systemID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}

@@ -24,7 +24,7 @@ type Ticket struct {
 	UpdatedAt time.Time `json:"updated_at,omitempty"`
 	// EventID holds the value of the "event_id" field.
 	EventID string `json:"event_id,omitempty"`
-	// Distinguishes CREATE vs MODIFY vs DELETE vs POWER ticket workflows (Phase 4 governance)
+	// Distinguishes CREATE, MODIFY, DELETE, POWER, and VNC_ACCESS ticket workflows (Phase 4 governance)
 	OperationType ticket.OperationType `json:"operation_type,omitempty"`
 	// Status holds the value of the "status" field.
 	Status ticket.Status `json:"status,omitempty"`
@@ -50,7 +50,11 @@ type Ticket struct {
 	ModifiedSpec map[string]interface{} `json:"modified_spec,omitempty"`
 	// ParentTicketID holds the value of the "parent_ticket_id" field.
 	ParentTicketID string `json:"parent_ticket_id,omitempty"`
-	selectValues   sql.SelectValues
+	// Number of logical dispatch attempts for a batch child ticket (ADR-0015 §19)
+	AttemptCount int32 `json:"attempt_count,omitempty"`
+	// Time the most recent logical batch-child dispatch attempt began (ADR-0015 §19)
+	LastAttemptAt *time.Time `json:"last_attempt_at,omitempty"`
+	selectValues  sql.SelectValues
 }
 
 // scanValues returns the types for scanning values from sql.Rows.
@@ -60,9 +64,11 @@ func (*Ticket) scanValues(columns []string) ([]any, error) {
 		switch columns[i] {
 		case ticket.FieldTemplateSnapshot, ticket.FieldInstanceSizeSnapshot, ticket.FieldPlacementEvaluation, ticket.FieldModifiedSpec:
 			values[i] = new([]byte)
+		case ticket.FieldAttemptCount:
+			values[i] = new(sql.NullInt64)
 		case ticket.FieldID, ticket.FieldEventID, ticket.FieldOperationType, ticket.FieldStatus, ticket.FieldRequester, ticket.FieldApprover, ticket.FieldReason, ticket.FieldRejectReason, ticket.FieldSelectedClusterID, ticket.FieldSelectedStorageClass, ticket.FieldParentTicketID:
 			values[i] = new(sql.NullString)
-		case ticket.FieldCreatedAt, ticket.FieldUpdatedAt:
+		case ticket.FieldCreatedAt, ticket.FieldUpdatedAt, ticket.FieldLastAttemptAt:
 			values[i] = new(sql.NullTime)
 		default:
 			values[i] = new(sql.UnknownType)
@@ -189,6 +195,19 @@ func (_m *Ticket) assignValues(columns []string, values []any) error {
 			} else if value.Valid {
 				_m.ParentTicketID = value.String
 			}
+		case ticket.FieldAttemptCount:
+			if value, ok := values[i].(*sql.NullInt64); !ok {
+				return fmt.Errorf("unexpected type %T for field attempt_count", values[i])
+			} else if value.Valid {
+				_m.AttemptCount = int32(value.Int64)
+			}
+		case ticket.FieldLastAttemptAt:
+			if value, ok := values[i].(*sql.NullTime); !ok {
+				return fmt.Errorf("unexpected type %T for field last_attempt_at", values[i])
+			} else if value.Valid {
+				_m.LastAttemptAt = new(time.Time)
+				*_m.LastAttemptAt = value.Time
+			}
 		default:
 			_m.selectValues.Set(columns[i], values[i])
 		}
@@ -272,6 +291,14 @@ func (_m *Ticket) String() string {
 	builder.WriteString(", ")
 	builder.WriteString("parent_ticket_id=")
 	builder.WriteString(_m.ParentTicketID)
+	builder.WriteString(", ")
+	builder.WriteString("attempt_count=")
+	builder.WriteString(fmt.Sprintf("%v", _m.AttemptCount))
+	builder.WriteString(", ")
+	if v := _m.LastAttemptAt; v != nil {
+		builder.WriteString("last_attempt_at=")
+		builder.WriteString(v.Format(time.ANSIC))
+	}
 	builder.WriteByte(')')
 	return builder.String()
 }

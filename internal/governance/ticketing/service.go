@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/governance/audit"
+	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/notification"
 	apperrors "kv-shepherd.io/shepherd/internal/pkg/errors"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
@@ -54,7 +56,14 @@ type ExecutionOptions struct {
 type approveCreateConfig struct {
 	skipClonePreflight bool
 	preflightOnly      bool
+	batchGuard         *domain.BatchApprovalDispatchGuard
 }
+
+const (
+	powerOperationStart   = "start"
+	powerOperationStop    = "stop"
+	powerOperationRestart = "restart"
+)
 
 // AtomicDecisionWriter defines ADR-0012 atomic write operations for final
 // ticket decisions.
@@ -70,6 +79,34 @@ type AtomicDecisionWriter interface {
 	ApproveDeleteAndEnqueue(ctx context.Context, ticketID, eventID, approver, vmID string) error
 	ApproveModifyAndEnqueue(ctx context.Context, ticketID, eventID, approver string, modifiedSpec map[string]interface{}) error
 	ApprovePowerAndEnqueue(ctx context.Context, ticketID, eventID, approver, operation string) error
+}
+
+// AtomicBatchDecisionWriter owns the crash-safe parent/retry intent plus River
+// dispatcher insertion. It is kept separate so direct-ticket writer fakes and
+// extensions do not need batch support unless they execute batch decisions.
+type AtomicBatchDecisionWriter interface {
+	ClaimBatchApprovalAndEnqueue(context.Context, domain.BatchApprovalClaimInput) error
+	RetryBatchApprovalAndEnqueue(context.Context, domain.BatchApprovalRetryInput) error
+	ValidateBatchApprovalDispatchGraph(context.Context, string, string) (domain.BatchApprovalDispatchGuard, error)
+}
+
+// AtomicBatchChildDecisionWriter extends the direct-ticket writer with a
+// parent-scoped guard. Every batch child mutation must validate the durable
+// graph under the same transaction that commits state and River work.
+type AtomicBatchChildDecisionWriter interface {
+	ApproveBatchCreateAndEnqueue(
+		ctx context.Context,
+		guard domain.BatchApprovalDispatchGuard,
+		ticketID, eventID, approver, clusterID, storageClass, serviceID, namespace, requesterID string,
+		templateSnapshot map[string]interface{},
+		instanceSizeSnapshot map[string]interface{},
+		placementEvaluation map[string]interface{},
+		modifiedSpec map[string]interface{},
+	) (vmID, vmName string, err error)
+	ApproveBatchDeleteAndEnqueue(context.Context, domain.BatchApprovalDispatchGuard, string, string, string, string) error
+	ApproveBatchModifyAndEnqueue(context.Context, domain.BatchApprovalDispatchGuard, string, string, string, map[string]interface{}) error
+	ApproveBatchPowerAndEnqueue(context.Context, domain.BatchApprovalDispatchGuard, string, string, string, string) error
+	FailBatchApprovalChildDispatch(context.Context, domain.BatchApprovalDispatchGuard, string, string, string, string) error
 }
 
 // Service orchestrates canonical ticket decisions.
@@ -93,6 +130,12 @@ func NewService(client *ent.Client, auditLogger *audit.Logger, atomicWriter Atom
 }
 
 func withDecisionTx(ctx context.Context, client *ent.Client, fn func(txClient *ent.Client) error) error {
+	return withDecisionEntTx(ctx, client, func(tx *ent.Tx) error {
+		return fn(tx.Client())
+	})
+}
+
+func withDecisionEntTx(ctx context.Context, client *ent.Client, fn func(tx *ent.Tx) error) error {
 	tx, err := client.Tx(ctx)
 	if err != nil {
 		return fmt.Errorf("begin ticket decision transaction: %w", err)
@@ -103,7 +146,7 @@ func withDecisionTx(ctx context.Context, client *ent.Client, fn func(txClient *e
 			panic(v)
 		}
 	}()
-	if err := fn(tx.Client()); err != nil {
+	if err := fn(tx); err != nil {
 		if rerr := tx.Rollback(); rerr != nil {
 			return fmt.Errorf("%w: rollback ticket decision transaction: %w", err, rerr)
 		}
@@ -182,11 +225,11 @@ func (g *Service) Approve(ctx context.Context, ticketID, approver string, opts E
 	// Branch by operation_type (ADR-0015 §5.D).
 	switch ticket.OperationType {
 	case entticket.OperationTypeMODIFY:
-		return g.approveModify(ctx, ticket, event, ticketID, approver, opts)
+		return g.approveModify(ctx, ticket, event, ticketID, approver, opts, nil)
 	case entticket.OperationTypeDELETE:
-		return g.approveDelete(ctx, ticket, ticketID, approver)
+		return g.approveDelete(ctx, ticket, ticketID, approver, nil)
 	case entticket.OperationTypePOWER:
-		return g.approvePower(ctx, ticket, event, ticketID, approver)
+		return g.approvePower(ctx, ticket, event, ticketID, approver, nil)
 	case entticket.OperationTypeVNC_ACCESS:
 		return g.approveVNC(ctx, ticket, event, ticketID, approver)
 	default:
@@ -196,7 +239,13 @@ func (g *Service) Approve(ctx context.Context, ticketID, approver string, opts E
 }
 
 // approvePower handles approval of POWER tickets.
-func (g *Service) approvePower(ctx context.Context, ticket *ent.Ticket, event *ent.DomainEvent, ticketID, approver string) error {
+func (g *Service) approvePower(
+	ctx context.Context,
+	ticket *ent.Ticket,
+	event *ent.DomainEvent,
+	ticketID, approver string,
+	batchGuard *domain.BatchApprovalDispatchGuard,
+) error {
 	if event == nil {
 		return fmt.Errorf("power approval requires domain event")
 	}
@@ -207,7 +256,7 @@ func (g *Service) approvePower(ctx context.Context, ticket *ent.Ticket, event *e
 	}
 	operation := strings.TrimSpace(strings.ToLower(payload.Operation))
 	switch operation {
-	case "start", "stop", "restart":
+	case powerOperationStart, powerOperationStop, powerOperationRestart:
 	default:
 		return fmt.Errorf("ticket %s has unsupported power operation %q", ticketID, payload.Operation)
 	}
@@ -215,8 +264,18 @@ func (g *Service) approvePower(ctx context.Context, ticket *ent.Ticket, event *e
 	if g.atomicWriter == nil {
 		return fmt.Errorf("atomic approval writer is not configured")
 	}
-	if err := g.atomicWriter.ApprovePowerAndEnqueue(ctx, ticketID, ticket.EventID, approver, operation); err != nil {
-		return fmt.Errorf("approve power ticket %s atomically: %w", ticketID, err)
+	var writeErr error
+	if batchGuard != nil {
+		batchWriter, ok := g.atomicWriter.(AtomicBatchChildDecisionWriter)
+		if !ok || batchWriter == nil {
+			return fmt.Errorf("guarded batch child writer is not configured")
+		}
+		writeErr = batchWriter.ApproveBatchPowerAndEnqueue(ctx, *batchGuard, ticketID, ticket.EventID, approver, operation)
+	} else {
+		writeErr = g.atomicWriter.ApprovePowerAndEnqueue(ctx, ticketID, ticket.EventID, approver, operation)
+	}
+	if writeErr != nil {
+		return fmt.Errorf("approve power ticket %s atomically: %w", ticketID, writeErr)
 	}
 
 	if g.auditLogger != nil {
@@ -332,7 +391,7 @@ func (g *Service) approveCreateWithConfig(
 		placementEvaluation = buildPlacementEvaluationSnapshot(evaluation, opts, resolvedOpts)
 		if evaluation != nil && !evaluation.Eligible {
 			if isSelectedClusterRuntimeUnavailable(evaluation) {
-				return approvalPreflightUnavailable(stderrors.New(evaluation.ReasonMessage))
+				return selectedClusterPreflightUnavailable(evaluation.ReasonMessage)
 			} else {
 				if g.auditLogger != nil {
 					_ = g.auditLogger.LogApprovalWithDetails(ctx, ticketID, "validation_failed", approver, map[string]interface{}{
@@ -378,9 +437,14 @@ func (g *Service) approveCreateWithConfig(
 		); preflightErr != nil {
 			if isClusterRuntimeUnavailable(preflightErr) {
 				return approvalPreflightUnavailable(preflightErr)
-			} else {
-				return fmt.Errorf("source pvc preflight failed for ticket %s: %w", ticketID, preflightErr)
 			}
+			if appErr, ok := apperrors.IsAppError(preflightErr); ok {
+				return appErr
+			}
+			return apperrors.BadRequest(
+				apperrors.CodeValidationFailed,
+				fmt.Sprintf("source pvc preflight failed for ticket %s", ticketID),
+			)
 		}
 	}
 
@@ -403,9 +467,12 @@ func (g *Service) approveCreateWithConfig(
 		case validateErr != nil && isClusterRuntimeUnavailable(validateErr):
 			return approvalPreflightUnavailable(validateErr)
 		case validateErr != nil:
+			if appErr, ok := apperrors.IsAppError(validateErr); ok {
+				return appErr
+			}
 			return apperrors.BadRequest(
 				apperrors.CodeValidationFailed,
-				fmt.Sprintf("pre-flight dryrun gate failed for ticket %s: %v", ticketID, validateErr),
+				fmt.Sprintf("pre-flight dryrun gate failed for ticket %s", ticketID),
 			)
 		case !result.Valid:
 			return apperrors.BadRequest(apperrors.CodeValidationFailed,
@@ -474,21 +541,24 @@ func (g *Service) approveCreateWithConfig(
 		return fmt.Errorf("atomic approval writer is not configured")
 	}
 
-	vmID, vmName, err := g.atomicWriter.ApproveCreateAndEnqueue(
-		ctx,
-		ticketID,
-		ticket.EventID,
-		approver,
-		opts.ClusterID,
-		resolvedOpts.StorageClass,
-		payload.ServiceID,
-		payload.Namespace,
-		payload.RequesterID,
-		templateSnapshot,
-		instanceSizeSnapshot,
-		placementEvaluation,
-		modifiedSpec,
-	)
+	var vmID, vmName string
+	if config.batchGuard != nil {
+		batchWriter, ok := g.atomicWriter.(AtomicBatchChildDecisionWriter)
+		if !ok || batchWriter == nil {
+			return fmt.Errorf("guarded batch child writer is not configured")
+		}
+		vmID, vmName, err = batchWriter.ApproveBatchCreateAndEnqueue(
+			ctx, *config.batchGuard, ticketID, ticket.EventID, approver, opts.ClusterID,
+			resolvedOpts.StorageClass, payload.ServiceID, payload.Namespace, payload.RequesterID,
+			templateSnapshot, instanceSizeSnapshot, placementEvaluation, modifiedSpec,
+		)
+	} else {
+		vmID, vmName, err = g.atomicWriter.ApproveCreateAndEnqueue(
+			ctx, ticketID, ticket.EventID, approver, opts.ClusterID, resolvedOpts.StorageClass,
+			payload.ServiceID, payload.Namespace, payload.RequesterID, templateSnapshot,
+			instanceSizeSnapshot, placementEvaluation, modifiedSpec,
+		)
+	}
 	if err != nil {
 		return fmt.Errorf("approve create ticket %s atomically: %w", ticketID, err)
 	}
@@ -772,6 +842,7 @@ func (g *Service) approveModify(
 	event *ent.DomainEvent,
 	ticketID, approver string,
 	opts ExecutionOptions,
+	batchGuard *domain.BatchApprovalDispatchGuard,
 ) error {
 	prepared, err := g.prepareModifyApproval(ctx, event, ticketID, opts)
 	if err != nil {
@@ -781,8 +852,18 @@ func (g *Service) approveModify(
 	if g.atomicWriter == nil {
 		return fmt.Errorf("atomic approval writer is not configured")
 	}
-	if err := g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, prepared.modifiedSpec); err != nil {
-		return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, err)
+	var writeErr error
+	if batchGuard != nil {
+		batchWriter, ok := g.atomicWriter.(AtomicBatchChildDecisionWriter)
+		if !ok || batchWriter == nil {
+			return fmt.Errorf("guarded batch child writer is not configured")
+		}
+		writeErr = batchWriter.ApproveBatchModifyAndEnqueue(ctx, *batchGuard, ticketID, ticket.EventID, approver, prepared.modifiedSpec)
+	} else {
+		writeErr = g.atomicWriter.ApproveModifyAndEnqueue(ctx, ticketID, ticket.EventID, approver, prepared.modifiedSpec)
+	}
+	if writeErr != nil {
+		return fmt.Errorf("approve modify ticket %s atomically: %w", ticketID, writeErr)
 	}
 
 	if g.auditLogger != nil {
@@ -860,7 +941,7 @@ func (g *Service) prepareModifyApproval(
 	if err != nil {
 		return nil, apperrors.BadRequest(
 			"VM_MODIFY_APPROVAL_INVALID",
-			fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
+			"modify request cannot be executed with the current VM state",
 		)
 	}
 	if err := g.vmService.DryRunVMMutation(ctx, payload.ClusterID, payload.Namespace, payload.VMName, plan.Mutation); err != nil {
@@ -869,7 +950,7 @@ func (g *Service) prepareModifyApproval(
 		}
 		return nil, apperrors.BadRequest(
 			"VM_MODIFY_APPROVAL_INVALID",
-			fmt.Sprintf("modify request cannot be executed with the current VM state: %v", err),
+			"modify request cannot be executed with the current VM state",
 		)
 	}
 	modifySpec = withApprovedVMMutation(modifySpec, plan)
@@ -879,14 +960,27 @@ func (g *Service) prepareModifyApproval(
 	}, nil
 }
 
-func approvalPreflightUnavailable(err error) *apperrors.AppError {
-	return apperrors.Wrap(
-		err,
+func approvalPreflightUnavailable(_ error) *apperrors.AppError {
+	return apperrors.New(
 		apperrors.CodeClusterUnhealthy,
 		"approval requires live cluster preflight",
 		http.StatusServiceUnavailable,
 	).WithParams(map[string]interface{}{
-		"reason": err.Error(),
+		"reason": "CLUSTER_RUNTIME_UNAVAILABLE",
+	})
+}
+
+func selectedClusterPreflightUnavailable(reason string) *apperrors.AppError {
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "approval requires live cluster preflight"
+	}
+	return apperrors.New(
+		apperrors.CodeClusterUnhealthy,
+		reason,
+		http.StatusServiceUnavailable,
+	).WithParams(map[string]interface{}{
+		"reason": "CLUSTER_RUNTIME_UNAVAILABLE",
 	})
 }
 
@@ -1056,7 +1150,12 @@ func withApprovedVMMutation(modifiedSpec map[string]interface{}, plan *vmmutatio
 
 // approveDelete handles approval of DELETE tickets.
 // ADR-0012: decision write + domain state + River enqueue are one atomic commit.
-func (g *Service) approveDelete(ctx context.Context, ticket *ent.Ticket, ticketID, approver string) error {
+func (g *Service) approveDelete(
+	ctx context.Context,
+	ticket *ent.Ticket,
+	ticketID, approver string,
+	batchGuard *domain.BatchApprovalDispatchGuard,
+) error {
 	// Parse the event payload to extract VM info for the delete job.
 	event, err := g.client.DomainEvent.Get(ctx, ticket.EventID)
 	if err != nil {
@@ -1077,8 +1176,18 @@ func (g *Service) approveDelete(ctx context.Context, ticket *ent.Ticket, ticketI
 	if g.atomicWriter == nil {
 		return fmt.Errorf("atomic approval writer is not configured")
 	}
-	if err := g.atomicWriter.ApproveDeleteAndEnqueue(ctx, ticketID, ticket.EventID, approver, payload.VMID); err != nil {
-		return fmt.Errorf("approve delete ticket %s atomically: %w", ticketID, err)
+	var writeErr error
+	if batchGuard != nil {
+		batchWriter, ok := g.atomicWriter.(AtomicBatchChildDecisionWriter)
+		if !ok || batchWriter == nil {
+			return fmt.Errorf("guarded batch child writer is not configured")
+		}
+		writeErr = batchWriter.ApproveBatchDeleteAndEnqueue(ctx, *batchGuard, ticketID, ticket.EventID, approver, payload.VMID)
+	} else {
+		writeErr = g.atomicWriter.ApproveDeleteAndEnqueue(ctx, ticketID, ticket.EventID, approver, payload.VMID)
+	}
+	if writeErr != nil {
+		return fmt.Errorf("approve delete ticket %s atomically: %w", ticketID, writeErr)
 	}
 
 	// Audit log (best-effort).
@@ -1288,12 +1397,9 @@ func (g *Service) approveBatchParent(
 		return fmt.Errorf("batch parent %s has no child tickets", parent.ID)
 	}
 
-	var (
-		successCount int
-		failedCount  int
-		firstErr     error
-	)
-	dispatchReady := make(map[string]struct{}, len(children))
+	// Preserve synchronous approval validation while keeping every durable
+	// mutation behind the parent+River transaction below. The worker repeats
+	// validation because cluster state may change after this request returns.
 	for _, child := range children {
 		if child.Status != entticket.StatusPENDING {
 			continue
@@ -1325,170 +1431,566 @@ func (g *Service) approveBatchParent(
 			if isNonConsumingApprovalError(preflightErr) {
 				return preflightErr
 			}
-			failedCount++
-			if firstErr == nil {
-				firstErr = preflightErr
-			}
-			if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, preflightErr); persistErr != nil {
-				return persistErr
-			}
-			continue
+			// Unknown infrastructure failures must not be converted into a
+			// consumed approval. River can retry them after the durable claim.
+			logger.Warn("batch child preflight deferred to durable dispatcher",
+				zap.String("parent_ticket_id", parent.ID),
+				zap.String("child_ticket_id", child.ID),
+				zap.String("failure_reason", "BATCH_APPROVAL_PREFLIGHT_DEFERRED"),
+				zap.String("error_type", fmt.Sprintf("%T", preflightErr)),
+			)
 		}
-		dispatchReady[child.ID] = struct{}{}
 	}
+
+	batchWriter, ok := g.atomicWriter.(AtomicBatchDecisionWriter)
+	if !ok || batchWriter == nil {
+		return fmt.Errorf("atomic batch approval writer is not configured")
+	}
+	if err := batchWriter.ClaimBatchApprovalAndEnqueue(ctx, domain.BatchApprovalClaimInput{
+		ParentTicketID: parent.ID,
+		ParentEventID:  parent.EventID,
+		Approver:       approver,
+		Execution:      batchApprovalExecutionFromOptions(opts),
+	}); err != nil {
+		return fmt.Errorf("claim batch parent %s and enqueue dispatcher atomically: %w", parent.ID, err)
+	}
+
+	if g.auditLogger != nil {
+		_ = g.auditLogger.LogApproval(ctx, parent.ID, "batch_dispatch_scheduled", approver)
+	}
+	if g.notifier != nil {
+		g.notifier.OnTicketApproved(ctx, parent.ID, parent.Requester, approver)
+	}
+	logger.Info("batch parent approved and dispatcher enqueued",
+		zap.String("ticket_id", parent.ID),
+		zap.String("approver", approver),
+		zap.Int("children_total", len(children)),
+	)
+	return nil
+}
+
+// DispatchBatchApproval is the idempotent River entry point. Each child writer
+// uses its own ticket/event CAS plus River InsertTx; completed children are
+// skipped on retries and only PENDING children are eligible for dispatch.
+func (g *Service) DispatchBatchApproval(ctx context.Context, parentID string) error {
+	parent, parentEvent, children, guard, err := g.loadBatchApprovalDispatchState(ctx, parentID)
+	if err != nil {
+		return err
+	}
+	if len(children) == 0 {
+		return batchApprovalDispatchConsistencyError(parent, parentEvent, batchApprovalDispatchChildCounts{}, "parent has no child tickets")
+	}
+
+	counts := countBatchApprovalDispatchChildren(children)
+	if counts.active > 0 &&
+		(parent.Status == entticket.StatusFAILED || parentEvent.Status == domainevent.StatusFAILED) {
+		// A stale parent aggregation can commit after an explicit retry reset its
+		// children. The parent-row lock in this narrow reconciliation prevents a
+		// second stale write and permits only FAILED -> EXECUTING / PROCESSING.
+		if (parent.Status != entticket.StatusEXECUTING && parent.Status != entticket.StatusFAILED) ||
+			(parentEvent.Status != domainevent.StatusPROCESSING && parentEvent.Status != domainevent.StatusFAILED) {
+			return batchApprovalDispatchConsistencyError(parent, parentEvent, counts, "active children belong to a non-repairable parent state")
+		}
+		if reconcileErr := jobs.ReconcileFailedParentBatchStatus(ctx, g.client, parent.ID); reconcileErr != nil {
+			return fmt.Errorf("reconcile failed batch dispatch parent %s: %w", parent.ID, reconcileErr)
+		}
+		parent, parentEvent, children, guard, err = g.loadBatchApprovalDispatchState(ctx, parent.ID)
+		if err != nil {
+			return err
+		}
+		counts = countBatchApprovalDispatchChildren(children)
+	}
+
+	if counts.active == 0 {
+		return g.syncTerminalBatchApprovalDispatch(ctx, parent, parentEvent, counts)
+	}
+	if parent.Status != entticket.StatusEXECUTING || parentEvent.Status != domainevent.StatusPROCESSING {
+		return batchApprovalDispatchConsistencyError(parent, parentEvent, counts, "active children require an EXECUTING/PROCESSING parent")
+	}
+
+	opts := batchApprovalOptionsFromExecution(guard.Execution)
+	approver := strings.TrimSpace(guard.Approver)
+
 	for _, child := range children {
 		if child.Status != entticket.StatusPENDING {
 			continue
 		}
-		if _, ok := dispatchReady[child.ID]; !ok {
+		dispatchErr := g.dispatchBatchChild(ctx, child, approver, opts, guard)
+		if dispatchErr == nil {
 			continue
 		}
-
-		var approveErr error
-		switch child.OperationType {
-		case entticket.OperationTypeCREATE:
-			approveErr = g.approveCreateWithConfig(ctx, child, child.ID, approver, opts, approveCreateConfig{
-				skipClonePreflight: true,
-			})
-		case entticket.OperationTypeMODIFY:
-			childEvent := parentEvent
-			if childEvent == nil || child.EventID != childEvent.ID {
-				childEvent, approveErr = g.client.DomainEvent.Get(ctx, child.EventID)
-				if approveErr != nil {
-					failedCount++
-					if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load modify child event %s: %w", child.EventID, approveErr)); persistErr != nil {
-						return persistErr
-					}
-					continue
-				}
-			}
-			approveErr = g.approveModify(ctx, child, childEvent, child.ID, approver, opts)
-		case entticket.OperationTypeDELETE:
-			approveErr = g.approveDelete(ctx, child, child.ID, approver)
-		case entticket.OperationTypePOWER:
-			childEvent := parentEvent
-			if childEvent == nil || child.EventID != childEvent.ID {
-				childEvent, approveErr = g.client.DomainEvent.Get(ctx, child.EventID)
-				if approveErr != nil {
-					failedCount++
-					if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load power child event %s: %w", child.EventID, approveErr)); persistErr != nil {
-						return persistErr
-					}
-					continue
-				}
-			}
-			approveErr = g.approvePower(ctx, child, childEvent, child.ID, approver)
-		case entticket.OperationTypeVNC_ACCESS:
-			childEvent := parentEvent
-			if childEvent == nil || child.EventID != childEvent.ID {
-				childEvent, approveErr = g.client.DomainEvent.Get(ctx, child.EventID)
-				if approveErr != nil {
-					failedCount++
-					if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, fmt.Errorf("load vnc child event %s: %w", child.EventID, approveErr)); persistErr != nil {
-						return persistErr
-					}
-					continue
-				}
-			}
-			approveErr = g.approveVNC(ctx, child, childEvent, child.ID, approver)
-		default:
-			approveErr = fmt.Errorf("unsupported ticket operation type %s for child ticket %s", child.OperationType, child.ID)
+		if isRetryableBatchDispatchError(dispatchErr) {
+			return fmt.Errorf("dispatch batch child %s: %w", child.ID, dispatchErr)
 		}
-		if approveErr != nil {
-			if isNonConsumingApprovalError(approveErr) && successCount == 0 {
-				return approveErr
-			}
-			failedCount++
-			if firstErr == nil {
-				firstErr = approveErr
-			}
-			if persistErr := g.markChildApprovalDispatchFailed(ctx, child, approver, approveErr); persistErr != nil {
-				return persistErr
-			}
-			continue
+		if persistErr := g.markChildApprovalDispatchFailed(ctx, child, guard, approver, dispatchErr, false); persistErr != nil {
+			return persistErr
 		}
-		successCount++
 	}
-
-	parentStatus := entticket.StatusFAILED
-	parentEventStatus := domainevent.StatusFAILED
-	if successCount > 0 {
-		parentStatus = entticket.StatusEXECUTING
-		parentEventStatus = domainevent.StatusPROCESSING
+	if err := jobs.SyncParentBatchStatus(ctx, g.client, parent.ID); err != nil {
+		return fmt.Errorf("sync batch parent %s after dispatcher: %w", parent.ID, err)
 	}
+	return nil
+}
 
-	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
-		parentUpdater := txClient.Ticket.Update().
-			Where(
-				entticket.ID(parent.ID),
-				entticket.EventID(parent.EventID),
-				entticket.StatusEQ(entticket.StatusPENDING),
-			).
-			SetStatus(parentStatus).
-			SetApprover(approver)
-		if parent.OperationType == entticket.OperationTypeCREATE && strings.TrimSpace(opts.ClusterID) != "" {
-			parentUpdater = parentUpdater.SetSelectedClusterID(opts.ClusterID)
-		}
-		if parent.OperationType == entticket.OperationTypeCREATE && strings.TrimSpace(opts.StorageClass) != "" {
-			parentUpdater = parentUpdater.SetSelectedStorageClass(opts.StorageClass)
-		}
-		if failedCount > 0 {
-			rejectReason := fmt.Sprintf("%d child approvals failed during dispatch", failedCount)
-			if firstErr != nil {
-				message := strings.TrimSpace(firstErr.Error())
-				if message != "" {
-					rejectReason = message
-				}
-			}
-			parentUpdater = parentUpdater.SetRejectReason(rejectReason)
-		}
-		affected, err := parentUpdater.Save(ctx)
+func (g *Service) dispatchBatchChild(
+	ctx context.Context,
+	child *ent.Ticket,
+	approver string,
+	opts ExecutionOptions,
+	guard domain.BatchApprovalDispatchGuard,
+) error {
+	if child == nil {
+		return permanentBatchDispatchError{err: fmt.Errorf("batch child ticket is nil")}
+	}
+	switch child.OperationType {
+	case entticket.OperationTypeCREATE:
+		return g.approveCreateWithConfig(ctx, child, child.ID, approver, opts, approveCreateConfig{batchGuard: &guard})
+	case entticket.OperationTypeMODIFY:
+		childEvent, err := g.client.DomainEvent.Get(ctx, child.EventID)
 		if err != nil {
-			return fmt.Errorf("update batch parent ticket %s: %w", parent.ID, err)
+			return fmt.Errorf("load modify child event %s: %w", child.EventID, err)
 		}
-		if affected != 1 {
-			return fmt.Errorf("update batch parent ticket %s: expected 1 row, got %d", parent.ID, affected)
-		}
-		affected, err = txClient.DomainEvent.Update().
-			Where(
-				domainevent.ID(parentEvent.ID),
-				domainevent.StatusEQ(domainevent.StatusPENDING),
-			).
-			SetStatus(parentEventStatus).
-			Save(ctx)
+		return g.approveModify(ctx, child, childEvent, child.ID, approver, opts, &guard)
+	case entticket.OperationTypeDELETE:
+		return g.approveDelete(ctx, child, child.ID, approver, &guard)
+	case entticket.OperationTypePOWER:
+		childEvent, err := g.client.DomainEvent.Get(ctx, child.EventID)
 		if err != nil {
-			return fmt.Errorf("update batch parent event %s: %w", parentEvent.ID, err)
+			return fmt.Errorf("load power child event %s: %w", child.EventID, err)
 		}
-		if affected != 1 {
-			return fmt.Errorf("update batch parent event %s: expected 1 row, got %d", parentEvent.ID, affected)
+		return g.approvePower(ctx, child, childEvent, child.ID, approver, &guard)
+	case entticket.OperationTypeVNC_ACCESS:
+		childEvent, err := g.client.DomainEvent.Get(ctx, child.EventID)
+		if err != nil {
+			return fmt.Errorf("load vnc child event %s: %w", child.EventID, err)
 		}
-		return g.syncBatchProjectionByParentIDWithClient(ctx, txClient, parent.ID)
-	}); err != nil {
+		return g.approveVNC(ctx, child, childEvent, child.ID, approver)
+	default:
+		return permanentBatchDispatchError{err: fmt.Errorf(
+			"unsupported ticket operation type %s for child ticket %s",
+			child.OperationType,
+			child.ID,
+		)}
+	}
+}
+
+// FailPendingBatchApprovalDispatch is called only after River exhausts the
+// dispatcher. Partial progress is safe: a snoozed finalizer skips children it
+// already made terminal and continues until parent synchronization succeeds.
+func (g *Service) FailPendingBatchApprovalDispatch(ctx context.Context, parentID string, cause error) error {
+	if cause == nil {
+		cause = stderrors.New("batch approval dispatcher exhausted without a recorded cause")
+	}
+	parent, parentEvent, children, guard, err := g.loadBatchApprovalDispatchState(ctx, parentID)
+	if err != nil {
 		return err
 	}
-
-	if g.auditLogger != nil {
-		_ = g.auditLogger.LogApproval(ctx, parent.ID, "batch_approved", approver)
+	if len(children) == 0 {
+		return batchApprovalDispatchConsistencyError(parent, parentEvent, batchApprovalDispatchChildCounts{}, "parent has no child tickets")
 	}
-	if g.notifier != nil && successCount > 0 {
-		g.notifier.OnTicketApproved(ctx, parent.ID, parent.Requester, approver)
+	counts := countBatchApprovalDispatchChildren(children)
+	if counts.active == 0 {
+		return g.syncTerminalBatchApprovalDispatch(ctx, parent, parentEvent, counts)
 	}
 
-	if successCount == 0 {
-		if firstErr != nil {
-			return firstErr
+	// Normalize the only repairable active-parent pair before mutating any child.
+	// This guard ensures the finalizer cannot commit FAILED children underneath a
+	// successful/cancelled parent and then discover that parent CAS is forbidden.
+	if (parent.Status == entticket.StatusEXECUTING || parent.Status == entticket.StatusFAILED) &&
+		(parentEvent.Status == domainevent.StatusPROCESSING || parentEvent.Status == domainevent.StatusFAILED) {
+		if parent.Status != entticket.StatusEXECUTING || parentEvent.Status != domainevent.StatusPROCESSING {
+			if reconcileErr := jobs.ReconcileFailedParentBatchStatus(ctx, g.client, parent.ID); reconcileErr != nil {
+				return fmt.Errorf("reconcile exhausted batch parent %s: %w", parent.ID, reconcileErr)
+			}
+			parent, parentEvent, children, guard, err = g.loadBatchApprovalDispatchState(ctx, parent.ID)
+			if err != nil {
+				return err
+			}
+			counts = countBatchApprovalDispatchChildren(children)
 		}
-		return fmt.Errorf("batch parent %s approval dispatch failed for all children", parent.ID)
+	}
+	if counts.active == 0 {
+		return g.syncTerminalBatchApprovalDispatch(ctx, parent, parentEvent, counts)
+	}
+	if parent.Status != entticket.StatusEXECUTING || parentEvent.Status != domainevent.StatusPROCESSING {
+		return batchApprovalDispatchConsistencyError(parent, parentEvent, counts, "finalizer cannot safely rewrite pending children")
+	}
+	if counts.pending == 0 {
+		return jobs.SyncParentBatchStatus(ctx, g.client, parent.ID)
 	}
 
-	logger.Info("batch parent approved and dispatched",
-		zap.String("ticket_id", parent.ID),
-		zap.String("approver", approver),
-		zap.Int("children_total", len(children)),
-		zap.Int("children_dispatched", successCount),
-		zap.Int("children_failed", failedCount),
-	)
+	for _, child := range children {
+		if child.Status != entticket.StatusPENDING {
+			continue
+		}
+		if err := g.markChildApprovalDispatchFailed(ctx, child, guard, guard.Approver, cause, true); err != nil {
+			return err
+		}
+	}
+	if err := jobs.SyncParentBatchStatus(ctx, g.client, parent.ID); err != nil {
+		return fmt.Errorf("sync exhausted batch parent %s: %w", parent.ID, err)
+	}
 	return nil
+}
+
+type batchApprovalDispatchChildCounts struct {
+	total     int
+	success   int
+	failed    int
+	cancelled int
+	pending   int
+	active    int
+}
+
+func countBatchApprovalDispatchChildren(children []*ent.Ticket) batchApprovalDispatchChildCounts {
+	var counts batchApprovalDispatchChildCounts
+	for _, child := range children {
+		if child == nil {
+			continue
+		}
+		counts.total++
+		if child.Status == entticket.StatusPENDING {
+			counts.pending++
+		}
+		switch child.Status {
+		case entticket.StatusSUCCESS:
+			counts.success++
+		case entticket.StatusFAILED, entticket.StatusREJECTED:
+			counts.failed++
+		case entticket.StatusCANCELLED:
+			counts.cancelled++
+		default:
+			counts.active++
+		}
+	}
+	return counts
+}
+
+func (g *Service) syncTerminalBatchApprovalDispatch(
+	ctx context.Context,
+	parent *ent.Ticket,
+	parentEvent *ent.DomainEvent,
+	counts batchApprovalDispatchChildCounts,
+) error {
+	expectedParent, expectedEvent, ok := terminalBatchApprovalDispatchOutcome(counts)
+	if !ok {
+		return batchApprovalDispatchConsistencyError(parent, parentEvent, counts, "child set is not terminal")
+	}
+	parentPairMatches := parent != nil && parentEvent != nil &&
+		parent.Status == expectedParent && parentEvent.Status == expectedEvent
+	activePairCanConverge := parent != nil && parentEvent != nil &&
+		parent.Status == entticket.StatusEXECUTING && parentEvent.Status == domainevent.StatusPROCESSING
+	if !parentPairMatches && !activePairCanConverge {
+		return batchApprovalDispatchConsistencyError(
+			parent,
+			parentEvent,
+			counts,
+			fmt.Sprintf("terminal children require parent/event %s/%s", expectedParent, expectedEvent),
+		)
+	}
+	// Even an already matching terminal pair is synchronized so projection
+	// counters cannot remain stale after a duplicate dispatcher delivery.
+	return jobs.SyncParentBatchStatus(ctx, g.client, parent.ID)
+}
+
+func terminalBatchApprovalDispatchOutcome(
+	counts batchApprovalDispatchChildCounts,
+) (ticketStatus entticket.Status, eventStatus domainevent.Status, terminal bool) {
+	if counts.total == 0 || counts.active != 0 {
+		return "", "", false
+	}
+	switch {
+	case counts.success == counts.total:
+		return entticket.StatusSUCCESS, domainevent.StatusCOMPLETED, true
+	case counts.cancelled == counts.total:
+		return entticket.StatusCANCELLED, domainevent.StatusCANCELLED, true
+	default:
+		return entticket.StatusFAILED, domainevent.StatusFAILED, true
+	}
+}
+
+func (g *Service) loadBatchApprovalDispatchState(
+	ctx context.Context,
+	parentID string,
+) (loadedParent *ent.Ticket, loadedParentEvent *ent.DomainEvent, loadedChildren []*ent.Ticket, guard domain.BatchApprovalDispatchGuard, loadErr error) {
+	parentID = strings.TrimSpace(parentID)
+	parent, parentEvent, children, err := g.loadBatchApprovalDispatchStateSnapshot(ctx, parentID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil, nil, domain.BatchApprovalDispatchGuard{}, &jobs.BatchApprovalDispatchConsistencyError{
+				BatchID: parentID,
+				Detail:  "durable parent ticket or parent event is missing",
+				Cause:   err,
+			}
+		}
+		return parent, parentEvent, children, domain.BatchApprovalDispatchGuard{}, err
+	}
+	batchWriter, ok := g.atomicWriter.(AtomicBatchDecisionWriter)
+	if !ok || batchWriter == nil {
+		return parent, parentEvent, children, domain.BatchApprovalDispatchGuard{}, batchApprovalDispatchConsistencyError(
+			parent,
+			parentEvent,
+			countBatchApprovalDispatchChildren(children),
+			"exact batch dispatch graph validator is not configured",
+		)
+	}
+	guard, err = batchWriter.ValidateBatchApprovalDispatchGraph(ctx, parent.ID, parent.EventID)
+	if err != nil {
+		var invalidGraph *domain.BatchApprovalDispatchGraphInvalidError
+		if !stderrors.As(err, &invalidGraph) {
+			return parent, parentEvent, children, domain.BatchApprovalDispatchGuard{}, fmt.Errorf(
+				"validate batch approval dispatch graph %s: %w",
+				parent.ID,
+				err,
+			)
+		}
+		consistencyErr := batchApprovalDispatchConsistencyError(
+			parent,
+			parentEvent,
+			countBatchApprovalDispatchChildren(children),
+			"exact parent, projection, child, and payload graph validation failed",
+		)
+		var typed *jobs.BatchApprovalDispatchConsistencyError
+		if stderrors.As(consistencyErr, &typed) {
+			typed.Cause = err
+		}
+		return parent, parentEvent, children, domain.BatchApprovalDispatchGuard{}, consistencyErr
+	}
+
+	// Decisions are made from a fresh post-validation snapshot. Every child
+	// mutation also revalidates guard.GraphFingerprint under the parent lock in
+	// its own write transaction, closing the remaining post-reload window.
+	parent, parentEvent, children, err = g.loadBatchApprovalDispatchStateSnapshot(ctx, parent.ID)
+	if err != nil {
+		if ent.IsNotFound(err) {
+			return nil, nil, nil, domain.BatchApprovalDispatchGuard{}, &jobs.BatchApprovalDispatchConsistencyError{
+				BatchID: parentID,
+				Detail:  "durable parent ticket or parent event disappeared after validation",
+				Cause:   err,
+			}
+		}
+		return parent, parentEvent, children, domain.BatchApprovalDispatchGuard{}, err
+	}
+	if parent.ID != guard.ParentTicketID || parent.EventID != guard.ParentEventID {
+		return parent, parentEvent, children, domain.BatchApprovalDispatchGuard{}, batchApprovalDispatchConsistencyError(
+			parent,
+			parentEvent,
+			countBatchApprovalDispatchChildren(children),
+			"parent identity changed after exact graph validation",
+		)
+	}
+	return parent, parentEvent, children, guard, nil
+}
+
+func (g *Service) loadBatchApprovalDispatchStateSnapshot(
+	ctx context.Context,
+	parentID string,
+) (loadedParent *ent.Ticket, loadedParentEvent *ent.DomainEvent, loadedChildren []*ent.Ticket, loadErr error) {
+	parentID = strings.TrimSpace(parentID)
+	parent, err := g.client.Ticket.Get(ctx, parentID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load batch dispatch parent %s: %w", parentID, err)
+	}
+	parentEvent, err := g.client.DomainEvent.Get(ctx, parent.EventID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load batch dispatch parent event %s: %w", parent.EventID, err)
+	}
+	children, err := g.client.Ticket.Query().
+		Where(entticket.ParentTicketIDEQ(parent.ID)).
+		Order(ent.Asc(entticket.FieldCreatedAt), ent.Asc(entticket.FieldID)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("list batch dispatch children %s: %w", parent.ID, err)
+	}
+	if !batchParentEventIdentityMatches(parent, parentEvent) {
+		return parent, parentEvent, children, batchApprovalDispatchConsistencyError(
+			parent,
+			parentEvent,
+			countBatchApprovalDispatchChildren(children),
+			"parent ticket and domain event identity or operation do not match",
+		)
+	}
+	childEventIDs := make([]string, 0, len(children))
+	for _, child := range children {
+		childEventIDs = append(childEventIDs, strings.TrimSpace(child.EventID))
+	}
+	childEvents, err := g.client.DomainEvent.Query().
+		Where(domainevent.IDIn(childEventIDs...)).
+		All(ctx)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load batch dispatch child events %s: %w", parent.ID, err)
+	}
+	childEventsByID := make(map[string]*ent.DomainEvent, len(childEvents))
+	for _, childEvent := range childEvents {
+		childEventsByID[childEvent.ID] = childEvent
+	}
+	for _, child := range children {
+		if !batchChildEventIdentityMatches(parent, child, childEventsByID[strings.TrimSpace(child.EventID)]) {
+			return parent, parentEvent, children, batchApprovalDispatchConsistencyError(
+				parent,
+				parentEvent,
+				countBatchApprovalDispatchChildren(children),
+				fmt.Sprintf("child ticket %s and domain event identity or payload do not match", child.ID),
+			)
+		}
+	}
+	return parent, parentEvent, children, nil
+}
+
+func batchChildEventIdentityMatches(parent, child *ent.Ticket, event *ent.DomainEvent) bool {
+	if parent == nil || child == nil || event == nil ||
+		strings.TrimSpace(child.ParentTicketID) != strings.TrimSpace(parent.ID) ||
+		child.OperationType != parent.OperationType ||
+		strings.TrimSpace(child.Requester) == "" ||
+		strings.TrimSpace(child.Requester) != strings.TrimSpace(parent.Requester) ||
+		strings.TrimSpace(child.EventID) != strings.TrimSpace(event.ID) ||
+		strings.TrimSpace(event.CreatedBy) != strings.TrimSpace(child.Requester) ||
+		strings.TrimSpace(event.AggregateType) != "vm" ||
+		strings.TrimSpace(event.AggregateID) == "" {
+		return false
+	}
+	aggregateID := strings.TrimSpace(event.AggregateID)
+	switch child.OperationType {
+	case entticket.OperationTypeCREATE:
+		if event.EventType != string(domain.EventVMCreationRequested) {
+			return false
+		}
+		var payload domain.VMCreationPayload
+		return json.Unmarshal(event.Payload, &payload) == nil && strings.TrimSpace(payload.ServiceID) == aggregateID
+	case entticket.OperationTypeMODIFY:
+		if event.EventType != string(domain.EventVMModifyRequested) {
+			return false
+		}
+		var payload domain.VMModifyPayload
+		return json.Unmarshal(event.Payload, &payload) == nil && strings.TrimSpace(payload.VMID) == aggregateID
+	case entticket.OperationTypeDELETE:
+		if event.EventType != string(domain.EventVMDeletionRequested) {
+			return false
+		}
+		var payload domain.VMDeletePayload
+		return json.Unmarshal(event.Payload, &payload) == nil && strings.TrimSpace(payload.VMID) == aggregateID
+	case entticket.OperationTypePOWER:
+		var payload domain.VMPowerPayload
+		if json.Unmarshal(event.Payload, &payload) != nil || strings.TrimSpace(payload.VMID) != aggregateID {
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(payload.Operation)) {
+		case powerOperationStart:
+			return event.EventType == string(domain.EventVMStartRequested)
+		case powerOperationStop:
+			return event.EventType == string(domain.EventVMStopRequested)
+		case powerOperationRestart:
+			return event.EventType == string(domain.EventVMRestartRequested)
+		default:
+			return false
+		}
+	default:
+		return false
+	}
+}
+
+func batchApprovalDispatchConsistencyError(
+	parent *ent.Ticket,
+	parentEvent *ent.DomainEvent,
+	counts batchApprovalDispatchChildCounts,
+	detail string,
+) error {
+	err := &jobs.BatchApprovalDispatchConsistencyError{
+		PendingChildren: counts.pending,
+		ActiveChildren:  counts.active,
+		Detail:          detail,
+	}
+	if parent != nil {
+		err.BatchID = parent.ID
+		err.ParentStatus = parent.Status.String()
+	}
+	if parentEvent != nil {
+		err.ParentEventStatus = parentEvent.Status.String()
+	}
+	return err
+}
+
+type permanentBatchDispatchError struct{ err error }
+
+func (e permanentBatchDispatchError) Error() string { return e.err.Error() }
+func (e permanentBatchDispatchError) Unwrap() error { return e.err }
+
+func isRetryableBatchDispatchError(err error) bool {
+	if err == nil {
+		return false
+	}
+	var permanent permanentBatchDispatchError
+	if stderrors.As(err, &permanent) {
+		return false
+	}
+	if stderrors.Is(err, context.Canceled) || stderrors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	appErr, ok := apperrors.IsAppError(err)
+	if !ok {
+		// Unknown errors include database/provider failures. Preserve PENDING and
+		// let River retry rather than consuming a potentially transient failure.
+		return true
+	}
+	return appErr.HTTPStatus != http.StatusBadRequest
+}
+
+func batchApprovalExecutionFromOptions(opts ExecutionOptions) domain.BatchApprovalExecutionOptions {
+	opts = normalizeExecutionOptions(opts)
+	return domain.BatchApprovalExecutionOptions{
+		ClusterID:       opts.ClusterID,
+		StorageClass:    opts.StorageClass,
+		DVAccessModes:   cloneStringSlice(opts.DVAccessModes),
+		DVVolumeMode:    opts.DVVolumeMode,
+		EnableOverride:  opts.EnableOverride,
+		CPURequest:      opts.CPURequest,
+		CPULimit:        opts.CPULimit,
+		MemoryRequestGi: opts.MemoryRequestGi,
+		MemoryLimitGi:   opts.MemoryLimitGi,
+		DiskGB:          opts.DiskGB,
+	}
+}
+
+func batchApprovalOptionsFromExecution(persisted domain.BatchApprovalExecutionOptions) ExecutionOptions {
+	return normalizeExecutionOptions(ExecutionOptions{
+		ClusterID:       persisted.ClusterID,
+		StorageClass:    persisted.StorageClass,
+		DVAccessModes:   cloneStringSlice(persisted.DVAccessModes),
+		DVVolumeMode:    persisted.DVVolumeMode,
+		EnableOverride:  persisted.EnableOverride,
+		CPURequest:      persisted.CPURequest,
+		CPULimit:        persisted.CPULimit,
+		MemoryRequestGi: persisted.MemoryRequestGi,
+		MemoryLimitGi:   persisted.MemoryLimitGi,
+		DiskGB:          persisted.DiskGB,
+	})
+}
+
+// BatchApprovalExecutionFromTicket reloads the durable execution plan used by
+// retry scheduling. Legacy parents without a snapshot retain their selected
+// cluster/storage values as a compatibility fallback.
+func BatchApprovalExecutionFromTicket(parent *ent.Ticket) (domain.BatchApprovalExecutionOptions, error) {
+	if parent == nil {
+		return domain.BatchApprovalExecutionOptions{}, fmt.Errorf("batch parent ticket is required")
+	}
+	persisted := domain.BatchApprovalExecutionOptions{
+		ClusterID:    strings.TrimSpace(parent.SelectedClusterID),
+		StorageClass: strings.TrimSpace(parent.SelectedStorageClass),
+	}
+	if raw, ok := parent.ModifiedSpec["batch_approval_execution"]; ok {
+		encoded, err := json.Marshal(raw)
+		if err != nil {
+			return domain.BatchApprovalExecutionOptions{}, fmt.Errorf("marshal persisted execution plan: %w", err)
+		}
+		if err := json.Unmarshal(encoded, &persisted); err != nil {
+			return domain.BatchApprovalExecutionOptions{}, fmt.Errorf("decode persisted execution plan: %w", err)
+		}
+	}
+	persisted.ClusterID = strings.TrimSpace(persisted.ClusterID)
+	persisted.StorageClass = strings.TrimSpace(persisted.StorageClass)
+	persisted.DVVolumeMode = strings.TrimSpace(persisted.DVVolumeMode)
+	persisted.DVAccessModes = cloneStringSlice(persisted.DVAccessModes)
+	return persisted, nil
 }
 
 func (g *Service) rejectBatchParent(
@@ -1497,26 +1999,13 @@ func (g *Service) rejectBatchParent(
 	approver,
 	reason string,
 ) error {
-	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
-		if err := updatePendingTicketEventDecisionPair(
-			ctx,
-			txClient,
-			parent.ID,
-			parent.EventID,
-			entticket.StatusREJECTED,
-			domainevent.StatusCANCELLED,
-			approver,
-			reason,
-		); err != nil {
-			return fmt.Errorf("reject batch parent ticket %s: %w", parent.ID, err)
-		}
-
-		children, err := txClient.Ticket.Query().
-			Where(entticket.ParentTicketIDEQ(parent.ID)).
-			All(ctx)
+	if err := withDecisionEntTx(ctx, g.client, func(tx *ent.Tx) error {
+		children, err := jobs.ValidateParentBatchChildrenInTx(ctx, tx, parent)
 		if err != nil {
-			return fmt.Errorf("list child tickets for batch reject %s: %w", parent.ID, err)
+			return fmt.Errorf("validate child tickets for batch reject %s: %w", parent.ID, err)
 		}
+		txClient := tx.Client()
+		sort.Slice(children, func(i, j int) bool { return children[i].ID < children[j].ID })
 		for _, child := range children {
 			if child.Status != entticket.StatusPENDING {
 				continue
@@ -1533,7 +2022,19 @@ func (g *Service) rejectBatchParent(
 				return fmt.Errorf("reject batch child %s: %w", child.ID, err)
 			}
 		}
-		return g.syncBatchProjectionByParentIDWithClient(ctx, txClient, parent.ID)
+		if err := updatePendingTicketEventDecisionPair(
+			ctx,
+			txClient,
+			parent.ID,
+			parent.EventID,
+			entticket.StatusREJECTED,
+			domainevent.StatusCANCELLED,
+			approver,
+			reason,
+		); err != nil {
+			return fmt.Errorf("reject batch parent ticket %s: %w", parent.ID, err)
+		}
+		return g.syncBatchProjectionByParentWithClient(ctx, txClient, parent)
 	}); err != nil {
 		return err
 	}
@@ -1548,26 +2049,13 @@ func (g *Service) rejectBatchParent(
 }
 
 func (g *Service) cancelBatchParent(ctx context.Context, parent *ent.Ticket, requester string) error {
-	if err := withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
-		if err := updatePendingTicketEventDecisionPair(
-			ctx,
-			txClient,
-			parent.ID,
-			parent.EventID,
-			entticket.StatusCANCELLED,
-			domainevent.StatusCANCELLED,
-			"",
-			"",
-		); err != nil {
-			return fmt.Errorf("set batch parent CANCELLED for ticket %s: %w", parent.ID, err)
-		}
-
-		children, err := txClient.Ticket.Query().
-			Where(entticket.ParentTicketIDEQ(parent.ID)).
-			All(ctx)
+	if err := withDecisionEntTx(ctx, g.client, func(tx *ent.Tx) error {
+		children, err := jobs.ValidateParentBatchChildrenInTx(ctx, tx, parent)
 		if err != nil {
-			return fmt.Errorf("list child tickets for batch cancel %s: %w", parent.ID, err)
+			return fmt.Errorf("validate child tickets for batch cancel %s: %w", parent.ID, err)
 		}
+		txClient := tx.Client()
+		sort.Slice(children, func(i, j int) bool { return children[i].ID < children[j].ID })
 		for _, child := range children {
 			if child.Status != entticket.StatusPENDING {
 				continue
@@ -1584,7 +2072,19 @@ func (g *Service) cancelBatchParent(ctx context.Context, parent *ent.Ticket, req
 				return fmt.Errorf("cancel batch child %s: %w", child.ID, err)
 			}
 		}
-		return g.syncBatchProjectionByParentIDWithClient(ctx, txClient, parent.ID)
+		if err := updatePendingTicketEventDecisionPair(
+			ctx,
+			txClient,
+			parent.ID,
+			parent.EventID,
+			entticket.StatusCANCELLED,
+			domainevent.StatusCANCELLED,
+			"",
+			"",
+		); err != nil {
+			return fmt.Errorf("set batch parent CANCELLED for ticket %s: %w", parent.ID, err)
+		}
+		return g.syncBatchProjectionByParentWithClient(ctx, txClient, parent)
 	}); err != nil {
 		return err
 	}
@@ -1607,7 +2107,21 @@ func updateBatchChildDecisionPair(
 	if child == nil {
 		return fmt.Errorf("batch child ticket is nil")
 	}
-	return updatePendingTicketEventDecisionPair(ctx, txClient, child.ID, child.EventID, ticketStatus, eventStatus, approver, reason)
+	parentTicketID := strings.TrimSpace(child.ParentTicketID)
+	if parentTicketID == "" {
+		return fmt.Errorf("batch child ticket %s has no parent identity", child.ID)
+	}
+	return updatePendingTicketEventDecisionPairWithParent(
+		ctx,
+		txClient,
+		child.ID,
+		child.EventID,
+		parentTicketID,
+		ticketStatus,
+		eventStatus,
+		approver,
+		reason,
+	)
 }
 
 func updatePendingTicketEventDecisionPair(
@@ -1615,6 +2129,30 @@ func updatePendingTicketEventDecisionPair(
 	txClient *ent.Client,
 	ticketID string,
 	eventID string,
+	ticketStatus entticket.Status,
+	eventStatus domainevent.Status,
+	approver string,
+	reason string,
+) error {
+	return updatePendingTicketEventDecisionPairWithParent(
+		ctx,
+		txClient,
+		ticketID,
+		eventID,
+		"",
+		ticketStatus,
+		eventStatus,
+		approver,
+		reason,
+	)
+}
+
+func updatePendingTicketEventDecisionPairWithParent(
+	ctx context.Context,
+	txClient *ent.Client,
+	ticketID string,
+	eventID string,
+	parentTicketID string,
 	ticketStatus entticket.Status,
 	eventStatus domainevent.Status,
 	approver string,
@@ -1633,6 +2171,11 @@ func updatePendingTicketEventDecisionPair(
 			entticket.StatusEQ(entticket.StatusPENDING),
 		).
 		SetStatus(ticketStatus)
+	if parentTicketID != "" {
+		ticketUpdate = ticketUpdate.Where(entticket.ParentTicketIDEQ(parentTicketID))
+	} else {
+		ticketUpdate = ticketUpdate.Where(entticket.ParentTicketIDIsNil())
+	}
 	if strings.TrimSpace(approver) != "" {
 		ticketUpdate = ticketUpdate.SetApprover(approver)
 	}
@@ -1665,34 +2208,47 @@ func updatePendingTicketEventDecisionPair(
 func (g *Service) markChildApprovalDispatchFailed(
 	ctx context.Context,
 	child *ent.Ticket,
+	guard domain.BatchApprovalDispatchGuard,
 	approver string,
 	cause error,
+	exhausted bool,
 ) error {
 	if child == nil {
 		return nil
 	}
-	message := strings.TrimSpace(cause.Error())
-	if message == "" {
-		message = "child approval dispatch failed"
+	publicReason := classifyBatchApprovalDispatchFailure(cause, exhausted)
+	logger.Warn("batch child dispatch failed",
+		zap.String("parent_ticket_id", strings.TrimSpace(guard.ParentTicketID)),
+		zap.String("child_ticket_id", child.ID),
+		zap.String("failure_reason", publicReason),
+		zap.String("error_type", fmt.Sprintf("%T", cause)),
+	)
+	batchWriter, ok := g.atomicWriter.(AtomicBatchChildDecisionWriter)
+	if !ok || batchWriter == nil {
+		return fmt.Errorf("guarded batch child writer is not configured")
 	}
-	if len(message) > 512 {
-		message = message[:512]
+	if err := batchWriter.FailBatchApprovalChildDispatch(
+		ctx,
+		guard,
+		child.ID,
+		child.EventID,
+		approver,
+		publicReason,
+	); err != nil {
+		return fmt.Errorf("mark child ticket %s dispatch failure: %w", child.ID, err)
 	}
-	return withDecisionTx(ctx, g.client, func(txClient *ent.Client) error {
-		if err := updatePendingTicketEventDecisionPair(
-			ctx,
-			txClient,
-			child.ID,
-			child.EventID,
-			entticket.StatusFAILED,
-			domainevent.StatusFAILED,
-			approver,
-			message,
-		); err != nil {
-			return fmt.Errorf("mark child ticket %s dispatch failure: %w", child.ID, err)
-		}
-		return nil
-	})
+	return nil
+}
+
+func classifyBatchApprovalDispatchFailure(cause error, exhausted bool) string {
+	if exhausted {
+		return domain.BatchApprovalDispatchFailureExhausted
+	}
+	var permanent permanentBatchDispatchError
+	if stderrors.As(cause, &permanent) {
+		return domain.BatchApprovalDispatchFailureUnsupported
+	}
+	return domain.BatchApprovalDispatchFailureValidation
 }
 
 func (g *Service) isBatchParentTicket(
@@ -1703,7 +2259,7 @@ func (g *Service) isBatchParentTicket(
 	if ticket == nil || event == nil {
 		return false, nil
 	}
-	if !isBatchEventType(event.EventType) {
+	if !batchParentEventIdentityMatches(ticket, event) {
 		return false, nil
 	}
 	hasChildren, err := g.client.Ticket.Query().
@@ -1715,19 +2271,36 @@ func (g *Service) isBatchParentTicket(
 	return hasChildren, nil
 }
 
-func isBatchEventType(eventType string) bool {
-	switch eventType {
-	case string(domain.EventBatchCreateRequested), string(domain.EventBatchModifyRequested), string(domain.EventBatchDeleteRequested), string(domain.EventBatchPowerRequested):
-		return true
+func batchParentEventIdentityMatches(parent *ent.Ticket, event *ent.DomainEvent) bool {
+	if parent == nil || event == nil || strings.TrimSpace(parent.ParentTicketID) != "" {
+		return false
+	}
+	if strings.TrimSpace(parent.EventID) != strings.TrimSpace(event.ID) ||
+		strings.TrimSpace(event.AggregateType) != "batch" ||
+		strings.TrimSpace(event.AggregateID) != strings.TrimSpace(parent.ID) ||
+		strings.TrimSpace(parent.Requester) == "" ||
+		strings.TrimSpace(event.CreatedBy) != strings.TrimSpace(parent.Requester) {
+		return false
+	}
+	switch parent.OperationType {
+	case entticket.OperationTypeCREATE:
+		return event.EventType == string(domain.EventBatchCreateRequested)
+	case entticket.OperationTypeMODIFY:
+		return event.EventType == string(domain.EventBatchModifyRequested)
+	case entticket.OperationTypeDELETE:
+		return event.EventType == string(domain.EventBatchDeleteRequested)
+	case entticket.OperationTypePOWER:
+		return event.EventType == string(domain.EventBatchPowerRequested)
 	default:
 		return false
 	}
 }
 
-func (g *Service) syncBatchProjectionByParentIDWithClient(ctx context.Context, client *ent.Client, parentTicketID string) error {
-	if client == nil || strings.TrimSpace(parentTicketID) == "" {
-		return nil
+func (g *Service) syncBatchProjectionByParentWithClient(ctx context.Context, client *ent.Client, parent *ent.Ticket) error {
+	if client == nil || parent == nil || strings.TrimSpace(parent.ID) == "" {
+		return fmt.Errorf("batch projection sync requires an exact parent ticket")
 	}
+	parentTicketID := strings.TrimSpace(parent.ID)
 	children, err := client.Ticket.Query().
 		Where(entticket.ParentTicketIDEQ(parentTicketID)).
 		All(ctx)
@@ -1735,7 +2308,7 @@ func (g *Service) syncBatchProjectionByParentIDWithClient(ctx context.Context, c
 		return fmt.Errorf("list child tickets for batch projection %s: %w", parentTicketID, err)
 	}
 	if len(children) == 0 {
-		return nil
+		return fmt.Errorf("batch projection %s has no child tickets", parentTicketID)
 	}
 
 	var (
@@ -1771,23 +2344,48 @@ func (g *Service) syncBatchProjectionByParentIDWithClient(ctx context.Context, c
 		status = entbatchticket.StatusFAILED
 	}
 
-	if _, err := client.BatchTicket.UpdateOneID(parentTicketID).
+	expectedBatchType, ok := batchProjectionTypeForOperation(parent.OperationType)
+	if !ok {
+		return fmt.Errorf("batch projection %s has unsupported parent operation %s", parentTicketID, parent.OperationType)
+	}
+	affected, err := client.BatchTicket.Update().
+		Where(
+			entbatchticket.ID(parentTicketID),
+			entbatchticket.BatchTypeEQ(expectedBatchType),
+			entbatchticket.CreatedByEQ(parent.Requester),
+		).
 		SetChildCount(len(children)).
 		SetSuccessCount(successCount).
 		SetFailedCount(failedCount).
 		SetPendingCount(activeCount).
 		SetStatus(status).
-		Save(ctx); err != nil {
-		if ent.IsNotFound(err) {
-			return nil
-		}
+		Save(ctx)
+	if err != nil {
 		logger.Warn("failed to sync batch projection from gateway",
 			zap.String("parent_ticket_id", parentTicketID),
 			zap.Error(err),
 		)
 		return fmt.Errorf("sync batch projection %s: %w", parentTicketID, err)
 	}
+	if affected != 1 {
+		return fmt.Errorf("sync batch projection %s with exact identity: expected 1 row, got %d", parentTicketID, affected)
+	}
 	return nil
+}
+
+func batchProjectionTypeForOperation(operation entticket.OperationType) (entbatchticket.BatchType, bool) {
+	switch operation {
+	case entticket.OperationTypeCREATE:
+		return entbatchticket.BatchTypeBATCH_CREATE, true
+	case entticket.OperationTypeMODIFY:
+		return entbatchticket.BatchTypeBATCH_MODIFY, true
+	case entticket.OperationTypeDELETE:
+		return entbatchticket.BatchTypeBATCH_DELETE, true
+	case entticket.OperationTypePOWER:
+		return entbatchticket.BatchTypeBATCH_POWER, true
+	default:
+		return "", false
+	}
 }
 
 // ListPending returns pending tickets sorted by creation time (oldest first).
@@ -1866,6 +2464,7 @@ func buildInstanceSizeSnapshot(size *ent.InstanceSize) map[string]interface{} {
 		"sort_order":         size.SortOrder,
 		"enabled":            size.Enabled,
 		"created_by":         size.CreatedBy,
+		"updated_at":         size.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 
@@ -1916,6 +2515,7 @@ func buildTemplateSnapshot(tpl *ent.Template) map[string]interface{} {
 		"os_version":    tpl.OsVersion,
 		"enabled":       tpl.Enabled,
 		"created_by":    tpl.CreatedBy,
+		"updated_at":    tpl.UpdatedAt.UTC().Format(time.RFC3339Nano),
 	}
 }
 

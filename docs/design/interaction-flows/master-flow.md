@@ -59,7 +59,7 @@ database development.
 | ADR | Constraint | Scope |
 |-----|------------|-------|
 | **ADR-0006** | External side-effect operations use **unified async model** (request → 202 → River Queue); pure PostgreSQL transactional writes may remain synchronous | State-changing operations that coordinate external systems |
-| **ADR-0009** | River Jobs carry **EventID only** (Claim Check); DomainEvent payload is **immutable** | All River Jobs |
+| **ADR-0009** | DomainEvent workflows carry **EventID only**; a non-DomainEvent worker may carry one durable owning-row key (Claim Check). DomainEvent payload is **immutable**. | All River Jobs |
 | **ADR-0012** | Atomic transactions: Ent for ORM, **sqlc for core transactions only** | All DB operations |
 
 > **CI at a Glance**: The constraints above are enforced by automated checks. For full gate definitions and scripts, see [docs/design/ci/README.md §Scope Boundary](../ci/README.md#scope-boundary).
@@ -99,7 +99,7 @@ Every `Stage` section MUST follow this order:
 |------|----------------------|
 | **Name governance** | Platform-managed logical names follow ADR-0019 constraints and must pass centralized validation. |
 | **Write model** | Operations with external side effects (for example K8s/provider calls and external notifications) follow unified async model (`request -> 202 -> River`) per [ADR-0006 §Decision](../../adr/ADR-0006-unified-async-model.md#decision); pure PostgreSQL writes may remain synchronous inside atomic transactions. |
-| **Event integrity** | River jobs use EventID-only claim-check; event payload is immutable per [ADR-0009 §Constraint 1](../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only). |
+| **Event integrity** | DomainEvent workers use EventID-only claim-check; non-DomainEvent workers may carry one durable owning-row key. Event payload is immutable per [ADR-0009 §Constraint 1](../../adr/ADR-0009-domain-event-pattern.md#constraint-1-domainevent-payload-immutability-append-only). |
 | **Transaction boundary** | Core cross-aggregate writes use atomic Ent+sqlc transaction model per [ADR-0012 §Adopt Ent + sqlc Hybrid Mode](../../adr/ADR-0012-hybrid-transaction.md#adopt-ent-sqlc-hybrid-mode). |
 | **Delete semantics** | Primary resource rows are hard-deleted (with optional transient `DELETING`), while audit/workflow/event records are retained/archived per [ADR-0015 §13](../../adr/ADR-0015-governance-model-v2.md#13-deletion-cascade-constraints). |
 | **Batch baseline** | V1 batch model uses parent-child tickets with two-layer throttling per [ADR-0015 §19](../../adr/ADR-0015-governance-model-v2.md#19-batch-operations). |
@@ -856,7 +856,7 @@ without changing approval state semantics.
 │                                                                                              │
 │  V1 go-live path:                                                                            │
 │    1) Platform admin optionally creates an enabled webhook approval system                   │
-│    2) User submits request -> approval_tickets=PENDING                                       │
+│    2) User submits request -> tickets=PENDING                                                │
 │    3) Router selects the first enabled registry provider by sort order                       │
 │    4) Provider unavailable or unconfigured -> controlled fallback to built-in queue          │
 │    5) Shepherd executes canonical decision path and appends audit logs                       │
@@ -1012,7 +1012,7 @@ without changing approval state semantics.
 │  │  Template versioning:                                                                    │
 │  │  - User sees active version when submitting request                                    │
 │  │  - Admin may select a different version during approval                               │
-│  │  - Final template snapshotted into ApprovalTicket; VM not affected by later updates   │
+│  │  - Final template snapshotted into Ticket (`tickets`); later updates do not affect VM │
 │  │                                                                                          │
 │  │  👉 Regular user: selects template, cannot edit cloud-init                              │
 │  │  👉 Admin: can create/edit templates (image source + cloud-init)                        │
@@ -1781,9 +1781,11 @@ Summarize persistence intent after VM request submission while keeping implement
 │        │                                                                                     │
 │        ▼                                                                                     │
 │  Single transaction writes:                                                                  │
-│    1) approval_tickets: create `PENDING`                                                     │
+│    1) tickets: create `PENDING` with operation_type=`CREATE`                                 │
 │    2) domain_events: create `PENDING`                                                        │
-│    3) audit_logs: append canonical submission action                                         │
+│        │                                                                                     │
+│        ▼                                                                                     │
+│  After commit: best-effort audit + approval routing + notification trigger                   │
 │        │                                                                                     │
 │        ▼                                                                                     │
 │  Return `202 Accepted` with ticket reference for polling                                     │
@@ -1795,7 +1797,7 @@ Summarize persistence intent after VM request submission while keeping implement
 
 | Entity | Before | After |
 |------|------|------|
-| `approval_tickets` | none | `PENDING` |
+| `tickets` | none | `PENDING` |
 | `domain_events` | none | `PENDING` |
 | `vms` | none | none |
 | `river_job` | none | none |
@@ -1959,8 +1961,9 @@ Schema details, purge jobs, and index design are defined in database-layer docs.
 
 #### Purpose
 
-Define canonical batch submission/execution behavior with parent-child ticket
-model and two-layer throttling.
+Define canonical batch submission/execution behavior with a parent-child ticket
+model, two-layer throttling, serialized submission checks, bounded logical
+attempts, and fail-closed handling for ambiguous VM restart dispatches.
 
 #### Actors & Trigger
 
@@ -1982,15 +1985,15 @@ UI storyboard (parent-child queue):
 │                                  ▼                                                               │
 │  [Queue list page]                                                                                │
 │     New parent row appears: `PENDING_APPROVAL`                                                   │
-│     Columns: total/success/failed/pending + requester + updated_at                              │
+│     Columns: operation + total/success/failed/pending + created_at                              │
 │                                  │                                                               │
 │                                  ▼                                                               │
 │  [Parent row expanded]                                                                            │
-│     Child table shows per-item status + attempt_count + last_error                               │
+│     Detail adds created_by/updated_at; children show status + attempt_count + last_error          │
 │                                  │                                                               │
 │                                  ▼                                                               │
 │  [In progress / terminal handling]                                                                │
-│     `IN_PROGRESS`      -> action: Terminate pending children                                     │
+│     `IN_PROGRESS`      -> actions: Retry eligible failed / Terminate pending children            │
 │     `PARTIAL_SUCCESS`  -> action: Retry failed children                                           │
 │     `FAILED`           -> action: Retry failed children                                           │
 │     `COMPLETED`        -> action: Export result                                                   │
@@ -2006,13 +2009,14 @@ UI storyboard (parent-child queue):
 │  1. User/Admin selects batch items in UI                                                        │
 │                                                                                                  │
 │  2. Frontend: POST /api/v1/vms/batch                                                            │
-│     └── includes idempotency key + operation payload                                             │
+│     └── includes a stable request_id + operation payload                                      │
 │                                                                                                  │
-│  3. Backend pre-checks:                                                                          │
-│     • Layer 1 (global): pending parent threshold + API rate                                     │
-│     • Layer 2 (user): pending parent/child limits + cooldown                                    │
+│  3. Backend serializes the mutable checks in the business transaction:                           │
+│     • acquire global submission, actor, and request guards in canonical order                   │
+│     • recheck request_id replay before evaluating current quotas/cooldown                        │
 │                                                                                                  │
-│  4. Atomic transaction:                                                                          │
+│  4. Same atomic transaction:                                                                     │
+│     • Evaluate global and user pending/rate limits from the locked snapshot                       │
 │     • Insert parent batch ticket                                                                 │
 │     • Insert all child tickets                                                                   │
 │     • If any child insert fails -> rollback all                                                 │
@@ -2030,21 +2034,24 @@ UI storyboard (parent-child queue):
 │ BATCH EXECUTION FLOW                                                                             │
 ├──────────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                                  │
-│  1. Parent enters APPROVED/IN_PROGRESS                                                          │
+│  1. Approval transaction moves the workflow parent Ticket/Event to                              │
+│     EXECUTING/PROCESSING and the API projection to IN_PROGRESS                                  │
 │                                                                                                  │
 │  2. Workers consume child tickets/jobs independently                                             │
+│     • Initial dispatch records logical attempt 1                                                 │
 │     • Child success/failure updates parent aggregate counters                                    │
 │     • Failures are isolated; successful children are not rolled back                             │
 │                                                                                                  │
 │  3. Parent terminal state calculation:                                                           │
 │     • COMPLETED: all children succeeded                                                          │
-│     • FAILED: all children failed                                                                │
-│     • PARTIAL_SUCCESS: mixed success/failure                                                     │
-│     • CANCELLED: pending children terminated by user/admin                                       │
+│     • CANCELLED: every child is cancelled                                                        │
+│     • PARTIAL_SUCCESS: at least one success plus failed/cancelled siblings                       │
+│     • FAILED: terminal children with no success, except the all-cancelled case                   │
 │                                                                                                  │
 │  4. Frontend actions during/after execution:                                                     │
-│     • Retry failed children: POST /api/v1/vms/batch/{batch_id}/retry                             │
+│     • Retry failed children below the three-attempt cap                                          │
 │     • Terminate pending children: POST /api/v1/vms/batch/{batch_id}/cancel                       │
+│     • Stale/concurrent retry or cancel conflicts never start duplicate work                      │
 │                                                                                                  │
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
@@ -2063,18 +2070,108 @@ UI storyboard (parent-child queue):
 └──────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+Submission and retry invariants:
+
+- A non-empty `request_id` is stored as PostgreSQL `text`; it is not truncated,
+  narrowed to `varchar`, or discarded because of its length. A replay is scoped
+  by requester and requested operation and returns the existing parent. Power
+  `START`, `STOP`, and `RESTART` keep separate scopes.
+- The attempt migration does not alter the `request_id` column or normalize,
+  clear, deduplicate, or otherwise rewrite any historical request-ID value.
+- Submission guards, the post-lock replay lookup, current rate-limit reads, and
+  parent/child persistence share the business transaction. This closes the
+  same-version read-before-write race; rollout restrictions for older writers
+  are defined in
+  [database/migrations.md §Batch Retry and Idempotency Rollout](../database/migrations.md#batch-retry-and-idempotency-rollout).
+- `VMPowerPayload.dispatch_mode` is immutable provenance and accepts only
+  `direct|ticket`. Before any new-release instance starts and automatically
+  registers its worker, the maintenance window freezes all old-version direct,
+  approval, external-approval, and batch power producers. Old workers
+  exclusively drain legacy jobs, and the admission report must prove both zero
+  unresolved `PENDING` Events (with or without Tickets) with a missing/invalid
+  mode and zero runnable `vm_power` jobs that reference one. Every remaining
+  `PENDING` request is terminated through a reviewed normal application flow
+  and resubmitted only through the new version. A direct orphan `PENDING` Event
+  with no Ticket and no runnable old-worker job has no current safe transition
+  and is a hard rollout blocker, not a quarantine candidate. Uncertain
+  `PROCESSING` START/STOP work
+  and every `PROCESSING` RESTART are quarantined with their evidence; the
+  immutable payload is never backfilled and the operation is never replayed or
+  redispatched. The complete admission procedure is in the migration guide
+  linked above.
+- `attempt_count` counts logical child dispatches, not River's internal delivery
+  attempts. The initial dispatch counts as one; explicit retry may advance the
+  count up to three total logical attempts.
+- Initial approval atomically claims the parent/event, stores the normalized
+  execution snapshot, refreshes the projection, and inserts a parent-keyed
+  dispatcher on its dedicated queue. The job carries only the durable parent
+  ticket key under ADR-0009's owning-table claim-check exception.
+- Every retry must conditionally transition the exact execution-`FAILED` child
+  ticket; an approval-`REJECTED` child is never retryable. The paired event must
+  also match the operation-specific safe reset set: generic dispatch accepts
+  only `PENDING|FAILED|CANCELLED`, while power dispatch accepts only
+  `FAILED|CANCELLED`. Generic retry atomically resets the children, reopens the
+  already-approved parent/event, refreshes its projection, and inserts the
+  dispatcher. Power retry instead atomically inserts each replacement River
+  job. Its per-VM locks use deterministic ordering, and any stale state or
+  active equivalent job aborts the whole retry request.
+- Before any retry mutation, the durable parent ticket/event must still be
+  `EXECUTING|FAILED` / `PROCESSING|FAILED`, with matching batch identity and
+  operation. Generic retry also requires the existing approval evidence.
+  The original approver (or an explicitly authorized replacement reviewer) is
+  the durable approval attribution. After a successful retry/cancel commit the
+  handler makes a best-effort supplemental `vm.batch.retry`/`vm.batch.cancel`
+  audit call for the acting user; audit-write failure does not roll back the
+  mutation and must not be presented as durable actor attribution.
+- Cancel accepts only a matching `PENDING|EXECUTING|FAILED` parent and
+  `PENDING|PROCESSING|FAILED` parent event at the handler boundary. The
+  parent-keyed mutation transaction then commits exact `PENDING` child
+  Ticket/Event cancellation plus parent Ticket/Event/projection aggregation;
+  parent-row locking and expected-state writes make a concurrent parent change
+  fail closed.
+- Parent aggregation locks the parent row before re-reading children. A stale
+  `FAILED` parent may be reconciled only to `EXECUTING/PROCESSING` when active
+  children prove a retry race; other terminal-parent/child outcome mismatches
+  cancel the dispatcher without rewriting children.
+- A restart worker must atomically claim `PENDING -> PROCESSING` before invoking
+  the provider. A duplicate or rescued delivery that observes `PROCESSING`
+  cannot prove whether the restart was accepted, so it fails closed and leaves
+  a durable fence for operator verification instead of dispatching again.
+  Timeout, response loss, and post-dispatch persistence failure also leave the
+  child `PROCESSING/EXECUTING`; the ordinary explicit-retry endpoint cannot
+  reopen that ambiguous attempt. The conflict response sets
+  `operator_action_required=true` and supplies the
+  `operator-runbook:ambiguous-vm-restart` reconciliation path.
+- No public or administrative API releases this fence. River terminal state
+  cannot exclude a provider call that remains in flight, so an operator must
+  drain the originating worker, preserve evidence, and inspect provider state
+  without changing Event/Ticket state. Until a provider receipt/idempotency or
+  provable-cancellation protocol is implemented, no API may clear the fence
+  and the restart must never be redispatched.
+
 #### State Transitions
 
 | Scope | Transition Pattern |
 |------|---------------------|
-| Parent ticket | `PENDING_APPROVAL -> IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED` |
-| Child ticket | `PENDING -> APPROVED/REJECTED/CANCELLED -> EXECUTING -> SUCCESS|FAILED` |
+| Workflow parent Ticket (raw) | `PENDING -> EXECUTING -> SUCCESS|FAILED|CANCELLED` |
+| Workflow parent Event (raw) | `PENDING -> PROCESSING -> COMPLETED|FAILED|CANCELLED` |
+| Batch API/projection | `PENDING_APPROVAL -> IN_PROGRESS -> COMPLETED|PARTIAL_SUCCESS|FAILED|CANCELLED`; there is no public `APPROVED` parent status |
+| Approved child execution | `PENDING -> APPROVED -> EXECUTING -> SUCCESS|FAILED` |
+| Child decision/cancel branches | `PENDING -> REJECTED|CANCELLED` are terminal for that child; `REJECTED` never flows into execution |
+| Explicit child retry | `FAILED -> PENDING/EXECUTING`, only while `attempt_count < 3`; `REJECTED` cannot be reopened and requires a new batch approval request |
+| Restart dispatch fence | Event `PENDING -> PROCESSING` is a one-way provider-dispatch claim until the original worker durably persists a terminal result; no API may clear the fence or redispatch an ambiguous restart |
 
 #### Failure & Edge Cases
 
 - Global or per-user throttling rejection must return actionable retry window.
 - Child failure must not rollback successful siblings.
 - Retry/cancel must target eligible children only and recompute parent aggregate status.
+- Concurrent retry/cancel requests that lose the conditional transition must
+  return an actionable conflict without mutating newer child state.
+- Transport timeout or worker rescue must not automatically repeat an ambiguous
+  restart after its durable dispatch fence was claimed.
+- Operator verification alone never releases an ambiguous restart fence;
+  River state cannot prove that a provider request is no longer in flight.
 
 #### Authority Links
 
@@ -2087,6 +2184,11 @@ UI storyboard (parent-child queue):
 
 This stage defines interactive behavior and state semantics only.
 Queue internals, table schema, and worker tuning details are defined in phase and database docs.
+
+Field-level three-state semantics (omitted versus explicit `null` versus a
+numeric value) for administrator rate-limit overrides are not changed by this
+stage. That contract remains deferred to a separate ADR amendment and its own
+implementation change; this flow must not be read as accepting that proposal.
 
 ---
 
@@ -2220,7 +2322,7 @@ It consolidates entity states, relationship intent, and audit semantics consumed
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────────────────────┐
-│                     ApprovalTicket Status Transitions                                         │
+│                         Ticket Status Transitions                                             │
 ├─────────────────────────────────────────────────────────────────────────────────────────────┤
 │                                                                                              │
 │                        ┌───────────────────┐                                                 │
@@ -2312,17 +2414,17 @@ Compatibility note:
 │         │                                                  │                                 │
 │         ▼                                                  ▼                                 │
 │  ┌──────────────┐                               ┌──────────────────┐                        │
-│  │ role_bindings│                               │ approval_tickets │                        │
+│  │ role_bindings│                               │     tickets      │                        │
 │  │──────────────│                               │──────────────────│                        │
 │  │ user_id      │                               │ id               │                        │
 │  │ role         │                               │ type             │                        │
 │  │ resource_type│                               │ status           │                        │
-│  │ resource_id  │                               │ requester_id     │                        │
-│  └──────────────┘                               │ approver_id      │                        │
-│                                                 │ service_id       │                        │
-│                                                 │ instance_size_id │                        │
-│                                                 │ template_id      │                        │
-│                                                 │ final_*          │ ← final values at approval
+│  │ resource_id  │                               │ event_id         │                        │
+│  └──────────────┘                               │ operation_type   │                        │
+│                                                 │ requester        │                        │
+│                                                 │ approver         │                        │
+│                                                 │ selected_cluster │                        │
+│                                                 │ snapshot fields  │ ← final values at approval
 │                                                 └──────────────────┘                        │
 │                                                          │                                  │
 │  ┌──────────────┐         ┌──────────────┐              │                                  │
@@ -2678,8 +2780,8 @@ Define secure browser console access behavior for test and production environmen
 │  │     d. No pending VNC access request exists (duplicate check)                             │
 │  │                                                                                          │
 │  │  3. Create approval ticket:                                                              │
-│  │     INSERT INTO approval_tickets (type, status, requester_id, resource_id, ...)          │
-│  │     VALUES ('VNC_ACCESS_REQUESTED', 'PENDING_APPROVAL', 'user-123', 'vm-456', ...)       │
+│  │     INSERT INTO tickets (event_id, operation_type, status, requester, ...)               │
+│  │     VALUES ('event-123', 'VNC_ACCESS', 'PENDING', 'user-123', ...)                       │
 │  │                                                                                          │
 │  │  4. Notify admin for approval                                                            │
 │  │                                                                                          │
@@ -2702,7 +2804,7 @@ Define secure browser console access behavior for test and production environmen
 | Environment | Ticket | Access Outcome |
 |-------------|--------|----------------|
 | Test | no approval ticket | RBAC pass -> access grant issued -> session started |
-| Production | `PENDING_APPROVAL -> APPROVED/REJECTED` | approved -> access grant issued; rejected -> no console access |
+| Production | raw Ticket `PENDING -> APPROVED/REJECTED` | approved -> access grant issued; rejected -> no console access |
 
 ### Failure & Edge Cases
 

@@ -85,7 +85,7 @@
 ## VMService Refactoring
 
 - [x] `ValidateAndPrepare()` method (outside transaction)
-- [x] `CreateVMRecord()` — via CreateVMUseCase atomic transaction (DomainEvent + ApprovalTicket)
+- [x] `CreateVMRecord()` — via CreateVMUseCase atomic transaction (DomainEvent + Ticket)
 - [x] `ExecuteK8sCreate()` method (outside transaction)
   - [x] **Idempotency**: Kubernetes `AlreadyExists` is handled by reading the existing VM and accepting it only when `shepherd.io/event-id` matches the requested spec
   - [ ] **Adoption Logic**: generalized K8s resource exists handling remains deferred; V1 only reuses same-event resources for retry safety

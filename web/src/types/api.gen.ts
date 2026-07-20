@@ -3236,6 +3236,12 @@ export interface components {
          */
         VMBatchOperation: "CREATE" | "MODIFY" | "DELETE" | "POWER";
         /**
+         * @description Operation accepted by the generic VM batch submission endpoint.
+         * @example CREATE
+         * @enum {string}
+         */
+        VMBatchSubmitOperation: "CREATE" | "MODIFY" | "DELETE";
+        /**
          * @description Power action applied by a VM batch power request.
          * @example START
          * @enum {string}
@@ -3250,9 +3256,10 @@ export interface components {
         /**
          * @description One target item in a VM create, modify, or delete batch request.
          * @example {
-         *       "vm_id": "vm-001",
-         *       "service_id": "service-001",
-         *       "template_id": "template-001"
+         *       "service_id": "11111111-1111-4111-8111-111111111111",
+         *       "template_id": "22222222-2222-4222-8222-222222222222",
+         *       "instance_size_id": "33333333-3333-4333-8333-333333333333",
+         *       "namespace": "example-namespace"
          *     }
          */
         VMBatchChildItem: {
@@ -3264,19 +3271,19 @@ export interface components {
             /**
              * Format: uuid
              * @description Required for CREATE operation
-             * @example service-001
+             * @example 11111111-1111-4111-8111-111111111111
              */
             service_id?: string;
             /**
              * Format: uuid
              * @description Required source template identifier for CREATE operation
-             * @example template-001
+             * @example 22222222-2222-4222-8222-222222222222
              */
             template_id?: string;
             /**
              * Format: uuid
              * @description Required sizing profile identifier for CREATE operation
-             * @example instance-size-001
+             * @example 33333333-3333-4333-8333-333333333333
              */
             instance_size_id?: string;
             /**
@@ -3323,9 +3330,10 @@ export interface components {
          *       "operation": "CREATE",
          *       "items": [
          *         {
-         *           "vm_id": "vm-001",
-         *           "service_id": "service-001",
-         *           "template_id": "template-001"
+         *           "service_id": "11111111-1111-4111-8111-111111111111",
+         *           "template_id": "22222222-2222-4222-8222-222222222222",
+         *           "instance_size_id": "33333333-3333-4333-8333-333333333333",
+         *           "namespace": "example-namespace"
          *         }
          *       ],
          *       "request_id": "request-001"
@@ -3333,9 +3341,9 @@ export interface components {
          */
         VMBatchSubmitRequest: {
             /** @example CREATE */
-            operation: components["schemas"]["VMBatchOperation"];
+            operation: components["schemas"]["VMBatchSubmitOperation"];
             /**
-             * @description Client idempotency key for the batch power request
+             * @description Optional opaque client idempotency key. Leading and trailing whitespace is ignored. The key is scoped to the authenticated user and requested batch operation; reusing it returns the originally accepted batch even when the submitted items differ.
              * @example request-001
              */
             request_id?: string;
@@ -3344,9 +3352,10 @@ export interface components {
             /**
              * @example [
              *       {
-             *         "vm_id": "vm-001",
-             *         "service_id": "service-001",
-             *         "template_id": "template-001"
+             *         "service_id": "11111111-1111-4111-8111-111111111111",
+             *         "template_id": "22222222-2222-4222-8222-222222222222",
+             *         "instance_size_id": "33333333-3333-4333-8333-333333333333",
+             *         "namespace": "example-namespace"
              *       }
              *     ]
              */
@@ -3369,7 +3378,7 @@ export interface components {
             /** @example START */
             operation: components["schemas"]["VMBatchPowerAction"];
             /**
-             * @description Client idempotency key
+             * @description Optional opaque client idempotency key. Leading and trailing whitespace is ignored. The key is scoped to the authenticated user and requested power action; reusing it for the same action returns the originally accepted batch even when the submitted items differ.
              * @example request-001
              */
             request_id?: string;
@@ -3390,8 +3399,8 @@ export interface components {
          * @example {
          *       "batch_id": "batch-001",
          *       "status": "PENDING_APPROVAL",
-         *       "status_url": "https://example.com/callback",
-         *       "retry_after_seconds": 1
+         *       "status_url": "/api/v1/vms/batch/batch-001",
+         *       "retry_after_seconds": 2
          *     }
          */
         VMBatchSubmitResponse: {
@@ -3399,9 +3408,9 @@ export interface components {
             batch_id: string;
             /** @example PENDING_APPROVAL */
             status: components["schemas"]["VMBatchParentStatus"];
-            /** @example https://example.com/callback */
+            /** @example /api/v1/vms/batch/batch-001 */
             status_url: string;
-            /** @example 1 */
+            /** @example 2 */
             retry_after_seconds: number;
         };
         /**
@@ -3446,8 +3455,8 @@ export interface components {
          *       "operation": "CREATE",
          *       "status": "PENDING_APPROVAL",
          *       "child_count": 1,
-         *       "success_count": 1,
-         *       "failed_count": 1,
+         *       "success_count": 0,
+         *       "failed_count": 0,
          *       "pending_count": 1,
          *       "children": [
          *         {
@@ -3470,9 +3479,9 @@ export interface components {
             status: components["schemas"]["VMBatchParentStatus"];
             /** @example 1 */
             child_count: number;
-            /** @example 1 */
+            /** @example 0 */
             success_count: number;
-            /** @example 1 */
+            /** @example 0 */
             failed_count: number;
             /** @example 1 */
             pending_count: number;
@@ -8544,8 +8553,8 @@ export interface components {
          *       "operation": "CREATE",
          *       "status": "PENDING_APPROVAL",
          *       "child_count": 1,
-         *       "success_count": 1,
-         *       "failed_count": 1,
+         *       "success_count": 0,
+         *       "failed_count": 0,
          *       "pending_count": 1,
          *       "created_at": "2026-01-01T00:00:00Z"
          *     }
@@ -8553,11 +8562,7 @@ export interface components {
         VMBatchJobSummary: {
             /** @example resource-001 */
             id: string;
-            /**
-             * @description Batch operation type (e.g. CREATE, POWER, DELETE)
-             * @example CREATE
-             */
-            operation: string;
+            operation: components["schemas"]["VMBatchOperation"];
             /**
              * @example PENDING_APPROVAL
              * @enum {string}
@@ -8565,9 +8570,9 @@ export interface components {
             status: "PENDING_APPROVAL" | "IN_PROGRESS" | "COMPLETED" | "PARTIAL_SUCCESS" | "FAILED" | "CANCELLED";
             /** @example 1 */
             child_count: number;
-            /** @example 1 */
+            /** @example 0 */
             success_count: number;
-            /** @example 1 */
+            /** @example 0 */
             failed_count: number;
             /** @example 1 */
             pending_count: number;
@@ -8586,8 +8591,8 @@ export interface components {
          *           "operation": "CREATE",
          *           "status": "PENDING_APPROVAL",
          *           "child_count": 1,
-         *           "success_count": 1,
-         *           "failed_count": 1,
+         *           "success_count": 0,
+         *           "failed_count": 0,
          *           "pending_count": 1,
          *           "created_at": "2026-01-01T00:00:00Z"
          *         }
@@ -8607,8 +8612,8 @@ export interface components {
              *         "operation": "CREATE",
              *         "status": "PENDING_APPROVAL",
              *         "child_count": 1,
-             *         "success_count": 1,
-             *         "failed_count": 1,
+             *         "success_count": 0,
+             *         "failed_count": 0,
              *         "pending_count": 1,
              *         "created_at": "2026-01-01T00:00:00Z"
              *       }
@@ -8772,6 +8777,22 @@ export interface components {
                  * @example {
                  *       "code": "example_code",
                  *       "message": "Example message",
+                 *       "params": {}
+                 *     }
+                 */
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /** @description Removing or demoting this user would leave a system without an owner */
+        LastSystemOwnerConflict: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                /**
+                 * @example {
+                 *       "code": "LAST_OWNER_CANNOT_BE_REMOVED",
+                 *       "message": "system must have at least one owner",
                  *       "params": {}
                  *     }
                  */
@@ -9635,6 +9656,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["LastSystemOwnerConflict"];
         };
     };
     updateSystemMemberRole: {
@@ -9687,6 +9709,15 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            /** @description USER_DISABLED means the target user cannot receive a membership role; LAST_OWNER_CANNOT_BE_REMOVED means changing the role would leave the system without an owner. */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
         };
     };
     listServicesOverview: {
@@ -10359,8 +10390,8 @@ export interface operations {
                      *           "operation": "CREATE",
                      *           "status": "PENDING_APPROVAL",
                      *           "child_count": 1,
-                     *           "success_count": 1,
-                     *           "failed_count": 1,
+                     *           "success_count": 0,
+                     *           "failed_count": 0,
                      *           "pending_count": 1,
                      *           "created_at": "2026-01-01T00:00:00Z"
                      *         }
@@ -10386,7 +10417,7 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        /** @description Parent batch request containing child VM create operations. */
+        /** @description Parent batch request containing child VM CREATE, MODIFY, or DELETE operations. */
         requestBody: {
             content: {
                 /**
@@ -10394,9 +10425,10 @@ export interface operations {
                  *       "operation": "CREATE",
                  *       "items": [
                  *         {
-                 *           "vm_id": "vm-001",
-                 *           "service_id": "service-001",
-                 *           "template_id": "template-001"
+                 *           "service_id": "11111111-1111-4111-8111-111111111111",
+                 *           "template_id": "22222222-2222-4222-8222-222222222222",
+                 *           "instance_size_id": "33333333-3333-4333-8333-333333333333",
+                 *           "namespace": "example-namespace"
                  *         }
                  *       ],
                  *       "request_id": "request-001"
@@ -10416,8 +10448,8 @@ export interface operations {
                      * @example {
                      *       "batch_id": "batch-001",
                      *       "status": "PENDING_APPROVAL",
-                     *       "status_url": "https://example.com/callback",
-                     *       "retry_after_seconds": 1
+                     *       "status_url": "/api/v1/vms/batch/batch-001",
+                     *       "retry_after_seconds": 2
                      *     }
                      */
                     "application/json": components["schemas"]["VMBatchSubmitResponse"];
@@ -10426,6 +10458,7 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
             /** @description Batch request conflicts with current resource state */
             409: {
                 headers: {
@@ -10442,17 +10475,21 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            /** @description Batch power request rate limit exceeded */
+            /** @description Batch submission rate limit exceeded (BATCH_RATE_LIMITED) */
             429: {
                 headers: {
+                    /** @description Seconds until the caller should retry. */
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {
                     /**
                      * @example {
-                     *       "code": "example_code",
-                     *       "message": "Example message",
-                     *       "params": {}
+                     *       "code": "BATCH_RATE_LIMITED",
+                     *       "message": "batch submission rate limit exceeded",
+                     *       "params": {
+                     *         "retry_after_seconds": 2
+                     *       }
                      *     }
                      */
                     "application/json": components["schemas"]["Error"];
@@ -10496,8 +10533,8 @@ export interface operations {
                      * @example {
                      *       "batch_id": "batch-001",
                      *       "status": "PENDING_APPROVAL",
-                     *       "status_url": "https://example.com/callback",
-                     *       "retry_after_seconds": 1
+                     *       "status_url": "/api/v1/vms/batch/batch-001",
+                     *       "retry_after_seconds": 2
                      *     }
                      */
                     "application/json": components["schemas"]["VMBatchSubmitResponse"];
@@ -10506,17 +10543,31 @@ export interface operations {
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
-            /** @description Rate limit exceeded */
+            404: components["responses"]["NotFound"];
+            /** @description One of the target VMs already has a pending approval or active power operation */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description Batch submission rate limit exceeded (BATCH_RATE_LIMITED) */
             429: {
                 headers: {
+                    /** @description Seconds until the caller should retry. */
+                    "Retry-After"?: number;
                     [name: string]: unknown;
                 };
                 content: {
                     /**
                      * @example {
-                     *       "code": "example_code",
-                     *       "message": "Example message",
-                     *       "params": {}
+                     *       "code": "BATCH_RATE_LIMITED",
+                     *       "message": "batch submission rate limit exceeded",
+                     *       "params": {
+                     *         "retry_after_seconds": 2
+                     *       }
                      *     }
                      */
                     "application/json": components["schemas"]["Error"];
@@ -10551,8 +10602,8 @@ export interface operations {
                      *       "operation": "CREATE",
                      *       "status": "PENDING_APPROVAL",
                      *       "child_count": 1,
-                     *       "success_count": 1,
-                     *       "failed_count": 1,
+                     *       "success_count": 0,
+                     *       "failed_count": 0,
                      *       "pending_count": 1,
                      *       "children": [
                      *         {
@@ -10587,7 +10638,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description Optional reviewer inputs used when retrying failed batch children. */
+        /** @description Optional replacement review inputs for a failed CREATE batch. Omit the request body for execution-only retries and for MODIFY, DELETE, or POWER batches. Supplying any body requires `builtin_approval:approve`; non-CREATE batches reject a body as not applicable. */
         requestBody?: {
             content: {
                 "application/json": components["schemas"]["ApprovalDecisionRequest"];
@@ -10603,8 +10654,11 @@ export interface operations {
                     /**
                      * @example {
                      *       "batch_id": "batch-001",
-                     *       "status": "PENDING_APPROVAL",
-                     *       "affected_count": 1
+                     *       "status": "IN_PROGRESS",
+                     *       "affected_count": 1,
+                     *       "affected_ticket_ids": [
+                     *         "ticket-001"
+                     *       ]
                      *     }
                      */
                     "application/json": components["schemas"]["VMBatchActionResponse"];
@@ -10614,19 +10668,12 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description No failed children are available to retry */
+            /** @description Retry cannot proceed because the parent is not in an approved execution state, durable approval provenance is missing, no failed children are available, a child exhausted its three logical dispatch attempts, review input is required, or equivalent work is already active */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": "example_code",
-                     *       "message": "Example message",
-                     *       "params": {}
-                     *     }
-                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -10656,8 +10703,11 @@ export interface operations {
                     /**
                      * @example {
                      *       "batch_id": "batch-001",
-                     *       "status": "PENDING_APPROVAL",
-                     *       "affected_count": 1
+                     *       "status": "CANCELLED",
+                     *       "affected_count": 1,
+                     *       "affected_ticket_ids": [
+                     *         "ticket-001"
+                     *       ]
                      *     }
                      */
                     "application/json": components["schemas"]["VMBatchActionResponse"];
@@ -10666,19 +10716,12 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
-            /** @description No pending children are available to cancel */
+            /** @description The parent is no longer cancellable, its durable identity is inconsistent, or no pending children are available to cancel */
             409: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    /**
-                     * @example {
-                     *       "code": "example_code",
-                     *       "message": "Example message",
-                     *       "params": {}
-                     *     }
-                     */
                     "application/json": components["schemas"]["Error"];
                 };
             };
@@ -12338,6 +12381,7 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+            409: components["responses"]["LastSystemOwnerConflict"];
         };
     };
     updateUser: {
@@ -14167,7 +14211,7 @@ export interface operations {
             };
             cookie?: never;
         };
-        /** @description Per-user pending-login and cooldown override values. */
+        /** @description Per-user pending batch parent/child and cooldown override values. */
         requestBody: {
             content: {
                 /**
@@ -14175,7 +14219,7 @@ export interface operations {
                  *       "max_pending_parents": 3,
                  *       "max_pending_children": 5,
                  *       "cooldown_seconds": 60,
-                 *       "reason": "Temporary elevated login concurrency"
+                 *       "reason": "Temporary elevated batch concurrency"
                  *     }
                  */
                 "application/json": components["schemas"]["RateLimitUserOverrideRequest"];
@@ -14545,7 +14589,9 @@ export interface operations {
                  * @example {
                  *       "name": "example-resource",
                  *       "cpu_cores": 1,
-                 *       "memory_gi": 1
+                 *       "cpu_request": 1,
+                 *       "memory_gi": 1,
+                 *       "memory_request_gi": 1
                  *     }
                  */
                 "application/json": components["schemas"]["InstanceSizeCreateRequest"];
@@ -14815,7 +14861,46 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             401: components["responses"]["Unauthorized"];
-            404: components["responses"]["NotFound"];
+            /** @description USER_DISABLED means the authenticated external identity belongs to a disabled user */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "USER_DISABLED"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description AUTH_PROVIDER_NOT_FOUND means the provider was removed or became unavailable during login */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "code": "AUTH_PROVIDER_NOT_FOUND"
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description AUTH_PROVIDER_CHANGED means the provider configuration changed during login and authentication must restart;
+             *     EXTERNAL_IDENTITY_CONFLICT means the external identity already belongs to another user.
+             */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
             /** @description Login rate limit exceeded */
             429: {
                 headers: {
@@ -14887,6 +14972,53 @@ export interface operations {
                     "text/html": string;
                 };
             };
+            /** @description USER_DISABLED means the callback identity belongs to a disabled user; the response is an HTML bridge */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example <!doctype html>
+                     *     <html lang="en">
+                     *     <body>
+                     *       <script nonce="example">
+                     *         const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"USER_DISABLED"};
+                     *       </script>
+                     *     </body>
+                     *     </html>
+                     */
+                    "text/html": string;
+                };
+            };
+            /** @description AUTH_PROVIDER_NOT_FOUND means the provider was removed or became unavailable; the response is an HTML bridge */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example <!doctype html>
+                     *     <html lang="en">
+                     *     <body>
+                     *       <script nonce="example">
+                     *         const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"AUTH_PROVIDER_NOT_FOUND"};
+                     *       </script>
+                     *     </body>
+                     *     </html>
+                     */
+                    "text/html": string;
+                };
+            };
+            /** @description Authentication provider generation changed or the external identity is already bound to another user. The HTML bridge returns AUTH_PROVIDER_CHANGED (authenticate again) or EXTERNAL_IDENTITY_CONFLICT (resolve the identity ownership conflict). */
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
         };
     };
     completeLoginAuthProviderPost: {
@@ -14942,6 +15074,53 @@ export interface operations {
             };
             /** @description Login callback failed */
             400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/html": string;
+                };
+            };
+            /** @description USER_DISABLED means the callback identity belongs to a disabled user; the response is an HTML bridge */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example <!doctype html>
+                     *     <html lang="en">
+                     *     <body>
+                     *       <script nonce="example">
+                     *         const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"USER_DISABLED"};
+                     *       </script>
+                     *     </body>
+                     *     </html>
+                     */
+                    "text/html": string;
+                };
+            };
+            /** @description AUTH_PROVIDER_NOT_FOUND means the provider was removed or became unavailable; the response is an HTML bridge */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example <!doctype html>
+                     *     <html lang="en">
+                     *     <body>
+                     *       <script nonce="example">
+                     *         const payload = {"type":"shepherd.external_auth.complete","success":false,"code":"AUTH_PROVIDER_NOT_FOUND"};
+                     *       </script>
+                     *     </body>
+                     *     </html>
+                     */
+                    "text/html": string;
+                };
+            };
+            /** @description Authentication provider generation changed or the external identity is already bound to another user. The HTML bridge returns AUTH_PROVIDER_CHANGED (authenticate again) or EXTERNAL_IDENTITY_CONFLICT (resolve the identity ownership conflict). */
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

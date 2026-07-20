@@ -145,7 +145,7 @@ git pull --ff-only origin main
 ./start-dev.sh
 ```
 
-Prerequisites: Git, Go 1.25.11 or newer, Node.js 22 or newer with npm, and
+Prerequisites: Git, Go 1.25.12 or newer, Node.js 22 or newer with npm, and
 Docker 24 or newer with Docker Compose v2.
 
 Default local endpoints:

@@ -29,6 +29,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/jobs"
 	"kv-shepherd.io/shepherd/internal/observability"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/repository/batchreplay"
 )
 
 // DatabaseClients contains all database-related clients.
@@ -147,6 +148,15 @@ func (c *DatabaseClients) ApplyEntSchema(ctx context.Context) error {
 	); err != nil {
 		return fmt.Errorf("ent auto-migrate: %w", err)
 	}
+	// Ent does not model PostgreSQL expression indexes. Recreate the governed
+	// opaque replay lookup index after Ent's drop-index reconciliation so clean
+	// bootstraps and controlled development schemas match the Atlas migration.
+	if _, err := c.Pool.Exec(ctx, batchreplay.EnsureHashFunctionSQL); err != nil {
+		return fmt.Errorf("ensure batch replay hash function: %w", err)
+	}
+	if _, err := c.Pool.Exec(ctx, batchreplay.EnsureLookupIndexSQL); err != nil {
+		return fmt.Errorf("ensure batch replay lookup index: %w", err)
+	}
 	logger.Info("Ent auto-migration completed")
 	return nil
 }
@@ -196,8 +206,9 @@ func (c *DatabaseClients) InitRiverClient(workers *river.Workers, cfg config.Riv
 
 func buildRiverQueues(maxWorkers int) map[string]river.QueueConfig {
 	return map[string]river.QueueConfig{
-		river.QueueDefault: {MaxWorkers: maxWorkers},
-		"vm_operations":    {MaxWorkers: maxWorkers},
+		river.QueueDefault:                {MaxWorkers: maxWorkers},
+		"vm_operations":                   {MaxWorkers: maxWorkers},
+		jobs.BatchApprovalDispatchJobKind: {MaxWorkers: maxWorkers},
 		// ADR-0038: dedicated queue for adaptive VM status sync polling jobs.
 		jobs.VMStatusSyncJobKind: {MaxWorkers: maxWorkers},
 	}

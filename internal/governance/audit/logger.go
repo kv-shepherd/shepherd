@@ -28,7 +28,20 @@ func NewLogger(client *ent.Client) *Logger {
 
 // LogAction records an auditable action.
 func (l *Logger) LogAction(ctx context.Context, action, resourceType, resourceID, actor string, details map[string]interface{}) error {
-	_, err := l.client.AuditLog.Create().
+	if l == nil {
+		return fmt.Errorf("audit logger is required")
+	}
+	return LogActionWithClient(ctx, l.client, action, resourceType, resourceID, actor, details)
+}
+
+// LogActionWithClient appends an audit record through the provided Ent client.
+// Passing tx.Client() lets state transitions and their compliance record share
+// one transaction, which is required for privileged reconciliation actions.
+func LogActionWithClient(ctx context.Context, client *ent.Client, action, resourceType, resourceID, actor string, details map[string]interface{}) error {
+	if client == nil {
+		return fmt.Errorf("audit client is required")
+	}
+	_, err := client.AuditLog.Create().
 		SetID(generateAuditID()).
 		SetAction(action).
 		SetResourceType(resourceType).

@@ -10,3 +10,4 @@
 2026-06-30 resource request hardening: POST /admin/instance-sizes the request property 'memory_request_gi' became required
 2026-06-30 resource request hardening: PATCH /admin/instance-sizes/{instance_size_id} the 'cpu_request' request property's min was increased to '0.50'
 2026-06-30 resource request hardening: PATCH /admin/instance-sizes/{instance_size_id} the 'memory_request_gi' request property's min was increased to '0.50'
+2026-07-19 contract correction: POST /vms/batch removed the enum value 'POWER' of the request property 'operation'

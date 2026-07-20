@@ -230,6 +230,47 @@ func (_u *TicketUpdate) ClearParentTicketID() *TicketUpdate {
 	return _u
 }
 
+// SetAttemptCount sets the "attempt_count" field.
+func (_u *TicketUpdate) SetAttemptCount(v int32) *TicketUpdate {
+	_u.mutation.ResetAttemptCount()
+	_u.mutation.SetAttemptCount(v)
+	return _u
+}
+
+// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
+func (_u *TicketUpdate) SetNillableAttemptCount(v *int32) *TicketUpdate {
+	if v != nil {
+		_u.SetAttemptCount(*v)
+	}
+	return _u
+}
+
+// AddAttemptCount adds value to the "attempt_count" field.
+func (_u *TicketUpdate) AddAttemptCount(v int32) *TicketUpdate {
+	_u.mutation.AddAttemptCount(v)
+	return _u
+}
+
+// SetLastAttemptAt sets the "last_attempt_at" field.
+func (_u *TicketUpdate) SetLastAttemptAt(v time.Time) *TicketUpdate {
+	_u.mutation.SetLastAttemptAt(v)
+	return _u
+}
+
+// SetNillableLastAttemptAt sets the "last_attempt_at" field if the given value is not nil.
+func (_u *TicketUpdate) SetNillableLastAttemptAt(v *time.Time) *TicketUpdate {
+	if v != nil {
+		_u.SetLastAttemptAt(*v)
+	}
+	return _u
+}
+
+// ClearLastAttemptAt clears the value of the "last_attempt_at" field.
+func (_u *TicketUpdate) ClearLastAttemptAt() *TicketUpdate {
+	_u.mutation.ClearLastAttemptAt()
+	return _u
+}
+
 // Mutation returns the TicketMutation object of the builder.
 func (_u *TicketUpdate) Mutation() *TicketMutation {
 	return _u.mutation
@@ -281,6 +322,11 @@ func (_u *TicketUpdate) check() error {
 	if v, ok := _u.mutation.Status(); ok {
 		if err := ticket.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Ticket.status": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.AttemptCount(); ok {
+		if err := ticket.AttemptCountValidator(v); err != nil {
+			return &ValidationError{Name: "attempt_count", err: fmt.Errorf(`ent: validator failed for field "Ticket.attempt_count": %w`, err)}
 		}
 	}
 	return nil
@@ -366,6 +412,18 @@ func (_u *TicketUpdate) sqlSave(ctx context.Context) (_node int, err error) {
 	}
 	if _u.mutation.ParentTicketIDCleared() {
 		_spec.ClearField(ticket.FieldParentTicketID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AttemptCount(); ok {
+		_spec.SetField(ticket.FieldAttemptCount, field.TypeInt32, value)
+	}
+	if value, ok := _u.mutation.AddedAttemptCount(); ok {
+		_spec.AddField(ticket.FieldAttemptCount, field.TypeInt32, value)
+	}
+	if value, ok := _u.mutation.LastAttemptAt(); ok {
+		_spec.SetField(ticket.FieldLastAttemptAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastAttemptAtCleared() {
+		_spec.ClearField(ticket.FieldLastAttemptAt, field.TypeTime)
 	}
 	if _node, err = sqlgraph.UpdateNodes(ctx, _u.driver, _spec); err != nil {
 		if _, ok := err.(*sqlgraph.NotFoundError); ok {
@@ -589,6 +647,47 @@ func (_u *TicketUpdateOne) ClearParentTicketID() *TicketUpdateOne {
 	return _u
 }
 
+// SetAttemptCount sets the "attempt_count" field.
+func (_u *TicketUpdateOne) SetAttemptCount(v int32) *TicketUpdateOne {
+	_u.mutation.ResetAttemptCount()
+	_u.mutation.SetAttemptCount(v)
+	return _u
+}
+
+// SetNillableAttemptCount sets the "attempt_count" field if the given value is not nil.
+func (_u *TicketUpdateOne) SetNillableAttemptCount(v *int32) *TicketUpdateOne {
+	if v != nil {
+		_u.SetAttemptCount(*v)
+	}
+	return _u
+}
+
+// AddAttemptCount adds value to the "attempt_count" field.
+func (_u *TicketUpdateOne) AddAttemptCount(v int32) *TicketUpdateOne {
+	_u.mutation.AddAttemptCount(v)
+	return _u
+}
+
+// SetLastAttemptAt sets the "last_attempt_at" field.
+func (_u *TicketUpdateOne) SetLastAttemptAt(v time.Time) *TicketUpdateOne {
+	_u.mutation.SetLastAttemptAt(v)
+	return _u
+}
+
+// SetNillableLastAttemptAt sets the "last_attempt_at" field if the given value is not nil.
+func (_u *TicketUpdateOne) SetNillableLastAttemptAt(v *time.Time) *TicketUpdateOne {
+	if v != nil {
+		_u.SetLastAttemptAt(*v)
+	}
+	return _u
+}
+
+// ClearLastAttemptAt clears the value of the "last_attempt_at" field.
+func (_u *TicketUpdateOne) ClearLastAttemptAt() *TicketUpdateOne {
+	_u.mutation.ClearLastAttemptAt()
+	return _u
+}
+
 // Mutation returns the TicketMutation object of the builder.
 func (_u *TicketUpdateOne) Mutation() *TicketMutation {
 	return _u.mutation
@@ -653,6 +752,11 @@ func (_u *TicketUpdateOne) check() error {
 	if v, ok := _u.mutation.Status(); ok {
 		if err := ticket.StatusValidator(v); err != nil {
 			return &ValidationError{Name: "status", err: fmt.Errorf(`ent: validator failed for field "Ticket.status": %w`, err)}
+		}
+	}
+	if v, ok := _u.mutation.AttemptCount(); ok {
+		if err := ticket.AttemptCountValidator(v); err != nil {
+			return &ValidationError{Name: "attempt_count", err: fmt.Errorf(`ent: validator failed for field "Ticket.attempt_count": %w`, err)}
 		}
 	}
 	return nil
@@ -755,6 +859,18 @@ func (_u *TicketUpdateOne) sqlSave(ctx context.Context) (_node *Ticket, err erro
 	}
 	if _u.mutation.ParentTicketIDCleared() {
 		_spec.ClearField(ticket.FieldParentTicketID, field.TypeString)
+	}
+	if value, ok := _u.mutation.AttemptCount(); ok {
+		_spec.SetField(ticket.FieldAttemptCount, field.TypeInt32, value)
+	}
+	if value, ok := _u.mutation.AddedAttemptCount(); ok {
+		_spec.AddField(ticket.FieldAttemptCount, field.TypeInt32, value)
+	}
+	if value, ok := _u.mutation.LastAttemptAt(); ok {
+		_spec.SetField(ticket.FieldLastAttemptAt, field.TypeTime, value)
+	}
+	if _u.mutation.LastAttemptAtCleared() {
+		_spec.ClearField(ticket.FieldLastAttemptAt, field.TypeTime)
 	}
 	_node = &Ticket{config: _u.config}
 	_spec.Assign = _node.assignValues

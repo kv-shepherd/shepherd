@@ -179,7 +179,7 @@ func TestBatchHandler_SubmitVMBatch_DeleteReturnsNotFound_WhenSystemMembershipMi
 
 	vmID := mustCreateBatchDeleteTargetVM(t, client)
 	body := mustJSON(t, generated.VMBatchSubmitRequest{
-		Operation: generated.VMBatchOperation("DELETE"),
+		Operation: generated.VMBatchSubmitOperation("DELETE"),
 		Items: []generated.VMBatchChildItem{
 			{VmId: vmID},
 		},

@@ -9,6 +9,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"os"
 	"strings"
@@ -28,6 +29,7 @@ import (
 	"kv-shepherd.io/shepherd/internal/config"
 	"kv-shepherd.io/shepherd/internal/infrastructure"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
+	"kv-shepherd.io/shepherd/internal/service"
 )
 
 const defaultSeedTimeout = 2 * time.Minute
@@ -355,9 +357,46 @@ func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
 		return fmt.Errorf("create default admin: %w", err)
 	}
 
-	bindingExists, err := client.RoleBinding.Query().
+	if err := ensureDefaultAdminRoleBinding(ctx, client, user.ID, spec); err != nil {
+		return err
+	}
+
+	logger.Info("Ensured default admin user",
+		zap.String("username", spec.username),
+		zap.Bool("created", created),
+		zap.Bool("force_password_change", spec.forcePasswordChange),
+	)
+
+	return nil
+}
+
+func ensureDefaultAdminRoleBinding(ctx context.Context, client *ent.Client, userID string, spec adminSeedSpec) error {
+	// The user/role locks below can wait behind concurrent mutations. READ
+	// COMMITTED ensures the subsequent role and binding checks observe the
+	// transaction that released those locks.
+	tx, err := client.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
+	if err != nil {
+		return fmt.Errorf("begin default admin role binding transaction: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if lockErr := service.LockRoleBindingUser(ctx, tx, userID); lockErr != nil {
+		return lockErr
+	}
+	if lockErr := service.LockRoleAssignment(ctx, tx, spec.roleID); lockErr != nil {
+		return lockErr
+	}
+	txClient := tx.Client()
+	if _, loadErr := txClient.Role.Get(ctx, spec.roleID); loadErr != nil {
+		return fmt.Errorf("load default admin role after lock: %w", loadErr)
+	}
+	bindingExists, err := txClient.RoleBinding.Query().
 		Where(
-			rolebinding.HasUserWith(entuser.IDEQ(user.ID)),
+			rolebinding.HasUserWith(entuser.IDEQ(userID)),
 			rolebinding.HasRoleWith(role.IDEQ(spec.roleID)),
 			rolebinding.ScopeTypeEQ(spec.roleBindingScopeType),
 		).
@@ -367,9 +406,9 @@ func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
 	}
 	if !bindingExists {
 		rbID, _ := uuid.NewV7()
-		if _, err := client.RoleBinding.Create().
+		if _, err := txClient.RoleBinding.Create().
 			SetID(rbID.String()).
-			SetUserID(user.ID).
+			SetUserID(userID).
 			SetRoleID(spec.roleID).
 			SetScopeType(spec.roleBindingScopeType).
 			SetCreatedBy(spec.roleBindingCreatedBy).
@@ -377,12 +416,9 @@ func seedDefaultAdmin(ctx context.Context, client *ent.Client) error {
 			return fmt.Errorf("create admin role binding: %w", err)
 		}
 	}
-
-	logger.Info("Ensured default admin user",
-		zap.String("username", spec.username),
-		zap.Bool("created", created),
-		zap.Bool("force_password_change", spec.forcePasswordChange),
-	)
-
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit default admin role binding transaction: %w", err)
+	}
+	committed = true
 	return nil
 }

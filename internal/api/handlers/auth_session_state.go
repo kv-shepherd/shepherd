@@ -36,18 +36,40 @@ func (s *Server) currentAuthSessionVersion(ctx context.Context, userID string) (
 	return version, nil
 }
 
-func (s *Server) revokeUserSessions(ctx context.Context, userID, reason string) error {
-	if s == nil || s.authSessions == nil {
+func (s *Server) activateAuthSession(ctx context.Context, userID string, expectedVersion int64) error {
+	if s == nil {
 		return nil
 	}
-	return s.authSessions.RevokeUserSessions(ctx, userID, reason)
+	if s.authSessionBeforeActivate != nil {
+		if err := s.authSessionBeforeActivate(ctx, userID, expectedVersion); err != nil {
+			return err
+		}
+	}
+	if s.authSessions == nil {
+		return nil
+	}
+	return s.authSessions.ActivateUserSession(ctx, userID, expectedVersion)
 }
 
-func (s *Server) revokeUsersSessions(ctx context.Context, userIDs []string, reason string) error {
+func (s *Server) revokeUserSessionsTx(ctx context.Context, tx *ent.Tx, userID, reason string) error {
 	if s == nil || s.authSessions == nil {
 		return nil
 	}
-	return s.authSessions.RevokeUsersSessions(ctx, userIDs, reason)
+	return s.authSessions.RevokeUserSessionsTx(ctx, tx, userID, reason)
+}
+
+func (s *Server) revokeUsersSessionsTx(ctx context.Context, tx *ent.Tx, userIDs []string, reason string) error {
+	if s == nil || s.authSessions == nil {
+		return nil
+	}
+	return s.authSessions.RevokeUsersSessionsTx(ctx, tx, userIDs, reason)
+}
+
+func (s *Server) ensureAuthSessionSchema(ctx context.Context) error {
+	if s == nil || s.authSessions == nil {
+		return nil
+	}
+	return s.authSessions.EnsureSchema(ctx)
 }
 
 func userIDsForRoleWithClient(ctx context.Context, client *ent.Client, roleID string) ([]string, error) {

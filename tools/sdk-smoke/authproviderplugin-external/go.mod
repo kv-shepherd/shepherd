@@ -1,6 +1,6 @@
 module example.com/authproviderplugin-external-smoke
 
-go 1.25.11
+go 1.25.12
 
 require kv-shepherd.io/shepherd v0.0.0
 
@@ -109,7 +109,7 @@ require (
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.68.0 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/riverqueue/river v0.39.0 // indirect
 	github.com/riverqueue/river/riverdriver v0.39.0 // indirect
 	github.com/riverqueue/river/riverdriver/riverpgxv5 v0.39.0 // indirect

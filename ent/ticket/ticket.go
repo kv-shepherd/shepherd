@@ -46,6 +46,10 @@ const (
 	FieldModifiedSpec = "modified_spec"
 	// FieldParentTicketID holds the string denoting the parent_ticket_id field in the database.
 	FieldParentTicketID = "parent_ticket_id"
+	// FieldAttemptCount holds the string denoting the attempt_count field in the database.
+	FieldAttemptCount = "attempt_count"
+	// FieldLastAttemptAt holds the string denoting the last_attempt_at field in the database.
+	FieldLastAttemptAt = "last_attempt_at"
 	// Table holds the table name of the ticket in the database.
 	Table = "tickets"
 )
@@ -69,6 +73,8 @@ var Columns = []string{
 	FieldPlacementEvaluation,
 	FieldModifiedSpec,
 	FieldParentTicketID,
+	FieldAttemptCount,
+	FieldLastAttemptAt,
 }
 
 // ValidColumn reports if the column name is valid (part of the table columns).
@@ -92,6 +98,10 @@ var (
 	EventIDValidator func(string) error
 	// RequesterValidator is a validator for the "requester" field. It is called by the builders before save.
 	RequesterValidator func(string) error
+	// DefaultAttemptCount holds the default value on creation for the "attempt_count" field.
+	DefaultAttemptCount int32
+	// AttemptCountValidator is a validator for the "attempt_count" field. It is called by the builders before save.
+	AttemptCountValidator func(int32) error
 )
 
 // OperationType defines the type for the "operation_type" enum field.
@@ -220,4 +230,14 @@ func BySelectedStorageClass(opts ...sql.OrderTermOption) OrderOption {
 // ByParentTicketID orders the results by the parent_ticket_id field.
 func ByParentTicketID(opts ...sql.OrderTermOption) OrderOption {
 	return sql.OrderByField(FieldParentTicketID, opts...).ToFunc()
+}
+
+// ByAttemptCount orders the results by the attempt_count field.
+func ByAttemptCount(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldAttemptCount, opts...).ToFunc()
+}
+
+// ByLastAttemptAt orders the results by the last_attempt_at field.
+func ByLastAttemptAt(opts ...sql.OrderTermOption) OrderOption {
+	return sql.OrderByField(FieldLastAttemptAt, opts...).ToFunc()
 }

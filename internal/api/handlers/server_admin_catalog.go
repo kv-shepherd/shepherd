@@ -36,7 +36,10 @@ import (
 var (
 	errAuthProviderInUse             = errors.New("auth provider in use")
 	errAuthProviderNotFound          = errors.New("auth provider not found")
+	errInvalidAuthProviderConfig     = errors.New("invalid auth provider config")
 	errExternalCohortMappingNotFound = errors.New("external cohort mapping not found")
+	errRoleInUse                     = errors.New("role in use")
+	errBuiltInRoleImmutable          = errors.New("built-in role is immutable")
 )
 
 type templateCreateRequest struct {
@@ -1211,10 +1214,17 @@ func (s *Server) UpdateRole(c *gin.Context, roleID generated.RoleID) {
 			return
 		}
 		hasPermissionsUpdate = true
-		invalidateRoleSessions = invalidateRoleSessions || !slices.Equal(existing.Permissions, permissions)
+		invalidateRoleSessions = true
 	}
 	if req.Enabled != nil {
-		invalidateRoleSessions = invalidateRoleSessions || existing.Enabled != *req.Enabled
+		invalidateRoleSessions = true
+	}
+	if invalidateRoleSessions {
+		if err := s.ensureAuthSessionSchema(ctx); err != nil {
+			logger.Error("failed to prepare auth session state for role update", zap.Error(err), zap.String("role_id", roleID))
+			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+			return
+		}
 	}
 
 	var r *ent.Role
@@ -1254,7 +1264,7 @@ func (s *Server) UpdateRole(c *gin.Context, roleID generated.RoleID) {
 		if err != nil {
 			return err
 		}
-		return s.revokeUsersSessions(ctx, userIDs, "role_updated")
+		return s.revokeUsersSessionsTx(ctx, tx, userIDs, "role_updated")
 	}); err != nil {
 		logger.Error("failed to update role", zap.Error(err), zap.String("role_id", roleID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
@@ -1275,49 +1285,49 @@ func (s *Server) DeleteRole(c *gin.Context, roleID generated.RoleID) {
 		return
 	}
 
-	r, err := s.client.Role.Get(ctx, roleID)
-	if err != nil {
-		if ent.IsNotFound(err) {
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if lockErr := lockRoleRow(ctx, tx, roleID); lockErr != nil {
+			return lockErr
+		}
+		txClient := tx.Client()
+		currentRole, loadErr := txClient.Role.Get(ctx, roleID)
+		if loadErr != nil {
+			return loadErr
+		}
+		if currentRole.BuiltIn {
+			return errBuiltInRoleImmutable
+		}
+
+		bindingExists, queryErr := txClient.RoleBinding.Query().
+			Where(rolebinding.HasRoleWith(role.IDEQ(roleID))).
+			Exist(ctx)
+		if queryErr != nil {
+			return fmt.Errorf("check role bindings: %w", queryErr)
+		}
+		if bindingExists {
+			return errRoleInUse
+		}
+		mappingExists, queryErr := txClient.ExternalCohortMapping.Query().
+			Where(externalcohortmapping.RoleIDEQ(roleID)).
+			Exist(ctx)
+		if queryErr != nil {
+			return fmt.Errorf("check external cohort mapping role usage: %w", queryErr)
+		}
+		if mappingExists {
+			return errRoleInUse
+		}
+
+		return txClient.Role.DeleteOneID(roleID).Exec(ctx)
+	}); err != nil {
+		switch {
+		case ent.IsNotFound(err):
 			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
 			return
-		}
-		logger.Error("failed to query role for delete", zap.Error(err), zap.String("role_id", roleID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if r.BuiltIn {
-		c.JSON(http.StatusForbidden, generated.Error{Code: "BUILTIN_ROLE_IMMUTABLE"})
-		return
-	}
-
-	bindingCount, err := s.client.RoleBinding.Query().
-		Where(rolebinding.HasRoleWith(role.IDEQ(roleID))).
-		Count(ctx)
-	if err != nil {
-		logger.Error("failed to count role bindings", zap.Error(err), zap.String("role_id", roleID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if bindingCount > 0 {
-		c.JSON(http.StatusConflict, generated.Error{Code: "ROLE_IN_USE"})
-		return
-	}
-	mappingExists, err := s.client.ExternalCohortMapping.Query().
-		Where(externalcohortmapping.RoleIDEQ(roleID)).
-		Exist(ctx)
-	if err != nil {
-		logger.Error("failed to check external cohort mapping role usage", zap.Error(err), zap.String("role_id", roleID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-	if mappingExists {
-		c.JSON(http.StatusConflict, generated.Error{Code: "ROLE_IN_USE"})
-		return
-	}
-
-	if err := s.client.Role.DeleteOneID(roleID).Exec(ctx); err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
+		case errors.Is(err, errBuiltInRoleImmutable):
+			c.JSON(http.StatusForbidden, generated.Error{Code: "BUILTIN_ROLE_IMMUTABLE"})
+			return
+		case errors.Is(err, errRoleInUse):
+			c.JSON(http.StatusConflict, generated.Error{Code: "ROLE_IN_USE"})
 			return
 		}
 		logger.Error("failed to delete role", zap.Error(err), zap.String("role_id", roleID))
@@ -1497,7 +1507,7 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 		return
 	}
 
-	existing, err := s.client.AuthProvider.Get(ctx, providerID)
+	_, err := s.client.AuthProvider.Get(ctx, providerID)
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
@@ -1516,30 +1526,45 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 			return
 		}
 	}
-	var mergedConfig map[string]interface{}
-	if req.Config != nil {
-		var mergeErr error
-		mergedConfig, mergeErr = s.authProviderConfig.MergeForUpdate(existing.AuthType, existing.Config, *req.Config)
-		if mergeErr != nil {
-			logger.Error("failed to merge auth provider config update", zap.Error(mergeErr), zap.String("provider_id", providerID))
+	// Both availability and runtime configuration define the provider trust
+	// generation. Tokens issued under an earlier issuer/tenant/client
+	// configuration must not remain valid after that generation is replaced,
+	// even when the patch is a semantic no-op.
+	revokeLinkedUserSessions := req.Enabled != nil || req.Config != nil
+	if revokeLinkedUserSessions {
+		if err := s.ensureAuthSessionSchema(ctx); err != nil {
+			logger.Error("failed to prepare auth session state for auth provider update", zap.Error(err), zap.String("provider_id", providerID))
 			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-		plainConfig, decryptErr := s.authProviderConfig.DecryptForUse(existing.AuthType, mergedConfig)
-		if decryptErr != nil {
-			logger.Error("failed to decrypt merged auth provider config", zap.Error(decryptErr), zap.String("provider_id", providerID))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
-		}
-		if validateErr := validateAuthProviderConfig(existing.AuthType, plainConfig); validateErr != nil {
-			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: validateErr.Error()})
 			return
 		}
 	}
-
-	revokeLinkedUserSessions := req.Enabled != nil && existing.Enabled && !*req.Enabled
 	var provider *ent.AuthProvider
 	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := tx.ExecContext(ctx, `SELECT id FROM auth_providers WHERE id = $1 FOR UPDATE`, providerID); lockErr != nil {
+			return lockErr
+		}
+		currentProvider, loadErr := tx.Client().AuthProvider.Get(ctx, providerID)
+		if loadErr != nil {
+			return loadErr
+		}
+		var mergedConfig map[string]interface{}
+		if req.Config != nil {
+			mergedConfig, loadErr = s.authProviderConfig.MergeForUpdate(currentProvider.AuthType, currentProvider.Config, *req.Config)
+			if loadErr != nil {
+				return fmt.Errorf("merge auth provider config: %w", loadErr)
+			}
+			plainConfig, decryptErr := s.authProviderConfig.DecryptForUse(currentProvider.AuthType, mergedConfig)
+			if decryptErr != nil {
+				return fmt.Errorf("decrypt merged auth provider config: %w", decryptErr)
+			}
+			if validateErr := validateAuthProviderConfig(currentProvider.AuthType, plainConfig); validateErr != nil {
+				return fmt.Errorf("%w: %w", errInvalidAuthProviderConfig, validateErr)
+			}
+		}
+
 		txUpdate := tx.Client().AuthProvider.UpdateOneID(providerID)
 		if req.Name != nil {
 			txUpdate = txUpdate.SetName(nameValue)
@@ -1566,8 +1591,12 @@ func (s *Server) UpdateAuthProvider(c *gin.Context, providerID generated.Provide
 		if err != nil {
 			return err
 		}
-		return s.revokeUsersSessions(ctx, linkedUserIDs, "auth_provider_disabled")
+		return s.revokeUsersSessionsTx(ctx, tx, linkedUserIDs, "auth_provider_updated")
 	}); err != nil {
+		if errors.Is(err, errInvalidAuthProviderConfig) {
+			c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST", Message: err.Error()})
+			return
+		}
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
@@ -1600,9 +1629,17 @@ func (s *Server) DeleteAuthProvider(c *gin.Context, providerID generated.Provide
 	if !ok {
 		return
 	}
+	if err := s.ensureAuthSessionSchema(ctx); err != nil {
+		logger.Error("failed to prepare auth session state for auth provider delete", zap.Error(err), zap.String("provider_id", providerID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
 		txClient := tx.Client()
+		if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+			return lockErr
+		}
 		userCount, err := txClient.User.Query().Where(entuser.AuthProviderIDEQ(providerID)).Count(ctx)
 		if err != nil {
 			return fmt.Errorf("count provider-linked users: %w", err)
@@ -1615,7 +1652,7 @@ func (s *Server) DeleteAuthProvider(c *gin.Context, providerID generated.Provide
 			return err
 		}
 		if len(affectedUserIDs) > 0 {
-			if err := s.revokeUsersSessions(ctx, affectedUserIDs, "auth_provider_deleted"); err != nil {
+			if err := s.revokeUsersSessionsTx(ctx, tx, affectedUserIDs, "auth_provider_deleted"); err != nil {
 				return err
 			}
 		}
@@ -1813,16 +1850,6 @@ func (s *Server) SyncAuthProviderCohorts(c *gin.Context, providerID generated.Pr
 		return
 	}
 
-	if _, err := s.client.AuthProvider.Get(ctx, providerID); err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get auth provider for cohort sync", zap.Error(err), zap.String("provider_id", providerID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
 	var req generated.ExternalCohortSyncRequest
 	if !bindAndValidateJSON(c, &req) {
 		return
@@ -1839,54 +1866,66 @@ func (s *Server) SyncAuthProviderCohorts(c *gin.Context, providerID generated.Pr
 		return
 	}
 
-	now := time.Now().UTC()
-	for _, cohortKey := range cohortKeys {
-		existing, err := s.client.ExternalCohort.Query().
-			Where(
-				externalcohort.ProviderIDEQ(providerID),
-				externalcohort.CohortKindEQ(cohortKind),
-				externalcohort.CohortKeyEQ(cohortKey),
-			).
-			Only(ctx)
-		if err != nil && !ent.IsNotFound(err) {
-			logger.Error("failed to query synced cohort", zap.Error(err), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-			return
+	var syncedCohorts []*ent.ExternalCohort
+	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+			return lockErr
+		}
+		txClient := tx.Client()
+		if _, loadErr := txClient.AuthProvider.Get(ctx, providerID); loadErr != nil {
+			return loadErr
 		}
 
-		if ent.IsNotFound(err) {
-			id, _ := uuid.NewV7()
-			_, err = s.client.ExternalCohort.Create().
-				SetID(id.String()).
-				SetProviderID(providerID).
-				SetCohortKind(cohortKind).
-				SetCohortKey(cohortKey).
+		now := time.Now().UTC()
+		for _, cohortKey := range cohortKeys {
+			existing, queryErr := txClient.ExternalCohort.Query().
+				Where(
+					externalcohort.ProviderIDEQ(providerID),
+					externalcohort.CohortKindEQ(cohortKind),
+					externalcohort.CohortKeyEQ(cohortKey),
+				).
+				Only(ctx)
+			if queryErr != nil && !ent.IsNotFound(queryErr) {
+				return fmt.Errorf("query synced cohort %s/%s: %w", cohortKind, cohortKey, queryErr)
+			}
+
+			if ent.IsNotFound(queryErr) {
+				id, idErr := uuid.NewV7()
+				if idErr != nil {
+					return fmt.Errorf("generate synced cohort id: %w", idErr)
+				}
+				if _, createErr := txClient.ExternalCohort.Create().
+					SetID(id.String()).
+					SetProviderID(providerID).
+					SetCohortKind(cohortKind).
+					SetCohortKey(cohortKey).
+					SetDisplayName(cohortKey).
+					SetSourceField(sourceField).
+					SetLastSyncedAt(now).
+					Save(ctx); createErr != nil {
+					return fmt.Errorf("create synced cohort %s/%s: %w", cohortKind, cohortKey, createErr)
+				}
+				continue
+			}
+
+			if _, updateErr := txClient.ExternalCohort.UpdateOneID(existing.ID).
 				SetDisplayName(cohortKey).
 				SetSourceField(sourceField).
 				SetLastSyncedAt(now).
-				Save(ctx)
-			if err != nil {
-				logger.Error("failed to create synced cohort", zap.Error(err), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
-				c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-				return
+				Save(ctx); updateErr != nil {
+				return fmt.Errorf("update synced cohort %s/%s: %w", cohortKind, cohortKey, updateErr)
 			}
-			continue
 		}
 
-		if _, err := existing.Update().
-			SetDisplayName(cohortKey).
-			SetSourceField(sourceField).
-			SetLastSyncedAt(now).
-			Save(ctx); err != nil {
-			logger.Error("failed to update synced cohort", zap.Error(err), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
-			c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		var listErr error
+		syncedCohorts, listErr = listExternalCohortsWithClient(ctx, txClient, providerID)
+		return listErr
+	}); err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
 			return
 		}
-	}
-
-	syncedCohorts, err := s.listExternalCohorts(ctx, providerID)
-	if err != nil {
-		logger.Error("failed to list synced cohorts after sync", zap.Error(err), zap.String("provider_id", providerID))
+		logger.Error("failed to sync auth provider cohorts", zap.Error(err), zap.String("provider_id", providerID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
@@ -1960,16 +1999,6 @@ func (s *Server) CreateAuthProviderCohortMapping(c *gin.Context, providerID gene
 		return
 	}
 
-	if _, err := s.client.AuthProvider.Get(ctx, providerID); err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to get auth provider for cohort mapping create", zap.Error(err), zap.String("provider_id", providerID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
 	var req generated.ExternalCohortMappingCreateRequest
 	if !bindAndValidateJSON(c, &req) {
 		return
@@ -2011,25 +2040,57 @@ func (s *Server) CreateAuthProviderCohortMapping(c *gin.Context, providerID gene
 	if cohortDisplayName == "" {
 		cohortDisplayName = cohortKey
 	}
-	if syncErr := s.ensureExternalCohort(ctx, providerID, cohortKind, cohortKey, cohortDisplayName); syncErr != nil {
-		logger.Error("failed to ensure external cohort before mapping create", zap.Error(syncErr), zap.String("provider_id", providerID), zap.String("cohort_kind", cohortKind), zap.String("cohort_key", cohortKey))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
 	id, _ := uuid.NewV7()
-	mapping, err := s.client.ExternalCohortMapping.Create().
-		SetID(id.String()).
-		SetProviderID(providerID).
-		SetCohortKind(cohortKind).
-		SetCohortKey(cohortKey).
-		SetRoleID(roleID).
-		SetScopeType(scopeType).
-		SetScopeID(scopeID).
-		SetAllowedEnvironments(allowedEnvs).
-		SetCreatedBy(actor).
-		Save(ctx)
+	var mapping *ent.ExternalCohortMapping
+	err = WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+			return lockErr
+		}
+		txClient := tx.Client()
+		if _, loadErr := txClient.AuthProvider.Get(ctx, providerID); loadErr != nil {
+			return loadErr
+		}
+		if lockErr := lockRoleRow(ctx, tx, roleID); lockErr != nil {
+			return lockErr
+		}
+		var loadRoleErr error
+		roleEnt, loadRoleErr = loadEnabledRoleForAssignment(ctx, txClient, roleID)
+		if loadRoleErr != nil {
+			return loadRoleErr
+		}
+		if syncErr := ensureExternalCohortWithClient(ctx, txClient, providerID, cohortKind, cohortKey, cohortDisplayName); syncErr != nil {
+			return fmt.Errorf("ensure external cohort before mapping create: %w", syncErr)
+		}
+		var saveErr error
+		mapping, saveErr = txClient.ExternalCohortMapping.Create().
+			SetID(id.String()).
+			SetProviderID(providerID).
+			SetCohortKind(cohortKind).
+			SetCohortKey(cohortKey).
+			SetRoleID(roleID).
+			SetScopeType(scopeType).
+			SetScopeID(scopeID).
+			SetAllowedEnvironments(allowedEnvs).
+			SetCreatedBy(actor).
+			Save(ctx)
+		return saveErr
+	})
 	if err != nil {
+		if errors.Is(err, errRoleAssignmentNotFound) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
+			return
+		}
+		if errors.Is(err, errRoleAssignmentDisabled) {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "ROLE_DISABLED",
+				Message: "disabled roles cannot be used for external cohort mappings",
+			})
+			return
+		}
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "AUTH_PROVIDER_NOT_FOUND"})
+			return
+		}
 		if ent.IsConstraintError(err) {
 			c.JSON(http.StatusConflict, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_EXISTS"})
 			return
@@ -2060,19 +2121,6 @@ func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID gene
 		return
 	}
 
-	mapping, err := s.client.ExternalCohortMapping.Query().
-		Where(externalcohortmapping.IDEQ(mappingID), externalcohortmapping.ProviderIDEQ(providerID)).
-		Only(ctx)
-	if err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to query external cohort mapping for update", zap.Error(err), zap.String("mapping_id", mappingID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
 	roleName := ""
 	roleID := strings.TrimSpace(req.RoleId)
 	if roleID != "" {
@@ -2096,9 +2144,63 @@ func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID gene
 		roleName = roleEnt.Name
 	}
 
-	var updated *ent.ExternalCohortMapping
+	if err := s.ensureAuthSessionSchema(ctx); err != nil {
+		logger.Error("failed to prepare auth session state for external cohort mapping update", zap.Error(err), zap.String("mapping_id", mappingID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
+	var (
+		mapping *ent.ExternalCohortMapping
+		updated *ent.ExternalCohortMapping
+	)
 	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
 		txClient := tx.Client()
+		if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+			return lockErr
+		}
+		if lockErr := tx.ExecContext(ctx, `
+SELECT id
+FROM external_cohort_mappings
+WHERE id = $1 AND provider_id = $2
+FOR UPDATE
+`, mappingID, providerID); lockErr != nil {
+			return lockErr
+		}
+		var loadErr error
+		mapping, loadErr = txClient.ExternalCohortMapping.Query().
+			Where(externalcohortmapping.IDEQ(mappingID), externalcohortmapping.ProviderIDEQ(providerID)).
+			Only(ctx)
+		if loadErr != nil {
+			if ent.IsNotFound(loadErr) {
+				return errExternalCohortMappingNotFound
+			}
+			return loadErr
+		}
+		mappingUserIDs, queryErr := externalCohortMappingGrantUserIDs(
+			ctx,
+			txClient,
+			providerID,
+			mapping.ID,
+		)
+		if queryErr != nil {
+			return queryErr
+		}
+		if lockErr := service.LockRoleBindingUsers(ctx, tx, mappingUserIDs); lockErr != nil {
+			return lockErr
+		}
+		selectedRoleID := roleID
+		if selectedRoleID == "" {
+			selectedRoleID = mapping.RoleID
+		}
+		if lockErr := lockRoleRow(ctx, tx, selectedRoleID); lockErr != nil {
+			return lockErr
+		}
+		selectedRole, loadRoleErr := loadEnabledRoleForAssignment(ctx, txClient, selectedRoleID)
+		if loadRoleErr != nil {
+			return loadRoleErr
+		}
+		roleName = selectedRole.Name
+
 		update := txClient.ExternalCohortMapping.UpdateOneID(mapping.ID).
 			Where(externalcohortmapping.ProviderIDEQ(providerID))
 		if roleID != "" {
@@ -2139,10 +2241,21 @@ func (s *Server) UpdateAuthProviderCohortMapping(c *gin.Context, providerID gene
 			return err
 		}
 		if len(affectedUserIDs) > 0 {
-			return s.revokeUsersSessions(ctx, affectedUserIDs, "external_cohort_mapping_updated")
+			return s.revokeUsersSessionsTx(ctx, tx, affectedUserIDs, "external_cohort_mapping_updated")
 		}
 		return nil
 	}); err != nil {
+		if errors.Is(err, errRoleAssignmentNotFound) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "ROLE_NOT_FOUND"})
+			return
+		}
+		if errors.Is(err, errRoleAssignmentDisabled) {
+			c.JSON(http.StatusConflict, generated.Error{
+				Code:    "ROLE_DISABLED",
+				Message: "disabled roles cannot be used for external cohort mappings",
+			})
+			return
+		}
 		if errors.Is(err, errExternalCohortMappingNotFound) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "EXTERNAL_COHORT_MAPPING_NOT_FOUND"})
 			return
@@ -2198,9 +2311,17 @@ func (s *Server) DeleteAuthProviderCohortMapping(c *gin.Context, providerID gene
 	if !ok {
 		return
 	}
+	if err := s.ensureAuthSessionSchema(ctx); err != nil {
+		logger.Error("failed to prepare auth session state for external cohort mapping delete", zap.Error(err), zap.String("mapping_id", mappingID))
+		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
+		return
+	}
 
 	if err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
 		txClient := tx.Client()
+		if lockErr := service.LockAuthProviderMutation(ctx, tx, providerID); lockErr != nil {
+			return lockErr
+		}
 		count, deleteErr := txClient.ExternalCohortMapping.Delete().
 			Where(externalcohortmapping.IDEQ(mappingID), externalcohortmapping.ProviderIDEQ(providerID)).
 			Exec(ctx)
@@ -2215,7 +2336,7 @@ func (s *Server) DeleteAuthProviderCohortMapping(c *gin.Context, providerID gene
 			return err
 		}
 		if len(affectedUserIDs) > 0 {
-			return s.revokeUsersSessions(ctx, affectedUserIDs, "external_cohort_mapping_deleted")
+			return s.revokeUsersSessionsTx(ctx, tx, affectedUserIDs, "external_cohort_mapping_deleted")
 		}
 		return nil
 	}); err != nil {
@@ -2316,6 +2437,27 @@ func reconcileExternalCohortGrantsForUpdatedMapping(
 	}
 
 	return compactExternalCohortGrantUserIDs(affectedUserIDs), nil
+}
+
+func externalCohortMappingGrantUserIDs(
+	ctx context.Context,
+	client *ent.Client,
+	providerID, mappingID string,
+) ([]string, error) {
+	grants, err := client.ExternalCohortGrant.Query().
+		Where(externalcohortgrant.ProviderIDEQ(providerID)).
+		All(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("query external cohort grants for mapping user locks: %w", err)
+	}
+	userIDs := make([]string, 0, len(grants))
+	for _, grant := range grants {
+		if grant == nil || !slices.Contains(grant.SourceMappingIds, mappingID) {
+			continue
+		}
+		userIDs = appendExternalCohortGrantUserID(userIDs, grant)
+	}
+	return compactExternalCohortGrantUserIDs(userIDs), nil
 }
 
 func ensureExternalCohortGrantForUpdatedMapping(
@@ -2738,8 +2880,8 @@ func normalizeExternalCohortAllowedEnvironments(raw []string) []string {
 	return out
 }
 
-func (s *Server) ensureExternalCohort(ctx context.Context, providerID, cohortKind, cohortKey, displayName string) error {
-	_, err := s.client.ExternalCohort.Query().
+func ensureExternalCohortWithClient(ctx context.Context, client *ent.Client, providerID, cohortKind, cohortKey, displayName string) error {
+	_, err := client.ExternalCohort.Query().
 		Where(
 			externalcohort.ProviderIDEQ(providerID),
 			externalcohort.CohortKindEQ(cohortKind),
@@ -2753,7 +2895,7 @@ func (s *Server) ensureExternalCohort(ctx context.Context, providerID, cohortKin
 		return err
 	}
 	id, _ := uuid.NewV7()
-	_, err = s.client.ExternalCohort.Create().
+	_, err = client.ExternalCohort.Create().
 		SetID(id.String()).
 		SetProviderID(providerID).
 		SetCohortKind(cohortKind).
@@ -2829,7 +2971,14 @@ func externalCohortRefKey(kind, key string) string {
 }
 
 func (s *Server) listExternalCohorts(ctx context.Context, providerID string) ([]*ent.ExternalCohort, error) {
-	return s.client.ExternalCohort.Query().
+	return listExternalCohortsWithClient(ctx, s.client, providerID)
+}
+
+func listExternalCohortsWithClient(ctx context.Context, client *ent.Client, providerID string) ([]*ent.ExternalCohort, error) {
+	if client == nil {
+		return nil, fmt.Errorf("ent client is required")
+	}
+	return client.ExternalCohort.Query().
 		Where(externalcohort.ProviderIDEQ(providerID)).
 		Order(ent.Asc(externalcohort.FieldCohortKind), ent.Asc(externalcohort.FieldDisplayName)).
 		All(ctx)

@@ -89,7 +89,7 @@ const (
 //
 // Key Constraints (ADR-0009, ADR-0012):
 // 1. Payload is IMMUTABLE (append-only)
-// 2. Modifications stored in ApprovalTicket.ModifiedSpec (full replacement, not diff)
+// 2. Modifications stored in Ticket.ModifiedSpec (full replacement, not diff)
 // 3. Worker calls GetEffectiveSpec() to get final config
 //
 // Database-Level Immutability Enforcement:
@@ -149,7 +149,7 @@ type DomainEvent struct {
 // This ensures Single Source of Truth and prevents data inconsistency.
 //
 // NOTE (master-flow.md §Stage 3.C): No ClusterID in user request.
-// Cluster is selected by admin during approval and stored in ApprovalTicket.ModifiedSpec.
+// Cluster is selected by admin during approval and stored in Ticket.ModifiedSpec.
 // This prevents users from bypassing capacity planning.
 type VMCreationPayload struct {
 	ServiceID  string `json:"service_id"`

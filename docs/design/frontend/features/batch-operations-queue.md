@@ -44,7 +44,7 @@ This document is mandatory for approvals batch, VM batch create/delete, and batc
 │                                  │                                                               │
 │                                  ▼                                                               │
 │  Screen D: Action States                                                                          │
-│    - `IN_PROGRESS`: allow [Terminate pending]                                                    │
+│    - `IN_PROGRESS`: allow [Retry failed] when eligible and [Terminate pending]                  │
 │    - `PARTIAL_SUCCESS` / `FAILED`: allow [Retry failed]                                         │
 │    - `COMPLETED` / `CANCELLED`: disable mutating actions, keep [Export result] / [View details] │
 │                                                                                                  │
@@ -53,25 +53,32 @@ This document is mandatory for approvals batch, VM batch create/delete, and batc
 
 ### 2.1 Parent Row
 
-Each parent row must display at least:
+The list endpoint exposes these parent-row fields:
 
-- `batch_id`
-- `batch_type`
-- `status` (`PENDING_APPROVAL`, `APPROVED`, `IN_PROGRESS`, `COMPLETED`, `PARTIAL_SUCCESS`, `FAILED`, `CANCELLED`)
+- `id`
+- `operation`
+- `status` (`PENDING_APPROVAL`, `IN_PROGRESS`, `COMPLETED`,
+  `PARTIAL_SUCCESS`, `FAILED`, `CANCELLED`)
 - `child_count`, `success_count`, `failed_count`, `pending_count`
-- `created_at`, `updated_at`
-- `requester`
+- `created_at`
+
+The detail endpoint uses `batch_id` for the same parent and additionally exposes
+`children`, `created_by`, and `updated_at`. The UI must not invent a public
+`APPROVED` parent status or require list-only `batch_type`, `requester`, or
+`updated_at` fields that are absent from the list schema.
 
 ### 2.2 Child Detail Panel
 
 Child tasks are rendered via expandable panel/table, showing:
 
 - `ticket_id`
-- target object (`vm_id`/`approval_ticket_id`)
-- `status` (`PENDING`, `RUNNING`, `SUCCESS`, `FAILED`, `CANCELLED`)
+- `event_id`
+- optional `resource_id` and `resource_name`
+- `status` (`PENDING`, `APPROVED`, `REJECTED`, `CANCELLED`, `EXECUTING`,
+  `SUCCESS`, `FAILED`)
 - `attempt_count`
-- `last_error_code`, `last_error_message`
-- `last_attempt_at`
+- optional `last_error`
+- optional `provisioning` detail
 
 ### 2.3 Actions
 
@@ -79,9 +86,8 @@ By parent status:
 
 | Parent Status | Allowed Actions |
 |---------------|-----------------|
-| `PENDING_APPROVAL` | Approve / Reject |
-| `APPROVED` | Refresh / View details (awaiting execution scheduling) |
-| `IN_PROGRESS` | Refresh / Terminate remaining pending children |
+| `PENDING_APPROVAL` | Refresh / Terminate pending children; approval decisions remain in the approvals UI |
+| `IN_PROGRESS` | Refresh / Retry eligible failed children / Terminate remaining pending children |
 | `PARTIAL_SUCCESS` | Retry failed children / Export result |
 | `FAILED` | Retry failed children / Export result |
 | `COMPLETED` | Export result |
@@ -108,12 +114,42 @@ Frontend MUST treat `202` as "accepted for processing" and transition UI into tr
 
 Use TanStack Query polling for parent and child status endpoints:
 
-- Initial polling interval: `2s`
+- Initial polling interval: use submission `retry_after_seconds` (`2s` in the
+  current contract); fall back to `2s` if tracking starts from a copied URL
 - Backoff on consecutive transient failures: exponential (max `30s`)
 - Stop polling when parent reaches terminal status
 - Resume polling immediately after user-triggered retry/terminate
 
-### 3.3 Rate Limit Handling
+### 3.3 Idempotency, Retry, and Fence Handling
+
+- Generate one stable `request_id` for one intentional submission and reuse it
+  across transport timeout, reconnect, and `5xx` recovery. Generate a new value
+  only after the user intentionally starts a distinct batch.
+- Treat `request_id` as opaque text. The client must not truncate it or infer a
+  `varchar`/512-character server limit.
+- Do not automatically repeat a batch mutation with a new key. First replay the
+  original key or reload the known `status_url` so a response lost after commit
+  resolves to the existing parent.
+- Display `attempt_count` as the logical dispatch count. The initial dispatch is
+  attempt 1 and the server permits at most three logical attempts per child;
+  River's internal job redelivery does not increase this number.
+- Enable `Retry failed` only for execution-`FAILED` children below the cap.
+  `REJECTED` is an approval outcome and must not expose this execution action.
+  The server remains authoritative because another actor or worker may win
+  after the view was rendered.
+- On `BATCH_RETRY_IN_PROGRESS`, `BATCH_NOTHING_TO_RETRY`,
+  `BATCH_NOTHING_TO_CANCEL`, or `BATCH_RETRY_ATTEMPTS_EXHAUSTED`, keep the parent
+  selection, refresh status, and explain the conflict instead of resubmitting.
+- Never automatically retry an ambiguous VM restart mutation. Continue polling
+  the child/parent state; when the conflict reports
+  `operator_action_required=true`, surface its server-provided
+  `reconciliation_path` runbook identifier to an authorized platform
+  administrator. The UI must keep this guidance read-only, must never expose a
+  fence-clear action, and must explain that a provider receipt/idempotency or
+  provable-cancellation protocol is required before safe recovery. It must not
+  turn operator guidance into a duplicate restart action.
+
+### 3.4 Rate Limit Handling
 
 When backend returns `429 Too Many Requests`:
 
@@ -140,9 +176,12 @@ Use Ant Design `Table` with `rowSelection` for batch creation and action trigger
 
 ### 4.3 Retry and Terminate
 
-- `Retry failed` only targets failed children
+- `Retry failed` only targets eligible execution-`FAILED` children with
+  `attempt_count < 3`; approval-`REJECTED` children do not expose this action
 - `Terminate` cancels only not-yet-started or pending children
 - UI must always indicate which items were actually affected
+- Concurrency conflicts must trigger a status refresh; optimistic UI must not
+  leave a child in a fabricated pending/executing state
 
 ### 4.4 Result Export
 
@@ -170,19 +209,23 @@ Track at least:
 ## 6. Suggested React Query Pattern
 
 ```ts
-const batchStatusQuery = useQuery({
-  queryKey: ['batch-status', batchId],
-  queryFn: ({ signal }) => api.getBatchStatus(batchId, { signal }),
-  refetchInterval: (q) => {
-    const status = q.state.data?.status;
-    if (!status || ['COMPLETED', 'FAILED', 'PARTIAL_SUCCESS', 'CANCELLED'].includes(status)) {
-      return false;
-    }
-    return 2000;
-  },
-  retry: 3,
-  retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
-});
+function useBatchStatus(batchId: string, retryAfterSeconds = 2) {
+  const pollIntervalMs = Math.max(1, retryAfterSeconds) * 1000;
+
+  return useQuery({
+    queryKey: ['batch-status', batchId],
+    queryFn: ({ signal }) => api.getBatchStatus(batchId, { signal }),
+    refetchInterval: (q) => {
+      const status = q.state.data?.status;
+      if (status && ['COMPLETED', 'FAILED', 'PARTIAL_SUCCESS', 'CANCELLED'].includes(status)) {
+        return false;
+      }
+      return pollIntervalMs;
+    },
+    retry: 3,
+    retryDelay: (attempt) => Math.min(1000 * 2 ** attempt, 30000),
+  });
+}
 ```
 
 ## 7. Cross-Document Consistency Rules
@@ -190,6 +233,9 @@ const batchStatusQuery = useQuery({
 - Status enum definitions must stay synchronized with `master-flow.md` and OpenAPI.
 - Parent/child counters shown in UI must come from backend aggregate fields, not local recomputation.
 - Frontend should not infer completion from HTTP request success alone; only terminal parent status ends flow.
+- Field-level three-state updates for administrator rate-limit overrides are
+  outside this batch-queue contract. Omitted/`null`/numeric semantics remain
+  deferred to a separate accepted ADR and must not be inferred here.
 
 ## 8. External Best-Practice References
 

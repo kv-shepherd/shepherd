@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"math"
 	"net/http"
 	"sort"
 	"strings"
@@ -16,7 +17,6 @@ import (
 	entticket "kv-shepherd.io/shepherd/ent/ticket"
 	entuser "kv-shepherd.io/shepherd/ent/user"
 	"kv-shepherd.io/shepherd/internal/api/generated"
-	"kv-shepherd.io/shepherd/internal/domain"
 	"kv-shepherd.io/shepherd/internal/pkg/logger"
 )
 
@@ -57,58 +57,67 @@ func (s *Server) CreateRateLimitExemption(c *gin.Context) {
 		})
 		return
 	}
-	userEnt, err := s.client.User.Get(ctx, userID)
+	reason := ""
+	if req.Reason != nil {
+		reason = strings.TrimSpace(*req.Reason)
+	}
+
+	var (
+		userEnt *ent.User
+		saved   *ent.RateLimitExemption
+	)
+	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if err := lockUserMutation(ctx, tx, userID); err != nil {
+			return err
+		}
+
+		txClient := tx.Client()
+		var err error
+		userEnt, err = txClient.User.Get(ctx, userID)
+		if err != nil {
+			return err
+		}
+
+		existing, err := txClient.RateLimitExemption.Query().
+			Where(ratelimitexemption.IDEQ(userID)).
+			Only(ctx)
+		if err != nil && !ent.IsNotFound(err) {
+			return err
+		}
+
+		if ent.IsNotFound(err) {
+			create := txClient.RateLimitExemption.Create().
+				SetID(userID).
+				SetExemptedBy(actor)
+			if reason != "" {
+				create = create.SetReason(reason)
+			}
+			if req.ExpiresAt != nil {
+				create = create.SetExpiresAt(*req.ExpiresAt)
+			}
+			saved, err = create.Save(ctx)
+			return err
+		}
+
+		update := existing.Update().SetExemptedBy(actor)
+		if reason != "" {
+			update = update.SetReason(reason)
+		} else {
+			update = update.ClearReason()
+		}
+		if req.ExpiresAt != nil {
+			update = update.SetExpiresAt(*req.ExpiresAt)
+		} else {
+			update = update.ClearExpiresAt()
+		}
+		saved, err = update.Save(ctx)
+		return err
+	})
 	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
 			return
 		}
-		logger.Error("failed to query user for rate-limit exemption", zap.Error(err), zap.String("user_id", userID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	reason := ""
-	if req.Reason != nil {
-		reason = strings.TrimSpace(*req.Reason)
-	}
-	existing, err := s.client.RateLimitExemption.Query().
-		Where(ratelimitexemption.IDEQ(userID)).
-		Only(ctx)
-	if err != nil && !ent.IsNotFound(err) {
-		logger.Error("failed to query rate-limit exemption", zap.Error(err), zap.String("user_id", userID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
-
-	var saved *ent.RateLimitExemption
-	if ent.IsNotFound(err) {
-		create := s.client.RateLimitExemption.Create().
-			SetID(userID).
-			SetExemptedBy(actor)
-		if reason != "" {
-			create = create.SetReason(reason)
-		}
-		if req.ExpiresAt != nil {
-			create = create.SetExpiresAt(*req.ExpiresAt)
-		}
-		saved, err = create.Save(ctx)
-	} else {
-		update := existing.Update().
-			SetExemptedBy(actor)
-		if reason == "" {
-			update = update.ClearReason()
-		} else {
-			update = update.SetReason(reason)
-		}
-		if req.ExpiresAt == nil {
-			update = update.ClearExpiresAt()
-		} else {
-			update = update.SetExpiresAt(*req.ExpiresAt)
-		}
-		saved, err = update.Save(ctx)
-	}
-	if err != nil {
 		logger.Error("failed to save rate-limit exemption", zap.Error(err), zap.String("user_id", userID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -151,7 +160,13 @@ func (s *Server) DeleteRateLimitExemption(c *gin.Context, userID string) {
 		return
 	}
 
-	if err := s.client.RateLimitExemption.DeleteOneID(trimmedUserID).Exec(ctx); err != nil {
+	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if err := lockUserMutation(ctx, tx, trimmedUserID); err != nil {
+			return err
+		}
+		return tx.Client().RateLimitExemption.DeleteOneID(trimmedUserID).Exec(ctx)
+	})
+	if err != nil {
 		if ent.IsNotFound(err) {
 			c.JSON(http.StatusNotFound, generated.Error{Code: "RATE_LIMIT_EXEMPTION_NOT_FOUND"})
 			return
@@ -178,15 +193,6 @@ func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userID string) {
 	trimmedUserID := strings.TrimSpace(userID)
 	if trimmedUserID == "" {
 		c.JSON(http.StatusBadRequest, generated.Error{Code: "INVALID_REQUEST"})
-		return
-	}
-	if _, err := s.client.User.Get(ctx, trimmedUserID); err != nil {
-		if ent.IsNotFound(err) {
-			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
-			return
-		}
-		logger.Error("failed to query user for rate-limit override", zap.Error(err), zap.String("user_id", trimmedUserID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
 	}
 
@@ -227,36 +233,45 @@ func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userID string) {
 	if req.Reason != nil {
 		reason = strings.TrimSpace(*req.Reason)
 	}
-	existing, err := s.client.RateLimitUserOverride.Query().
-		Where(ratelimituseroverride.IDEQ(trimmedUserID)).
-		Only(ctx)
-	if err != nil && !ent.IsNotFound(err) {
-		logger.Error("failed to query rate-limit override", zap.Error(err), zap.String("user_id", trimmedUserID))
-		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
-		return
-	}
 
 	var saved *ent.RateLimitUserOverride
-	if ent.IsNotFound(err) {
-		create := s.client.RateLimitUserOverride.Create().
-			SetID(trimmedUserID).
-			SetUpdatedBy(actor)
-		if req.MaxPendingParents != nil {
-			create = create.SetMaxPendingParents(*req.MaxPendingParents)
+	err := WithTx(ctx, s.client, func(tx *ent.Tx) error {
+		if err := lockUserMutation(ctx, tx, trimmedUserID); err != nil {
+			return err
 		}
-		if req.MaxPendingChildren != nil {
-			create = create.SetMaxPendingChildren(*req.MaxPendingChildren)
+
+		txClient := tx.Client()
+		if _, err := txClient.User.Get(ctx, trimmedUserID); err != nil {
+			return err
 		}
-		if req.CooldownSeconds != nil {
-			create = create.SetCooldownSeconds(*req.CooldownSeconds)
+
+		existing, err := txClient.RateLimitUserOverride.Query().
+			Where(ratelimituseroverride.IDEQ(trimmedUserID)).
+			Only(ctx)
+		if err != nil && !ent.IsNotFound(err) {
+			return err
 		}
-		if req.Reason != nil && reason != "" {
-			create = create.SetReason(reason)
+		if ent.IsNotFound(err) {
+			create := txClient.RateLimitUserOverride.Create().
+				SetID(trimmedUserID).
+				SetUpdatedBy(actor)
+			if req.MaxPendingParents != nil {
+				create = create.SetMaxPendingParents(*req.MaxPendingParents)
+			}
+			if req.MaxPendingChildren != nil {
+				create = create.SetMaxPendingChildren(*req.MaxPendingChildren)
+			}
+			if req.CooldownSeconds != nil {
+				create = create.SetCooldownSeconds(*req.CooldownSeconds)
+			}
+			if req.Reason != nil && reason != "" {
+				create = create.SetReason(reason)
+			}
+			saved, err = create.Save(ctx)
+			return err
 		}
-		saved, err = create.Save(ctx)
-	} else {
-		update := existing.Update().
-			SetUpdatedBy(actor)
+
+		update := existing.Update().SetUpdatedBy(actor)
 		if req.MaxPendingParents != nil {
 			update = update.SetMaxPendingParents(*req.MaxPendingParents)
 		}
@@ -274,8 +289,13 @@ func (s *Server) UpdateRateLimitUserOverrides(c *gin.Context, userID string) {
 			}
 		}
 		saved, err = update.Save(ctx)
-	}
+		return err
+	})
 	if err != nil {
+		if ent.IsNotFound(err) {
+			c.JSON(http.StatusNotFound, generated.Error{Code: "USER_NOT_FOUND"})
+			return
+		}
 		logger.Error("failed to save rate-limit override", zap.Error(err), zap.String("user_id", trimmedUserID))
 		c.JSON(http.StatusInternalServerError, generated.Error{Code: "INTERNAL_ERROR"})
 		return
@@ -329,12 +349,9 @@ func (s *Server) ListRateLimitStatus(c *gin.Context) {
 
 	parentEvents, err := s.client.DomainEvent.Query().
 		Where(
-			domainevent.AggregateTypeEQ("batch"),
-			domainevent.EventTypeIn(
-				string(domain.EventBatchCreateRequested),
-				string(domain.EventBatchDeleteRequested),
-			),
-			domainevent.StatusEQ(domainevent.StatusPENDING),
+			domainevent.AggregateTypeEQ(batchResourceType),
+			domainevent.EventTypeIn(batchParentEventTypes()...),
+			domainevent.StatusIn(domainevent.StatusPENDING, domainevent.StatusPROCESSING),
 		).
 		All(ctx)
 	if err != nil {
@@ -377,11 +394,8 @@ func (s *Server) ListRateLimitStatus(c *gin.Context) {
 
 	recentEvents, err := s.client.DomainEvent.Query().
 		Where(
-			domainevent.AggregateTypeEQ("batch"),
-			domainevent.EventTypeIn(
-				string(domain.EventBatchCreateRequested),
-				string(domain.EventBatchDeleteRequested),
-			),
+			domainevent.AggregateTypeEQ(batchResourceType),
+			domainevent.EventTypeIn(batchParentEventTypes()...),
 		).
 		Order(ent.Desc(domainevent.FieldCreatedAt)).
 		All(ctx)
@@ -453,7 +467,7 @@ func (s *Server) ListRateLimitStatus(c *gin.Context) {
 			if last, ok := lastBatchEventByUser[userID]; ok {
 				remaining := time.Until(last.Add(policy.Cooldown))
 				if remaining > 0 {
-					cooldownRemaining = int(remaining.Seconds())
+					cooldownRemaining = int(math.Ceil(remaining.Seconds()))
 				}
 			}
 		}

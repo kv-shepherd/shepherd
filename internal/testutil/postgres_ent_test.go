@@ -7,6 +7,25 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestMain(m *testing.M) {
+	MustStartDockerPG(m)
+}
+
+func TestOpenEntPostgresWithPoolSharesSchema(t *testing.T) {
+	client, pool := OpenEntPostgresWithPool(t, "ent_pool_shared_schema")
+	created, err := client.User.Create().
+		SetID("shared-user").
+		SetUsername("shared-user").
+		SetEnabled(true).
+		Save(t.Context())
+	require.NoError(t, err)
+
+	var username string
+	err = pool.QueryRow(t.Context(), `SELECT username FROM users WHERE id = $1`, created.ID).Scan(&username)
+	require.NoError(t, err)
+	require.Equal(t, created.Username, username)
+}
+
 func TestDsnWithSearchPath_URL(t *testing.T) {
 	dsn := "postgres://user:pass@localhost:5432/shepherd?sslmode=disable"
 	got, err := dsnWithSearchPath(dsn, "tenant_a")

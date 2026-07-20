@@ -361,20 +361,22 @@ Rules:
 
 Key constraints:
 - **Payload is immutable** (append-only)
-- Modifications stored in `ApprovalTicket.modified_spec` (full replacement)
+- Modifications stored in `Ticket.modified_spec` (full replacement)
 - `archived_at` field for soft archiving
 
-### 3.4 ApprovalTicket Admin Fields (ADR-0017)
+### 3.4 Ticket Approval Fields (ADR-0017)
 
-> **Added by [ADR-0017](../../adr/ADR-0017-vm-request-flow-clarification.md)**: Admin-determined fields during approval workflow.
+> **Current physical schema**: [`ent/schema/ticket.go`](../../../ent/schema/ticket.go). `Ticket.operation_type` supports `CREATE`, `MODIFY`, `DELETE`, `POWER`, `VNC_ACCESS`.
+> ADR-0017 introduced the admin-determined fields used during the approval workflow.
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `selected_cluster_id` | string | Admin selects target cluster during approval |
-| `selected_template_version` | int | Admin confirms template version |
 | `selected_storage_class` | string | From cluster's available storage classes |
-| `template_snapshot` | JSONB | Full template configuration at approval time (immutable) |
+| `template_snapshot` | JSONB | Effective template configuration resolved and snapshotted at approval time |
 | `instance_size_snapshot` | JSONB | InstanceSize configuration at approval time (ADR-0018) |
+| `placement_evaluation` | JSONB | Capability and policy evaluation for the selected cluster |
+| `modified_spec` | JSONB | Full replacement containing supported approval-time overrides |
 
 > **Security Note**: User-provided `namespace` is **immutable after submission**. Admin can only approve/reject, never modify the namespace. This prevents permission escalation attacks.
 
@@ -386,7 +388,7 @@ Key constraints:
 | Forbidden Field | Reason | Where Determined |
 |-----------------|--------|------------------|
 | `cluster_id` | ❌ **Users cannot select clusters** | Admin during approval |
-| `template_version` | ❌ Users cannot pin specific versions | Admin during approval |
+| `template_version` | ❌ Version pinning is not part of the request or Ticket schema | Effective template is resolved and snapshotted during approval |
 | `storage_class` | ❌ Infrastructure decision | Admin during approval |
 
 **OpenAPI Schema Enforcement** (api/openapi.yaml):

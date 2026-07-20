@@ -1015,6 +1015,12 @@ func init() {
 	ticketDescRequester := ticketFields[4].Descriptor()
 	// ticket.RequesterValidator is a validator for the "requester" field. It is called by the builders before save.
 	ticket.RequesterValidator = ticketDescRequester.Validators[0].(func(string) error)
+	// ticketDescAttemptCount is the schema descriptor for attempt_count field.
+	ticketDescAttemptCount := ticketFields[15].Descriptor()
+	// ticket.DefaultAttemptCount holds the default value on creation for the attempt_count field.
+	ticket.DefaultAttemptCount = ticketDescAttemptCount.Default.(int32)
+	// ticket.AttemptCountValidator is a validator for the "attempt_count" field. It is called by the builders before save.
+	ticket.AttemptCountValidator = ticketDescAttemptCount.Validators[0].(func(int32) error)
 	userMixin := schema.User{}.Mixin()
 	userMixinFields0 := userMixin[0].Fields()
 	_ = userMixinFields0

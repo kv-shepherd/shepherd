@@ -7,6 +7,20 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const controllerState = vi.hoisted(() => ({
     activeBatchID: '',
     activeBatchKind: '',
+    batchRateLimited: false,
+    batchRateLimitContactAdmin: false,
+    batchRetryAfterSeconds: 0,
+    canRetryActiveBatch: false,
+    canCancelActiveBatch: false,
+    lastBatchActionFeedback: null as null | {
+        action: 'retry' | 'cancel';
+        affectedCount: number;
+        affectedTicketIDs: string[];
+    },
+    restartReconciliationNotice: null as null | {
+        eventId: string;
+        reconciliationPath: string;
+    },
     batchStatus: null as null | {
         status: string;
         success_count?: number;
@@ -22,6 +36,9 @@ const useApiGetMock = vi.fn();
 const openWizardMock = vi.fn();
 const changeFiltersMock = vi.fn();
 const resetFiltersMock = vi.fn();
+const retryBatchMock = vi.fn();
+const cancelBatchMock = vi.fn();
+const dismissRestartReconciliationMock = vi.fn();
 
 vi.mock('react-i18next', () => ({
     useTranslation: () => ({
@@ -66,6 +83,18 @@ vi.mock('react-i18next', () => ({
                 'batch.open_requests': 'Open My Requests',
                 'batch.open_workbench': 'Open Batch Jobs',
                 'batch.clear': 'Clear',
+                'batch.retry_failed': 'Retry Failed',
+                'batch.cancel_pending': 'Cancel Pending',
+                'batch.retry_feedback': 'Retry affected {{count}}: {{ids}}',
+                'batch.cancel_feedback': 'Cancel affected {{count}}: {{ids}}',
+                'batch.affected_ids_none': 'none returned',
+                'restart_reconciliation.title': 'Operator action required',
+                'restart_reconciliation.readonly_description': 'Follow the operations runbook; the UI cannot release this fence.',
+                'restart_reconciliation.event_id': 'Event ID',
+                'restart_reconciliation.path': 'Reconciliation path',
+                'restart_reconciliation.dismiss': 'Dismiss',
+                'batch.rate_limited_wait': 'Retry in {{seconds}}s',
+                'batch.rate_limited_contact_admin': 'Retry in {{seconds}}s or contact an administrator',
             };
             const fallback =
                 typeof options === 'string' ? options : options?.defaultValue;
@@ -185,12 +214,19 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
             discardDraft: vi.fn(),
             selectedVMIDs: [],
             batchSubmitPending: false,
-            batchRateLimited: false,
+            batchRateLimited: controllerState.batchRateLimited,
+            batchRateLimitContactAdmin: controllerState.batchRateLimitContactAdmin,
             modifySubmitPending: false,
             openBatchModifyModal: vi.fn(),
             submitBatchPowerSelected: vi.fn(),
             submitBatchDeleteSelected: vi.fn(),
-            batchRetryAfterSeconds: 0,
+            batchRetryAfterSeconds: controllerState.batchRetryAfterSeconds,
+            canRetryActiveBatch: controllerState.canRetryActiveBatch,
+            canCancelActiveBatch: controllerState.canCancelActiveBatch,
+            lastBatchActionFeedback: controllerState.lastBatchActionFeedback,
+            batchActionPending: false,
+            retryBatch: retryBatchMock,
+            cancelBatch: cancelBatchMock,
             vmData: { items: [], pagination: { total: 0 } },
             isLoading: false,
             page: 1,
@@ -200,6 +236,8 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
             startVM: vi.fn(),
             stopVM: vi.fn(),
             restartVM: vi.fn(),
+            restartReconciliationNotice: controllerState.restartReconciliationNotice,
+            dismissRestartReconciliation: dismissRestartReconciliationMock,
             openDeleteModal: vi.fn(),
             openModifyModal: vi.fn(),
             setSelectedVMIDs: vi.fn(),
@@ -209,7 +247,6 @@ vi.mock('@/features/vm-management/hooks/useVMManagementController', () => ({
             batchLoading: false,
             refreshBatch: vi.fn(),
             clearBatchTracking: vi.fn(),
-            lastBatchActionFeedback: null,
             wizardStep: 0,
             setWizardStep: vi.fn(),
             requestMode: 'guided',
@@ -285,8 +322,18 @@ describe('VMsPage', () => {
         openWizardMock.mockReset();
         changeFiltersMock.mockReset();
         resetFiltersMock.mockReset();
+        retryBatchMock.mockReset();
+        cancelBatchMock.mockReset();
+        dismissRestartReconciliationMock.mockReset();
         controllerState.activeBatchID = '';
         controllerState.activeBatchKind = '';
+        controllerState.batchRateLimited = false;
+        controllerState.batchRateLimitContactAdmin = false;
+        controllerState.batchRetryAfterSeconds = 0;
+        controllerState.canRetryActiveBatch = false;
+        controllerState.canCancelActiveBatch = false;
+        controllerState.lastBatchActionFeedback = null;
+        controllerState.restartReconciliationNotice = null;
         controllerState.batchStatus = null;
         useApiGetMock.mockReturnValue({
             data: {
@@ -361,6 +408,19 @@ describe('VMsPage', () => {
         expect(screen.getByTestId('vms-advanced-search-submit')).toBeVisible();
     });
 
+    it('keeps administrator guidance visible throughout a server-directed batch cooldown', () => {
+        useSetupGuideMock.mockReturnValue({
+            vmRequestReady: true,
+        });
+        controllerState.batchRateLimited = true;
+        controllerState.batchRateLimitContactAdmin = true;
+        controllerState.batchRetryAfterSeconds = 9;
+
+        render(<VMsPage />);
+
+        expect(screen.getByText('Retry in 9s or contact an administrator')).toBeVisible();
+    });
+
     it('routes request-style current batch tracking to My Requests', async () => {
         const user = userEvent.setup();
         useSetupGuideMock.mockReturnValue({
@@ -402,5 +462,56 @@ describe('VMsPage', () => {
 
         await user.click(screen.getByRole('button', { name: 'Open Batch Jobs' }));
         expect(pushMock).toHaveBeenCalledWith('/vms/batch/batch-job-1');
+    });
+
+    it('consumes controller retry/cancel capability and affected ticket feedback', async () => {
+        const user = userEvent.setup();
+        useSetupGuideMock.mockReturnValue({ vmRequestReady: true });
+        controllerState.activeBatchID = 'batch-job-1';
+        controllerState.activeBatchKind = 'job';
+        controllerState.batchStatus = {
+            status: 'IN_PROGRESS',
+            success_count: 0,
+            failed_count: 1,
+            pending_count: 1,
+        };
+        controllerState.canRetryActiveBatch = true;
+        controllerState.canCancelActiveBatch = true;
+        controllerState.lastBatchActionFeedback = {
+            action: 'retry',
+            affectedCount: 1,
+            affectedTicketIDs: ['ticket-failed-1'],
+        };
+
+        render(<VMsPage />);
+
+        expect(screen.getByTestId('active-batch-action-feedback')).toHaveTextContent(
+            'Retry affected 1: ticket-failed-1',
+        );
+        await user.click(screen.getByTestId('active-batch-retry'));
+        await user.click(screen.getByTestId('active-batch-cancel'));
+        expect(retryBatchMock).toHaveBeenCalledOnce();
+        expect(cancelBatchMock).toHaveBeenCalledOnce();
+    });
+
+    it('shows ambiguous restart metadata as read-only runbook guidance', async () => {
+        const user = userEvent.setup();
+        useSetupGuideMock.mockReturnValue({ vmRequestReady: true });
+        controllerState.restartReconciliationNotice = {
+            eventId: 'event-restart-1',
+            reconciliationPath: 'operator-runbook:ambiguous-vm-restart',
+        };
+
+        render(<VMsPage />);
+
+        const alert = screen.getByTestId('restart-reconciliation-alert');
+        expect(alert).toHaveTextContent('event-restart-1');
+        expect(alert).toHaveTextContent(
+            'operator-runbook:ambiguous-vm-restart',
+        );
+        expect(alert).toHaveTextContent('the UI cannot release this fence');
+        expect(screen.queryByTestId('restart-reconciliation-submit')).not.toBeInTheDocument();
+        await user.click(screen.getByRole('button', { name: 'Dismiss' }));
+        expect(dismissRestartReconciliationMock).toHaveBeenCalledOnce();
     });
 });

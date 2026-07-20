@@ -1,6 +1,6 @@
 module kv-shepherd.io/shepherd
 
-go 1.25.11
+go 1.25.12
 
 require (
 	ariga.io/atlas v1.2.0
@@ -135,7 +135,7 @@ require (
 	github.com/prometheus/common v0.66.1 // indirect
 	github.com/prometheus/procfs v0.16.1 // indirect
 	github.com/quic-go/qpack v0.6.0 // indirect
-	github.com/quic-go/quic-go v0.59.0 // indirect
+	github.com/quic-go/quic-go v0.59.1 // indirect
 	github.com/riverqueue/river/riverdriver v0.39.0 // indirect
 	github.com/riverqueue/river/rivershared v0.39.0 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect

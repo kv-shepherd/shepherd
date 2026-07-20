@@ -2,8 +2,10 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"slices"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 
@@ -80,6 +82,9 @@ func NewResourceRoleChecker(client *ent.Client) *ResourceRoleChecker {
 // CheckResourceRole walks the resource hierarchy to find the user's role.
 // Returns the role and whether any binding was found.
 func (c *ResourceRoleChecker) CheckResourceRole(ctx context.Context, userID, resourceType, resourceID string) (ResourceRole, bool, error) {
+	if c == nil || c.client == nil {
+		return "", false, fmt.Errorf("resource role checker is not initialized")
+	}
 	// 1. Check direct binding on this resource.
 	binding, err := c.findBinding(ctx, userID, resourceType, resourceID)
 	if err != nil {
@@ -174,6 +179,16 @@ func RoleCanPerform(role ResourceRole, action string) bool {
 // It first checks global permissions, then falls back to resource role hierarchy.
 func RequireResourceAccess(checker *ResourceRoleChecker, resourceType, action, paramName string) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if checker == nil || checker.client == nil ||
+			strings.TrimSpace(resourceType) == "" ||
+			strings.TrimSpace(action) == "" ||
+			strings.TrimSpace(paramName) == "" {
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"code": "INTERNAL_ERROR", "message": "resource access middleware is misconfigured",
+			})
+			return
+		}
+
 		// 1. Global permission check: platform:admin allows everything.
 		perms, _ := c.Get("permissions")
 		if permList, ok := perms.([]string); ok && slices.Contains(permList, "platform:admin") {
@@ -191,7 +206,9 @@ func RequireResourceAccess(checker *ResourceRoleChecker, resourceType, action, p
 
 		resourceID := c.Param(paramName)
 		if resourceID == "" {
-			c.Next()
+			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{
+				"code": "INTERNAL_ERROR", "message": "resource route parameter is missing",
+			})
 			return
 		}
 

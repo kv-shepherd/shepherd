@@ -30,6 +30,7 @@ var allowedRawEntSQLFileSuffixes = []string{
 	"internal/api/handlers/audit_ent_predicates.go",
 	"internal/api/handlers/member_ent_predicates.go",
 	"internal/api/handlers/ticket_ent_predicates.go",
+	"internal/jobs/helpers_ent_predicates.go",
 	"internal/infrastructure/database.go",
 	"internal/testutil/postgres_ent.go",
 }

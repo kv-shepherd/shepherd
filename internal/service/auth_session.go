@@ -22,6 +22,7 @@ var (
 	ErrAuthSessionStoreUnavailable = errors.New("auth session store is unavailable")
 	ErrAuthSessionTokenIDMissing   = errors.New("auth session token id is required")
 	ErrAuthSessionUserIDMissing    = errors.New("auth session user id is required")
+	ErrAuthSessionVersionChanged   = errors.New("auth session version changed")
 )
 
 const defaultJWTSessionVersion int64 = 1
@@ -63,13 +64,13 @@ ON auth_revoked_tokens (expires_at);`
 	createAuthRevokedTokensUserIndexSQL = `
 CREATE INDEX IF NOT EXISTS idx_auth_revoked_tokens_user_id
 ON auth_revoked_tokens (user_id);`
-	ensureAuthSessionSubjectSQL = `
+	activateAuthSessionSubjectSQL = `
 INSERT INTO auth_session_subjects (user_id, session_version, last_activity_at, updated_at)
-VALUES ($1, 1, NOW(), NOW())
+VALUES ($1, $2, NOW(), NOW())
 ON CONFLICT (user_id) DO UPDATE
-SET user_id = EXCLUDED.user_id,
-	last_activity_at = NOW(),
+SET last_activity_at = NOW(),
 	updated_at = NOW()
+WHERE auth_session_subjects.session_version = EXCLUDED.session_version
 RETURNING session_version;`
 	//nolint:gosec // Static SQL DML string; no credentials or secrets embedded.
 	revokeAuthTokenSQL = `
@@ -90,9 +91,10 @@ SELECT EXISTS (
 );`
 	incrementAuthSessionVersionsSQL = `
 INSERT INTO auth_session_subjects (user_id, session_version, last_activity_at, updated_at)
-SELECT DISTINCT item.user_id, 2, NOW(), NOW()
+SELECT item.user_id, 2, NOW(), NOW()
 FROM unnest($1::text[]) AS item(user_id)
 WHERE item.user_id <> ''
+ORDER BY item.user_id
 ON CONFLICT (user_id) DO UPDATE
 SET session_version = auth_session_subjects.session_version + 1,
 	last_activity_at = NOW(),
@@ -120,6 +122,12 @@ type AuthSessionManager struct {
 	initialized bool
 }
 
+// AuthSessionTxExecutor is the minimal transaction surface needed to update
+// auth-session state alongside an application transaction.
+type AuthSessionTxExecutor interface {
+	ExecContext(context.Context, string, ...any) error
+}
+
 // NewAuthSessionManager creates a PostgreSQL-backed auth session manager.
 func NewAuthSessionManager(pool *pgxpool.Pool, client *ent.Client, idleTimeout time.Duration) *AuthSessionManager {
 	if pool == nil || client == nil {
@@ -131,6 +139,18 @@ func NewAuthSessionManager(pool *pgxpool.Pool, client *ent.Client, idleTimeout t
 		idleTimeout: idleTimeout,
 		now:         func() time.Time { return time.Now().UTC() },
 	}
+}
+
+// EnsureSchema prepares the auxiliary auth-session tables before callers open
+// a transaction that will update them through RevokeUsersSessionsTx.
+func (m *AuthSessionManager) EnsureSchema(ctx context.Context) error {
+	if m == nil || m.pool == nil {
+		return ErrAuthSessionStoreUnavailable
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return m.ensureSchema(ctx)
 }
 
 // CurrentSessionVersion returns the current JWT session version for a user.
@@ -145,18 +165,47 @@ func (m *AuthSessionManager) CurrentSessionVersion(ctx context.Context, userID s
 	if userID == "" {
 		return 0, ErrAuthSessionUserIDMissing
 	}
+	return m.readSessionVersion(ctx, userID)
+}
+
+// ActivateUserSession records authenticated activity only when the session
+// version still matches the authorization snapshot used to sign the token.
+// Unlike CurrentSessionVersion, this operation is intentionally stateful and
+// must only be called after credentials and token signing have succeeded.
+func (m *AuthSessionManager) ActivateUserSession(
+	ctx context.Context,
+	userID string,
+	expectedVersion int64,
+) error {
+	if m == nil || m.pool == nil {
+		return ErrAuthSessionStoreUnavailable
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return ErrAuthSessionUserIDMissing
+	}
+	if expectedVersion < defaultJWTSessionVersion {
+		return fmt.Errorf("expected auth session version must be at least %d", defaultJWTSessionVersion)
+	}
 	if err := m.ensureSchema(ctx); err != nil {
-		return 0, err
+		return err
 	}
 
-	var version int64
-	if err := m.pool.QueryRow(ctx, ensureAuthSessionSubjectSQL, userID).Scan(&version); err != nil {
-		return 0, fmt.Errorf("ensure auth session subject: %w", err)
+	var activatedVersion int64
+	err := m.pool.QueryRow(ctx, activateAuthSessionSubjectSQL, userID, expectedVersion).Scan(&activatedVersion)
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		return ErrAuthSessionVersionChanged
+	case err != nil:
+		return fmt.Errorf("activate auth session subject: %w", err)
+	case activatedVersion != expectedVersion:
+		return ErrAuthSessionVersionChanged
+	default:
+		return nil
 	}
-	if version < defaultJWTSessionVersion {
-		return defaultJWTSessionVersion, nil
-	}
-	return version, nil
 }
 
 // RevokeToken adds a token identifier to the revocation list.
@@ -196,6 +245,54 @@ func (m *AuthSessionManager) RevokeToken(
 // RevokeUserSessions invalidates all current and future JWTs issued before the new version for a user.
 func (m *AuthSessionManager) RevokeUserSessions(ctx context.Context, userID, reason string) error {
 	return m.RevokeUsersSessions(ctx, []string{userID}, reason)
+}
+
+// RevokeUserSessionsTx invalidates a user's sessions through the caller's
+// transaction. This keeps the version bump atomic with user deletion and safe
+// when a serializable transaction is retried.
+func (m *AuthSessionManager) RevokeUserSessionsTx(
+	ctx context.Context,
+	exec AuthSessionTxExecutor,
+	userID string,
+	reason string,
+) error {
+	return m.RevokeUsersSessionsTx(ctx, exec, []string{userID}, reason)
+}
+
+// RevokeUsersSessionsTx invalidates sessions for the given users through the
+// caller's transaction. Callers must initialize the auxiliary schema before
+// opening that transaction so schema setup never needs a second connection.
+func (m *AuthSessionManager) RevokeUsersSessionsTx(
+	ctx context.Context,
+	exec AuthSessionTxExecutor,
+	userIDs []string,
+	reason string,
+) error {
+	if m == nil || m.pool == nil {
+		return ErrAuthSessionStoreUnavailable
+	}
+	if exec == nil {
+		return fmt.Errorf("auth session transaction executor is required")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	m.initMu.Lock()
+	initialized := m.initialized
+	m.initMu.Unlock()
+	if !initialized {
+		return fmt.Errorf("auth session schema is not initialized")
+	}
+
+	normalized := normalizeAuthSessionUserIDs(userIDs)
+	if len(normalized) == 0 {
+		return nil
+	}
+	_ = reason
+	if err := exec.ExecContext(ctx, incrementAuthSessionVersionsSQL, normalized); err != nil {
+		return fmt.Errorf("increment auth session versions in transaction: %w", err)
+	}
+	return nil
 }
 
 // RevokeUsersSessions invalidates all current and future JWTs issued before the new version for the given users.

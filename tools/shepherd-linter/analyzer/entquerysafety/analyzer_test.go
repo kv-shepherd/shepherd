@@ -14,4 +14,6 @@ func TestEntQuerySafetyAnalyzer(t *testing.T) {
 		"example.com/project/internal/api/handlers")
 	analysistest.Run(t, testdata, entquerysafety.Analyzer,
 		"example.com/project/internal/infrastructure")
+	analysistest.Run(t, testdata, entquerysafety.Analyzer,
+		"example.com/project/internal/jobs")
 }

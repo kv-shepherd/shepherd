@@ -24305,6 +24305,9 @@ type TicketMutation struct {
 	placement_evaluation   *map[string]interface{}
 	modified_spec          *map[string]interface{}
 	parent_ticket_id       *string
+	attempt_count          *int32
+	addattempt_count       *int32
+	last_attempt_at        *time.Time
 	clearedFields          map[string]struct{}
 	done                   bool
 	oldValue               func(context.Context) (*Ticket, error)
@@ -25121,6 +25124,111 @@ func (m *TicketMutation) ResetParentTicketID() {
 	delete(m.clearedFields, ticket.FieldParentTicketID)
 }
 
+// SetAttemptCount sets the "attempt_count" field.
+func (m *TicketMutation) SetAttemptCount(i int32) {
+	m.attempt_count = &i
+	m.addattempt_count = nil
+}
+
+// AttemptCount returns the value of the "attempt_count" field in the mutation.
+func (m *TicketMutation) AttemptCount() (r int32, exists bool) {
+	v := m.attempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldAttemptCount returns the old "attempt_count" field's value of the Ticket entity.
+// If the Ticket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TicketMutation) OldAttemptCount(ctx context.Context) (v int32, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldAttemptCount is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldAttemptCount requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldAttemptCount: %w", err)
+	}
+	return oldValue.AttemptCount, nil
+}
+
+// AddAttemptCount adds i to the "attempt_count" field.
+func (m *TicketMutation) AddAttemptCount(i int32) {
+	if m.addattempt_count != nil {
+		*m.addattempt_count += i
+	} else {
+		m.addattempt_count = &i
+	}
+}
+
+// AddedAttemptCount returns the value that was added to the "attempt_count" field in this mutation.
+func (m *TicketMutation) AddedAttemptCount() (r int32, exists bool) {
+	v := m.addattempt_count
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// ResetAttemptCount resets all changes to the "attempt_count" field.
+func (m *TicketMutation) ResetAttemptCount() {
+	m.attempt_count = nil
+	m.addattempt_count = nil
+}
+
+// SetLastAttemptAt sets the "last_attempt_at" field.
+func (m *TicketMutation) SetLastAttemptAt(t time.Time) {
+	m.last_attempt_at = &t
+}
+
+// LastAttemptAt returns the value of the "last_attempt_at" field in the mutation.
+func (m *TicketMutation) LastAttemptAt() (r time.Time, exists bool) {
+	v := m.last_attempt_at
+	if v == nil {
+		return
+	}
+	return *v, true
+}
+
+// OldLastAttemptAt returns the old "last_attempt_at" field's value of the Ticket entity.
+// If the Ticket object wasn't provided to the builder, the object is fetched from the database.
+// An error is returned if the mutation operation is not UpdateOne, or the database query fails.
+func (m *TicketMutation) OldLastAttemptAt(ctx context.Context) (v *time.Time, err error) {
+	if !m.op.Is(OpUpdateOne) {
+		return v, errors.New("OldLastAttemptAt is only allowed on UpdateOne operations")
+	}
+	if m.id == nil || m.oldValue == nil {
+		return v, errors.New("OldLastAttemptAt requires an ID field in the mutation")
+	}
+	oldValue, err := m.oldValue(ctx)
+	if err != nil {
+		return v, fmt.Errorf("querying old value for OldLastAttemptAt: %w", err)
+	}
+	return oldValue.LastAttemptAt, nil
+}
+
+// ClearLastAttemptAt clears the value of the "last_attempt_at" field.
+func (m *TicketMutation) ClearLastAttemptAt() {
+	m.last_attempt_at = nil
+	m.clearedFields[ticket.FieldLastAttemptAt] = struct{}{}
+}
+
+// LastAttemptAtCleared returns if the "last_attempt_at" field was cleared in this mutation.
+func (m *TicketMutation) LastAttemptAtCleared() bool {
+	_, ok := m.clearedFields[ticket.FieldLastAttemptAt]
+	return ok
+}
+
+// ResetLastAttemptAt resets all changes to the "last_attempt_at" field.
+func (m *TicketMutation) ResetLastAttemptAt() {
+	m.last_attempt_at = nil
+	delete(m.clearedFields, ticket.FieldLastAttemptAt)
+}
+
 // Where appends a list predicates to the TicketMutation builder.
 func (m *TicketMutation) Where(ps ...predicate.Ticket) {
 	m.predicates = append(m.predicates, ps...)
@@ -25155,7 +25263,7 @@ func (m *TicketMutation) Type() string {
 // order to get all numeric fields that were incremented/decremented, call
 // AddedFields().
 func (m *TicketMutation) Fields() []string {
-	fields := make([]string, 0, 16)
+	fields := make([]string, 0, 18)
 	if m.created_at != nil {
 		fields = append(fields, ticket.FieldCreatedAt)
 	}
@@ -25204,6 +25312,12 @@ func (m *TicketMutation) Fields() []string {
 	if m.parent_ticket_id != nil {
 		fields = append(fields, ticket.FieldParentTicketID)
 	}
+	if m.attempt_count != nil {
+		fields = append(fields, ticket.FieldAttemptCount)
+	}
+	if m.last_attempt_at != nil {
+		fields = append(fields, ticket.FieldLastAttemptAt)
+	}
 	return fields
 }
 
@@ -25244,6 +25358,10 @@ func (m *TicketMutation) Field(name string) (ent.Value, bool) {
 		return m.ModifiedSpec()
 	case ticket.FieldParentTicketID:
 		return m.ParentTicketID()
+	case ticket.FieldAttemptCount:
+		return m.AttemptCount()
+	case ticket.FieldLastAttemptAt:
+		return m.LastAttemptAt()
 	}
 	return nil, false
 }
@@ -25285,6 +25403,10 @@ func (m *TicketMutation) OldField(ctx context.Context, name string) (ent.Value, 
 		return m.OldModifiedSpec(ctx)
 	case ticket.FieldParentTicketID:
 		return m.OldParentTicketID(ctx)
+	case ticket.FieldAttemptCount:
+		return m.OldAttemptCount(ctx)
+	case ticket.FieldLastAttemptAt:
+		return m.OldLastAttemptAt(ctx)
 	}
 	return nil, fmt.Errorf("unknown Ticket field %s", name)
 }
@@ -25406,6 +25528,20 @@ func (m *TicketMutation) SetField(name string, value ent.Value) error {
 		}
 		m.SetParentTicketID(v)
 		return nil
+	case ticket.FieldAttemptCount:
+		v, ok := value.(int32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetAttemptCount(v)
+		return nil
+	case ticket.FieldLastAttemptAt:
+		v, ok := value.(time.Time)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.SetLastAttemptAt(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Ticket field %s", name)
 }
@@ -25413,13 +25549,21 @@ func (m *TicketMutation) SetField(name string, value ent.Value) error {
 // AddedFields returns all numeric fields that were incremented/decremented during
 // this mutation.
 func (m *TicketMutation) AddedFields() []string {
-	return nil
+	var fields []string
+	if m.addattempt_count != nil {
+		fields = append(fields, ticket.FieldAttemptCount)
+	}
+	return fields
 }
 
 // AddedField returns the numeric value that was incremented/decremented on a field
 // with the given name. The second boolean return value indicates that this field
 // was not set, or was not defined in the schema.
 func (m *TicketMutation) AddedField(name string) (ent.Value, bool) {
+	switch name {
+	case ticket.FieldAttemptCount:
+		return m.AddedAttemptCount()
+	}
 	return nil, false
 }
 
@@ -25428,6 +25572,13 @@ func (m *TicketMutation) AddedField(name string) (ent.Value, bool) {
 // type.
 func (m *TicketMutation) AddField(name string, value ent.Value) error {
 	switch name {
+	case ticket.FieldAttemptCount:
+		v, ok := value.(int32)
+		if !ok {
+			return fmt.Errorf("unexpected type %T for field %s", value, name)
+		}
+		m.AddAttemptCount(v)
+		return nil
 	}
 	return fmt.Errorf("unknown Ticket numeric field %s", name)
 }
@@ -25465,6 +25616,9 @@ func (m *TicketMutation) ClearedFields() []string {
 	}
 	if m.FieldCleared(ticket.FieldParentTicketID) {
 		fields = append(fields, ticket.FieldParentTicketID)
+	}
+	if m.FieldCleared(ticket.FieldLastAttemptAt) {
+		fields = append(fields, ticket.FieldLastAttemptAt)
 	}
 	return fields
 }
@@ -25509,6 +25663,9 @@ func (m *TicketMutation) ClearField(name string) error {
 		return nil
 	case ticket.FieldParentTicketID:
 		m.ClearParentTicketID()
+		return nil
+	case ticket.FieldLastAttemptAt:
+		m.ClearLastAttemptAt()
 		return nil
 	}
 	return fmt.Errorf("unknown Ticket nullable field %s", name)
@@ -25565,6 +25722,12 @@ func (m *TicketMutation) ResetField(name string) error {
 		return nil
 	case ticket.FieldParentTicketID:
 		m.ResetParentTicketID()
+		return nil
+	case ticket.FieldAttemptCount:
+		m.ResetAttemptCount()
+		return nil
+	case ticket.FieldLastAttemptAt:
+		m.ResetLastAttemptAt()
 		return nil
 	}
 	return fmt.Errorf("unknown Ticket field %s", name)
