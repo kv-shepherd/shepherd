@@ -60,13 +60,12 @@ describe('useAdminInstanceSizesController', () => {
   const t = ((key: string) => key) as unknown as TFunction;
 
   beforeEach(() => {
-    vi.clearAllMocks();
+    vi.resetAllMocks();
 
     let formCall = 0;
     useFormMock.mockImplementation(() => {
       formCall += 1;
-      if (formCall === 1) return [createFormState];
-      return [editFormState];
+      return formCall % 2 === 1 ? [createFormState] : [editFormState];
     });
 
     useApiGetMock.mockReturnValue({
@@ -74,6 +73,8 @@ describe('useAdminInstanceSizesController', () => {
       isLoading: false,
       refetch: vi.fn(),
     });
+    useApiMutationMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
+    useApiActionMock.mockReturnValue({ mutate: vi.fn(), isPending: false });
     createFormState.getFieldsValue.mockReturnValue({});
     editFormState.getFieldsValue.mockReturnValue({});
   });
@@ -256,6 +257,42 @@ describe('useAdminInstanceSizesController', () => {
         errors: ['instanceSizes.memory_request_required'],
       },
     ]);
+  });
+
+  it('preserves shared overcommit request values in create payloads', async () => {
+    const createMutate = vi.fn();
+
+    useApiMutationMock
+      .mockReturnValueOnce({ mutate: createMutate, isPending: false })
+      .mockReturnValueOnce({ mutate: vi.fn(), isPending: false });
+
+    createFormState.validateFields.mockResolvedValue({
+      name: 'm4.shared',
+      catalog_scope: 'prod',
+      cpu_cores: 4,
+      memory_gi: 8,
+      cpu_overcommit_enabled: true,
+      cpu_request: 2,
+      memory_overcommit_enabled: true,
+      memory_request_gi: 6,
+      spec_text: '{}',
+      enabled: true,
+    });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    await act(async () => {
+      await result.current.submitCreate();
+    });
+
+    expect(createMutate).toHaveBeenCalledTimes(1);
+    expect(createMutate).toHaveBeenCalledWith(expect.objectContaining({
+      name: 'm4.shared',
+      cpu_cores: 4,
+      cpu_request: 2,
+      memory_gi: 8,
+      memory_request_gi: 6,
+    }));
   });
 
   it('does not require a memory request input when hugepages is configured', async () => {
@@ -598,6 +635,62 @@ describe('useAdminInstanceSizesController', () => {
       body: expect.objectContaining({
         cpu_request: 4,
         memory_request_gi: 8,
+      }),
+    }));
+  });
+
+  it('preserves shared overcommit request values in update payloads', async () => {
+    const createMutate = vi.fn();
+    const updateMutate = vi.fn();
+
+    let mutationCall = 0;
+    useApiMutationMock.mockImplementation(() => {
+      mutationCall += 1;
+      if (mutationCall % 2 === 1) {
+        return { mutate: createMutate, isPending: false };
+      }
+      return { mutate: updateMutate, isPending: false };
+    });
+
+    const { result } = renderHook(() => useAdminInstanceSizesController({ t }));
+
+    act(() => {
+      result.current.openEditModal({
+        id: 'size-shared',
+        name: 'm4.shared',
+        cpu_cores: 4,
+        memory_gi: 8,
+        cpu_request: 2,
+        memory_request_gi: 6,
+        dedicated_cpu: false,
+        enabled: true,
+      });
+    });
+
+    editFormState.validateFields.mockResolvedValue({
+      name: 'm4.shared',
+      cpu_cores: 4,
+      memory_gi: 8,
+      cpu_overcommit_enabled: true,
+      cpu_request: 2,
+      memory_overcommit_enabled: true,
+      memory_request_gi: 6,
+      spec_text: '{}',
+      enabled: true,
+    });
+
+    await act(async () => {
+      await result.current.submitEdit();
+    });
+
+    expect(updateMutate).toHaveBeenCalledTimes(1);
+    expect(updateMutate).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'size-shared',
+      body: expect.objectContaining({
+        cpu_cores: 4,
+        cpu_request: 2,
+        memory_gi: 8,
+        memory_request_gi: 6,
       }),
     }));
   });
