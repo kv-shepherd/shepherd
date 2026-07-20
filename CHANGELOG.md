@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.1-alpha.10](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.9...v0.1.1-alpha.10) (2026-07-20)
+
+
+### Bug Fixes
+
+* **auth:** repair external auth callback ([#728](https://github.com/kv-shepherd/shepherd/issues/728)) ([995af03](https://github.com/kv-shepherd/shepherd/commit/995af033453be95f7f7938cd7c488f5262348771)), closes [#727](https://github.com/kv-shepherd/shepherd/issues/727)
+* **core:** harden concurrent state changes ([#746](https://github.com/kv-shepherd/shepherd/issues/746)) ([de9a4a4](https://github.com/kv-shepherd/shepherd/commit/de9a4a477914c9b2dad1a1a58565859740d0505f)), closes [#741](https://github.com/kv-shepherd/shepherd/issues/741) [#744](https://github.com/kv-shepherd/shepherd/issues/744)
+* **ui:** clarify instance size resource controls ([#730](https://github.com/kv-shepherd/shepherd/issues/730)) ([a6f8610](https://github.com/kv-shepherd/shepherd/commit/a6f8610ecbe29b604a499257eecb1e12e16857b2)), closes [#729](https://github.com/kv-shepherd/shepherd/issues/729)
+* **vm:** require explicit resource requests ([#725](https://github.com/kv-shepherd/shepherd/issues/725)) ([75c6010](https://github.com/kv-shepherd/shepherd/commit/75c6010cc5486f60a0fd27407428ffca17142f81))
+
+
+### Documentation
+
+* downgrade live e2e evidence scope ([#738](https://github.com/kv-shepherd/shepherd/issues/738)) ([31a0bbd](https://github.com/kv-shepherd/shepherd/commit/31a0bbd66c0f7cdfdaf920c931e7096bfa4e3f3d))
+
 ## [0.1.1-alpha.9](https://github.com/kv-shepherd/shepherd/compare/v0.1.1-alpha.8...v0.1.1-alpha.9) (2026-06-29)
 
 
