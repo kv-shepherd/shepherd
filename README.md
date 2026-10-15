@@ -4,14 +4,27 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/kv-shepherd/shepherd)](go.mod)
 [![CI](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml/badge.svg)](https://github.com/kv-shepherd/shepherd/actions/workflows/ci.yml)
 
-**[Website](https://kv-shepherd.io)** ·
-**[Online Demo](https://demo.kv-shepherd.io)** ·
+**[KubeVirt Shepherd official website](https://kv-shepherd.io/)** ·
+**[中文官网](https://kv-shepherd.io/zh/)** ·
+**[Browser demo — simulated data](https://demo.kv-shepherd.io/)** ·
 **[Documentation](docs/README.md)**
 
-KubeVirt Shepherd is a governance-first management platform for
-[KubeVirt][kubevirt] virtual machines. It provides self-service VM lifecycle
-management with structured approval workflows, RBAC, quota-aware operating
-models, and audit trails across multiple Kubernetes clusters.
+KubeVirt Shepherd (kv-shepherd) is an open-source management platform for
+[KubeVirt][kubevirt] virtual machines. It brings VM requests, approval policies
+based on operation and environment, scoped access, and audit records into a
+shared interface across managed Kubernetes/KubeVirt clusters.
+
+This repository contains the Go backend, product web UI, and deployment assets.
+The official website provides product introductions and task guides in English
+and Chinese.
+
+**Project status: Alpha.** Start with an evaluation deployment and review the
+[release notes](https://github.com/kv-shepherd/shepherd/releases) before using
+Shepherd with shared workloads.
+
+The public browser demo needs no account and uses simulated data and operations.
+It does not create real VMs or provide live VNC/serial consoles. Real cluster
+operations require a self-hosted installation and a configured KubeVirt environment.
 
 <p align="center">
   <img src="docs/assets/screenshot.png" alt="KubeVirt Shepherd Dashboard" width="800">
@@ -24,27 +37,22 @@ model around those VMs: who can request them, who approves the change, how
 platform permissions are enforced, which clusters are available, and where the
 audit trail lives.
 
-Shepherd is an open-source, vendor-neutral alternative for teams that need VM
-governance without tying the workflow to a specific commercial platform stack.
-
-| Capability | OpenShift Virt | Shepherd |
-|------------|----------------|----------|
-| Multi-cluster management | Yes, commonly with RHACM | Native |
-| Approval workflows | Yes | Built in |
-| Self-service portal | Operator-driven | Request -> approve -> deliver |
-| Audit trail | OpenShift-integrated | Platform-native |
-| Vendor lock-in | Strong OpenShift coupling | None |
+Platform teams configure the resource catalog, roles, and managed clusters.
+Users submit requests within those boundaries, reviewers handle requests that
+require approval, and background workers execute accepted work against the
+target cluster. KubeVirt remains responsible for running the virtual machines.
 
 ## Features
 
-- Approval workflows for create, modify, start, stop, restart, and delete
+- Approval policies for create, modify, start, stop, restart, and delete,
+  with requirements configurable by operation and environment
 - Multi-cluster Kubernetes/KubeVirt management
 - Platform RBAC plus System, Service, and VM membership inheritance
 - Environment-scoped global role bindings
-- Full audit trail for governed resource changes
-- Built-in administrator observability for API traces, audit-derived business
-  signals, and operational metrics
-- VNC and serial console entrypoints
+- Audit records for platform requests, review decisions, and VM operations
+- Administrator visibility into audit-derived business signals and operational
+  metrics, with API tracing available when an observability backend is configured
+- VNC and serial console entrypoints with platform access controls
 - Chinese and English UI
 - Auth provider plugin SDK for LDAP, OIDC, and custom integrations
 - PostgreSQL-only runtime architecture with River Queue for async work
@@ -65,12 +73,10 @@ architecture decisions are tracked in [docs/adr/](docs/adr/).
 
 ## Project Status
 
-Shepherd is currently **Alpha**. The core governance paths - approval workflows,
-RBAC, audit trails, and VM lifecycle management - have been validated through
-internal production use in a financial-services Kubernetes/KubeVirt
-environment. The Alpha label is intentionally conservative while broader
-external feedback is gathered across different clusters, storage classes, auth
-providers, and operating policies.
+Shepherd is currently **Alpha**. Evaluate it with your Kubernetes/KubeVirt
+versions, storage classes, networking, and authentication providers. Review
+resource permissions, database persistence, and upgrade behavior for your
+environment before connecting shared workloads.
 
 See [CHANGELOG.md](CHANGELOG.md) for release details and
 [ROADMAP.md](ROADMAP.md) for planned work.
@@ -108,7 +114,7 @@ kubectl -n shepherd apply \
 
 ### Docker Compose From Release Images
 
-Use this path for production or VPS installs. It uses GHCR release images and
+Use this path for single-host or VPS installs. It uses GHCR release images and
 does not require a git checkout on the target host.
 
 Prerequisites: Docker, Docker Compose v2, and outbound access to GHCR and
@@ -186,10 +192,10 @@ configuration reference, security checklist, and VPS experience seed setup.
 Feedback from real environments is especially useful while the project is in
 Alpha.
 
-- [Official Website](https://kv-shepherd.io) - Project homepage and feature overview
+- [KubeVirt Shepherd official website](https://kv-shepherd.io/) - Product overview and task guides
+- [KubeVirt Shepherd 中文官网](https://kv-shepherd.io/zh/) - 中文产品介绍与场景指南
 - [Discord](https://discord.gg/9P2wtpPMUe) - Chat with the community
-- [GitHub Issues][issues] - Bug reports and feature requests
-- [GitHub Discussions](https://github.com/kv-shepherd/shepherd/discussions) - Questions and ideas
+- [GitHub Issues][issues] - Bug reports, feature requests, and usage questions
 - [Contributing](CONTRIBUTING.md) - PR workflow, CI gates, and coding standards
 - [Code of Conduct](CODE_OF_CONDUCT.md) - Community standards
 - [Governance](GOVERNANCE.md) - Project governance
