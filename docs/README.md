@@ -1,6 +1,29 @@
 # KubeVirt Shepherd Documentation
 
-> This directory contains all project documentation organized following open source best practices.
+KubeVirt Shepherd (kv-shepherd) is an open-source management platform for KubeVirt
+virtual machines. This directory documents the backend, product web UI, deployment,
+and engineering model maintained in this repository.
+
+**[KubeVirt Shepherd official website](https://kv-shepherd.io/)** ·
+**[KubeVirt Shepherd 中文官网](https://kv-shepherd.io/zh/)** ·
+**[Browser demo — simulated data](https://demo.kv-shepherd.io/)**
+
+## Start here
+
+- **Understand the product:** visit the official website in English or Chinese
+  for the VM request workflow, capabilities, and project boundaries.
+- **Try the interface:** the browser demo needs no account and simulates VM
+  requests, approvals, and role switching. It does not provision VMs or connect
+  to real consoles.
+- **Install Shepherd:** follow the [deployment guide](./DEPLOYMENT.md) for
+  [Helm on Kubernetes](./DEPLOYMENT.md#helm-deployment) or
+  [Docker Compose from release images](./DEPLOYMENT.md#docker-compose-from-release-images).
+  Real VM operations need a configured Kubernetes/KubeVirt environment.
+- **Evaluate Alpha:** read the [release notes](https://github.com/kv-shepherd/shepherd/releases)
+  and test compatibility, permissions, persistence, and upgrade behavior in your environment.
+- **Work on the implementation:** use the architecture and implementation reading
+  order below. English engineering documents remain the canonical source; see
+  [translated documentation](./i18n/README.md) for translation coverage.
 
 ---
 
